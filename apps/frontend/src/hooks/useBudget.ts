@@ -80,7 +80,7 @@ export const useBudget = (month: Date) => {
     }
   };
 
-  const deleteTransaction = async (id: number) => {
+    const deleteTransaction = async (id: string | number) => {
     try {
       await invoke('delete_budget_transaction', { id });
       await fetchData();

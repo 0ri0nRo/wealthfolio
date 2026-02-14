@@ -1,7 +1,7 @@
 // src/pages/Budget/components/BudgetLimits.tsx
 import React, { useState } from 'react';
 import { AlertCircle, Edit2, Plus, Trash2, TrendingDown } from 'lucide-react';
-import { BudgetCategory, BudgetLimit } from '@/types/budget';
+import { BudgetCategory, BudgetLimit } from '@/lib/types/budget';
 
 interface BudgetLimitsProps {
   limits: BudgetLimit[];

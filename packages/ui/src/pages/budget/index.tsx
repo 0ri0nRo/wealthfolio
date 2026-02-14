@@ -1,70 +1,74 @@
 // src/pages/Budget/BudgetPage.tsx
-import React, { useState, useEffect } from 'react';
-import { Plus, TrendingUp, TrendingDown, Wallet } from 'lucide-react';
-import { BudgetSummary, BudgetTransaction, BudgetCategory, MonthlyBudgetOverview } from '@/types/budget';
-import { BudgetOverview } from './components/BudgetOverview';
-import { TransactionList } from './components/TransactionList';
-import { CategoryBreakdown } from './components/CategoryBreakdown';
-import { AddTransactionModal } from './components/AddTransactionModal';
-import { BudgetChart } from './components/BudgetChart';
-import { MonthSelector } from './components/MonthSelector';
+import { useBudget } from '@/hooks/useBudget';
+import { BudgetTransaction } from '@/lib/types/budget';
+import { Plus, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import React, { useState } from 'react';
+import { AddTransactionModal } from "./components/add-transaction-modal";
+import { BudgetChart } from "./components/budget-chart";
+import { CategoryBreakdown } from "./components/category-breakdown";
+import { MonthSelector } from "./components/month-selector";
+import { TransactionList } from "./components/transaction-list";
 
 export const BudgetPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [transactions, setTransactions] = useState<BudgetTransaction[]>([]);
-  const [summary, setSummary] = useState<BudgetSummary | null>(null);
-  const [categories, setCategories] = useState<BudgetCategory[]>([]);
-  const [monthlyOverview, setMonthlyOverview] = useState<MonthlyBudgetOverview | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState<boolean>(false);
 
-  useEffect(() => {
-    loadBudgetData();
-  }, [selectedMonth]);
-
-  const loadBudgetData = async () => {
-    setLoading(true);
-    try {
-      // Qui chiamerai le tue API Tauri
-      // const data = await invoke('get_budget_summary', { 
-      //   month: selectedMonth.getMonth() + 1,
-      //   year: selectedMonth.getFullYear()
-      // });
-      
-      // Mock data per esempio
-      const mockSummary: BudgetSummary = {
-        totalIncome: 3500,
-        totalExpenses: 2300,
-        balance: 1200,
-        period: {
-          start: new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1).toISOString(),
-          end: new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).toISOString(),
-        },
-        categoryBreakdown: [],
-      };
-      
-      setSummary(mockSummary);
-    } catch (error) {
-      console.error('Error loading budget data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    transactions,
+    categories,
+    summary,
+    loading,
+    error,
+    createTransaction,
+    deleteTransaction,
+    refresh,
+  } = useBudget(selectedMonth);
 
   const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
     try {
-      // await invoke('create_budget_transaction', { transaction });
-      await loadBudgetData();
+      await createTransaction({
+        categoryId: transaction.categoryId!,
+        amount: transaction.amount!,
+        type: transaction.type!,
+        description: transaction.description!,
+        date: transaction.date!,
+        notes: transaction.notes,
+      });
       setShowAddModal(false);
-    } catch (error) {
-      console.error('Error adding transaction:', error);
+    } catch (err) {
+      console.error('Error adding transaction:', err);
+    }
+  };
+
+  const handleDeleteTransaction = async (id: string | number) => {
+    try {
+      await deleteTransaction(id);
+    } catch (err) {
+      console.error('Error deleting transaction:', err);
     }
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="text-center max-w-md">
+          <p className="text-red-600 dark:text-red-400 text-lg font-semibold mb-2">Error loading budget data</p>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
+          <button
+            onClick={refresh}
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-all shadow-sm shadow-blue-500/20"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -72,86 +76,86 @@ export const BudgetPage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-          <div className="flex items-center justify-between">
+      <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200/50 dark:border-gray-800/50 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-6 py-6">
+          <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
                 Budget
               </h1>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Gestisci le tue entrate e uscite
+                Track your income and expenses
               </p>
             </div>
             <button
               onClick={() => setShowAddModal(true)}
-              className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              className="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-sm shadow-blue-500/20"
             >
-              <Plus className="h-5 w-5 mr-2" />
-              Nuova Transazione
+              <Plus className="h-4 w-4 mr-2" />
+              New Transaction
             </button>
           </div>
-          
+
           {/* Month Selector */}
-          <div className="mt-6">
-            <MonthSelector
-              selectedMonth={selectedMonth}
-              onChange={setSelectedMonth}
-            />
-          </div>
+          <MonthSelector
+            selectedMonth={selectedMonth}
+            onChange={(date: Date) => setSelectedMonth(date)}
+          />
         </div>
       </div>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Overview Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Entrate
+          <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                  Income
                 </p>
-                <p className="text-2xl font-bold text-green-600 mt-2">
-                  €{summary?.totalIncome.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-              <div className="h-12 w-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
-                <TrendingUp className="h-6 w-6 text-green-600" />
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Uscite
-                </p>
-                <p className="text-2xl font-bold text-red-600 mt-2">
-                  €{summary?.totalExpenses.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                <p className="text-3xl font-semibold text-gray-900 dark:text-white">
+                  €{(summary?.totalIncome ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                 </p>
               </div>
-              <div className="h-12 w-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
-                <TrendingDown className="h-6 w-6 text-red-600" />
+              <div className="h-12 w-12 bg-green-50 dark:bg-green-900/20 rounded-xl flex items-center justify-center">
+                <TrendingUp className="h-6 w-6 text-green-600 dark:text-green-500" />
               </div>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Bilancio
+          <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                  Expenses
                 </p>
-                <p className={`text-2xl font-bold mt-2 ${
-                  (summary?.balance ?? 0) >= 0 ? 'text-blue-600' : 'text-red-600'
+                <p className="text-3xl font-semibold text-gray-900 dark:text-white">
+                  €{(summary?.totalExpenses ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className="h-12 w-12 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center justify-center">
+                <TrendingDown className="h-6 w-6 text-red-600 dark:text-red-500" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                  Balance
+                </p>
+                <p className={`text-3xl font-semibold ${
+                  (summary?.balance ?? 0) >= 0
+                    ? 'text-blue-600 dark:text-blue-500'
+                    : 'text-red-600 dark:text-red-500'
                 }`}>
-                  €{summary?.balance.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                  €{(summary?.balance ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                 </p>
               </div>
-              <div className="h-12 w-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
-                <Wallet className="h-6 w-6 text-blue-600" />
+              <div className="h-12 w-12 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center">
+                <Wallet className="h-6 w-6 text-blue-600 dark:text-blue-500" />
               </div>
             </div>
           </div>
@@ -166,13 +170,10 @@ export const BudgetPage: React.FC = () => {
         {/* Transactions List */}
         <TransactionList
           transactions={transactions}
-          onEdit={(transaction) => {
-            // Handle edit
+          onEdit={(transaction: BudgetTransaction) => {
+            console.log('Edit transaction:', transaction);
           }}
-          onDelete={async (id) => {
-            // Handle delete
-            await loadBudgetData();
-          }}
+          onDelete={handleDeleteTransaction}
         />
       </div>
 

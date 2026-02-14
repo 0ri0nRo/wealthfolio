@@ -1,5 +1,5 @@
 // src/pages/Budget/components/AddTransactionModal.tsx
-import { BudgetCategory, CreateBudgetTransactionInput } from '@/types/budget';
+import { BudgetCategory, CreateBudgetTransactionInput } from '@/lib/types/budget';
 import { X } from 'lucide-react';
 import React, { useState } from 'react';
 
