@@ -13,7 +13,7 @@ export const BudgetPage: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [transactions, setTransactions] = useState<BudgetTransaction[]>([]);
   const [summary, setSummary] = useState<BudgetSummary | null>(null);
-  const [categories, setCategories] = useState<BudgetCategory[]>([]);
+  const [categories, setCategoriess] = useState<BudgetCategory[]>([]);
   const [monthlyOverview, setMonthlyOverview] = useState<MonthlyBudgetOverview | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -79,7 +79,7 @@ export const BudgetPage: React.FC = () => {
                 Budget
               </h1>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Gestisci le tue entrate e uscite
+                Manage your income and expenses
               </p>
             </div>
             <button
@@ -87,7 +87,7 @@ export const BudgetPage: React.FC = () => {
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-lg shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
             >
               <Plus className="h-5 w-5 mr-2" />
-              Nuova Transazione
+              New Transaction
             </button>
           </div>
 
@@ -109,7 +109,7 @@ export const BudgetPage: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Entrate
+                  Income
                 </p>
                 <p className="text-2xl font-bold text-green-600 mt-2">
                   €{summary?.totalIncome.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
@@ -125,7 +125,7 @@ export const BudgetPage: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Uscite
+                  Expenses
                 </p>
                 <p className="text-2xl font-bold text-red-600 mt-2">
                   €{summary?.totalExpenses.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
@@ -141,7 +141,7 @@ export const BudgetPage: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                  Bilancio
+                  Balance
                 </p>
                 <p className={`text-2xl font-bold mt-2 ${
                   (summary?.balance ?? 0) >= 0 ? 'text-blue-600' : 'text-red-600'

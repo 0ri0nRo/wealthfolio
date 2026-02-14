@@ -29,7 +29,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const filteredCategories = categories.filter(c => c.type === formData.type && c.isActive);
+  const filteredCategoriess = categories.filter(c => c.type === formData.type && c.isActive);
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -87,7 +87,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-              {initialData ? 'Modifica Transazione' : 'Nuova Transazione'}
+              {initialData ? 'Modifica Transazione' : 'New Transaction'}
             </h3>
             <button
               onClick={onClose}
@@ -162,7 +162,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 }`}
               >
                 <option value="">Seleziona categoria</option>
-                {filteredCategories.map(category => (
+                {filteredCategoriess.map(category => (
                   <option key={category.id} value={category.id}>
                     {category.icon} {category.name}
                   </option>

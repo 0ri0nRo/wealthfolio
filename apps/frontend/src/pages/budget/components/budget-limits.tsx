@@ -25,7 +25,7 @@ export const BudgetLimits: React.FC<BudgetLimitsProps> = ({
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingLimit, setEditingLimit] = useState<BudgetLimit | null>(null);
 
-  const expenseCategories = categories.filter(c => c.type === 'expense' && c.isActive);
+  const expenseCategoriess = categories.filter(c => c.type === 'expense' && c.isActive);
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
@@ -192,7 +192,7 @@ export const BudgetLimits: React.FC<BudgetLimitsProps> = ({
       {/* Add/Edit Limit Modal */}
       {(showAddModal || editingLimit) && (
         <BudgetLimitModal
-          categories={expenseCategories}
+          categories={expenseCategoriess}
           existingLimit={editingLimit}
           month={month}
           year={year}
