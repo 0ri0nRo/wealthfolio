@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tauri::State;
 
 #[derive(Debug, Serialize, Deserialize, Queryable, QueryableByName)]
+#[serde(rename_all = "camelCase")] // <-- AGGIUNGI QUESTA RIGA
 pub struct BudgetCategory {
     #[diesel(sql_type = BigInt)]
     pub id: i64,
