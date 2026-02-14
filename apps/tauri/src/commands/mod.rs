@@ -6,6 +6,7 @@ pub mod ai_providers;
 pub mod alternative_assets;
 pub mod asset;
 pub mod brokers_sync;
+pub mod budget;
 pub mod device_enroll_service;
 pub mod device_sync;
 pub mod error;

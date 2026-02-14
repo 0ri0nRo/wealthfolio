@@ -12,6 +12,7 @@ import ActivityManagerPage from "@/pages/activity/activity-manager-page";
 import ActivityPage from "@/pages/activity/activity-page";
 import ActivityImportPage from "@/pages/activity/import/activity-import-page-v2";
 import AssetsPage from "@/pages/asset/assets-page";
+import { BudgetPage } from "@/pages/budget";
 import PortfolioPage from "@/pages/dashboard/portfolio-page";
 import HoldingsPage from "@/pages/holdings/holdings-page";
 import IncomePage from "@/pages/income/income-page";
@@ -89,6 +90,7 @@ export function AppRoutes() {
           <Route path="performance" element={<PerformancePage />} />
           <Route path="insights" element={<PortfolioInsightsPage />} />
           <Route path="health" element={<HealthPage />} />
+          <Route path="budget" element={<BudgetPage />} />
           <Route path="assistant" element={<AiAssistantPage />} />
           <Route path="connect" element={<ConnectPage />} />
           {/* Dynamic addon routes */}
