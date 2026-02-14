@@ -1,7 +1,7 @@
 // src/pages/Budget/components/AddTransactionModal.tsx
-import React, { useState } from 'react';
+import { BudgetCategory, CreateBudgetTransactionInput } from '@/types/budget';
 import { X } from 'lucide-react';
-import { BudgetCategory, TransactionType, CreateBudgetTransactionInput } from '@/types/budget';
+import React, { useState } from 'react';
 
 interface AddTransactionModalProps {
   categories: BudgetCategory[];
@@ -18,18 +18,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<CreateBudgetTransactionInput>({
     type: initialData?.type || 'expense',
-    categoryId: initialData?.categoryId || '',
+    categoryId: initialData?.categoryId || 0,  // FIX: number invece di stringa vuota
     amount: initialData?.amount || 0,
     description: initialData?.description || '',
     date: initialData?.date || new Date().toISOString().split('T')[0],
     notes: initialData?.notes || '',
-    isRecurring: initialData?.isRecurring || false,
-    tags: initialData?.tags || [],
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const filteredCategoriess = categories.filter(c => c.type === formData.type && c.isActive);
+  const filteredCategories = categories.filter(c => c.type === formData.type && c.isActive);  // FIX: rimosso doppio 's'
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -156,13 +154,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
               </label>
               <select
                 value={formData.categoryId}
-                onChange={(e) => updateField('categoryId', e.target.value)}
+                onChange={(e) => updateField('categoryId', parseInt(e.target.value))}
                 className={`w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
                   errors.categoryId ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
                 }`}
               >
-                <option value="">Seleziona categoria</option>
-                {filteredCategoriess.map(category => (
+                <option value="0">Seleziona categoria</option>
+                {filteredCategories.map(category => (
                   <option key={category.id} value={category.id}>
                     {category.icon} {category.name}
                   </option>
@@ -225,20 +223,6 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                 placeholder="Informazioni aggiuntive..."
               />
-            </div>
-
-            {/* Recurring */}
-            <div className="flex items-center">
-              <input
-                type="checkbox"
-                id="recurring"
-                checked={formData.isRecurring}
-                onChange={(e) => updateField('isRecurring', e.target.checked)}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="recurring" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                Transazione ricorrente
-              </label>
             </div>
 
             {/* Actions */}
