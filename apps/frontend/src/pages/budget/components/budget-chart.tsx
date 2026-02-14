@@ -153,10 +153,10 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions }) => {
                         {payload[0].payload.month}
                       </p>
                       <p className="text-sm text-green-600">
-                        Entrate: €{payload[0].value?.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                        Income: €{payload[0].value?.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                       </p>
                       <p className="text-sm text-red-600">
-                        Uscite: €{payload[1].value?.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                        Expenses: €{payload[1].value?.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                       </p>
                     </div>
                   );
@@ -164,8 +164,8 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions }) => {
                 return null;
               }}
             />
-            <Bar dataKey="income" fill="#10b981" name="Entrate" radius={[8, 8, 0, 0]} />
-            <Bar dataKey="expenses" fill="#ef4444" name="Uscite" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="income" fill="#10b981" name="Income" radius={[8, 8, 0, 0]} />
+            <Bar dataKey="expenses" fill="#ef4444" name="Expenses" radius={[8, 8, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       )}
