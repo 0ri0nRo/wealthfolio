@@ -252,6 +252,11 @@ pub fn run() {
             commands::settings::update_exchange_rate,
             commands::settings::add_exchange_rate,
             commands::settings::delete_exchange_rate,
+            // Budget commands
+            commands::budget::get_budget_categories,
+            commands::budget::get_budget_transactions,
+            commands::budget::create_budget_transaction,
+            commands::budget::get_budget_summary,
             // Goal commands
             commands::goal::create_goal,
             commands::goal::update_goal,

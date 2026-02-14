@@ -1,3 +1,5 @@
+use diesel::r2d2::{ConnectionManager, Pool};
+use diesel::SqliteConnection;
 use std::sync::{Arc, RwLock};
 use wealthfolio_ai::{AiProviderServiceTrait, ChatService};
 use wealthfolio_connect::BrokerSyncServiceTrait;
@@ -16,6 +18,9 @@ use crate::services::ConnectService;
 pub struct ServiceContext {
     pub base_currency: Arc<RwLock<String>>,
     pub instance_id: Arc<String>,
+
+    /// Database connection pool
+    pub pool: Arc<Pool<ConnectionManager<SqliteConnection>>>, // ← CAMBIATO QUI
 
     /// Domain event sink for emitting events after mutations.
     /// Runtime bridges (Tauri/Web) implement this to trigger portfolio recalculation,
@@ -53,6 +58,11 @@ pub struct ServiceContext {
 }
 
 impl ServiceContext {
+    pub fn pool(&self) -> &Arc<Pool<ConnectionManager<SqliteConnection>>> {
+        // ← CAMBIATO QUI
+        &self.pool
+    }
+
     pub fn get_base_currency(&self) -> String {
         self.base_currency.read().unwrap().clone()
     }

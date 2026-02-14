@@ -302,6 +302,7 @@ pub async fn initialize_context(
         context: ServiceContext {
             base_currency,
             instance_id,
+            pool, // ← AGGIUNTO QUI
             domain_event_sink,
             settings_service,
             account_service,

@@ -22,3 +22,4 @@ pub mod sync_crypto;
 pub mod taxonomy;
 pub mod utilities;
 pub mod wealthfolio_connect;
+pub mod budget;
