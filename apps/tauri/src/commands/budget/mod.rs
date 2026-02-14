@@ -314,7 +314,7 @@ pub async fn get_budget_transactions(
     month: u32,
     year: i32,
     state: State<'_, Arc<ServiceContext>>,
-) -> Result<Vec<BudgetTransaction>, String> {
+) -> Result<Vec<serde_json::Value>, String> {
     debug!("Fetching budget transactions for {}/{}", month, year);
 
     let mut conn = state.inner().pool().get().map_err(|e| e.to_string())?;
@@ -326,31 +326,88 @@ pub async fn get_budget_transactions(
         format!("{:04}-{:02}-01", year, month + 1)
     };
 
-    let transactions: Vec<BudgetTransactionRow> = diesel::sql_query(
-        "SELECT id, category_id, amount, type, description, date, notes
-         FROM budget_transactions
-         WHERE date >= ? AND date < ?
-         ORDER BY date DESC",
+    // Usa sql_query di Diesel con una struct per il risultato
+    #[derive(QueryableByName)]
+    struct TransactionWithCategory {
+        #[diesel(sql_type = Nullable<BigInt>)]
+        id: Option<i64>,
+        #[diesel(sql_type = BigInt)]
+        category_id: i64,
+        #[diesel(sql_type = Double)]
+        amount: f64,
+        #[diesel(sql_type = Text, column_name = "type")]
+        transaction_type: String,
+        #[diesel(sql_type = Text)]
+        description: String,
+        #[diesel(sql_type = Text)]
+        date: String,
+        #[diesel(sql_type = Nullable<Text>)]
+        notes: Option<String>,
+        // Campi della categoria
+        #[diesel(sql_type = BigInt)]
+        cat_id: i64,
+        #[diesel(sql_type = Text)]
+        cat_name: String,
+        #[diesel(sql_type = Text)]
+        cat_type: String,
+        #[diesel(sql_type = Text)]
+        cat_color: String,
+        #[diesel(sql_type = Nullable<Text>)]
+        cat_icon: Option<String>,
+        #[diesel(sql_type = Nullable<BigInt>)]
+        cat_parent_id: Option<i64>,
+        #[diesel(sql_type = Bool)]
+        cat_is_active: bool,
+        #[diesel(sql_type = Text)]
+        cat_created_at: String,
+        #[diesel(sql_type = Text)]
+        cat_updated_at: String,
+    }
+
+    let rows: Vec<TransactionWithCategory> = diesel::sql_query(
+        "SELECT
+            t.id, t.category_id, t.amount, t.type, t.description, t.date, t.notes,
+            c.id as cat_id, c.name as cat_name, c.type as cat_type,
+            c.color as cat_color, c.icon as cat_icon, c.parent_id as cat_parent_id,
+            c.is_active as cat_is_active, c.created_at as cat_created_at, c.updated_at as cat_updated_at
+         FROM budget_transactions t
+         JOIN budget_categories c ON t.category_id = c.id
+         WHERE t.date >= ? AND t.date < ?
+         ORDER BY t.date DESC"
     )
     .bind::<diesel::sql_types::Text, _>(&start_date)
     .bind::<diesel::sql_types::Text, _>(&end_date)
     .load(&mut conn)
     .map_err(|e| e.to_string())?;
 
-    let result = transactions
+    // Converti in JSON
+    let transactions: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|row| BudgetTransaction {
-            id: row.id,
-            category_id: row.category_id,
-            amount: row.amount,
-            transaction_type: row.transaction_type,
-            description: row.description,
-            date: row.date,
-            notes: row.notes,
+        .map(|row| {
+            serde_json::json!({
+                "id": row.id,
+                "categoryId": row.category_id,
+                "amount": row.amount,
+                "type": row.transaction_type,
+                "description": row.description,
+                "date": row.date,
+                "notes": row.notes,
+                "category": {
+                    "id": row.cat_id,
+                    "name": row.cat_name,
+                    "type": row.cat_type,
+                    "color": row.cat_color,
+                    "icon": row.cat_icon,
+                    "parentId": row.cat_parent_id,
+                    "isActive": row.cat_is_active,
+                    "createdAt": row.cat_created_at,
+                    "updatedAt": row.cat_updated_at
+                }
+            })
         })
         .collect();
 
-    Ok(result)
+    Ok(transactions)
 }
 
 #[tauri::command]
