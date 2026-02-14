@@ -1,15 +1,12 @@
-// src/hooks/useBudget.ts
-import { useState, useEffect, useCallback } from 'react';
 import {
-  BudgetTransaction,
   BudgetCategory,
-  BudgetSummary,
-  CreateBudgetTransactionInput,
   BudgetFilters,
-} from '@/types/budget';
-
-// Questo è un esempio - dovrai adattarlo alle tue API Tauri
-// import { invoke } from '@tauri-apps/api/tauri';
+  BudgetSummary,
+  BudgetTransaction,
+  CreateBudgetTransactionInput,
+} from '@/lib/types/budget';
+import { invoke } from '@tauri-apps/api/tauri';
+import { useCallback, useEffect, useState } from 'react';
 
 export const useBudget = (month: Date) => {
   const [transactions, setTransactions] = useState<BudgetTransaction[]>([]);
@@ -21,83 +18,32 @@ export const useBudget = (month: Date) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
-      // Esempio di chiamate API - sostituisci con le tue chiamate Tauri
-      // const [txns, cats, sum] = await Promise.all([
-      //   invoke('get_budget_transactions', {
-      //     month: month.getMonth() + 1,
-      //     year: month.getFullYear(),
-      //   }),
-      //   invoke('get_budget_categories'),
-      //   invoke('get_budget_summary', {
-      //     month: month.getMonth() + 1,
-      //     year: month.getFullYear(),
-      //   }),
-      // ]);
-      
-      // Mock data per sviluppo
-      const mockCategories: BudgetCategory[] = [
-        {
-          id: '1',
-          name: 'Alimentari',
-          type: 'expense',
-          color: '#ef4444',
-          icon: '🛒',
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-        {
-          id: '2',
-          name: 'Stipendio',
-          type: 'income',
-          color: '#10b981',
-          icon: '💼',
-          isActive: true,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        },
-      ];
+      const [cats, txns, sum] = await Promise.all([
+        invoke<BudgetCategory[]>('get_budget_categories'),
+        invoke<BudgetTransaction[]>('get_budget_transactions', {
+          month: month.getMonth() + 1,
+          year: month.getFullYear(),
+        }),
+        invoke<BudgetSummary>('get_budget_summary', {
+          month: month.getMonth() + 1,
+          year: month.getFullYear(),
+        }),
+      ]);
 
-      const mockTransactions: BudgetTransaction[] = [
-        {
-          id: '1',
-          categoryId: '1',
-          amount: 50.25,
-          type: 'expense',
-          description: 'Spesa settimanale',
-          date: new Date().toISOString().split('T')[0],
-          isRecurring: false,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          category: mockCategories[0],
-        },
-      ];
-
-      const mockSummary: BudgetSummary = {
-        totalIncome: 3500,
-        totalExpenses: 2300,
-        balance: 1200,
+      setCategories(cats);
+      setTransactions(txns);
+      setSummary({
+        ...sum,
         period: {
           start: new Date(month.getFullYear(), month.getMonth(), 1).toISOString(),
           end: new Date(month.getFullYear(), month.getMonth() + 1, 0).toISOString(),
         },
-        categoryBreakdown: [
-          {
-            category: mockCategories[0],
-            total: 450,
-            transactions: 12,
-            percentage: 19.6,
-          },
-        ],
-      };
-
-      setCategories(mockCategories);
-      setTransactions(mockTransactions);
-      setSummary(mockSummary);
+        categoryBreakdown: [],
+      });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Errore durante il caricamento dei dati');
+      setError(err instanceof Error ? err.message : 'Error loading data');
       console.error('Error fetching budget data:', err);
     } finally {
       setLoading(false);
@@ -110,42 +56,28 @@ export const useBudget = (month: Date) => {
 
   const createTransaction = async (data: CreateBudgetTransactionInput) => {
     try {
-      // await invoke('create_budget_transaction', { data });
-      console.log('Creating transaction:', data);
+      await invoke('create_budget_transaction', {
+        categoryId: parseInt(data.categoryId),
+        amount: data.amount,
+        transactionType: data.type,
+        description: data.description,
+        date: data.date,
+        notes: data.notes || null,
+      });
       await fetchData();
     } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Errore durante la creazione');
+      throw new Error(err instanceof Error ? err.message : 'Error creating transaction');
     }
   };
 
   const updateTransaction = async (id: string, data: Partial<BudgetTransaction>) => {
-    try {
-      // await invoke('update_budget_transaction', { id, data });
-      console.log('Updating transaction:', id, data);
-      await fetchData();
-    } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Errore durante l\'aggiornamento');
-    }
+    console.log('Update not yet implemented:', id, data);
+    await fetchData();
   };
 
   const deleteTransaction = async (id: string) => {
-    try {
-      // await invoke('delete_budget_transaction', { id });
-      console.log('Deleting transaction:', id);
-      await fetchData();
-    } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Errore durante l\'eliminazione');
-    }
-  };
-
-  const createCategory = async (data: Partial<BudgetCategory>) => {
-    try {
-      // await invoke('create_budget_category', { data });
-      console.log('Creating category:', data);
-      await fetchData();
-    } catch (err) {
-      throw new Error(err instanceof Error ? err.message : 'Errore durante la creazione categoria');
-    }
+    console.log('Delete not yet implemented:', id);
+    await fetchData();
   };
 
   return {
@@ -158,48 +90,17 @@ export const useBudget = (month: Date) => {
     createTransaction,
     updateTransaction,
     deleteTransaction,
-    createCategory,
   };
 };
 
-// Hook per filtrare le transazioni
 export const useFilteredTransactions = (
   transactions: BudgetTransaction[],
   filters: BudgetFilters
 ) => {
   return transactions.filter(transaction => {
-    // Filter by date range
     if (filters.startDate && transaction.date < filters.startDate) return false;
     if (filters.endDate && transaction.date > filters.endDate) return false;
-    
-    // Filter by category
-    if (filters.categoryIds?.length && !filters.categoryIds.includes(transaction.categoryId)) {
-      return false;
-    }
-    
-    // Filter by type
     if (filters.type && transaction.type !== filters.type) return false;
-    
-    // Filter by search query
-    if (filters.search) {
-      const query = filters.search.toLowerCase();
-      const matchesDescription = transaction.description.toLowerCase().includes(query);
-      const matchesCategory = transaction.category?.name.toLowerCase().includes(query);
-      if (!matchesDescription && !matchesCategory) return false;
-    }
-    
-    // Filter by amount
-    if (filters.minAmount !== undefined && transaction.amount < filters.minAmount) return false;
-    if (filters.maxAmount !== undefined && transaction.amount > filters.maxAmount) return false;
-    
-    // Filter by tags
-    if (filters.tags?.length) {
-      const hasMatchingTag = filters.tags.some(tag => 
-        transaction.tags?.includes(tag)
-      );
-      if (!hasMatchingTag) return false;
-    }
-    
     return true;
   });
 };
