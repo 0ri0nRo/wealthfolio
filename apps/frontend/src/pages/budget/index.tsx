@@ -1,6 +1,6 @@
 // src/pages/Budget/BudgetPage.tsx
 import { useBudget } from '@/hooks/useBudget';
-import { BudgetTransaction } from '@/types/budget';
+import { BudgetTransaction } from '@/lib/types/budget';
 import { Plus, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import React, { useState } from 'react';
 import { AddTransactionModal } from "./components/add-transaction-modal";
@@ -11,7 +11,7 @@ import { TransactionList } from "./components/transaction-list";
 
 export const BudgetPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState<boolean>(false);
 
   const {
     transactions,
@@ -35,19 +35,18 @@ export const BudgetPage: React.FC = () => {
         notes: transaction.notes,
       });
       setShowAddModal(false);
-    } catch (error) {
-      console.error('Error adding transaction:', error);
+    } catch (err) {
+      console.error('Error adding transaction:', err);
     }
   };
 
-  const handleDeleteTransaction = async (id: number) => {
+  const handleDeleteTransaction = async (id: string | number) => {
     try {
       await deleteTransaction(id);
-    } catch (error) {
-      console.error('Error deleting transaction:', error);
+    } catch (err) {
+      console.error('Error deleting transaction:', err);
     }
   };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
@@ -99,7 +98,7 @@ export const BudgetPage: React.FC = () => {
           {/* Month Selector */}
           <MonthSelector
             selectedMonth={selectedMonth}
-            onChange={setSelectedMonth}
+            onChange={(date: Date) => setSelectedMonth(date)}
           />
         </div>
       </div>
@@ -170,10 +169,10 @@ export const BudgetPage: React.FC = () => {
         {/* Transactions List */}
         <TransactionList
           transactions={transactions}
-          onEdit={(transaction) => {
+          onEdit={(transaction: BudgetTransaction) => {
             console.log('Edit transaction:', transaction);
           }}
-          onDelete={handleDeleteTransaction}
+          onDelete={(id) => handleDeleteTransaction(id)}
         />
       </div>
 

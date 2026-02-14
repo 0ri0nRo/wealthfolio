@@ -1,12 +1,12 @@
 // src/pages/Budget/components/TransactionList.tsx
+import { BudgetTransaction } from '@/lib/types/budget';
+import { ArrowDownCircle, ArrowUpCircle, Edit2, Search, Trash2 } from 'lucide-react';
 import React, { useState } from 'react';
-import { Edit2, Trash2, Search, Filter, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
-import { BudgetTransaction } from '@/types/budget';
 
 interface TransactionListProps {
   transactions: BudgetTransaction[];
   onEdit: (transaction: BudgetTransaction) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string | number) => void;
 }
 
 export const TransactionList: React.FC<TransactionListProps> = ({
@@ -40,7 +40,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Transazioni
         </h2>
-        
+
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4">
           {/* Search */}
@@ -184,8 +184,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   </button>
                   <button
                     onClick={() => {
-                      if (confirm('Sei sicuro di voler eliminare questa transazione?')) {
-                        onDelete(transaction.id);
+                      if (confirm('Are you sure you want to delete this transaction?')) {
+                        onDelete(String(transaction.id));
                       }
                     }}
                     className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"

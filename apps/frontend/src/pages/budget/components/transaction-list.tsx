@@ -1,7 +1,7 @@
 // src/pages/Budget/components/TransactionList.tsx
+import { BudgetTransaction } from '@/lib/types/budget';
+import { ArrowDownCircle, ArrowUpCircle, Edit2, Search, Trash2 } from 'lucide-react';
 import React, { useState } from 'react';
-import { Edit2, Trash2, Search, Filter, ArrowUpCircle, ArrowDownCircle } from 'lucide-react';
-import { BudgetTransaction } from '@/types/budget';
 
 interface TransactionListProps {
   transactions: BudgetTransaction[];
@@ -40,7 +40,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Transactions
         </h2>
-        
+
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-4">
           {/* Search */}

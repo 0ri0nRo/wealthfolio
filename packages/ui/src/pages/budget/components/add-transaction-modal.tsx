@@ -1,7 +1,7 @@
 // src/pages/Budget/components/AddTransactionModal.tsx
-import React, { useState } from 'react';
+import { BudgetCategory, CreateBudgetTransactionInput } from '@/lib/types/budget';
 import { X } from 'lucide-react';
-import { BudgetCategory, TransactionType, CreateBudgetTransactionInput } from '@/types/budget';
+import React, { useState } from 'react';
 
 interface AddTransactionModalProps {
   categories: BudgetCategory[];

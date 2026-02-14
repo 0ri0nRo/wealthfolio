@@ -1,7 +1,7 @@
 // src/pages/Budget/components/BudgetLimits.tsx
-import React, { useState } from 'react';
+import { BudgetCategory, BudgetLimit } from '@/lib/types/budget';
 import { AlertCircle, Edit2, Plus, Trash2, TrendingDown } from 'lucide-react';
-import { BudgetCategory, BudgetLimit } from '@/types/budget';
+import React, { useState } from 'react';
 
 interface BudgetLimitsProps {
   limits: BudgetLimit[];
@@ -233,13 +233,13 @@ const BudgetLimitModal: React.FC<BudgetLimitModalProps> = ({
   onClose,
   onSave,
 }) => {
-  const [categoryId, setCategoryId] = useState(existingLimit?.categoryId || '');
+  const [categoryId, setCategoryId] = useState(String(existingLimit?.categoryId || ''));
   const [amount, setAmount] = useState(existingLimit?.limitAmount || 0);
   const [error, setError] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!categoryId) {
       setError('Seleziona una categoria');
       return;
@@ -249,7 +249,7 @@ const BudgetLimitModal: React.FC<BudgetLimitModalProps> = ({
       return;
     }
 
-    onSave(categoryId, amount);
+    onSave(String(categoryId), amount);
   };
 
   const monthName = new Date(year, month - 1).toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
@@ -258,12 +258,12 @@ const BudgetLimitModal: React.FC<BudgetLimitModalProps> = ({
     <div className="fixed inset-0 z-50 overflow-y-auto">
       <div className="flex min-h-screen items-center justify-center p-4">
         <div className="fixed inset-0 bg-black bg-opacity-50" onClick={onClose} />
-        
+
         <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
             {existingLimit ? 'Modifica Limite Budget' : 'Nuovo Limite Budget'}
           </h3>
-          
+
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
             Imposta un limite di spesa per {monthName}
           </p>

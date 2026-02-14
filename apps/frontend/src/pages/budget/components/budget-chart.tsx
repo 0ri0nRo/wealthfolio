@@ -1,7 +1,7 @@
 // src/pages/Budget/components/BudgetChart.tsx
 import React, { useMemo } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
-import { BudgetTransaction } from '@/types/budget';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { BudgetTransaction } from '@/lib/types/budget';
 
 interface BudgetChartProps {
   transactions: BudgetTransaction[];
@@ -120,7 +120,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions }) => {
               cx="50%"
               cy="50%"
               labelLine={false}
-              label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+              label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
               outerRadius={80}
               fill="#8884d8"
               dataKey="value"

@@ -1,12 +1,12 @@
 // src/hooks/useBudget.ts
-import { useState, useEffect, useCallback } from 'react';
 import {
-  BudgetTransaction,
   BudgetCategory,
-  BudgetSummary,
-  CreateBudgetTransactionInput,
   BudgetFilters,
-} from '@/types/budget';
+  BudgetSummary,
+  BudgetTransaction,
+  CreateBudgetTransactionInput,
+} from '@/lib/types/budget';
+import { useCallback, useEffect, useState } from 'react';
 
 // Questo è un esempio - dovrai adattarlo alle tue API Tauri
 // import { invoke } from '@tauri-apps/api/tauri';
@@ -21,7 +21,7 @@ export const useBudget = (month: Date) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       // Esempio di chiamate API - sostituisci con le tue chiamate Tauri
       // const [txns, cats, sum] = await Promise.all([
@@ -35,7 +35,7 @@ export const useBudget = (month: Date) => {
       //     year: month.getFullYear(),
       //   }),
       // ]);
-      
+
       // Mock data per sviluppo
       const mockCategories: BudgetCategory[] = [
         {
@@ -128,7 +128,7 @@ export const useBudget = (month: Date) => {
     }
   };
 
-  const deleteTransaction = async (id: string) => {
+    const deleteTransaction = async (id: string | number) => {
     try {
       // await invoke('delete_budget_transaction', { id });
       console.log('Deleting transaction:', id);
@@ -171,15 +171,15 @@ export const useFilteredTransactions = (
     // Filter by date range
     if (filters.startDate && transaction.date < filters.startDate) return false;
     if (filters.endDate && transaction.date > filters.endDate) return false;
-    
+
     // Filter by category
     if (filters.categoryIds?.length && !filters.categoryIds.includes(transaction.categoryId)) {
       return false;
     }
-    
+
     // Filter by type
     if (filters.type && transaction.type !== filters.type) return false;
-    
+
     // Filter by search query
     if (filters.search) {
       const query = filters.search.toLowerCase();
@@ -187,19 +187,19 @@ export const useFilteredTransactions = (
       const matchesCategory = transaction.category?.name.toLowerCase().includes(query);
       if (!matchesDescription && !matchesCategory) return false;
     }
-    
+
     // Filter by amount
     if (filters.minAmount !== undefined && transaction.amount < filters.minAmount) return false;
     if (filters.maxAmount !== undefined && transaction.amount > filters.maxAmount) return false;
-    
+
     // Filter by tags
     if (filters.tags?.length) {
-      const hasMatchingTag = filters.tags.some(tag => 
+      const hasMatchingTag = filters.tags.some(tag =>
         transaction.tags?.includes(tag)
       );
       if (!hasMatchingTag) return false;
     }
-    
+
     return true;
   });
 };
