@@ -338,42 +338,20 @@
 }
 
 :root {
-  /* Base radius - desktop default */
-  --radius: 0.625rem;
+  /* Flexoki Light Theme - Aesthetic Pastel Palette */
+  --flexoki-bg: 210 30% 98%;       /* very soft pastel blue */
+  --flexoki-bg-2: 210 25% 95%;     /* card / secondary bg */
+  --flexoki-ui: 210 20% 90%;       /* UI elements */
+  --flexoki-ui-2: 210 15% 85%;     /* slightly darker UI */
+  --flexoki-ui-3: 210 10% 80%;     /* subtle UI accent */
+  --flexoki-tx: 210 5% 15%;        /* main text: dark but soft */
+  --flexoki-tx-2: 210 10% 35%;     /* secondary text */
+  --flexoki-tx-3: 210 10% 70%;     /* muted text / placeholders */
+  --flexoki-re: 0 60% 80%;         /* soft red / error */
+  --flexoki-gr: 120 40% 75%;       /* soft green / success */
+  --flexoki-ye: 45 80% 80%;        /* pastel yellow / warning */
 
-  /* Input heights - desktop default */
-  --input-height: 2.75rem; /* h-11 */
-  --input-height-lg: 2.75rem; /* h-11 */
-
-  /* Button heights - desktop default */
-  --button-height: 2.5rem; /* h-10 */
-  --button-height-sm: 2.25rem; /* h-9 */
-  --button-height-lg: 2.75rem; /* h-11 */
-
-  /* Card padding - desktop default */
-  --card-padding: 1rem; /* p-4 */
-
-  /* Sheet spacing - desktop default */
-  --sheet-padding: 1rem; /* p-4 */
-  --sheet-title-size: 1.125rem; /* text-lg */
-
-  /* Font size - desktop default */
-  --font-size-base: 0.875rem; /* text-sm */
-
-  /* Flexoki Light Theme (HSL numeric components) */
-  --flexoki-bg: 48 100% 97%;
-  --flexoki-bg-2: 51 59% 95%;
-  --flexoki-ui: 51 21% 88%;
-  --flexoki-ui-2: 50 14% 83%;
-  --flexoki-ui-3: 55 10% 79%;
-  --flexoki-tx: 0 3% 6%;
-  --flexoki-tx-2: 50 3% 42%;
-  --flexoki-tx-3: 49 7% 70%;
-  --flexoki-re: 3 62% 42%;
-  --flexoki-gr: 73 84% 27%;
-  --flexoki-ye: 45 99% 34%;
-
-  /* Shadcn tokens as full HSL colors */
+  /* Semantic usage */
   --background: hsl(var(--flexoki-bg));
   --foreground: hsl(var(--flexoki-tx));
   --card: hsl(var(--flexoki-bg-2));
@@ -399,18 +377,7 @@
   --input-bg: hsl(var(--flexoki-bg));
   --ring: hsl(var(--flexoki-ui-3));
 
-  /* Charts (full hsl colors) */
-  --chart-1: hsl(40 3% 20%);
-  --chart-2: hsl(45 2% 33%);
-  --chart-3: hsl(50 3% 42%);
-  --chart-4: hsl(43 3% 52%);
-  --chart-5: hsl(47 4% 61%);
-  --chart-6: hsl(49 7% 70%);
-  --chart-7: hsl(55 10% 79%);
-  --chart-8: hsl(50 14% 83%);
-  --chart-9: hsl(51 21% 88%);
-
-  /* Sidebar (full hsl colors) */
+  /* Sidebar */
   --sidebar: hsl(var(--flexoki-bg));
   --sidebar-foreground: hsl(var(--flexoki-tx));
   --sidebar-primary: hsl(var(--flexoki-tx));
@@ -419,35 +386,8 @@
   --sidebar-accent-foreground: hsl(var(--flexoki-tx-2));
   --sidebar-border: hsl(var(--flexoki-ui));
   --sidebar-ring: hsl(var(--flexoki-ui-3));
-
-  --liquid-glass-bg: rgba(255, 255, 255, 0.05);
-  --liquid-glass-border: rgba(255, 255, 255, 0.1);
-
-  --inset-top: env(safe-area-inset-top, 0px);
-  --inset-right: env(safe-area-inset-right, 0px);
-  --inset-bottom: env(safe-area-inset-bottom, 0px);
-  --inset-left: env(safe-area-inset-left, 0px);
-
-  --mobile-nav-ui-height: 64px; /* nav bar height */
-  --mobile-nav-gap: 12px; /* space between nav and bottom */
-
-  /* Sonner toast overrides - solid backgrounds for better readability */
-  --toast-bg: hsl(var(--flexoki-bg-2));
-  --toast-fg: hsl(var(--flexoki-tx));
-  --toast-border: hsl(var(--flexoki-ui-2));
-  --toast-success-bg: var(--color-green-50);
-  --toast-success-fg: var(--color-green-700);
-  --toast-success-border: var(--color-green-200);
-  --toast-error-bg: var(--color-red-50);
-  --toast-error-fg: var(--color-red-700);
-  --toast-error-border: var(--color-red-200);
-  --toast-warning-bg: var(--color-orange-50);
-  --toast-warning-fg: var(--color-orange-700);
-  --toast-warning-border: var(--color-orange-200);
-  --toast-info-bg: var(--color-blue-50);
-  --toast-info-fg: var(--color-blue-700);
-  --toast-info-border: var(--color-blue-200);
 }
+
 
 .dark {
   /* Flexoki Dark Theme (HSL numeric components) */
