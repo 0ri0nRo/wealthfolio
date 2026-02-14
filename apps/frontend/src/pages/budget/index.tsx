@@ -1,7 +1,8 @@
 // src/pages/Budget/BudgetPage.tsx
-import { BudgetCategory, BudgetSummary, BudgetTransaction, MonthlyBudgetOverview } from '@/types/budget';
+import { useBudget } from '@/hooks/useBudget';
+import { BudgetTransaction } from '@/types/budget';
 import { Plus, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { AddTransactionModal } from "./components/add-transaction-modal";
 import { BudgetChart } from "./components/budget-chart";
 import { CategoryBreakdown } from "./components/category-breakdown";
@@ -11,52 +12,42 @@ import { TransactionList } from "./components/transaction-list";
 export const BudgetPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [showAddModal, setShowAddModal] = useState(false);
-  const [transactions, setTransactions] = useState<BudgetTransaction[]>([]);
-  const [summary, setSummary] = useState<BudgetSummary | null>(null);
-  const [categories, setCategoriess] = useState<BudgetCategory[]>([]);
-  const [monthlyOverview, setMonthlyOverview] = useState<MonthlyBudgetOverview | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadBudgetData();
-  }, [selectedMonth]);
-
-  const loadBudgetData = async () => {
-    setLoading(true);
-    try {
-      // Qui chiamerai le tue API Tauri
-      // const data = await invoke('get_budget_summary', {
-      //   month: selectedMonth.getMonth() + 1,
-      //   year: selectedMonth.getFullYear()
-      // });
-
-      // Mock data per esempio
-      const mockSummary: BudgetSummary = {
-        totalIncome: 3500,
-        totalExpenses: 2300,
-        balance: 1200,
-        period: {
-          start: new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1).toISOString(),
-          end: new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0).toISOString(),
-        },
-        categoryBreakdown: [],
-      };
-
-      setSummary(mockSummary);
-    } catch (error) {
-      console.error('Error loading budget data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // USA IL HOOK INVECE DELLO STATO LOCALE
+  const {
+    transactions,
+    categories,
+    summary,
+    loading,
+    error,
+    createTransaction,
+    deleteTransaction,
+    refresh,
+  } = useBudget(selectedMonth);
 
   const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
     try {
-      // await invoke('create_budget_transaction', { transaction });
-      await loadBudgetData();
+      await createTransaction({
+        categoryId: transaction.categoryId!,
+        amount: transaction.amount!,
+        type: transaction.type!,
+        description: transaction.description!,
+        date: transaction.date!,
+        notes: transaction.notes,
+      });
       setShowAddModal(false);
     } catch (error) {
       console.error('Error adding transaction:', error);
+      // Mostra un toast/alert all'utente
+    }
+  };
+
+  const handleDeleteTransaction = async (id: number) => {
+    try {
+      await deleteTransaction(id);
+    } catch (error) {
+      console.error('Error deleting transaction:', error);
+      // Mostra un toast/alert all'utente
     }
   };
 
@@ -64,6 +55,23 @@ export const BudgetPage: React.FC = () => {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <p className="text-red-600 text-lg font-semibold mb-4">Error loading budget data</p>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button
+            onClick={refresh}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -112,7 +120,7 @@ export const BudgetPage: React.FC = () => {
                   Income
                 </p>
                 <p className="text-2xl font-bold text-green-600 mt-2">
-                  €{summary?.totalIncome.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                  €{(summary?.totalIncome ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="h-12 w-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
@@ -128,7 +136,7 @@ export const BudgetPage: React.FC = () => {
                   Expenses
                 </p>
                 <p className="text-2xl font-bold text-red-600 mt-2">
-                  €{summary?.totalExpenses.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                  €{(summary?.totalExpenses ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="h-12 w-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
@@ -146,7 +154,7 @@ export const BudgetPage: React.FC = () => {
                 <p className={`text-2xl font-bold mt-2 ${
                   (summary?.balance ?? 0) >= 0 ? 'text-blue-600' : 'text-red-600'
                 }`}>
-                  €{summary?.balance.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                  €{(summary?.balance ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
                 </p>
               </div>
               <div className="h-12 w-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
@@ -166,12 +174,10 @@ export const BudgetPage: React.FC = () => {
         <TransactionList
           transactions={transactions}
           onEdit={(transaction) => {
-            // Handle edit
+            // TODO: Implementa la modifica
+            console.log('Edit transaction:', transaction);
           }}
-          onDelete={async (id) => {
-            // Handle delete
-            await loadBudgetData();
-          }}
+          onDelete={handleDeleteTransaction}
         />
       </div>
 

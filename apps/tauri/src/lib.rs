@@ -254,8 +254,14 @@ pub fn run() {
             commands::settings::delete_exchange_rate,
             // Budget commands
             commands::budget::get_budget_categories,
+            commands::budget::create_budget_category,
+            commands::budget::update_budget_category,
+            commands::budget::delete_budget_category,
+            commands::budget::initialize_default_categories,
             commands::budget::get_budget_transactions,
             commands::budget::create_budget_transaction,
+            commands::budget::update_budget_transaction,
+            commands::budget::delete_budget_transaction,
             commands::budget::get_budget_summary,
             // Goal commands
             commands::goal::create_goal,
@@ -445,14 +451,6 @@ pub fn run() {
             commands::health::execute_health_fix,
             commands::health::get_health_config,
             commands::health::update_health_config,
-            // Budget commands
-            // commands::budget::get_budget_categories,
-            // commands::budget::get_budget_transactions,
-            // commands::budget::create_budget_transaction,
-            // commands::budget::update_budget_transaction,
-            //commands::budget::delete_budget_transaction,
-            //commands::budget::get_budget_summary,
-            //commands::budget::create_budget_category,
         ])
         .build(tauri::generate_context!())
         .expect("Failed to build Wealthfolio application")

@@ -5,7 +5,7 @@ import {
   BudgetTransaction,
   CreateBudgetTransactionInput,
 } from '@/lib/types/budget';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useState } from 'react';
 
 export const useBudget = (month: Date) => {
@@ -34,14 +34,7 @@ export const useBudget = (month: Date) => {
 
       setCategories(cats);
       setTransactions(txns);
-      setSummary({
-        ...sum,
-        period: {
-          start: new Date(month.getFullYear(), month.getMonth(), 1).toISOString(),
-          end: new Date(month.getFullYear(), month.getMonth() + 1, 0).toISOString(),
-        },
-        categoryBreakdown: [],
-      });
+      setSummary(sum);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error loading data');
       console.error('Error fetching budget data:', err);
@@ -57,7 +50,7 @@ export const useBudget = (month: Date) => {
   const createTransaction = async (data: CreateBudgetTransactionInput) => {
     try {
       await invoke('create_budget_transaction', {
-        categoryId: parseInt(data.categoryId),
+        categoryId: data.categoryId,  // Già number, non serve parseInt
         amount: data.amount,
         transactionType: data.type,
         description: data.description,
@@ -70,14 +63,30 @@ export const useBudget = (month: Date) => {
     }
   };
 
-  const updateTransaction = async (id: string, data: Partial<BudgetTransaction>) => {
-    console.log('Update not yet implemented:', id, data);
-    await fetchData();
+  const updateTransaction = async (id: number, data: Partial<BudgetTransaction>) => {
+    try {
+      await invoke('update_budget_transaction', {
+        id,
+        categoryId: data.categoryId,
+        amount: data.amount,
+        transactionType: data.type,
+        description: data.description,
+        date: data.date,
+        notes: data.notes,
+      });
+      await fetchData();
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Error updating transaction');
+    }
   };
 
-  const deleteTransaction = async (id: string) => {
-    console.log('Delete not yet implemented:', id);
-    await fetchData();
+  const deleteTransaction = async (id: number) => {
+    try {
+      await invoke('delete_budget_transaction', { id });
+      await fetchData();
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Error deleting transaction');
+    }
   };
 
   return {
