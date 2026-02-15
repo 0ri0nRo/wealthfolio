@@ -273,7 +273,7 @@ async fn run_portfolio_job(
     // - Otherwise: process all non-archived accounts
     let mut account_ids: Vec<String> = if let Some(ref target_ids) = config.account_ids {
         // Process the specific requested accounts (even if archived, for their own snapshots)
-        target_ids.clone()
+        target_ids.to_vec()
     } else {
         // No specific accounts requested - use non-archived accounts
         accounts_for_total.iter().map(|a| a.id.clone()).collect()
@@ -349,7 +349,7 @@ async fn run_portfolio_job(
         account_ids.push(PORTFOLIO_TOTAL_ACCOUNT_ID.to_string());
     }
 
-    for account_id in account_ids {
+    for account_id in &account_ids {
         if let Err(err) = deps
             .valuation_service
             .calculate_valuation_history(&account_id, config.force_full_recalculation)

@@ -63,6 +63,7 @@ pub struct AppState {
     /// Note: The sink is used by services injected at construction time; this field
     /// is kept for documentation and possible future access patterns.
     #[allow(dead_code)]
+    pub pool: diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<diesel::SqliteConnection>>,
     pub domain_event_sink: Arc<dyn DomainEventSink>,
     pub account_service: Arc<AccountService>,
     pub settings_service: Arc<SettingsService>,
@@ -408,6 +409,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         .map(Arc::new);
 
     Ok(Arc::new(AppState {
+        pool: (*pool).clone(), // ← AGGIUNGI QUESTA RIGA
         domain_event_sink,
         account_service,
         settings_service,
