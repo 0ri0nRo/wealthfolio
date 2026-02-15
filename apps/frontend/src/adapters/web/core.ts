@@ -1184,14 +1184,25 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       break;
     }
     case "update_budget_transaction": {
-        const { id, ...data } = payload as { id: number | string } & Record<string, unknown>;
-        url = url.replace(":id", id.toString());  // ✅ cambia {id} in :id
-        body = JSON.stringify(data);
-        break;
-      }
+      const { id, ...data } = payload as { id: number | string } & Record<string, unknown>;
+      url = url.replace(":id", id.toString());
+
+      // ✅ Trasforma i campi in snake_case per il backend
+      const snakeCaseData: any = {};
+      if (data.categoryId !== undefined) snakeCaseData.category_id = data.categoryId;
+      if (data.amount !== undefined) snakeCaseData.amount = data.amount;
+      if (data.transactionType) snakeCaseData.transaction_type = data.transactionType;
+      if (data.type) snakeCaseData.transaction_type = data.type;
+      if (data.description !== undefined) snakeCaseData.description = data.description;
+      if (data.date) snakeCaseData.date = data.date;
+      if (data.notes !== undefined) snakeCaseData.notes = data.notes;
+
+      body = JSON.stringify(snakeCaseData);
+      break;
+    }
     case "delete_budget_transaction": {
       const { id } = payload as { id: number | string };
-      url = url.replace(":id", id.toString());  // ✅ cerca :id
+      url = url.replace(":id", id.toString());
       break;
     }
   }
