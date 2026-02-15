@@ -56,6 +56,11 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [], sho
 
     // Aggiungi dati dalle transazioni
     transactions.forEach(transaction => {
+      // ✅ AGGIUNGI: Escludi "Investments" dalle entrate
+      if (transaction.type === 'income' && transaction.category?.name === 'Investments') {
+        return; // Salta questa transazione
+      }
+
       const date = new Date(transaction.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
       const existing = monthlyData.get(monthKey);
