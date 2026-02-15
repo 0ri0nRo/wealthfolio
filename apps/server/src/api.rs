@@ -23,6 +23,7 @@ mod ai_chat;
 mod ai_providers;
 mod alternative_assets;
 mod assets;
+mod budget;
 #[cfg(any(feature = "connect-sync", feature = "device-sync"))]
 pub mod connect;
 #[cfg(feature = "device-sync")]
@@ -79,7 +80,6 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
     let openapi = ApiDoc::openapi();
     let requires_auth = state.auth.is_some();
 
-    // Compose all protected routes from individual modules
     #[allow(unused_mut)]
     let mut protected_api = Router::new()
         .merge(accounts::router())
@@ -100,7 +100,8 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
         .merge(alternative_assets::router())
         .merge(ai_providers::router())
         .merge(ai_chat::router())
-        .merge(health::router());
+        .merge(health::router())
+        .merge(budget::router());
 
     #[cfg(feature = "device-sync")]
     {
