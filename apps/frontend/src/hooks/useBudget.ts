@@ -10,7 +10,7 @@ import { invoke } from '../adapters/shared/platform';
 
 export const useBudget = (month: Date) => {
   const [transactions, setTransactions] = useState<BudgetTransaction[]>([]);
-  const [allTransactions, setAllTransactions] = useState<BudgetTransaction[]>([]); // ✅ AGGIUNGI
+  const [allTransactions, setAllTransactions] = useState<BudgetTransaction[]>([]);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [summary, setSummary] = useState<BudgetSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,13 +50,12 @@ export const useBudget = (month: Date) => {
       // JOIN client-side delle categorie
       const categoriesMap = new Map(cats.map((c: BudgetCategory) => [String(c.id), c]));
 
-      // Aggiungi l'oggetto category completo a ogni transazione del mese corrente
+      // Aggiungi l'oggetto category completo a ogni transazione
       const enrichedTxns = txns.map((txn: any) => ({
         ...txn,
         category: categoriesMap.get(String(txn.categoryId)) || undefined,
       }));
 
-      // Aggiungi l'oggetto category anche a tutte le transazioni degli ultimi 12 mesi
       const enrichedAllTxns = allTxns.map((txn: any) => ({
         ...txn,
         category: categoriesMap.get(String(txn.categoryId)) || undefined,
@@ -86,56 +85,22 @@ export const useBudget = (month: Date) => {
             return acc;
           }, new Map())
           .values()
-      ) as Array<{  // ✅ AGGIUNGI QUESTO CAST
+      ) as Array<{
         category: BudgetCategory;
         total: number;
         transactions: number;
         percentage: number;
       }>;
+
       // Calcola le percentuali
       const totalExpenses = sum.totalExpenses || 0.01;
       categoryBreakdown.forEach((item: any) => {
         item.percentage = (item.total / totalExpenses) * 100;
       });
 
-      // ✅ AGGIUNGI QUESTO BLOCCO QUI
-      // Trova la categoria Investments
-      const investmentsCategory = cats.find(c =>
-        c.name === 'Investments' && c.type === 'expense'
-      );
-      const investmentsCategoryId = investmentsCategory ? String(investmentsCategory.id) : null;
-
-      // Calcola totale investimenti
-      const totalInvestments = investmentsCategoryId
-        ? enrichedTxns
-            .filter(t => t.type === 'expense' && String(t.categoryId) === investmentsCategoryId)
-            .reduce((sum, t) => sum + t.amount, 0)
-        : 0;
-
-      // Escludi investimenti dalle spese
-      const adjustedExpenses = sum.totalExpenses - totalInvestments;
-      const adjustedBalance = sum.totalIncome - adjustedExpenses;
-
-      // Filtra investimenti dal breakdown
-      const filteredBreakdown = categoryBreakdown.filter(cb =>
-        String(cb.category.id) !== investmentsCategoryId
-      );
-      // FINE BLOCCO
-
       setCategories(cats);
       setTransactions(enrichedTxns);
       setAllTransactions(enrichedAllTxns);
-      setSummary({
-        ...sum,
-        totalExpenses: adjustedExpenses,    // ✅ CAMBIA
-        balance: adjustedBalance,            // ✅ CAMBIA
-        totalInvestments: totalInvestments,  // ✅ AGGIUNGI
-        categoryBreakdown: filteredBreakdown, // ✅ CAMBIA
-      });
-
-      setCategories(cats);
-      setTransactions(enrichedTxns);
-      setAllTransactions(enrichedAllTxns); // ✅ AGGIUNGI
       setSummary({
         ...sum,
         categoryBreakdown,
@@ -196,7 +161,7 @@ export const useBudget = (month: Date) => {
 
   return {
     transactions,
-    allTransactions, // ✅ ORA È PRESENTE
+    allTransactions,
     categories,
     summary,
     loading,
