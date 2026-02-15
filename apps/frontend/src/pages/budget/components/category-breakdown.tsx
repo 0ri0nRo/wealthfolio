@@ -1,13 +1,13 @@
-import React from 'react';
 import { BudgetSummary } from '@/lib/types/budget';
+import React from 'react';
 
 interface CategoryBreakdownProps {
   summary: BudgetSummary | null;
 }
 
 export const CategoryBreakdown: React.FC<CategoryBreakdownProps> = ({ summary }) => {
-  if (!summary || summary.categoryBreakdown.length === 0) {
-    return (
+if (!summary || !summary.categoryBreakdown || summary.categoryBreakdown.length === 0) {
+      return (
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
           Category Breakdown
