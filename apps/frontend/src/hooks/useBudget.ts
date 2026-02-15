@@ -10,84 +10,108 @@ import { invoke } from '../adapters/shared/platform';
 
 export const useBudget = (month: Date) => {
   const [transactions, setTransactions] = useState<BudgetTransaction[]>([]);
+  const [allTransactions, setAllTransactions] = useState<BudgetTransaction[]>([]); // ✅ AGGIUNGI
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [summary, setSummary] = useState<BudgetSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-const fetchData = useCallback(async () => {
-  setLoading(true);
-  setError(null);
-  try {
-    const [cats, txns, sum] = await Promise.all([
-      invoke<BudgetCategory[]>('get_budget_categories'),
-      invoke<BudgetTransaction[]>('get_budget_transactions', {
-        month: month.getMonth() + 1,
-        year: month.getFullYear(),
-      }),
-      invoke<BudgetSummary>('get_budget_summary', {
-        month: month.getMonth() + 1,
-        year: month.getFullYear(),
-      }),
-    ]);
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // Calcola gli ultimi 12 mesi
+      const now = new Date();
+      const startDate = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
-    // ✅ AGGIUNGI QUESTO: JOIN client-side delle categorie
-    const categoriesMap = new Map(cats.map(c => [
-      String(c.id), // o Number(c.id) se preferisci
-      c
-    ]));
-
-    // Aggiungi l'oggetto category completo a ogni transazione
-    const enrichedTxns = txns.map(txn => ({
-      ...txn,
-      category: categoriesMap.get(String(txn.categoryId)) || undefined,
-    }));
-
-    // ✅ AGGIUNGI QUESTO: Calcola categoryBreakdown per il summary
-    const categoryBreakdown = Array.from(
-      enrichedTxns
-        .filter(t => t.type === 'expense')
-        .reduce((acc, txn) => {
-          if (!txn.category) return acc;
-
-          const key = String(txn.categoryId);
-          const existing = acc.get(key);
-
-          if (existing) {
-            existing.total += txn.amount;
-            existing.transactions += 1;
-          } else {
-            acc.set(key, {
-              category: txn.category,
-              total: txn.amount,
-              transactions: 1,
-              percentage: 0, // calcoliamo dopo
+      const [cats, txns, sum, allTxns] = await Promise.all([
+        invoke<BudgetCategory[]>('get_budget_categories'),
+        invoke<BudgetTransaction[]>('get_budget_transactions', {
+          month: month.getMonth() + 1,
+          year: month.getFullYear(),
+        }),
+        invoke<BudgetSummary>('get_budget_summary', {
+          month: month.getMonth() + 1,
+          year: month.getFullYear(),
+        }),
+        // Carica tutte le transazioni degli ultimi 12 mesi
+        Promise.all(
+          Array.from({ length: 12 }, (_, i) => {
+            const d = new Date(startDate);
+            d.setMonth(startDate.getMonth() + i);
+            return invoke<BudgetTransaction[]>('get_budget_transactions', {
+              month: d.getMonth() + 1,
+              year: d.getFullYear(),
             });
-          }
-          return acc;
-        }, new Map())
-        .values()
-    );
+          })
+        ).then(results => results.flat()),
+      ]);
 
-    // Calcola le percentuali
-    const totalExpenses = sum.totalExpenses || 0.01; // evita divisione per zero
-    categoryBreakdown.forEach(item => {
-      item.percentage = (item.total / totalExpenses) * 100;
-    });
+      // JOIN client-side delle categorie
+      const categoriesMap = new Map(cats.map((c: BudgetCategory) => [String(c.id), c]));
 
-    setCategories(cats);
-    setTransactions(enrichedTxns);
-    setSummary({
-      ...sum,
-      categoryBreakdown,
-    });
-  } catch (err) {
-    setError(err instanceof Error ? err.message : 'Error loading data');
-    console.error('Error fetching budget data:', err);
-  } finally {
-    setLoading(false);
-  }
-}, [month]);
+      // Aggiungi l'oggetto category completo a ogni transazione del mese corrente
+      const enrichedTxns = txns.map((txn: any) => ({
+        ...txn,
+        category: categoriesMap.get(String(txn.categoryId)) || undefined,
+      }));
+
+      // Aggiungi l'oggetto category anche a tutte le transazioni degli ultimi 12 mesi
+      const enrichedAllTxns = allTxns.map((txn: any) => ({
+        ...txn,
+        category: categoriesMap.get(String(txn.categoryId)) || undefined,
+      }));
+
+      // Calcola categoryBreakdown per il summary
+      const categoryBreakdown = Array.from(
+        enrichedTxns
+          .filter((t: BudgetTransaction) => t.type === 'expense')
+          .reduce((acc: Map<string, any>, txn: BudgetTransaction) => {
+            if (!txn.category) return acc;
+
+            const key = String(txn.categoryId);
+            const existing = acc.get(key);
+
+            if (existing) {
+              existing.total += txn.amount;
+              existing.transactions += 1;
+            } else {
+              acc.set(key, {
+                category: txn.category,
+                total: txn.amount,
+                transactions: 1,
+                percentage: 0,
+              });
+            }
+            return acc;
+          }, new Map())
+          .values()
+      ) as Array<{  // ✅ AGGIUNGI QUESTO CAST
+        category: BudgetCategory;
+        total: number;
+        transactions: number;
+        percentage: number;
+      }>;
+      // Calcola le percentuali
+      const totalExpenses = sum.totalExpenses || 0.01;
+      categoryBreakdown.forEach((item: any) => {
+        item.percentage = (item.total / totalExpenses) * 100;
+      });
+
+      setCategories(cats);
+      setTransactions(enrichedTxns);
+      setAllTransactions(enrichedAllTxns); // ✅ AGGIUNGI
+      setSummary({
+        ...sum,
+        categoryBreakdown,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error loading data');
+      console.error('Error fetching budget data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [month]);
 
   useEffect(() => {
     fetchData();
@@ -96,7 +120,7 @@ const fetchData = useCallback(async () => {
   const createTransaction = async (data: CreateBudgetTransactionInput) => {
     try {
       await invoke('create_budget_transaction', {
-        categoryId: data.categoryId,  // Già number, non serve parseInt
+        categoryId: data.categoryId,
         amount: data.amount,
         transactionType: data.type,
         description: data.description,
@@ -126,7 +150,7 @@ const fetchData = useCallback(async () => {
     }
   };
 
-    const deleteTransaction = async (id: string | number) => {
+  const deleteTransaction = async (id: string | number) => {
     try {
       await invoke('delete_budget_transaction', { id });
       await fetchData();
@@ -137,6 +161,7 @@ const fetchData = useCallback(async () => {
 
   return {
     transactions,
+    allTransactions, // ✅ ORA È PRESENTE
     categories,
     summary,
     loading,

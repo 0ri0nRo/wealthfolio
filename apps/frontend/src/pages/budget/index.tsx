@@ -15,6 +15,7 @@ export const BudgetPage: React.FC = () => {
   const [editingTransaction, setEditingTransaction] = useState<BudgetTransaction | null>(null); // ✅ AGGIUNGI
   const {
     transactions,
+    allTransactions,
     categories,
     summary,
     loading,
@@ -170,14 +171,10 @@ export const BudgetPage: React.FC = () => {
         {/* Charts and Breakdown */}
         {/* Grafico ultimi 12 mesi */}
         <div className="mb-8">
-          <BudgetChart transactions={transactions || []} showLast12Months={true} />
+          <BudgetChart transactions={allTransactions || []} showLast12Months={true} />
         </div>
 
         {/* Charts and Breakdown */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <BudgetChart transactions={transactions || []} />
-          <CategoryBreakdown summary={summary} />
-        </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <BudgetChart transactions={transactions || []} />
           <CategoryBreakdown summary={summary} />
