@@ -81,10 +81,10 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [], sho
               {payload[0].payload.month}
             </p>
             <p className="text-sm text-green-600">
-              Entrate: €{payload[0].value?.toFixed(2)}
+              Income: €{payload[0].value?.toFixed(2)}
             </p>
             <p className="text-sm text-red-600">
-              Uscite: €{payload[1].value?.toFixed(2)}
+              Expenses: €{payload[1].value?.toFixed(2)}
             </p>
           </div>
         );
@@ -108,7 +108,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [], sho
     return (
       <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">
-          Entrate e Uscite - Ultimi 12 Mesi
+            Income and Expenses - Last 12 Months
         </h2>
         <ResponsiveContainer width="100%" height={300}>
           <AreaChart data={last12MonthsData}>
@@ -140,7 +140,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [], sho
               strokeWidth={2}
               fillOpacity={1}
               fill="url(#colorIncome)"
-              name="Entrate"
+              name="Income"
             />
             <Area
               type="monotone"
@@ -161,7 +161,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [], sho
     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-          Spese per Categoria
+            Expenses by Category
         </h2>
         <div className="flex gap-2">
           <button
@@ -172,14 +172,14 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [], sho
                 : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
             }`}
           >
-            Torta
+            Pie Chart
           </button>
         </div>
       </div>
 
       {expensesByCategory.length === 0 ? (
         <div className="flex items-center justify-center h-64 text-gray-400">
-          <p>Nessuna spesa registrata</p>
+          <p>No expenses recorded</p>
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={300}>
