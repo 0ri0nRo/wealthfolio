@@ -1184,14 +1184,14 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       break;
     }
     case "update_budget_transaction": {
-      const { id, ...data } = payload as { id: number | string } & Record<string, unknown>;
-      url = url.replace("{id}", id.toString());
-      body = JSON.stringify(data);
-      break;
-    }
+        const { id, ...data } = payload as { id: number | string } & Record<string, unknown>;
+        url = url.replace(":id", id.toString());  // ✅ cambia {id} in :id
+        body = JSON.stringify(data);
+        break;
+      }
     case "delete_budget_transaction": {
       const { id } = payload as { id: number | string };
-      url = url.replace("{id}", id.toString());
+      url = url.replace(":id", id.toString());  // ✅ cerca :id
       break;
     }
   }
@@ -1289,10 +1289,11 @@ if (command === "get_budget_transactions") {
     id: String(txn.id),
     categoryId: txn.category_id,
     amount: txn.amount,
-    type: txn.transaction_type,
+    type: txn.type,  // è già "expense" o "income"
     description: txn.description,
     date: txn.date,
     notes: txn.notes,
+    // La categoria verrà aggiunta dall'hook useBudget
   })) as T;
 }
 
@@ -1302,6 +1303,7 @@ if (command === "get_budget_summary") {
     totalIncome: data.total_income,
     totalExpenses: data.total_expenses,
     balance: data.balance,
+    categoryBreakdown: [], // Questo deve essere popolato dal backend o calcolato client-side
   } as T;
 }
 
