@@ -56,8 +56,8 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [], sho
 
     // Aggiungi dati dalle transazioni
     transactions.forEach(transaction => {
-      // ✅ AGGIUNGI: Escludi "Investments" dalle entrate
-      if (transaction.type === 'income' && transaction.category?.name === 'Investments') {
+      // ✅ AGGIUNGI: Escludi "Investments" dalle uscite
+      if (transaction.type === 'expense' && transaction.category?.name === 'Investments') {
         return; // Salta questa transazione
       }
 
