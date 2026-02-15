@@ -55,6 +55,7 @@ export interface BudgetSummary {
   totalIncome: number;
   totalExpenses: number;
   balance: number;
+  totalInvestments?: number;
   period: {
     start: string;
     end: string;

@@ -120,7 +120,7 @@ const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">  {/* ✅ CAMBIA da grid-cols-3 a grid-cols-4 */}
           <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -149,6 +149,24 @@ const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => 
               </div>
               <div className="h-12 w-12 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center justify-center">
                 <TrendingDown className="h-6 w-6 text-red-600 dark:text-red-500" />
+              </div>
+            </div>
+          </div>
+          {/* Cards esistenti: Income, Expenses, Balance */}
+
+          {/* ✅ AGGIUNGI QUESTA NUOVA CARD */}
+          <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                  Investments
+                </p>
+                <p className="text-3xl font-semibold text-purple-600 dark:text-purple-500">
+                  €{(summary?.totalInvestments ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                </p>
+              </div>
+              <div className="h-12 w-12 bg-purple-50 dark:bg-purple-900/20 rounded-xl flex items-center justify-center">
+                <TrendingUp className="h-6 w-6 text-purple-600 dark:text-purple-500" />
               </div>
             </div>
           </div>
