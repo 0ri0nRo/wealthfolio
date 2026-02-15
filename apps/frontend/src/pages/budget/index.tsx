@@ -26,29 +26,35 @@ export const BudgetPage: React.FC = () => {
     refresh,
   } = useBudget(selectedMonth);
 
-    const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
-      try {
-        if (editingTransaction) {
-          // UPDATE
-          await updateTransaction(Number(editingTransaction.id), transaction);
-        } else {
-          // CREATE
-          await createTransaction({
-            categoryId: transaction.categoryId!,
-            amount: transaction.amount!,
-            type: transaction.type!,
-            description: transaction.description!,
-            date: transaction.date!,
-            notes: transaction.notes,
-          });
-        }
-        setShowAddModal(false);
-        setEditingTransaction(null);
-      } catch (err) {
-        console.error('Error saving transaction:', err);
-      }
-    };
-  const handleDeleteTransaction = async (id: string | number) => {
+const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
+  try {
+    if (editingTransaction) {
+      // UPDATE
+      console.log('Updating transaction:', editingTransaction.id, transaction); // ✅ AGGIUNGI LOG
+      await updateTransaction(Number(editingTransaction.id), transaction);
+      console.log('Update completed'); // ✅ AGGIUNGI LOG
+    } else {
+      // CREATE
+      await createTransaction({
+        categoryId: transaction.categoryId!,
+        amount: transaction.amount!,
+        type: transaction.type!,
+        description: transaction.description!,
+        date: transaction.date!,
+        notes: transaction.notes,
+      });
+    }
+    console.log('Closing modal'); // ✅ AGGIUNGI LOG
+    setShowAddModal(false);
+    setEditingTransaction(null);
+    console.log('Modal closed'); // ✅ AGGIUNGI LOG
+  } catch (err) {
+    console.error('Error saving transaction:', err);
+    // ✅ AGGIUNGI: mostra l'errore all'utente
+    alert('Error saving transaction: ' + (err instanceof Error ? err.message : 'Unknown error'));
+  }
+};
+    const handleDeleteTransaction = async (id: string | number) => {
     try {
       await deleteTransaction(id);
     } catch (err) {
