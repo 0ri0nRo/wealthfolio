@@ -1,7 +1,7 @@
 // Web adapter core - Internal invoke function, COMMANDS map, and helpers
 // This module exports invoke, logger, and platform constants for shared modules
 
-import { getAuthToken, notifyUnauthorized } from "@/lib/auth-token";
+import { getAuthToken } from "@/lib/auth-token";
 import type { Logger } from "../types";
 
 /** True when running in the desktop (Tauri) environment */
@@ -1295,36 +1295,48 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     "clear_sync_session",
     "get_sync_session_status",
   ];
-  if (res.status === 401 && !connectCommands.includes(command)) {
-    notifyUnauthorized();
-  }
-  if (!res.ok) {
-    let msg = res.statusText;
-    try {
-      const err = await res.json();
-      msg = (err?.message ?? msg) as string;
-    } catch (_e) {
-      // ignore JSON parse error from non-JSON error bodies
-      void 0;
-    }
-    console.error(`[Invoke] Command "${command}" failed: ${msg}`);
-    throw new Error(msg);
-  }
-  if (command === "backup_database") {
-    const parsed = (await res.json()) as { filename: string; dataB64: string };
-    return {
-      filename: parsed.filename,
-      data: fromBase64(parsed.dataB64),
-    } as T;
-  }
-  if (command === "backup_database_to_path") {
-    const parsed = (await res.json()) as { path: string };
-    return parsed.path as T;
-  }
-  // Handle responses with no body (204 No Content, 202 Accepted, or empty 200)
+// Handle responses with no body (204 No Content, 202 Accepted, or empty 200)
   if (res.status === 204 || res.status === 202) {
     return undefined as T;
   }
+
+  if (command === "get_budget_categories") {
+    const data = await res.json();
+    return data.map((cat: any) => ({
+      id: String(cat.id),
+      name: cat.name,
+      type: cat.type,
+      color: cat.color,
+      icon: cat.icon,
+      parentId: cat.parent_id,
+      isActive: cat.is_active,
+      createdAt: cat.created_at,
+      updatedAt: cat.updated_at,
+    })) as T;
+  }
+
+  if (command === "get_budget_transactions") {
+    const data = await res.json();
+    return data.map((txn: any) => ({
+      id: String(txn.id),
+      categoryId: txn.category_id,
+      amount: txn.amount,
+      type: txn.transaction_type,
+      description: txn.description,
+      date: txn.date,
+      notes: txn.notes,
+    })) as T;
+  }
+
+  if (command === "get_budget_summary") {
+    const data = await res.json();
+    return {
+      totalIncome: data.total_income,
+      totalExpenses: data.total_expenses,
+      balance: data.balance,
+    } as T;
+  }
+
   const text = await res.text();
   if (!text) {
     return undefined as T;

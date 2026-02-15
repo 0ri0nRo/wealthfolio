@@ -5,17 +5,20 @@ export type TransactionType = 'income' | 'expense';
 export type RecurringPattern = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface BudgetCategory {
-  id: string;
+  id: string | number;  // accetta entrambi
   name: string;
   type: TransactionType;
   color: string;
   icon?: string;
-  parentId?: string;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  parent_id?: number | null;  // snake_case dall'API
+  parentId?: number | null;   // camelCase per compatibilità
+  is_active?: boolean;        // snake_case dall'API
+  isActive?: boolean;         // camelCase per compatibilità
+  created_at?: string;        // snake_case dall'API
+  createdAt?: string;         // camelCase per compatibilità
+  updated_at?: string;        // snake_case dall'API
+  updatedAt?: string;         // camelCase per compatibilità
 }
-
 export interface BudgetTransaction {
   id: string;
   accountId?: string;
