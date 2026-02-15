@@ -26,7 +26,11 @@ export const BudgetPage: React.FC = () => {
     refresh,
   } = useBudget(selectedMonth);
 
-const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
+
+  const actualBalance = (summary?.totalIncome ?? 0) - (summary?.totalExpenses ?? 0);
+
+
+  const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
   try {
     if (editingTransaction) {
       // UPDATE
@@ -120,7 +124,8 @@ const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => 
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Overview Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">  {/* ✅ CAMBIA da grid-cols-3 a grid-cols-4 */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          {/* Income */}
           <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -137,6 +142,7 @@ const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => 
             </div>
           </div>
 
+          {/* Expenses (senza investimenti) */}
           <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -144,7 +150,12 @@ const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => 
                   Expenses
                 </p>
                 <p className="text-3xl font-semibold text-gray-900 dark:text-white">
-                  €{(summary?.totalExpenses ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                  €{(() => {
+                    const expensesWithoutInvestments = (transactions || [])
+                      .filter(t => t.type === 'expense' && t.category?.name !== 'Investments')
+                      .reduce((sum, t) => sum + t.amount, 0);
+                    return expensesWithoutInvestments.toLocaleString('it-IT', { minimumFractionDigits: 2 });
+                  })()}
                 </p>
               </div>
               <div className="h-12 w-12 bg-red-50 dark:bg-red-900/20 rounded-xl flex items-center justify-center">
@@ -152,17 +163,21 @@ const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => 
               </div>
             </div>
           </div>
-          {/* Cards esistenti: Income, Expenses, Balance */}
 
-          {/* ✅ AGGIUNGI QUESTA NUOVA CARD */}
+          {/* Investments */}
           <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                  Investments
+                  Saving
                 </p>
-                <p className="text-3xl font-semibold text-purple-600 dark:text-purple-500">
-                  €{(summary?.totalInvestments ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                <p className="text-3xl font-semibold text-gray-900 dark:text-white">
+                  €{(() => {
+                    const investments = (transactions || [])
+                      .filter(t => t.type === 'expense' && t.category?.name === 'Investments')
+                      .reduce((sum, t) => sum + t.amount, 0);
+                    return investments.toLocaleString('it-IT', { minimumFractionDigits: 2 });
+                  })()}
                 </p>
               </div>
               <div className="h-12 w-12 bg-purple-50 dark:bg-purple-900/20 rounded-xl flex items-center justify-center">
@@ -171,25 +186,26 @@ const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => 
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                  Balance
-                </p>
-                <p className={`text-3xl font-semibold ${
-                  (summary?.balance ?? 0) >= 0
-                    ? 'text-blue-600 dark:text-blue-500'
-                    : 'text-red-600 dark:text-red-500'
-                }`}>
-                  €{(summary?.balance ?? 0).toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                </p>
-              </div>
-              <div className="h-12 w-12 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center">
-                <Wallet className="h-6 w-6 text-blue-600 dark:text-blue-500" />
+          {/* Balance */}
+            <div className="bg-white dark:bg-gray-800/50 rounded-2xl p-6 border border-gray-200/50 dark:border-gray-700/50">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                    Balance
+                  </p>
+                  <p className={`text-3xl font-semibold ${
+                    actualBalance >= 0
+                      ? 'text-blue-600 dark:text-blue-500'
+                      : 'text-red-600 dark:text-red-500'
+                  }`}>
+                    €{actualBalance.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="h-12 w-12 bg-blue-50 dark:bg-blue-900/20 rounded-xl flex items-center justify-center">
+                  <Wallet className="h-6 w-6 text-blue-600 dark:text-blue-500" />
+                </div>
               </div>
             </div>
-          </div>
         </div>
 
         {/* Charts and Breakdown */}
