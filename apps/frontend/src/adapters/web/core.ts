@@ -1173,7 +1173,14 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
         date: string;
         notes?: string;
       };
-      body = JSON.stringify({ categoryId, amount, transactionType, description, date, notes });
+      body = JSON.stringify({
+        category_id: categoryId,           // snake_case per il backend
+        amount,
+        transaction_type: transactionType, // snake_case per il backend
+        description,
+        date,
+        notes
+      });
       break;
     }
     case "update_budget_transaction": {
