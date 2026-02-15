@@ -98,6 +98,41 @@ export const useBudget = (month: Date) => {
         item.percentage = (item.total / totalExpenses) * 100;
       });
 
+      // ✅ AGGIUNGI QUESTO BLOCCO QUI
+      // Trova la categoria Investments
+      const investmentsCategory = cats.find(c =>
+        c.name === 'Investments' && c.type === 'expense'
+      );
+      const investmentsCategoryId = investmentsCategory ? String(investmentsCategory.id) : null;
+
+      // Calcola totale investimenti
+      const totalInvestments = investmentsCategoryId
+        ? enrichedTxns
+            .filter(t => t.type === 'expense' && String(t.categoryId) === investmentsCategoryId)
+            .reduce((sum, t) => sum + t.amount, 0)
+        : 0;
+
+      // Escludi investimenti dalle spese
+      const adjustedExpenses = sum.totalExpenses - totalInvestments;
+      const adjustedBalance = sum.totalIncome - adjustedExpenses;
+
+      // Filtra investimenti dal breakdown
+      const filteredBreakdown = categoryBreakdown.filter(cb =>
+        String(cb.category.id) !== investmentsCategoryId
+      );
+      // FINE BLOCCO
+
+      setCategories(cats);
+      setTransactions(enrichedTxns);
+      setAllTransactions(enrichedAllTxns);
+      setSummary({
+        ...sum,
+        totalExpenses: adjustedExpenses,    // ✅ CAMBIA
+        balance: adjustedBalance,            // ✅ CAMBIA
+        totalInvestments: totalInvestments,  // ✅ AGGIUNGI
+        categoryBreakdown: filteredBreakdown, // ✅ CAMBIA
+      });
+
       setCategories(cats);
       setTransactions(enrichedTxns);
       setAllTransactions(enrichedAllTxns); // ✅ AGGIUNGI
