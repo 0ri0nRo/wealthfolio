@@ -11,7 +11,7 @@ interface AddTransactionModalProps {
 }
 
 export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
-  categories = [],
+  categories,
   onClose,
   onSave,
   initialData,

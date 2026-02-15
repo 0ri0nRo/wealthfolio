@@ -162,28 +162,28 @@ export const BudgetPage: React.FC = () => {
 
         {/* Charts and Breakdown */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <BudgetChart transactions={transactions} />
+          <BudgetChart transactions={transactions || []} />
           <CategoryBreakdown summary={summary} />
         </div>
 
         {/* Transactions List */}
-        <TransactionList
-          transactions={transactions}
-          onEdit={(transaction: BudgetTransaction) => {
-            console.log('Edit transaction:', transaction);
-          }}
-          onDelete={(id) => handleDeleteTransaction(id)}
-        />
+          <TransactionList
+            transactions={transactions || []}
+            onEdit={(transaction: BudgetTransaction) => {
+              console.log('Edit transaction:', transaction);
+            }}
+            onDelete={(id) => handleDeleteTransaction(id)}
+          />
       </div>
 
       {/* Add Transaction Modal */}
-      {showAddModal && (
-        <AddTransactionModal
-          categories={categories}
-          onClose={() => setShowAddModal(false)}
-          onSave={handleAddTransaction}
-        />
-      )}
+        {showAddModal && (
+          <AddTransactionModal
+            categories={categories || []}
+            onClose={() => setShowAddModal(false)}
+            onSave={handleAddTransaction}
+          />
+        )}
     </div>
   );
 };
