@@ -1,24 +1,24 @@
 // src/pages/Budget/components/BudgetChart.tsx
-import React, { useMemo } from 'react';
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { BudgetTransaction } from '@/lib/types/budget';
+import React, { useMemo } from 'react';
+import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 
 interface BudgetChartProps {
   transactions: BudgetTransaction[];
 }
 
-export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions }) => {
+export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [] }) => {
   const [chartType, setChartType] = React.useState<'pie' | 'bar'>('pie');
 
   const expensesByCategory = useMemo(() => {
     const categoryMap = new Map<string, { name: string; value: number; color: string }>();
-    
+
     transactions
       .filter(t => t.type === 'expense')
       .forEach(transaction => {
         const category = transaction.category;
         if (!category) return;
-        
+
         const existing = categoryMap.get(category.id);
         if (existing) {
           existing.value += transaction.amount;
@@ -30,7 +30,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions }) => {
           });
         }
       });
-    
+
     return Array.from(categoryMap.values())
       .sort((a, b) => b.value - a.value)
       .slice(0, 8); // Top 8 categories
@@ -38,11 +38,11 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions }) => {
 
   const incomeVsExpenses = useMemo(() => {
     const monthlyData = new Map<string, { month: string; income: number; expenses: number }>();
-    
+
     transactions.forEach(transaction => {
       const date = new Date(transaction.date);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      
+
       const existing = monthlyData.get(monthKey);
       if (existing) {
         if (transaction.type === 'income') {
@@ -58,7 +58,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions }) => {
         });
       }
     });
-    
+
     return Array.from(monthlyData.values()).slice(-6); // Last 6 months
   }, [transactions]);
 
@@ -136,15 +136,15 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions }) => {
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={incomeVsExpenses}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-gray-200 dark:stroke-gray-700" />
-            <XAxis 
-              dataKey="month" 
+            <XAxis
+              dataKey="month"
               className="text-xs text-gray-600 dark:text-gray-400"
             />
-            <YAxis 
+            <YAxis
               className="text-xs text-gray-600 dark:text-gray-400"
               tickFormatter={(value) => `€${(value / 1000).toFixed(1)}k`}
             />
-            <Tooltip 
+            <Tooltip
               content={({ active, payload }) => {
                 if (active && payload && payload.length) {
                   return (

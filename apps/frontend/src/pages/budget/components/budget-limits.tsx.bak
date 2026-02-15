@@ -15,7 +15,7 @@ interface BudgetLimitsProps {
 
 export const BudgetLimits: React.FC<BudgetLimitsProps> = ({
   limits = [],
-  categories = [],
+  categories,
   month,
   year,
   onAddLimit,
@@ -226,7 +226,7 @@ interface BudgetLimitModalProps {
 }
 
 const BudgetLimitModal: React.FC<BudgetLimitModalProps> = ({
-  categories = [],
+  categories,
   existingLimit,
   month,
   year,

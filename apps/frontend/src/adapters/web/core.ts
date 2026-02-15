@@ -1146,10 +1146,51 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       url += `/${encodeURIComponent(threadId)}/tags`;
       break;
     }
+
+    // Budget commands
+    case "get_budget_transactions": {
+      const { month, year } = payload as { month: number; year: number };
+      const params = new URLSearchParams();
+      params.set("month", month.toString());
+      params.set("year", year.toString());
+      url += `?${params.toString()}`;
+      break;
+    }
+    case "get_budget_summary": {
+      const { month, year } = payload as { month: number; year: number };
+      const params = new URLSearchParams();
+      params.set("month", month.toString());
+      params.set("year", year.toString());
+      url += `?${params.toString()}`;
+      break;
+    }
+    case "create_budget_transaction": {
+      const { categoryId, amount, transactionType, description, date, notes } = payload as {
+        categoryId: number;
+        amount: number;
+        transactionType: string;
+        description: string;
+        date: string;
+        notes?: string;
+      };
+      body = JSON.stringify({ categoryId, amount, transactionType, description, date, notes });
+      break;
+    }
+    case "update_budget_transaction": {
+      const { id, ...data } = payload as { id: number | string } & Record<string, unknown>;
+      url = url.replace("{id}", id.toString());
+      body = JSON.stringify(data);
+      break;
+    }
+    case "delete_budget_transaction": {
+      const { id } = payload as { id: number | string };
+      url = url.replace("{id}", id.toString());
+      break;
+    }
   }
 
   const headers: HeadersInit = {};
-  if (body !== undefined) {
+    if (body !== undefined) {
     headers["Content-Type"] = "application/json";
   }
   const token = getAuthToken();
