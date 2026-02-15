@@ -72,5 +72,5 @@ ENV WF_DB_PATH=/data/wealthfolio.db
 # Wealthfolio Connect API URL (can be overridden at runtime)
 ENV CONNECT_API_URL=https://api.wealthfolio.app
 VOLUME ["/data"]
-EXPOSE 8080
+EXPOSE 8088
 CMD ["/usr/local/bin/wealthfolio-server"]

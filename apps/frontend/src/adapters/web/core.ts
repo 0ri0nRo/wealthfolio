@@ -217,6 +217,14 @@ export const COMMANDS: CommandMap = {
   unlink_liability: { method: "DELETE", path: "/alternative-assets" },
   update_alternative_asset_metadata: { method: "PUT", path: "/alternative-assets" },
   get_alternative_holdings: { method: "GET", path: "/alternative-holdings" },
+  // Budget
+  get_budget_categories: { method: "GET", path: "/budget/categories" },
+  get_budget_transactions: { method: "GET", path: "/budget/transactions" },
+  get_budget_summary: { method: "GET", path: "/budget/summary" },
+  create_budget_transaction: { method: "POST", path: "/budget/transactions" },
+  update_budget_transaction: { method: "PUT", path: "/budget/transactions/:id" },
+  delete_budget_transaction: { method: "DELETE", path: "/budget/transactions/:id" },
+
 };
 
 /**
