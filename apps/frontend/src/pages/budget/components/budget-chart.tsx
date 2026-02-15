@@ -19,11 +19,11 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [] }) =
         const category = transaction.category;
         if (!category) return;
 
-        const existing = categoryMap.get(category.id);
+        const existing = categoryMap.get(String(category.id));
         if (existing) {
           existing.value += transaction.amount;
         } else {
-          categoryMap.set(category.id, {
+          categoryMap.set(String(category.id), {
             name: category.name,
             value: transaction.amount,
             color: category.color,

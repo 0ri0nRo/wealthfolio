@@ -16,6 +16,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
   onSave,
   initialData,
 }) => {
+  console.log('📦 Categories received:', categories);
+  console.log('📦 Categories length:', categories.length);
+  console.log('📦 First category:', categories[0]);
+
   const [formData, setFormData] = useState<CreateBudgetTransactionInput>({
     type: initialData?.type || 'expense',
     categoryId: initialData?.categoryId || 0,
@@ -27,8 +31,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const filteredCategories = categories.filter(c => c.type === formData.type && c.isActive);
-
+  const filteredCategories = categories.filter(c => c.type === formData.type && (c.isActive ?? c.is_active));
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
 

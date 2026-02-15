@@ -1255,5 +1255,48 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
   if (res.status === 204 || res.status === 202) {
     return undefined as T;
   }
-  return (await res.json()) as T;
-};
+  // Aggiungi prima di "return (await res.json()) as T;"
+// Trova questa riga verso la fine del file:
+// return (await res.json()) as T;
+
+// E PRIMA di quella riga, aggiungi:
+
+if (command === "get_budget_categories") {
+  const data = await res.json();
+  return data.map((cat: any) => ({
+    id: String(cat.id),
+    name: cat.name,
+    type: cat.type,
+    color: cat.color,
+    icon: cat.icon,
+    parentId: cat.parent_id,
+    isActive: cat.is_active,
+    createdAt: cat.created_at,
+    updatedAt: cat.updated_at,
+  })) as T;
+}
+
+if (command === "get_budget_transactions") {
+  const data = await res.json();
+  return data.map((txn: any) => ({
+    id: String(txn.id),
+    categoryId: txn.category_id,
+    amount: txn.amount,
+    type: txn.transaction_type,
+    description: txn.description,
+    date: txn.date,
+    notes: txn.notes,
+  })) as T;
+}
+
+if (command === "get_budget_summary") {
+  const data = await res.json();
+  return {
+    totalIncome: data.total_income,
+    totalExpenses: data.total_expenses,
+    balance: data.balance,
+  } as T;
+}
+
+return (await res.json()) as T;
+}
