@@ -5,8 +5,8 @@ import {
   BudgetTransaction,
   CreateBudgetTransactionInput,
 } from '@/lib/types/budget';
-import { invoke } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useState } from 'react';
+import { invoke } from '../adapters/shared/platform';
 
 export const useBudget = (month: Date) => {
   const [transactions, setTransactions] = useState<BudgetTransaction[]>([]);
