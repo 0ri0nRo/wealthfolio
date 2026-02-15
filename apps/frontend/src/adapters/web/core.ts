@@ -1242,14 +1242,14 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       break;
     }
     case "update_budget_transaction": {
-      const { id, ...data } = payload as { id: number | string } & Record<string, unknown>;
-      url = url.replace("{id}", id.toString());
-      body = JSON.stringify(data);
-      break;
-    }
+        const { id, ...data } = payload as { id: number | string } & Record<string, unknown>;
+        url = url.replace(":id", id.toString());  // ✅ cambia {id} in :id
+        body = JSON.stringify(data);
+        break;
+      }
     case "delete_budget_transaction": {
       const { id } = payload as { id: number | string };
-      url = url.replace("{id}", id.toString());
+      url = url.replace(":id", id.toString());  // ✅ cerca :id
       break;
     }
   }
@@ -1335,12 +1335,26 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     })) as T;
   }
 
+if (command === "get_budget_transactions") {
+    const data = await res.json();
+    return data.map((txn: any) => ({
+      id: String(txn.id),
+      categoryId: txn.category_id,
+      amount: txn.amount,
+      type: txn.type,
+      description: txn.description,
+      date: txn.date,
+      notes: txn.notes,
+    })) as T;
+  }
+
   if (command === "get_budget_summary") {
     const data = await res.json();
     return {
       totalIncome: data.total_income,
       totalExpenses: data.total_expenses,
       balance: data.balance,
+      categoryBreakdown: [],
     } as T;
   }
 
