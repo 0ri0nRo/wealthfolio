@@ -12,7 +12,7 @@ import { TransactionList } from "./components/transaction-list";
 export const BudgetPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
-
+  const [editingTransaction, setEditingTransaction] = useState<BudgetTransaction | null>(null); // ✅ AGGIUNGI
   const {
     transactions,
     categories,
@@ -21,25 +21,32 @@ export const BudgetPage: React.FC = () => {
     error,
     createTransaction,
     deleteTransaction,
+    updateTransaction,  // ✅ AGGIUNGI
     refresh,
   } = useBudget(selectedMonth);
 
-  const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
-    try {
-      await createTransaction({
-        categoryId: transaction.categoryId!,
-        amount: transaction.amount!,
-        type: transaction.type!,
-        description: transaction.description!,
-        date: transaction.date!,
-        notes: transaction.notes,
-      });
-      setShowAddModal(false);
-    } catch (err) {
-      console.error('Error adding transaction:', err);
-    }
-  };
-
+    const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
+      try {
+        if (editingTransaction) {
+          // UPDATE
+          await updateTransaction(Number(editingTransaction.id), transaction);
+        } else {
+          // CREATE
+          await createTransaction({
+            categoryId: transaction.categoryId!,
+            amount: transaction.amount!,
+            type: transaction.type!,
+            description: transaction.description!,
+            date: transaction.date!,
+            notes: transaction.notes,
+          });
+        }
+        setShowAddModal(false);
+        setEditingTransaction(null);
+      } catch (err) {
+        console.error('Error saving transaction:', err);
+      }
+    };
   const handleDeleteTransaction = async (id: string | number) => {
     try {
       await deleteTransaction(id);
@@ -168,22 +175,27 @@ export const BudgetPage: React.FC = () => {
 
         {/* Transactions List */}
           <TransactionList
-            transactions={transactions || []}
-            onEdit={(transaction: BudgetTransaction) => {
-              console.log('Edit transaction:', transaction);
-            }}
-            onDelete={(id) => handleDeleteTransaction(id)}
-          />
+          transactions={transactions || []}
+          onEdit={(transaction: BudgetTransaction) => {
+            setEditingTransaction(transaction);  // ✅ CAMBIA
+            setShowAddModal(true);                // ✅ CAMBIA
+          }}
+          onDelete={(id) => handleDeleteTransaction(id)}
+        />
       </div>
 
       {/* Add Transaction Modal */}
         {showAddModal && (
-          <AddTransactionModal
-            categories={categories || []}
-            onClose={() => setShowAddModal(false)}
-            onSave={handleAddTransaction}
-          />
-        )}
+        <AddTransactionModal
+          categories={categories || []}
+          onClose={() => {
+            setShowAddModal(false);
+            setEditingTransaction(null);  // ✅ AGGIUNGI
+          }}
+          onSave={handleAddTransaction}
+          initialData={editingTransaction || undefined}  // ✅ AGGIUNGI
+        />
+      )}
     </div>
   );
 };
