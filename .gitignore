@@ -88,3 +88,5 @@ Thumbs.db
 db/
 tasks
 *.tar.gz
+
+wealthfolio-*.tar.gz
