@@ -1317,6 +1317,14 @@ if (command === "get_budget_summary") {
     categoryBreakdown: [], // Questo deve essere popolato dal backend o calcolato client-side
   } as T;
 }
+// Check if response has content
+const contentType = res.headers.get('content-type');
+if (!contentType || !contentType.includes('application/json')) {
+  // No JSON body, return undefined for successful requests
+  if (res.ok) {
+    return undefined as T;
+  }
+}
 
 return (await res.json()) as T;
 }
