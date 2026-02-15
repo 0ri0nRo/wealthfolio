@@ -149,7 +149,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({ transactions = [], sho
               strokeWidth={2}
               fillOpacity={1}
               fill="url(#colorExpenses)"
-              name="Uscite"
+              name="Expenses"
             />
           </AreaChart>
         </ResponsiveContainer>
