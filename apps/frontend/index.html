@@ -7,9 +7,28 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
     />
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#d4af37" />
+    <meta name="description" content="Track your income and expenses - Personal finance manager" />
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- iOS Specific Meta Tags -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Budget" />
+
+    <!-- Apple Touch Icons -->
+    <link rel="apple-touch-icon" href="/icons/icon-180x180.png" />
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152x152.png" />
+    <link rel="apple-touch-icon" sizes="167x167" href="/icons/icon-167x167.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-180x180.png" />
+
+    <!-- Standard Icons -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512x512.png" />
+
     <title>Wealthfolio</title>
     <style>
       /* Prevent mobile viewport bouncing */
@@ -17,6 +36,14 @@
       body {
         touch-action: pan-x pan-y;
         overscroll-behavior: none;
+      }
+
+      /* Safe area insets per iPhone con notch */
+      body {
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+        padding-left: env(safe-area-inset-left);
+        padding-right: env(safe-area-inset-right);
       }
 
       /* Simulate a Splash screen before react app mount */
@@ -34,6 +61,16 @@
         position: relative;
         z-index: 1;
         background-color: transparent;
+      }
+
+      /* Previeni zoom accidentale su iOS */
+      input, select, textarea {
+        font-size: 16px !important;
+      }
+
+      /* Rimuovi tap highlight su iOS */
+      * {
+        -webkit-tap-highlight-color: transparent;
       }
     </style>
   </head>
