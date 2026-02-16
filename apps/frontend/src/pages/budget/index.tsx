@@ -1,4 +1,4 @@
-// src/pages/Budget/BudgetPage.tsx
+// src/pages/Budget/index.tsx
 import { useBudget } from '@/hooks/useBudget';
 import { BudgetTransaction } from '@/lib/types/budget';
 import { Plus, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
