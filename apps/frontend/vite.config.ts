@@ -1,6 +1,7 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { VitePWA } from 'vite-plugin-pwa';
 import { defineConfig } from "vitest/config";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -32,7 +33,68 @@ const buildTarget = process.env.BUILD_TARGET || "tauri";
 // https://vitejs.dev/config/
 export default defineConfig({
   envDir: "../..",
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    // 🚀 PWA Plugin - solo per build web
+    ...(buildTarget === "web" ? [
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['logo.png', 'logo.svg', 'logo-gold.png'],
+        manifest: {
+          name: 'Wealthfolio Budget',
+          short_name: 'Budget',
+          description: 'Track your income and expenses - Personal finance manager',
+          theme_color: '#d4af37',
+          background_color: '#09090b',
+          display: 'standalone',
+          scope: '/',
+          start_url: '/',
+          orientation: 'portrait-primary',
+          icons: [
+            {
+              src: '/icons/icon-192x192.png',
+              sizes: '192x192',
+              type: 'image/png',
+              purpose: 'any maskable'
+            },
+            {
+              src: '/icons/icon-512x512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any maskable'
+            }
+          ]
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,woff2}'],
+          // Aumenta il limite per file grandi (5 MB)
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+          // Escludi file molto grandi dal precache
+          globIgnores: ['**/logo.svg', '**/screenshot.webp'],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/api\./,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'api-cache',
+                expiration: {
+                  maxEntries: 50,
+                  maxAgeSeconds: 300 // 5 minuti
+                },
+                cacheableResponse: {
+                  statuses: [0, 200]
+                }
+              }
+            }
+          ]
+        },
+        devOptions: {
+          enabled: false // Disabilita in dev mode
+        }
+      })
+    ] : [])
+  ],
   publicDir: "public",
   optimizeDeps: {
     include: ["lucide-react", "recharts", "lodash"],
