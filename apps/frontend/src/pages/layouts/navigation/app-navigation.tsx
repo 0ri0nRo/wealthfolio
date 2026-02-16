@@ -26,8 +26,6 @@ const staticNavigation: NavigationProps = {
       label: "View Dashboard",
     },
     {
-<<<<<<< HEAD
-=======
       icon: <Icons.Wallet className="size-6" />,
       title: "Budget",
       href: "/budget",
@@ -35,14 +33,6 @@ const staticNavigation: NavigationProps = {
       label: "View Budget",
     },
     {
-      icon: <Icons.Holdings className="size-6" />,
-      title: "Holdings",
-      href: "/holdings",
-      keywords: ["Holdings", "portfolio", "assets", "positions", "stocks"],
-      label: "View Holdings",
-    },
-    {
->>>>>>> 3b5c1da65 (fix: Remove duplicate Budget link from static navigation)
       icon: <Icons.Insight className="size-6" />,
       title: "Insights",
       href: "/insights",
@@ -70,7 +60,6 @@ const staticNavigation: NavigationProps = {
       keywords: ["ai", "assistant", "chat", "help", "ask"],
       label: "AI Assistant",
     },
-
   ],
   secondary: [
     {
