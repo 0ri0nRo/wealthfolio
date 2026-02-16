@@ -150,19 +150,21 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
    * ================================
    */
   if (showLast12Months) {
-    // 📱 Font size responsivo per mobile
+    // 📱 Font size e dimensioni molto più compatte per mobile
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-    const axisFontSize = isMobile ? 10 : 12;
-    const tickFontSize = isMobile ? 9 : 11;
+    const chartHeight = isMobile ? 180 : 260;
+    const tickFontSize = isMobile ? 8 : 11;
+    // 🔧 FIX: Margine sinistro corretto per non tagliare l'asse Y
+    const leftMargin = isMobile ? 0 : 10;
 
     return (
-      <div className="bg-white/70 dark:bg-gray-800/60 backdrop-blur-sm rounded-3xl p-4 sm:p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-sm">
-        <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-900 dark:text-white">
+      <div className="bg-white/70 dark:bg-gray-800/60 backdrop-blur-sm rounded-3xl p-3 sm:p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-sm">
+        <h3 className="text-sm sm:text-lg font-semibold mb-2 sm:mb-4 text-gray-900 dark:text-white">
           Andamento ultimi 12 mesi
         </h3>
 
-        <ResponsiveContainer width="100%" height={isMobile ? 240 : 260}>
-          <AreaChart data={last12MonthsData}>
+        <ResponsiveContainer width="100%" height={chartHeight}>
+          <AreaChart data={last12MonthsData} margin={{ top: 5, right: 5, left: leftMargin, bottom: 0 }}>
             <defs>
               <linearGradient id="income" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
@@ -178,11 +180,11 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
             <XAxis
               dataKey="month"
               tick={{ fontSize: tickFontSize }}
-              style={{ fontSize: axisFontSize }}
+              height={isMobile ? 20 : 30}
             />
             <YAxis
               tick={{ fontSize: tickFontSize }}
-              style={{ fontSize: axisFontSize }}
+              width={isMobile ? 40 : 60}
             />
             <Tooltip
               contentStyle={{ fontSize: tickFontSize }}
@@ -193,14 +195,14 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
               dataKey="income"
               stroke="#10b981"
               fill="url(#income)"
-              strokeWidth={2}
+              strokeWidth={isMobile ? 1.5 : 2}
             />
             <Area
               type="monotone"
               dataKey="expenses"
               stroke="#ef4444"
               fill="url(#expenses)"
-              strokeWidth={2}
+              strokeWidth={isMobile ? 1.5 : 2}
             />
           </AreaChart>
         </ResponsiveContainer>
@@ -218,6 +220,12 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     (sum, item) => sum + item.value,
     0
   );
+
+  // 🍩 Dimensioni responsive per il donut
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const isTablet = typeof window !== 'undefined' && window.innerWidth < 1024;
+  const innerRadius = isMobile ? 60 : isTablet ? 80 : 110;
+  const outerRadius = isMobile ? 90 : isTablet ? 110 : 150;
 
   return (
     <div className="bg-white/70 dark:bg-gray-800/60 backdrop-blur-sm rounded-3xl p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-sm">
@@ -255,16 +263,16 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
       {chartType === 'pie' && expensesByCategory.length > 0 && (
         <div className="flex flex-col lg:flex-row items-center gap-10">
 
-          {/* DONUT */}
-          <div className="w-full lg:w-1/2 h-[240px] sm:h-[280px]">
+          {/* DONUT - 🖥️ MOLTO PIÙ GRANDE SU PC */}
+          <div className="w-full lg:w-1/2 h-[240px] sm:h-[420px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={expensesByCategory}
                   cx="50%"
                   cy="50%"
-                  innerRadius={70}
-                  outerRadius={100}
+                  innerRadius={innerRadius}
+                  outerRadius={outerRadius}
                   paddingAngle={4}
                   dataKey="value"
                 >
@@ -278,7 +286,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
                   y="50%"
                   textAnchor="middle"
                   dominantBaseline="middle"
-                  className="fill-gray-900 dark:fill-white text-base font-semibold"
+                  className="fill-gray-900 dark:fill-white text-lg sm:text-xl font-semibold"
                 >
                   €{total.toLocaleString('it-IT')}
                 </text>
@@ -323,10 +331,11 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </div>
       )}
 
+      {/* BAR CHART - 🖥️ PIÙ GRANDE SU PC */}
       {chartType === 'bar' && expensesByCategory.length > 0 && (
         <ResponsiveContainer
           width="100%"
-          height={window.innerWidth < 640 ? 220 : 300}
+          height={window.innerWidth < 640 ? 220 : 400}
         >
           <BarChart data={expensesByCategory}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.1} />
