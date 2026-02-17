@@ -1,234 +1,245 @@
-// src/pages/Budget/components/TransactionList.tsx
 import { BudgetTransaction } from '@/lib/types/budget';
-import { ArrowDownCircle, ArrowUpCircle, Edit2, Search, Trash2 } from 'lucide-react';
-import React, { useState } from 'react';
+import { Pencil, Trash2 } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 interface TransactionListProps {
   transactions: BudgetTransaction[];
   onEdit: (transaction: BudgetTransaction) => void;
-  onDelete: (id: string) => void;
+  onDelete: (id: string | number) => void;
 }
 
+type FilterType = 'all' | 'income' | 'expense';
+type SortKey = 'date' | 'amount';
+
+function useIsMobileList(bp = 640) {
+  const [is, setIs] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
+  useEffect(() => {
+    const h = () => setIs(window.innerWidth < bp);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, [bp]);
+  return is;
+}
+
+const FILTERS: { key: FilterType; label: string }[] = [
+  { key: 'all',     label: 'All'      },
+  { key: 'income',  label: 'Income'   },
+  { key: 'expense', label: 'Expenses' },
+];
+
+const SORTS: { key: SortKey; label: string }[] = [
+  { key: 'date',   label: 'Date'   },
+  { key: 'amount', label: 'Amount' },
+];
+
 export const TransactionList: React.FC<TransactionListProps> = ({
-  transactions = [],
+  transactions,
   onEdit,
   onDelete,
 }) => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterType, setFilterType] = useState<'all' | 'income' | 'expense'>('all');
-  const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
+  const [filter, setFilter] = useState<FilterType>('all');
+  const [sort, setSort]     = useState<SortKey>('date');
+  const isMobile = useIsMobileList();
 
-  const filteredTransactions = transactions
-    .filter(t => {
-      const matchesSearch = t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           t.category?.name.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesType = filterType === 'all' || t.type === filterType;
-      return matchesSearch && matchesType;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'date') {
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
-      } else {
-        return b.amount - a.amount;
-      }
+  const filtered = useMemo(() => {
+    const base = filter === 'all'
+      ? transactions
+      : transactions.filter((t) => t.type === filter);
+
+    return [...base].sort((a, b) => {
+      if (sort === 'date')   return new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (sort === 'amount') return b.amount - a.amount;
+      return 0;
     });
+  }, [transactions, filter, sort]);
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
-      {/* Header */}
-      <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700">
-        <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Transactions
-        </h2>
-
-        {/* Filters */}
-        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 sm:h-5 sm:w-5 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Cerca transactions..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 sm:pl-10 pr-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
-          {/* Type Filter */}
-          <div className="flex gap-2">
+    <div>
+      {/* ── Filter + Sort bar ─────────────────────────────────────────────── */}
+      <div style={{
+        padding: '0.6rem 1rem',
+        borderBottom: '1px solid rgba(0,0,0,0.05)',
+        display: 'flex',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: isMobile ? 'stretch' : 'center',
+        justifyContent: 'space-between',
+        gap: '0.5rem',
+      }}>
+        {/* Type filter pills */}
+        <div style={{ display: 'flex', gap: '3px', background: '#f3f4f6', borderRadius: '8px', padding: '3px' }}>
+          {FILTERS.map(({ key, label }) => (
             <button
-              onClick={() => setFilterType('all')}
-              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-                filterType === 'all'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-              }`}
+              key={key}
+              onClick={() => setFilter(key)}
+              style={{
+                flex: isMobile ? 1 : undefined,
+                padding: '5px 10px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                background: filter === key ? '#111827' : 'transparent',
+                color:      filter === key ? '#ffffff' : '#9ca3af',
+                boxShadow:  filter === key ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
+              }}
             >
-              Tutte
+              {label}
             </button>
-            <button
-              onClick={() => setFilterType('income')}
-              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-                filterType === 'income'
-                  ? 'bg-green-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-              }`}
-            >
-              Income
-            </button>
-            <button
-              onClick={() => setFilterType('expense')}
-              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-                filterType === 'expense'
-                  ? 'bg-red-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-              }`}
-            >
-              Expenses
-            </button>
-          </div>
+          ))}
+        </div>
 
-          {/* Sort */}
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as 'date' | 'amount')}
-            className="px-3 sm:px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="date">Data</option>
-            <option value="amount">Importo</option>
-          </select>
+        {/* Sort selector */}
+        <div style={{ display: 'flex', gap: '3px', background: '#f3f4f6', borderRadius: '8px', padding: '3px' }}>
+          {SORTS.map(({ key, label }) => (
+            <button
+              key={key}
+              onClick={() => setSort(key)}
+              style={{
+                flex: isMobile ? 1 : undefined,
+                padding: '5px 9px',
+                fontSize: '0.72rem',
+                fontWeight: 600,
+                border: 'none',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                background: sort === key ? '#ffffff' : 'transparent',
+                color:      sort === key ? '#111827' : '#9ca3af',
+                boxShadow:  sort === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+              }}
+            >
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Transaction List */}
-      <div className="divide-y divide-gray-200 dark:divide-gray-700">
-        {filteredTransactions.length === 0 ? (
-          <div className="p-12 text-center text-gray-400">
-            <p className="text-sm">Nessuna transazione trovata</p>
-          </div>
-        ) : (
-          filteredTransactions.map((transaction) => (
-            <div
-              key={transaction.id}
-              className="p-3 sm:p-4 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
-            >
-              <div className="flex items-start sm:items-center gap-3">
-                {/* Icon */}
-                <div className={`h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 rounded-full flex items-center justify-center ${
-                  transaction.type === 'income'
-                    ? 'bg-green-100 dark:bg-green-900/30'
-                    : 'bg-red-100 dark:bg-red-900/30'
-                }`}>
-                  {transaction.type === 'income' ? (
-                    <ArrowUpCircle className="h-4 w-4 sm:h-5 sm:w-5 text-green-600" />
-                  ) : (
-                    <ArrowDownCircle className="h-4 w-4 sm:h-5 sm:w-5 text-red-600" />
-                  )}
+      {/* ── List ──────────────────────────────────────────────────────────── */}
+      {filtered.length === 0 ? (
+        <div style={{
+          padding: '2.5rem 1rem',
+          textAlign: 'center',
+          color: '#9ca3af',
+          fontSize: '0.82rem',
+        }}>
+          No transactions found
+        </div>
+      ) : (
+        <div>
+          {filtered.map((t, idx) => {
+            const isIncome  = t.type === 'income';
+            const amtColor  = isIncome ? '#16a34a' : '#dc2626';
+            const amtPrefix = isIncome ? '+' : '−';
+
+            const dateStr = new Date(t.date).toLocaleDateString('en-GB', {
+              day: 'numeric', month: 'short', year: 'numeric',
+            });
+
+            return (
+              <div
+                key={String(t.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '0.7rem 1rem',
+                  borderBottom: idx < filtered.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none',
+                  gap: '0.75rem',
+                  transition: 'background 0.12s',
+                  background: 'transparent',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = '#fafafa')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                {/* Category icon bubble */}
+                <div style={{
+                  width: 34, height: 34, borderRadius: '9px',
+                  background: isIncome ? '#f0fdf4' : '#fef2f2',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '1rem', flexShrink: 0,
+                }}>
+                  {t.category?.icon ?? (isIncome ? '💰' : '💸')}
                 </div>
 
-                {/* Details */}
-                <div className="flex-1 min-w-0">
-                  {/* Nome transazione */}
-                  <p className="text-sm font-medium text-gray-900 dark:text-white truncate mb-1">
-                    {transaction.description}
+                {/* Description + meta */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{
+                    fontSize: '0.82rem', fontWeight: 600, color: '#111827',
+                    margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {t.description || t.category?.name || '—'}
                   </p>
-
-                  {/* Categoria e Data - su una riga separata */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {transaction.category && (
-                      <span
-                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium flex-shrink-0"
-                        style={{
-                          backgroundColor: `${transaction.category.color}20`,
-                          color: transaction.category.color,
-                        }}
-                      >
-                        <span className="mr-1">{transaction.category.icon}</span>
-                        <span className="truncate max-w-[120px]">{transaction.category.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                    {t.category && (
+                      <span style={{
+                        fontSize: '0.68rem', fontWeight: 600,
+                        padding: '1px 6px', borderRadius: '4px',
+                        background: isIncome ? '#dcfce7' : '#fee2e2',
+                        color:      isIncome ? '#15803d' : '#b91c1c',
+                      }}>
+                        {t.category.name}
                       </span>
                     )}
-                    <p className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
-                      {new Date(transaction.date).toLocaleDateString('it-IT', {
-                        day: '2-digit',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                    </p>
+                    <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>{dateStr}</span>
                   </div>
-
-                  {/* Note (se presenti) */}
-                  {transaction.notes && (
-                    <p className="text-xs text-gray-400 dark:text-gray-500 truncate mt-1">
-                      {transaction.notes}
-                    </p>
-                  )}
                 </div>
 
-                {/* Amount - sempre visibile */}
-                <div className="text-right flex-shrink-0">
-                  <p className={`text-sm sm:text-base font-semibold whitespace-nowrap ${
-                    transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {transaction.type === 'income' ? '+' : '-'}€{transaction.amount.toLocaleString('it-IT', { minimumFractionDigits: 2 })}
-                  </p>
-                </div>
+                {/* Amount */}
+                <p style={{
+                  fontSize: '0.88rem', fontWeight: 700,
+                  color: amtColor, margin: 0, flexShrink: 0, letterSpacing: '-0.01em',
+                }}>
+                  {amtPrefix}€{t.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </p>
 
-                {/* Actions - nascosti su mobile molto piccolo */}
-                <div className="hidden sm:flex items-center gap-2 ml-2">
+                {/* Actions — show on row hover via parent hover state */}
+                <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
                   <button
-                    onClick={() => onEdit(transaction)}
-                    className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
-                    title="Modifica"
-                  >
-                    <Edit2 className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (confirm('Sei sicuro di voler eliminare questa transazione?')) {
-                        onDelete(transaction.id);
-                      }
+                    onClick={() => onEdit(t)}
+                    title="Edit"
+                    style={{
+                      width: 28, height: 28, border: 'none', borderRadius: '7px',
+                      background: 'transparent', cursor: 'pointer', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      color: '#9ca3af', transition: 'all 0.12s',
                     }}
-                    className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors"
-                    title="Elimina"
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6';
+                      (e.currentTarget as HTMLButtonElement).style.color = '#374151';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                      (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
+                    }}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Pencil size={13} />
+                  </button>
+                  <button
+                    onClick={() => onDelete(t.id)}
+                    title="Delete"
+                    style={{
+                      width: 28, height: 28, border: 'none', borderRadius: '7px',
+                      background: 'transparent', cursor: 'pointer', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center',
+                      color: '#9ca3af', transition: 'all 0.12s',
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = '#fef2f2';
+                      (e.currentTarget as HTMLButtonElement).style.color = '#dc2626';
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
+                      (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
+                    }}
+                  >
+                    <Trash2 size={13} />
                   </button>
                 </div>
               </div>
-
-              {/* Actions mobile - mostrati sotto */}
-              <div className="flex sm:hidden items-center gap-2 mt-2 ml-12">
-                <button
-                  onClick={() => onEdit(transaction)}
-                  className="flex-1 px-3 py-1.5 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg transition-colors"
-                >
-                  <Edit2 className="h-3 w-3 inline mr-1" />
-                  Modifica
-                </button>
-                <button
-                  onClick={() => {
-                    if (confirm('Sei sicuro di voler eliminare questa transazione?')) {
-                      onDelete(transaction.id);
-                    }
-                  }}
-                  className="flex-1 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg transition-colors"
-                >
-                  <Trash2 className="h-3 w-3 inline mr-1" />
-                  Elimina
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Pagination (optional) */}
-      {filteredTransactions.length > 0 && (
-        <div className="p-3 sm:p-4 border-t border-gray-200 dark:border-gray-700">
-          <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 text-center">
-            Visualizzate {filteredTransactions.length} transactions
-          </p>
+            );
+          })}
         </div>
       )}
     </div>
