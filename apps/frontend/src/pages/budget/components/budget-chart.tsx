@@ -114,9 +114,22 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
   const heroChartData = useMemo(() => {
     if (!showLast12Months) return [];
 
-    const fromDate = getDateRangeForPeriod(selectedPeriod);
+
     const now = new Date();
+
+    // For ALL: find the earliest transaction instead of defaulting to year 2000
+    let fromDate = getDateRangeForPeriod(selectedPeriod);
+    if (selectedPeriod === 'ALL' && transactions.length > 0) {
+      const earliest = transactions.reduce((min, t) => {
+        const d = new Date(t.date);
+        return d < min ? d : min;
+      }, new Date());
+      fromDate = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
+    }
+
     const isShortPeriod = selectedPeriod === '1W' || selectedPeriod === '1M';
+
+
 
     type DataPoint = { label: string; income: number; expenses: number };
     const points = new Map<string, DataPoint>();
@@ -136,10 +149,20 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
       while (cursor <= now) {
         const key = `${cursor.getFullYear()}-${cursor.getMonth()}`;
         points.set(key, {
-          label: cursor.toLocaleDateString('en-GB', {
-            month: 'short',
-            year: cursor.getFullYear() !== now.getFullYear() ? '2-digit' : undefined,
-          }),
+          // For ALL with many years, show only month+year; compress if span > 2 years
+          label: (() => {
+            const spanYears = now.getFullYear() - fromDate.getFullYear();
+            if (spanYears > 2) {
+              // Only label January of each year + current month to reduce clutter
+              return cursor.getMonth() === 0 || (cursor.getFullYear() === now.getFullYear() && cursor.getMonth() === now.getMonth())
+                ? cursor.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })
+                : '';
+            }
+            return cursor.toLocaleDateString('en-GB', {
+              month: 'short',
+              year: cursor.getFullYear() !== now.getFullYear() ? '2-digit' : undefined,
+            });
+          })(),
           income: 0, expenses: 0,
         });
         cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
