@@ -2,36 +2,41 @@
 import { useBudget } from '@/hooks/useBudget';
 import { BudgetTransaction } from '@/lib/types/budget';
 import { Plus, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AddTransactionModal } from "./components/add-transaction-modal";
 import { BudgetChart } from "./components/budget-chart";
+import { BudgetInsights } from "./components/budget-insights";
 import { MonthSelector } from "./components/month-selector";
 import { TransactionList } from "./components/transaction-list";
+
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.innerWidth < breakpoint : false
+  );
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth < breakpoint);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, [breakpoint]);
+  return isMobile;
+}
 
 export const BudgetPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [editingTransaction, setEditingTransaction] = useState<BudgetTransaction | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'transactions'>('overview');
+  const isMobile = useIsMobile();
 
   const {
-    transactions,
-    allTransactions,
-    categories,
-    summary,
-    loading,
-    error,
-    createTransaction,
-    deleteTransaction,
-    updateTransaction,
-    refresh,
+    transactions, allTransactions, categories,
+    summary, loading, error,
+    createTransaction, deleteTransaction, updateTransaction, refresh,
   } = useBudget(selectedMonth);
 
-  const actualBalance =
-    (summary?.totalIncome ?? 0) - (summary?.totalExpenses ?? 0);
+  const actualBalance = (summary?.totalIncome ?? 0) - (summary?.totalExpenses ?? 0);
 
-  const handleAddTransaction = async (
-    transaction: Partial<BudgetTransaction>
-  ) => {
+  const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
     try {
       if (editingTransaction) {
         await updateTransaction(Number(editingTransaction.id), transaction);
@@ -45,222 +50,362 @@ export const BudgetPage: React.FC = () => {
           notes: transaction.notes,
         });
       }
-
       setShowAddModal(false);
       setEditingTransaction(null);
     } catch (err) {
-      console.error("Error saving transaction:", err);
-      alert(
-        "Error saving transaction: " +
-          (err instanceof Error ? err.message : "Unknown error")
-      );
+      alert('Error saving transaction: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
   };
 
   const handleDeleteTransaction = async (id: string | number) => {
-    try {
-      await deleteTransaction(id);
-    } catch (err) {
-      console.error("Error deleting transaction:", err);
-    }
+    try { await deleteTransaction(id); } catch {}
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent"></div>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh' }}>
+      <div style={{ width:28, height:28, border:'2.5px solid #111827', borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.7s linear infinite' }} />
+    </div>
+  );
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="text-center max-w-md">
-          <p className="text-red-600 dark:text-red-400 text-lg font-semibold mb-2">
-            Error loading budget data
-          </p>
-          <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
-          <button
-            onClick={refresh}
-            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-all shadow-sm shadow-blue-500/20"
-          >
-            Retry
-          </button>
-        </div>
+  if (error) return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100vh' }}>
+      <div style={{ textAlign:'center', padding:'0 1.5rem' }}>
+        <p style={{ color:'#dc2626', fontWeight:600, marginBottom:8 }}>Error loading budget data</p>
+        <p style={{ color:'#6b7280', marginBottom:24 }}>{error}</p>
+        <button onClick={refresh} style={{ padding:'8px 20px', background:'#111827', color:'#fff', border:'none', borderRadius:'10px', fontWeight:600, cursor:'pointer' }}>Retry</button>
       </div>
-    );
-  }
+    </div>
+  );
 
   const expensesWithoutInvestments = (transactions || [])
-    .filter(
-      (t) => t.type === "expense" && t.category?.name !== "Investments"
-    )
-    .reduce((sum, t) => sum + t.amount, 0);
+    .filter(t => t.type === 'expense' && t.category?.name !== 'Investments')
+    .reduce((s, t) => s + t.amount, 0);
 
   const investments = (transactions || [])
-    .filter((t) => t.type === "expense" && t.category?.name === "Investments")
-    .reduce((sum, t) => sum + t.amount, 0);
+    .filter(t => t.type === 'expense' && t.category?.name === 'Investments')
+    .reduce((s, t) => s + t.amount, 0);
+
+  const fmtEur = (n: number) => `€${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+
+  const statCards = [
+    { label: 'Income',   value: summary?.totalIncome ?? 0, icon: <TrendingUp size={14} />,  color: '#16a34a', bg: '#f0fdf4' },
+    { label: 'Expenses', value: expensesWithoutInvestments, icon: <TrendingDown size={14} />, color: '#dc2626', bg: '#fef2f2' },
+    { label: 'Savings',  value: investments,                icon: <TrendingUp size={14} />,  color: '#7c3aed', bg: '#f5f3ff' },
+    { label: 'Balance',  value: actualBalance,              icon: <Wallet size={14} />,
+      color: actualBalance >= 0 ? '#2563eb' : '#dc2626',
+      bg:    actualBalance >= 0 ? '#eff6ff' : '#fef2f2' },
+  ];
+
+  const TABS: [string, string][] = [['overview', 'Overview'], ['transactions', 'Transactions']];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <div className="bg-white/70 dark:bg-gray-900/70 backdrop-blur-xl border-b border-gray-200/40 dark:border-gray-800/40 sticky top-0 z-20">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
-                Budget
-              </h1>
-              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Track your income and expenses
-              </p>
+    <div style={{ minHeight:'100vh', background:'#ffffff', fontFamily:'-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+
+      {/* ── NAV ────────────────────────────────────────────────────────────── */}
+      <div style={{ position:'sticky', top:0, zIndex:20, background:'rgba(255,255,255,0.92)', backdropFilter:'blur(16px)', borderBottom:'1px solid rgba(0,0,0,0.05)' }}>
+        {/* Main nav row */}
+        <div style={{
+          maxWidth:1280, margin:'0 auto',
+          padding: isMobile ? '0 1rem' : '0 1.5rem',
+          height:52, display:'flex', alignItems:'center', justifyContent:'space-between', gap:'0.75rem',
+        }}>
+          {/* Title + tabs */}
+          <div style={{ display:'flex', alignItems:'center', gap: isMobile ? '0.6rem' : '1rem', minWidth:0 }}>
+            <span style={{ fontSize:'1rem', fontWeight:800, color:'#111827', letterSpacing:'-0.02em', flexShrink:0 }}>
+              Budget
+            </span>
+            <div style={{ display:'flex', gap:'2px', background:'#f3f4f6', borderRadius:'10px', padding:'3px' }}>
+              {TABS.map(([key, label]) => (
+                <span
+                  key={key}
+                  onClick={() => setActiveTab(key as 'overview' | 'transactions')}
+                  style={{
+                    fontSize:'0.75rem', fontWeight:600, whiteSpace:'nowrap',
+                    padding: isMobile ? '4px 8px' : '4px 12px',
+                    borderRadius:'8px', cursor:'pointer',
+                    background: activeTab === key ? '#ffffff' : 'transparent',
+                    color:      activeTab === key ? '#111827' : '#9ca3af',
+                    boxShadow:  activeTab === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                    transition:'all 0.15s',
+                  }}
+                >
+                  {/* Shorten on mobile */}
+                  {isMobile && key === 'transactions' ? 'Trans.' : label}
+                </span>
+              ))}
             </div>
+          </div>
+
+          {/* Right side */}
+          <div style={{ display:'flex', alignItems:'center', gap:'0.5rem', flexShrink:0 }}>
+            {/* Month selector only on desktop in nav */}
+            {!isMobile && (
+              <MonthSelector selectedMonth={selectedMonth} onChange={(d: Date) => setSelectedMonth(d)} />
+            )}
             <button
               onClick={() => setShowAddModal(true)}
-              className="inline-flex items-center px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition-all shadow-sm shadow-blue-500/20"
+              style={{
+                display:'inline-flex', alignItems:'center', gap: isMobile ? 0 : '0.35rem',
+                padding: isMobile ? '7px 10px' : '7px 14px',
+                background:'#111827', color:'#fff', border:'none',
+                borderRadius:'10px', fontSize:'0.78rem', fontWeight:600, cursor:'pointer',
+              }}
             >
-              <Plus className="h-4 w-4 mr-2" />
-              New Transaction
+              <Plus size={14} />
+              {!isMobile && 'Add'}
             </button>
           </div>
-
-          <MonthSelector
-            selectedMonth={selectedMonth}
-            onChange={(date: Date) => setSelectedMonth(date)}
-          />
         </div>
+
+        {/* Mobile: month selector in second row */}
+        {isMobile && (
+          <div style={{ padding:'0 1rem 0.6rem', display:'flex', justifyContent:'center' }}>
+            <MonthSelector selectedMonth={selectedMonth} onChange={(d: Date) => setSelectedMonth(d)} />
+          </div>
+        )}
       </div>
 
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
-        {/* Overview Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6 mb-8">
+      {/* ── HERO CHART ───────────────────────────────────────────────────────── */}
+      {activeTab === 'overview' && (
+        <div style={{ borderBottom:'1px solid rgba(0,0,0,0.05)' }}>
+          <BudgetChart transactions={allTransactions || []} showLast12Months={true} />
+        </div>
+      )}
 
-          {/* Income */}
-          <div className="group bg-white/70 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-4 md:p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Income
-                </p>
-                <p className="text-xl md:text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
-                  €{(summary?.totalIncome ?? 0).toLocaleString("it-IT", {
-                    minimumFractionDigits: 2,
-                  })}
-                </p>
-              </div>
-              <div className="h-10 w-10 md:h-12 md:w-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-                <TrendingUp className="h-5 w-5 md:h-6 md:w-6 text-white" />
-              </div>
-            </div>
-          </div>
+      {/* ── CONTENT ──────────────────────────────────────────────────────────── */}
+      <div style={{ maxWidth:1280, margin:'0 auto', padding: isMobile ? '1rem' : '1.75rem 1.5rem' }}>
 
-          {/* Expenses */}
-          <div className="group bg-white/70 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-4 md:p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Expenses
-                </p>
-                <p className="text-xl md:text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
-                  €{expensesWithoutInvestments.toLocaleString("it-IT", {
-                    minimumFractionDigits: 2,
-                  })}
-                </p>
-              </div>
-              <div className="h-10 w-10 md:h-12 md:w-12 bg-gradient-to-br from-red-400 to-rose-500 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-                <TrendingDown className="h-5 w-5 md:h-6 md:w-6 text-white" />
-              </div>
-            </div>
-          </div>
-
-          {/* Saving */}
-          <div className="group bg-white/70 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-4 md:p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Saving
-                </p>
-                <p className="text-xl md:text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">
-                  €{investments.toLocaleString("it-IT", {
-                    minimumFractionDigits: 2,
-                  })}
-                </p>
-              </div>
-              <div className="h-10 w-10 md:h-12 md:w-12 bg-gradient-to-br from-purple-400 to-violet-500 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform">
-                <TrendingUp className="h-5 w-5 md:h-6 md:w-6 text-white" />
-              </div>
-            </div>
-          </div>
-
-          {/* Balance */}
-          <div className="group bg-white/70 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl md:rounded-3xl p-4 md:p-6 border border-gray-200/50 dark:border-gray-700/50 shadow-sm hover:shadow-md transition-all duration-300">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs md:text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">
-                  Balance
-                </p>
-                <p
-                  className={`text-xl md:text-3xl font-semibold tracking-tight ${
-                    actualBalance >= 0
-                      ? "text-blue-600 dark:text-blue-400"
-                      : "text-red-600 dark:text-red-400"
-                  }`}
+        {activeTab === 'overview' && (
+          <>
+            {/* Stat cards: 2×2 mobile / 4×1 desktop */}
+            <div style={{
+              display:'grid',
+              gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+              gap:'1px',
+              background:'rgba(0,0,0,0.06)',
+              borderRadius:'14px', overflow:'hidden',
+              marginBottom: isMobile ? '1rem' : '1.75rem',
+              boxShadow:'0 1px 3px rgba(0,0,0,0.04)',
+            }}>
+              {statCards.map(({ label, value, icon, color, bg }) => (
+                <div
+                  key={label}
+                  style={{
+                    background:'#ffffff',
+                    padding: isMobile ? '0.85rem 0.9rem' : '1.1rem 1.25rem',
+                    display:'flex', alignItems:'center', justifyContent:'space-between',
+                    transition:'background 0.15s',
+                  }}
+                  onMouseEnter={e => { if (!isMobile) e.currentTarget.style.background = '#fafafa'; }}
+                  onMouseLeave={e => { if (!isMobile) e.currentTarget.style.background = '#ffffff'; }}
                 >
-                  €{actualBalance.toLocaleString("it-IT", {
-                    minimumFractionDigits: 2,
-                  })}
-                </p>
-              </div>
-              <div
-                className={`h-10 w-10 md:h-12 md:w-12 rounded-xl flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform bg-gradient-to-br ${
-                  actualBalance >= 0
-                    ? "from-blue-400 to-indigo-500"
-                    : "from-red-400 to-rose-500"
-                }`}
-              >
-                <Wallet className="h-5 w-5 md:h-6 md:w-6 text-white" />
-              </div>
+                  <div style={{ minWidth:0 }}>
+                    <p style={{ fontSize:'0.68rem', fontWeight:500, color:'#9ca3af', margin:'0 0 3px' }}>{label}</p>
+                    <p style={{
+                      fontSize: isMobile ? '0.95rem' : '1.2rem',
+                      fontWeight:700, margin:0, letterSpacing:'-0.02em',
+                      color: label === 'Balance' ? color : '#111827',
+                      overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap',
+                    }}>
+                      {fmtEur(value)}
+                    </p>
+                  </div>
+                  <div style={{
+                    width: isMobile ? 28 : 34, height: isMobile ? 28 : 34,
+                    borderRadius:'8px', background:bg, color,
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    flexShrink:0, marginLeft:'0.5rem',
+                  }}>
+                    {icon}
+                  </div>
+                </div>
+              ))}
             </div>
+
+            {/* DESKTOP: two-column */}
+            {!isMobile && (
+              <>
+                <div style={{ display:'flex', gap:'1.25rem', alignItems:'flex-start' }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <BudgetChart transactions={transactions || []} />
+                  </div>
+                  <div style={{
+                    width:380, flexShrink:0, background:'#ffffff',
+                    border:'1px solid rgba(0,0,0,0.06)', borderRadius:'16px',
+                    overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
+                  }}>
+                    <div style={{
+                      padding:'0.85rem 1.1rem', borderBottom:'1px solid rgba(0,0,0,0.05)',
+                      display:'flex', alignItems:'center', justifyContent:'space-between',
+                    }}>
+                      <h2 style={{ fontSize:'0.875rem', fontWeight:700, color:'#111827', margin:0 }}>Transactions</h2>
+                      <span onClick={() => setActiveTab('transactions')}
+                        style={{ fontSize:'0.75rem', color:'#6b7280', cursor:'pointer', fontWeight:500 }}>
+                        View all →
+                      </span>
+                    </div>
+                    <div style={{ maxHeight:600, overflowY:'auto' }}>
+                      <TransactionList
+                        transactions={(transactions || []).slice(0, 8)}
+                        onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }}
+                        onDelete={handleDeleteTransaction}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div style={{ marginTop:'1.25rem' }}>
+                  <BudgetInsights
+                    transactions={transactions || []}
+                    allTransactions={allTransactions || []}
+                    totalIncome={summary?.totalIncome ?? 0}
+                    totalExpenses={expensesWithoutInvestments}
+                    savings={investments}
+                  />
+                </div>
+              </>
+            )}
+
+            {/* MOBILE: single column */}
+            {isMobile && (
+              <div style={{ display:'flex', flexDirection:'column', gap:'1rem' }}>
+                {/* Category chart */}
+                <BudgetChart transactions={transactions || []} />
+
+                {/* Savings Rate mini card */}
+                <MobileSavingsCard
+                  income={summary?.totalIncome ?? 0}
+                  expenses={expensesWithoutInvestments}
+                  savings={investments}
+                  fmtEur={fmtEur}
+                />
+
+                {/* Recent transactions */}
+                <div style={{
+                  background:'#ffffff', border:'1px solid rgba(0,0,0,0.06)',
+                  borderRadius:'16px', overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
+                }}>
+                  <div style={{
+                    padding:'0.8rem 1rem', borderBottom:'1px solid rgba(0,0,0,0.05)',
+                    display:'flex', alignItems:'center', justifyContent:'space-between',
+                  }}>
+                    <h2 style={{ fontSize:'0.85rem', fontWeight:700, color:'#111827', margin:0 }}>
+                      Recent Transactions
+                    </h2>
+                    <span
+                      onClick={() => setActiveTab('transactions')}
+                      style={{ fontSize:'0.72rem', color:'#6b7280', cursor:'pointer', fontWeight:500 }}
+                    >
+                      View all →
+                    </span>
+                  </div>
+                  <TransactionList
+                    transactions={(transactions || []).slice(0, 5)}
+                    onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }}
+                    onDelete={handleDeleteTransaction}
+                  />
+                </div>
+
+                {/* Insights charts — all 5, mobile-adapted via their own responsive logic */}
+                <BudgetInsights
+                  transactions={transactions || []}
+                  allTransactions={allTransactions || []}
+                  totalIncome={summary?.totalIncome ?? 0}
+                  totalExpenses={expensesWithoutInvestments}
+                  savings={investments}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {/* TRANSACTIONS TAB */}
+        {activeTab === 'transactions' && (
+          <div style={{
+            background:'#ffffff', border:'1px solid rgba(0,0,0,0.06)',
+            borderRadius:'16px', overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
+          }}>
+            <div style={{
+              padding: isMobile ? '0.75rem 1rem' : '1rem 1.25rem',
+              borderBottom:'1px solid rgba(0,0,0,0.05)',
+              display:'flex', alignItems:'center', justifyContent:'space-between',
+            }}>
+              <h2 style={{ fontSize:'0.9rem', fontWeight:700, color:'#111827', margin:0 }}>
+                All Transactions
+              </h2>
+              <span style={{ fontSize:'0.72rem', color:'#9ca3af', fontWeight:500 }}>
+                {(transactions || []).length} total
+              </span>
+            </div>
+            <TransactionList
+              transactions={transactions || []}
+              onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }}
+              onDelete={handleDeleteTransaction}
+            />
           </div>
-        </div>
-
-        {/* Charts */}
-        <div className="mb-8">
-          <BudgetChart
-            transactions={allTransactions || []}
-            showLast12Months={true}
-          />
-        </div>
-
-        <div className="mb-8">
-          <BudgetChart transactions={transactions || []} />
-        </div>
-
-        {/* Transactions */}
-        <TransactionList
-          transactions={transactions || []}
-          onEdit={(transaction: BudgetTransaction) => {
-            setEditingTransaction(transaction);
-            setShowAddModal(true);
-          }}
-          onDelete={(id) => handleDeleteTransaction(id)}
-        />
+        )}
       </div>
 
-      {/* Modal */}
       {showAddModal && (
         <AddTransactionModal
           categories={categories || []}
-          onClose={() => {
-            setShowAddModal(false);
-            setEditingTransaction(null);
-          }}
+          onClose={() => { setShowAddModal(false); setEditingTransaction(null); }}
           onSave={handleAddTransaction}
           initialData={editingTransaction || undefined}
         />
       )}
+    </div>
+  );
+};
+
+// ── Mobile-only savings summary card ─────────────────────────────────────────
+const MobileSavingsCard: React.FC<{
+  income: number; expenses: number; savings: number;
+  fmtEur: (n: number) => string;
+}> = ({ income, expenses, savings, fmtEur }) => {
+  const savingsRate = income > 0 ? Math.round(((income - expenses) / income) * 100) : 0;
+  const isPositive = savingsRate >= 0;
+  const spentPct = income > 0 ? Math.min((expenses / income) * 100, 100) : 0;
+
+  return (
+    <div style={{
+      background:'#ffffff', border:'1px solid rgba(0,0,0,0.06)',
+      borderRadius:'16px', padding:'1rem', boxShadow:'0 1px 4px rgba(0,0,0,0.04)',
+    }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+        <h3 style={{ fontSize:'0.85rem', fontWeight:700, color:'#111827', margin:0 }}>Monthly Summary</h3>
+        <span style={{
+          fontSize:'0.75rem', fontWeight:700, padding:'3px 9px', borderRadius:'999px',
+          background: isPositive ? '#f0fdf4' : '#fef2f2',
+          color:      isPositive ? '#16a34a' : '#dc2626',
+        }}>
+          {isPositive ? '+' : ''}{savingsRate}% saved
+        </span>
+      </div>
+
+      {/* Progress bar: expenses vs income */}
+      <div style={{ background:'#f3f4f6', borderRadius:'999px', height:8, overflow:'hidden', marginBottom:'0.75rem' }}>
+        <div style={{
+          height:'100%', borderRadius:'999px', width:`${spentPct}%`,
+          background: spentPct > 80
+            ? 'linear-gradient(90deg, #fca5a5, #ef4444)'
+            : 'linear-gradient(90deg, #86efac, #22c55e)',
+          transition:'width 0.5s ease',
+        }} />
+      </div>
+
+      {/* Row of figures */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:'0.5rem' }}>
+        {[
+          { label:'Income',  value: fmtEur(income),  color:'#16a34a' },
+          { label:'Spent',   value: fmtEur(expenses), color:'#ef4444' },
+          { label:'Invested',value: fmtEur(savings),  color:'#7c3aed' },
+        ].map(({ label, value, color }) => (
+          <div key={label} style={{ textAlign:'center' }}>
+            <p style={{ fontSize:'0.65rem', color:'#9ca3af', fontWeight:500, margin:'0 0 2px' }}>{label}</p>
+            <p style={{ fontSize:'0.78rem', fontWeight:700, color, margin:0 }}>{value}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };
