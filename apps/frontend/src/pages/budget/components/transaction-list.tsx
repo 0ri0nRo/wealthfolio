@@ -54,11 +54,11 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   }, [transactions, filter, sort]);
 
   return (
-    <div>
-      {/* ── Filter + Sort bar ─────────────────────────────────────────────── */}
+    <div style={{ background: 'var(--card)' }}>
+      {/* ── Filter + Sort bar ────────────────────────────────────────────── */}
       <div style={{
         padding: '0.6rem 1rem',
-        borderBottom: '1px solid rgba(0,0,0,0.05)',
+        borderBottom: '1px solid var(--border)',
         display: 'flex',
         flexDirection: isMobile ? 'column' : 'row',
         alignItems: isMobile ? 'stretch' : 'center',
@@ -66,7 +66,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         gap: '0.5rem',
       }}>
         {/* Type filter pills */}
-        <div style={{ display: 'flex', gap: '3px', background: '#f3f4f6', borderRadius: '8px', padding: '3px' }}>
+        <div style={{ display: 'flex', gap: '3px', background: 'var(--muted)', borderRadius: '8px', padding: '3px' }}>
           {FILTERS.map(({ key, label }) => (
             <button
               key={key}
@@ -80,8 +80,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 borderRadius: '6px',
                 cursor: 'pointer',
                 transition: 'all 0.15s',
-                background: filter === key ? '#111827' : 'transparent',
-                color:      filter === key ? '#ffffff' : '#9ca3af',
+                background: filter === key ? 'var(--foreground)' : 'transparent',
+                color:      filter === key ? 'var(--background)' : 'var(--muted-foreground)',
                 boxShadow:  filter === key ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
               }}
             >
@@ -91,7 +91,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         </div>
 
         {/* Sort selector */}
-        <div style={{ display: 'flex', gap: '3px', background: '#f3f4f6', borderRadius: '8px', padding: '3px' }}>
+        <div style={{ display: 'flex', gap: '3px', background: 'var(--muted)', borderRadius: '8px', padding: '3px' }}>
           {SORTS.map(({ key, label }) => (
             <button
               key={key}
@@ -105,8 +105,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 borderRadius: '6px',
                 cursor: 'pointer',
                 transition: 'all 0.15s',
-                background: sort === key ? '#ffffff' : 'transparent',
-                color:      sort === key ? '#111827' : '#9ca3af',
+                background: sort === key ? 'var(--card)' : 'transparent',
+                color:      sort === key ? 'var(--foreground)' : 'var(--muted-foreground)',
                 boxShadow:  sort === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               }}
             >
@@ -116,12 +116,12 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         </div>
       </div>
 
-      {/* ── List ──────────────────────────────────────────────────────────── */}
+      {/* ── List ─────────────────────────────────────────────────────────── */}
       {filtered.length === 0 ? (
         <div style={{
           padding: '2.5rem 1rem',
           textAlign: 'center',
-          color: '#9ca3af',
+          color: 'var(--muted-foreground)',
           fontSize: '0.82rem',
         }}>
           No transactions found
@@ -145,18 +145,20 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '0.7rem 1rem',
-                  borderBottom: idx < filtered.length - 1 ? '1px solid rgba(0,0,0,0.04)' : 'none',
+                  borderBottom: idx < filtered.length - 1 ? '1px solid var(--border)' : 'none',
                   gap: '0.75rem',
                   transition: 'background 0.12s',
                   background: 'transparent',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#fafafa')}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
               >
                 {/* Category icon bubble */}
                 <div style={{
                   width: 34, height: 34, borderRadius: '9px',
-                  background: isIncome ? '#f0fdf4' : '#fef2f2',
+                  background: isIncome
+                    ? 'color-mix(in srgb, #16a34a 12%, var(--background))'
+                    : 'color-mix(in srgb, #dc2626 12%, var(--background))',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '1rem', flexShrink: 0,
                 }}>
@@ -166,7 +168,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                 {/* Description + meta */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <p style={{
-                    fontSize: '0.82rem', fontWeight: 600, color: '#111827',
+                    fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground)',
                     margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   }}>
                     {t.description || t.category?.name || '—'}
@@ -176,13 +178,15 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                       <span style={{
                         fontSize: '0.68rem', fontWeight: 600,
                         padding: '1px 6px', borderRadius: '4px',
-                        background: isIncome ? '#dcfce7' : '#fee2e2',
-                        color:      isIncome ? '#15803d' : '#b91c1c',
+                        background: isIncome
+                          ? 'color-mix(in srgb, #16a34a 15%, var(--background))'
+                          : 'color-mix(in srgb, #dc2626 15%, var(--background))',
+                        color: isIncome ? '#16a34a' : '#dc2626',
                       }}>
                         {t.category.name}
                       </span>
                     )}
-                    <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>{dateStr}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)' }}>{dateStr}</span>
                   </div>
                 </div>
 
@@ -194,7 +198,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   {amtPrefix}€{t.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </p>
 
-                {/* Actions — show on row hover via parent hover state */}
+                {/* Actions */}
                 <div style={{ display: 'flex', gap: '2px', flexShrink: 0 }}>
                   <button
                     onClick={() => onEdit(t)}
@@ -203,15 +207,15 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                       width: 28, height: 28, border: 'none', borderRadius: '7px',
                       background: 'transparent', cursor: 'pointer', display: 'flex',
                       alignItems: 'center', justifyContent: 'center',
-                      color: '#9ca3af', transition: 'all 0.12s',
+                      color: 'var(--muted-foreground)', transition: 'all 0.12s',
                     }}
                     onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = '#f3f4f6';
-                      (e.currentTarget as HTMLButtonElement).style.color = '#374151';
+                      (e.currentTarget as HTMLButtonElement).style.background = 'var(--muted)';
+                      (e.currentTarget as HTMLButtonElement).style.color = 'var(--foreground)';
                     }}
                     onMouseLeave={(e) => {
                       (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                      (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
+                      (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)';
                     }}
                   >
                     <Pencil size={13} />
@@ -223,15 +227,15 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                       width: 28, height: 28, border: 'none', borderRadius: '7px',
                       background: 'transparent', cursor: 'pointer', display: 'flex',
                       alignItems: 'center', justifyContent: 'center',
-                      color: '#9ca3af', transition: 'all 0.12s',
+                      color: 'var(--muted-foreground)', transition: 'all 0.12s',
                     }}
                     onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = '#fef2f2';
+                      (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #dc2626 12%, var(--background))';
                       (e.currentTarget as HTMLButtonElement).style.color = '#dc2626';
                     }}
                     onMouseLeave={(e) => {
                       (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                      (e.currentTarget as HTMLButtonElement).style.color = '#9ca3af';
+                      (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)';
                     }}
                   >
                     <Trash2 size={13} />

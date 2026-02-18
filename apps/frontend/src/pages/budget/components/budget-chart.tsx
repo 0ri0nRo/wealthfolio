@@ -31,15 +31,16 @@ const isInvestment = (transaction: BudgetTransaction) => {
   );
 };
 
+// Uses the exact palette defined in global.css @theme
 const COLORS = [
-  'hsl(25 92% 72%)',
-  'hsl(24 81% 61%)',
-  'hsl(23 70% 51%)',
-  'hsl(23 73% 46%)',
-  'hsl(22 80% 41%)',
-  'hsl(22 82% 34%)',
-  'hsl(22 79% 25%)',
-  'hsl(22 75% 20%)',
+  '#f9ae77', // orange-200
+  '#87d3c3', // cyan-200
+  '#c4b9e0', // purple-200
+  '#bec97e', // green-200
+  '#92bfdb', // blue-200
+  '#f4a4c2', // magenta-200
+  '#f89a8a', // red-200
+  '#f6e2a0', // yellow-100
 ];
 
 type TimePeriod = '1W' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
@@ -63,21 +64,26 @@ const PERIOD_LABEL: Record<TimePeriod, string> = {
   '6M': 'past 6 months', 'YTD': 'year to date', '1Y': 'past year', 'ALL': 'all time',
 };
 
+// ── TOOLTIPS ─────────────────────────────────────────────────────────────────
+// Uses .liquid-glass from global.css for the frosted-glass look in both
+// light and dark mode (CSS vars handle the background/border automatically).
+
 const HeroTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{
-      background: 'rgba(255,255,255,0.97)',
-      border: '1px solid rgba(0,0,0,0.06)',
-      borderRadius: '10px',
-      padding: '10px 14px',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-      fontSize: '12px',
-    }}>
-      <p style={{ color: '#6b7280', marginBottom: 4, fontWeight: 500 }}>{label}</p>
+    <div
+      className="liquid-glass"
+      style={{
+        borderRadius: '10px',
+        padding: '10px 14px',
+        fontSize: '12px',
+      }}
+    >
+      <p style={{ color: 'var(--muted-foreground)', marginBottom: 4, fontWeight: 500 }}>{label}</p>
       {payload.map((p: any) => (
         <p key={p.dataKey} style={{ color: p.stroke, margin: '2px 0', fontWeight: 600 }}>
-          {p.dataKey === 'income' ? 'Income' : 'Expenses'}: €{Number(p.value).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          {p.dataKey === 'income' ? 'Income' : 'Expenses'}:{' '}
+          €{Number(p.value).toLocaleString('en-US', { minimumFractionDigits: 2 })}
         </p>
       ))}
     </div>
@@ -87,21 +93,25 @@ const HeroTooltip = ({ active, payload, label }: any) => {
 const CategoryTooltip = ({ active, payload }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{
-      background: 'rgba(255,255,255,0.97)',
-      border: '1px solid rgba(0,0,0,0.06)',
-      borderRadius: '10px',
-      padding: '10px 14px',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-      fontSize: '12px',
-    }}>
-      <p style={{ color: '#111827', fontWeight: 600, margin: '0 0 2px' }}>{payload[0]?.payload?.name}</p>
-      <p style={{ color: '#6b7280', margin: 0 }}>
+    <div
+      className="liquid-glass"
+      style={{
+        borderRadius: '10px',
+        padding: '10px 14px',
+        fontSize: '12px',
+      }}
+    >
+      <p style={{ color: 'var(--foreground)', fontWeight: 600, margin: '0 0 2px' }}>
+        {payload[0]?.payload?.name}
+      </p>
+      <p style={{ color: 'var(--muted-foreground)', margin: 0 }}>
         €{Number(payload[0]?.value).toLocaleString('en-US', { minimumFractionDigits: 2 })}
       </p>
     </div>
   );
 };
+
+// ── MAIN COMPONENT ────────────────────────────────────────────────────────────
 
 export const BudgetChart: React.FC<BudgetChartProps> = ({
   transactions = [],
@@ -110,14 +120,12 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
   const [chartType, setChartType] = useState<'pie' | 'bar'>('pie');
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('1W');
 
-  // ── HERO CHART DATA ──────────────────────────────────────────────────────────
+  // ── HERO CHART DATA ────────────────────────────────────────────────────────
   const heroChartData = useMemo(() => {
     if (!showLast12Months) return [];
 
-
     const now = new Date();
 
-    // For ALL: find the earliest transaction instead of defaulting to year 2000
     let fromDate = getDateRangeForPeriod(selectedPeriod);
     if (selectedPeriod === 'ALL' && transactions.length > 0) {
       const earliest = transactions.reduce((min, t) => {
@@ -128,8 +136,6 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     }
 
     const isShortPeriod = selectedPeriod === '1W' || selectedPeriod === '1M';
-
-
 
     type DataPoint = { label: string; income: number; expenses: number };
     const points = new Map<string, DataPoint>();
@@ -149,12 +155,11 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
       while (cursor <= now) {
         const key = `${cursor.getFullYear()}-${cursor.getMonth()}`;
         points.set(key, {
-          // For ALL with many years, show only month+year; compress if span > 2 years
           label: (() => {
             const spanYears = now.getFullYear() - fromDate.getFullYear();
             if (spanYears > 2) {
-              // Only label January of each year + current month to reduce clutter
-              return cursor.getMonth() === 0 || (cursor.getFullYear() === now.getFullYear() && cursor.getMonth() === now.getMonth())
+              return cursor.getMonth() === 0 ||
+                (cursor.getFullYear() === now.getFullYear() && cursor.getMonth() === now.getMonth())
                 ? cursor.toLocaleDateString('en-GB', { month: 'short', year: '2-digit' })
                 : '';
             }
@@ -193,28 +198,48 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     return { totalIncome, totalExpenses, balance, balancePct };
   }, [heroChartData]);
 
-  // ── HERO CHART RENDER ────────────────────────────────────────────────────────
+  // ── HERO CHART RENDER ──────────────────────────────────────────────────────
   if (showLast12Months) {
     const isPositive = heroStats.balance >= 0;
+    // Gradient adapts automatically: green tint in light, fades to --background in dark
+    const heroGradient = `linear-gradient(180deg, color-mix(in srgb, #16a34a 8%, var(--background)) 0%, var(--background) 70%)`;
 
     return (
-      <div style={{ background: 'linear-gradient(180deg, #f0faf4 0%, #ffffff 70%)', position: 'relative' }}>
+      <div style={{ background: heroGradient, position: 'relative' }}>
+
         {/* Stats */}
         <div style={{ padding: '1.75rem 1.75rem 0' }}>
           <p style={{
-            fontSize: '2.25rem', fontWeight: 700, color: '#111827',
-            letterSpacing: '-0.03em', lineHeight: 1, margin: '0 0 0.45rem',
+            fontSize: '2.25rem',
+            fontWeight: 700,
+            // animate-subtle-pulse only when income is 0 (no data yet)
+            color: 'var(--foreground)',
+            letterSpacing: '-0.03em',
+            lineHeight: 1,
+            margin: '0 0 0.45rem',
           }}>
             €{heroStats.totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isPositive ? '#16a34a' : '#dc2626' }}>
+            {/* Balance badge — uses animate-subtle-pulse when exactly zero */}
+            <span
+              className={heroStats.balance === 0 ? 'animate-subtle-pulse' : ''}
+              style={{
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                color: isPositive ? '#16a34a' : '#dc2626',
+              }}
+            >
               {isPositive ? '+' : ''}€{heroStats.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </span>
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isPositive ? '#16a34a' : '#dc2626' }}>
+            <span style={{
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              color: isPositive ? '#16a34a' : '#dc2626',
+            }}>
               {isPositive ? '+' : ''}{heroStats.balancePct.toFixed(2)}%
             </span>
-            <span style={{ fontSize: '0.78rem', color: '#9ca3af' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
               {PERIOD_LABEL[selectedPeriod]}
             </span>
           </div>
@@ -234,35 +259,60 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
                   <stop offset="100%" stopColor="#dc2626" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }}
-                axisLine={false} tickLine={false} interval="preserveStartEnd" height={28} />
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any}
+                axisLine={false}
+                tickLine={false}
+                interval="preserveStartEnd"
+                height={28}
+              />
               <YAxis hide />
               <Tooltip content={<HeroTooltip />} />
-              <Area type="monotone" dataKey="income" stroke="#16a34a" strokeWidth={2}
-                fill="url(#heroIncome)" dot={false} activeDot={{ r: 4, fill: '#16a34a', strokeWidth: 0 }} />
-              <Area type="monotone" dataKey="expenses" stroke="#ef4444" strokeWidth={2}
-                fill="url(#heroExpenses)" dot={false} activeDot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} />
+              <Area
+                type="monotone"
+                dataKey="income"
+                stroke="#16a34a"
+                strokeWidth={2}
+                fill="url(#heroIncome)"
+                dot={false}
+                activeDot={{ r: 4, fill: '#16a34a', strokeWidth: 0 }}
+              />
+              <Area
+                type="monotone"
+                dataKey="expenses"
+                stroke="#ef4444"
+                strokeWidth={2}
+                fill="url(#heroExpenses)"
+                dot={false}
+                activeDot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }}
+              />
             </AreaChart>
           </ResponsiveContainer>
         </div>
 
         {/* Period selector */}
         <div style={{
-          display: 'flex', justifyContent: 'center', gap: '2px',
+          display: 'flex',
+          justifyContent: 'center',
+          gap: '2px',
           padding: '0.5rem 1.75rem 0.75rem',
-          borderTop: '1px solid rgba(0,0,0,0.04)',
+          borderTop: '1px solid var(--border)',
         }}>
           {TIME_PERIODS.map((period) => (
             <button
               key={period}
               onClick={() => setSelectedPeriod(period)}
               style={{
-                padding: '5px 12px', fontSize: '0.78rem',
+                padding: '5px 12px',
+                fontSize: '0.78rem',
                 fontWeight: selectedPeriod === period ? 700 : 500,
-                borderRadius: '999px', border: 'none', cursor: 'pointer',
+                borderRadius: '999px',
+                border: 'none',
+                cursor: 'pointer',
                 transition: 'all 0.15s ease',
-                background: selectedPeriod === period ? '#111827' : 'transparent',
-                color: selectedPeriod === period ? '#ffffff' : '#6b7280',
+                background: selectedPeriod === period ? 'var(--foreground)' : 'transparent',
+                color: selectedPeriod === period ? 'var(--background)' : 'var(--muted-foreground)',
               }}
             >
               {period}
@@ -278,7 +328,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
           ].map(({ color, label, value }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-              <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
                 {label} · €{value.toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             </div>
@@ -288,7 +338,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     );
   }
 
-  // ── CATEGORY CHART ────────────────────────────────────────────────────────────
+  // ── CATEGORY CHART ─────────────────────────────────────────────────────────
   const expensesByCategory = useMemo(() => {
     type CategoryData = { name: string; value: number; color: string; icon: string };
     const categoryMap = new Map<string, CategoryData>();
@@ -303,8 +353,10 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
           existing.value += transaction.amount;
         } else {
           categoryMap.set(String(category.id), {
-            name: category.name, value: transaction.amount,
-            color: category.color, icon: category.icon || '📦',
+            name: category.name,
+            value: transaction.amount,
+            color: category.color,
+            icon: category.icon || '📦',
           });
         }
       });
@@ -321,28 +373,52 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
   const outerRadius = isMobile ? 80 : 115;
 
   return (
-    <div style={{
-      background: '#ffffff',
-      border: '1px solid rgba(0,0,0,0.06)',
-      borderRadius: '16px',
-      padding: '1.25rem',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-    }}>
+    // liquid-glass gives the frosted-card look; CSS vars inside it adapt to .dark automatically
+    <div
+      className="liquid-glass"
+      style={{
+        borderRadius: '16px',
+        padding: '1.25rem',
+      }}
+    >
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-        <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: '#111827', margin: 0 }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '1rem',
+      }}>
+        <h3 style={{
+          fontSize: '0.9rem',
+          fontWeight: 700,
+          color: 'var(--foreground)',
+          margin: 0,
+        }}>
           Expenses by category
         </h3>
-        <div style={{ background: '#f3f4f6', borderRadius: '10px', padding: '3px', display: 'flex', gap: '2px' }}>
+
+        {/* Chart type toggle — uses --muted / --card CSS vars */}
+        <div style={{
+          background: 'var(--muted)',
+          borderRadius: '10px',
+          padding: '3px',
+          display: 'flex',
+          gap: '2px',
+        }}>
           {(['pie', 'bar'] as const).map((type) => (
             <button
               key={type}
               onClick={() => setChartType(type)}
               style={{
-                padding: '4px 12px', fontSize: '0.78rem', fontWeight: 600,
-                borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-                background: chartType === type ? '#ffffff' : 'transparent',
-                color: chartType === type ? '#111827' : '#9ca3af',
+                padding: '4px 12px',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                borderRadius: '8px',
+                border: 'none',
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                background: chartType === type ? 'var(--card)' : 'transparent',
+                color: chartType === type ? 'var(--foreground)' : 'var(--muted-foreground)',
                 boxShadow: chartType === type ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
               }}
             >
@@ -352,27 +428,45 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </div>
       </div>
 
+      {/* ── DONUT CHART ───────────────────────────────────────────────────── */}
       {chartType === 'pie' && expensesByCategory.length > 0 && (
         <div>
-          {/* Donut */}
           <div style={{ width: '100%', height: isMobile ? 180 : 240 }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={expensesByCategory} cx="50%" cy="50%"
-                  innerRadius={innerRadius} outerRadius={outerRadius}
-                  paddingAngle={3} dataKey="value" animationDuration={800}>
+                <Pie
+                  data={expensesByCategory}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={innerRadius}
+                  outerRadius={outerRadius}
+                  paddingAngle={3}
+                  dataKey="value"
+                  animationDuration={800}
+                >
                   {expensesByCategory.map((entry, index) => (
                     <Cell key={index} fill={entry.color} style={{ cursor: 'pointer' }} />
                   ))}
                 </Pie>
-                <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle"
-                  style={{ fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700, fill: '#111827' }}>
+                {/* Center label — color via CSS var so it flips in dark mode */}
+                <text
+                  x="50%"
+                  y="50%"
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  style={{
+                    fontSize: isMobile ? '1rem' : '1.1rem',
+                    fontWeight: 700,
+                    fill: 'var(--foreground)',
+                  }}
+                >
                   €{total.toLocaleString('en-US')}
                 </text>
                 <Tooltip content={<CategoryTooltip />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
+
           {/* Legend rows */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '0.5rem' }}>
             {expensesByCategory.map((item) => {
@@ -381,27 +475,45 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
                 <div
                   key={item.name}
                   style={{
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '7px 10px', borderRadius: '8px', background: '#f9fafb',
-                    cursor: 'default', transition: 'background 0.15s',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    padding: '7px 10px',
+                    borderRadius: '8px',
+                    // --accent is the hover-ready muted surface in both themes
+                    background: 'var(--accent)',
+                    cursor: 'default',
+                    transition: 'background 0.15s',
                   }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = '#f3f4f6')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = '#f9fafb')}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--muted)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--accent)')}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: item.color }} />
+                    <div style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: '50%',
+                      flexShrink: 0,
+                      background: item.color,
+                    }} />
                     <span style={{
-                      fontSize: '0.8rem', fontWeight: 500, color: '#374151',
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      fontSize: '0.8rem',
+                      fontWeight: 500,
+                      color: 'var(--foreground)',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
                     }}>
                       {item.icon} {item.name}
                     </span>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '12px' }}>
-                    <p style={{ fontSize: '0.82rem', fontWeight: 700, color: '#111827', margin: 0 }}>
+                    <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>
                       €{item.value.toLocaleString('en-US')}
                     </p>
-                    <p style={{ fontSize: '0.72rem', color: '#9ca3af', margin: 0 }}>{percent}%</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', margin: 0 }}>
+                      {percent}%
+                    </p>
                   </div>
                 </div>
               );
@@ -410,13 +522,26 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </div>
       )}
 
+      {/* ── BAR CHART ─────────────────────────────────────────────────────── */}
       {chartType === 'bar' && expensesByCategory.length > 0 && (
         <ResponsiveContainer width="100%" height={isMobile ? 200 : 300}>
-          <BarChart data={expensesByCategory} margin={{ top: 5, right: 5, left: 0, bottom: 50 }}>
+          <BarChart
+            data={expensesByCategory}
+            margin={{ top: 5, right: 5, left: 0, bottom: 50 }}
+          >
             <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
-            <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#9ca3af' }}
-              angle={-35} textAnchor="end" interval={0} stroke="transparent" />
-            <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} stroke="transparent" />
+            <XAxis
+              dataKey="name"
+              tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any}
+              angle={-35}
+              textAnchor="end"
+              interval={0}
+              stroke="transparent"
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any}
+              stroke="transparent"
+            />
             <Tooltip content={<CategoryTooltip />} />
             <Bar dataKey="value" radius={[6, 6, 0, 0]} animationDuration={800}>
               {expensesByCategory.map((entry, index) => (
@@ -427,9 +552,18 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </ResponsiveContainer>
       )}
 
+      {/* Empty state — uses animate-subtle-pulse on the icon for a living feel */}
       {expensesByCategory.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '3rem 1rem', color: '#9ca3af', fontSize: '0.85rem' }}>
-          No expense data for this period
+        <div style={{
+          textAlign: 'center',
+          padding: '3rem 1rem',
+          color: 'var(--muted-foreground)',
+          fontSize: '0.85rem',
+        }}>
+          <span className="animate-subtle-pulse" style={{ display: 'inline-block', fontSize: '1.5rem', marginBottom: '0.5rem' }}>
+            💸
+          </span>
+          <p style={{ margin: 0 }}>No expense data for this period</p>
         </div>
       )}
     </div>

@@ -16,7 +16,8 @@
     <!-- iOS Specific Meta Tags -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- "default" invece di "black-translucent": la status bar NON si sovrappone al layout -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Budget" />
 
     <!-- Apple Touch Icons -->
@@ -36,17 +37,11 @@
       body {
         touch-action: pan-x pan-y;
         overscroll-behavior: none;
+        margin: 0;
+        padding: 0;
       }
 
-      /* Safe area insets per iPhone con notch */
-      body {
-        padding-top: env(safe-area-inset-top);
-        padding-bottom: env(safe-area-inset-bottom);
-        padding-left: env(safe-area-inset-left);
-        padding-right: env(safe-area-inset-right);
-      }
-
-      /* Simulate a Splash screen before react app mount */
+      /* Splash screen sul body — visibile solo prima che React monta */
       body {
         background-color: #09090b;
         background-image: url("/logo-gold.png");
@@ -56,11 +51,20 @@
         background-attachment: fixed;
       }
 
-      /* Ensure root content sits above the background */
+      /*
+       * #root gestisce safe area e background.
+       * Con status-bar-style "default" la status bar occupa il suo spazio
+       * naturale fuori dal viewport — non servono padding-top qui.
+       * Il padding bottom copre la home indicator di iPhone.
+       */
       #root {
         position: relative;
         z-index: 1;
-        background-color: transparent;
+        background-color: #09090b; /* solido, non transparent */
+        min-height: 100dvh;
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
       }
 
       /* Previeni zoom accidentale su iOS */
