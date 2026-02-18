@@ -129,8 +129,8 @@ const applySettingsToDocument = (newSettings: Settings) => {
 
   // Handle theme mode
   if (newSettings.theme === "system") {
-    // Resolve initial theme from media query (immediate), fallback to light
-    let initial: "light" | "dark" = "dark";
+    // FIX: fallback corretto a "light" invece che "dark"
+    let initial: "light" | "dark" = "light";
     if (typeof window !== "undefined" && window.matchMedia) {
       mediaQueryList = window.matchMedia("(prefers-color-scheme: dark)");
       initial = mediaQueryList.matches ? "dark" : "light";

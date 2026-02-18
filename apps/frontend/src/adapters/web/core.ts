@@ -224,6 +224,10 @@ export const COMMANDS: CommandMap = {
   create_budget_transaction: { method: "POST", path: "/budget/transactions" },
   update_budget_transaction: { method: "PUT", path: "/budget/transactions/:id" },
   delete_budget_transaction: { method: "DELETE", path: "/budget/transactions/:id" },
+  create_budget_category: { method: "POST", path: "/budget/categories" },
+  update_budget_category: { method: "PUT", path: "/budget/categories/:id" },
+  delete_budget_category: { method: "DELETE", path: "/budget/categories/:id" },
+
 
 };
 
