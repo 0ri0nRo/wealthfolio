@@ -79,6 +79,28 @@ struct UpdateTransactionRequest {
     notes: Option<String>,
 }
 
+// ── NEW: structs per le categorie ──────────────────────────────────────────
+#[derive(Debug, Deserialize)]
+struct CreateCategoryRequest {
+    name: String,
+    #[serde(rename = "type")]
+    category_type: String, // "income" o "expense"
+    color: String,
+    icon: Option<String>,
+    parent_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateCategoryRequest {
+    name: Option<String>,
+    #[serde(rename = "type")]
+    category_type: Option<String>,
+    color: Option<String>,
+    icon: Option<String>,
+    parent_id: Option<i64>,
+    is_active: Option<bool>,
+}
+
 async fn get_categories(
     State(state): State<Arc<AppState>>,
 ) -> ApiResult<Json<Vec<BudgetCategory>>> {
@@ -95,6 +117,121 @@ async fn get_categories(
     .load(&mut conn)
     .map_err(|e| anyhow::anyhow!("DB error: {}", e))?;
     Ok(Json(categories))
+}
+
+// ── NEW: create category ────────────────────────────────────────────────────
+async fn create_category(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CreateCategoryRequest>,
+) -> ApiResult<Json<BudgetCategory>> {
+    let mut conn = state
+        .pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
+
+    diesel::sql_query(
+        "INSERT INTO budget_categories (name, type, color, icon, parent_id, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))",
+    )
+    .bind::<Text, _>(&payload.name)
+    .bind::<Text, _>(&payload.category_type)
+    .bind::<Text, _>(&payload.color)
+    .bind::<Nullable<Text>, _>(payload.icon.as_deref())
+    .bind::<Nullable<BigInt>, _>(payload.parent_id)
+    .execute(&mut conn)
+    .map_err(|e| anyhow::anyhow!("Insert error: {}", e))?;
+
+    #[derive(QueryableByName)]
+    struct LastId {
+        #[diesel(sql_type = BigInt)]
+        id: i64,
+    }
+
+    let id: i64 = diesel::sql_query("SELECT last_insert_rowid() as id")
+        .get_result::<LastId>(&mut conn)
+        .map(|r| r.id)
+        .map_err(|e| anyhow::anyhow!("Get ID error: {}", e))?;
+
+    // Ritorna la categoria appena creata
+    let category: BudgetCategory = diesel::sql_query(
+        "SELECT id, name, type, color, icon, parent_id, is_active, created_at, updated_at
+         FROM budget_categories
+         WHERE id = ?",
+    )
+    .bind::<BigInt, _>(id)
+    .get_result(&mut conn)
+    .map_err(|e| anyhow::anyhow!("Fetch error: {}", e))?;
+
+    Ok(Json(category))
+}
+
+// ── NEW: update category ────────────────────────────────────────────────────
+async fn update_category(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(payload): Json<UpdateCategoryRequest>,
+) -> ApiResult<StatusCode> {
+    let mut conn = state
+        .pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
+
+    let mut updates = vec![];
+
+    if let Some(ref name) = payload.name {
+        updates.push(format!("name = '{}'", name.replace("'", "''")));
+    }
+    if let Some(ref typ) = payload.category_type {
+        updates.push(format!("type = '{}'", typ.replace("'", "''")));
+    }
+    if let Some(ref color) = payload.color {
+        updates.push(format!("color = '{}'", color.replace("'", "''")));
+    }
+    if let Some(ref icon) = payload.icon {
+        updates.push(format!("icon = '{}'", icon.replace("'", "''")));
+    }
+    if let Some(parent_id) = payload.parent_id {
+        updates.push(format!("parent_id = {}", parent_id));
+    }
+    if let Some(is_active) = payload.is_active {
+        updates.push(format!("is_active = {}", if is_active { 1 } else { 0 }));
+    }
+    updates.push("updated_at = datetime('now')".to_string());
+
+    if updates.is_empty() {
+        return Ok(StatusCode::BAD_REQUEST);
+    }
+
+    let query = format!(
+        "UPDATE budget_categories SET {} WHERE id = {}",
+        updates.join(", "),
+        id
+    );
+
+    diesel::sql_query(&query)
+        .execute(&mut conn)
+        .map_err(|e| anyhow::anyhow!("Update error: {}", e))?;
+
+    Ok(StatusCode::OK)
+}
+
+// ── NEW: delete category (soft delete) ─────────────────────────────────────
+async fn delete_category(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> ApiResult<StatusCode> {
+    let mut conn = state
+        .pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
+
+    // Soft delete: setta is_active = 0
+    diesel::sql_query("UPDATE budget_categories SET is_active = 0, updated_at = datetime('now') WHERE id = ?")
+        .bind::<BigInt, _>(id)
+        .execute(&mut conn)
+        .map_err(|e| anyhow::anyhow!("Delete error: {}", e))?;
+
+    Ok(StatusCode::OK)
 }
 
 async fn get_transactions(
@@ -317,7 +454,14 @@ async fn get_summary(
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
-        .route("/budget/categories", get(get_categories))
+        .route(
+            "/budget/categories",
+            get(get_categories).post(create_category),
+        )
+        .route(
+            "/budget/categories/{id}",
+            put(update_category).delete(delete_category),
+        )
         .route(
             "/budget/transactions",
             get(get_transactions).post(create_transaction),

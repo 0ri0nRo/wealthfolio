@@ -20,7 +20,6 @@ export const useBudget = (month: Date) => {
     setLoading(true);
     setError(null);
     try {
-      // Calcola gli ultimi 12 mesi
       const now = new Date();
       const startDate = new Date(now.getFullYear(), now.getMonth() - 11, 1);
 
@@ -34,7 +33,6 @@ export const useBudget = (month: Date) => {
           month: month.getMonth() + 1,
           year: month.getFullYear(),
         }),
-        // Carica tutte le transazioni degli ultimi 12 mesi
         Promise.all(
           Array.from({ length: 12 }, (_, i) => {
             const d = new Date(startDate);
@@ -47,10 +45,8 @@ export const useBudget = (month: Date) => {
         ).then(results => results.flat()),
       ]);
 
-      // JOIN client-side delle categorie
       const categoriesMap = new Map(cats.map((c: BudgetCategory) => [String(c.id), c]));
 
-      // Aggiungi l'oggetto category completo a ogni transazione
       const enrichedTxns = txns.map((txn: any) => ({
         ...txn,
         category: categoriesMap.get(String(txn.categoryId)) || undefined,
@@ -61,16 +57,13 @@ export const useBudget = (month: Date) => {
         category: categoriesMap.get(String(txn.categoryId)) || undefined,
       }));
 
-      // Calcola categoryBreakdown per il summary
       const categoryBreakdown = Array.from(
         enrichedTxns
           .filter((t: BudgetTransaction) => t.type === 'expense')
           .reduce((acc: Map<string, any>, txn: BudgetTransaction) => {
             if (!txn.category) return acc;
-
             const key = String(txn.categoryId);
             const existing = acc.get(key);
-
             if (existing) {
               existing.total += txn.amount;
               existing.transactions += 1;
@@ -92,7 +85,6 @@ export const useBudget = (month: Date) => {
         percentage: number;
       }>;
 
-      // Calcola le percentuali
       const totalExpenses = sum.totalExpenses || 0.01;
       categoryBreakdown.forEach((item: any) => {
         item.percentage = (item.total / totalExpenses) * 100;
@@ -159,6 +151,64 @@ export const useBudget = (month: Date) => {
     }
   };
 
+  // ── NEW: funzioni per gestire le categorie ────────────────────────────────
+  const createCategory = async (data: {
+    name: string;
+    type: 'income' | 'expense';
+    color: string;
+    icon?: string;
+    parentId?: number;
+  }) => {
+    try {
+      await invoke('create_budget_category', {
+        name: data.name,
+        type: data.type,
+        color: data.color,
+        icon: data.icon || null,
+        parentId: data.parentId || null,
+      });
+      await fetchData();
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Error creating category');
+    }
+  };
+
+  const updateCategory = async (
+    id: number,
+    data: {
+      name?: string;
+      type?: 'income' | 'expense';
+      color?: string;
+      icon?: string;
+      parentId?: number;
+      isActive?: boolean;
+    }
+  ) => {
+    try {
+      await invoke('update_budget_category', {
+        id,
+        name: data.name,
+        categoryType: data.type ?? null,
+        color: data.color,
+        icon: data.icon,
+        parentId: data.parentId,
+        isActive: data.isActive,
+      });
+      await fetchData();
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Error updating category');
+    }
+  };
+
+  const deleteCategory = async (id: number) => {
+    try {
+      await invoke('delete_budget_category', { id });
+      await fetchData();
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Error deleting category');
+    }
+  };
+
   return {
     transactions,
     allTransactions,
@@ -170,6 +220,10 @@ export const useBudget = (month: Date) => {
     createTransaction,
     updateTransaction,
     deleteTransaction,
+    // NEW exports
+    createCategory,
+    updateCategory,
+    deleteCategory,
   };
 };
 

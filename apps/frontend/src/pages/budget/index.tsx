@@ -1,13 +1,14 @@
 // src/pages/Budget/index.tsx
 import { useBudget } from '@/hooks/useBudget';
 import { BudgetTransaction } from '@/lib/types/budget';
-import { Plus, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { Plus, Tag, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { AddTransactionModal } from "./components/add-transaction-modal";
 import { BudgetChart } from "./components/budget-chart";
 import { BudgetInsights } from "./components/budget-insights";
 import { MonthSelector } from "./components/month-selector";
 import { TransactionList } from "./components/transaction-list";
+import { ManageCategoriesModal } from "./components/ManageCategoriesModal";
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(
@@ -24,6 +25,7 @@ function useIsMobile(breakpoint = 768) {
 export const BudgetPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
+  const [showCategoriesModal, setShowCategoriesModal] = useState<boolean>(false);
   const [editingTransaction, setEditingTransaction] = useState<BudgetTransaction | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'transactions'>('overview');
   const isMobile = useIsMobile();
@@ -32,6 +34,7 @@ export const BudgetPage: React.FC = () => {
     transactions, allTransactions, categories,
     summary, loading, error,
     createTransaction, deleteTransaction, updateTransaction, refresh,
+    createCategory, updateCategory, deleteCategory,
   } = useBudget(selectedMonth);
 
   const actualBalance = (summary?.totalIncome ?? 0) - (summary?.totalExpenses ?? 0);
@@ -105,12 +108,6 @@ export const BudgetPage: React.FC = () => {
     <div style={{ minHeight: '100vh', background: 'var(--background)', fontFamily: 'var(--font-sans)' }}>
 
       {/* ── NAV ─────────────────────────────────────────────────────────────── */}
-      {/*
-        FIX iOS: paddingTop usa env(safe-area-inset-top) per spingere il contenuto
-        sotto la status bar di iPhone (notch / Dynamic Island).
-        Il `top: 0` dello sticky + il padding fanno sì che la nav occupi
-        correttamente anche l'area della status bar, evitando sovrapposizioni.
-      */}
       <div style={{
         position: 'sticky',
         top: 0,
@@ -119,7 +116,6 @@ export const BudgetPage: React.FC = () => {
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
         borderBottom: '1px solid var(--border)',
-        /* safe area top: spinge il contenuto nav sotto la status bar */
         paddingTop: 'env(safe-area-inset-top, 0px)',
       }}>
         <div style={{
@@ -157,6 +153,21 @@ export const BudgetPage: React.FC = () => {
             {!isMobile && (
               <MonthSelector selectedMonth={selectedMonth} onChange={(d: Date) => setSelectedMonth(d)} />
             )}
+            
+            {/* Pulsante Categorie */}
+            <button
+              onClick={() => setShowCategoriesModal(true)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: isMobile ? 0 : '0.35rem',
+                padding: isMobile ? '7px 10px' : '7px 14px',
+                background: 'var(--muted)', color: 'var(--foreground)', border: 'none',
+                borderRadius: '10px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer',
+              }}
+            >
+              <Tag size={14} />
+              {!isMobile && 'Categories'}
+            </button>
+
             <button
               onClick={() => setShowAddModal(true)}
               style={{
@@ -349,12 +360,23 @@ export const BudgetPage: React.FC = () => {
         )}
       </div>
 
+      {/* Modals */}
       {showAddModal && (
         <AddTransactionModal
           categories={categories || []}
           onClose={() => { setShowAddModal(false); setEditingTransaction(null); }}
           onSave={handleAddTransaction}
           initialData={editingTransaction || undefined}
+        />
+      )}
+
+      {showCategoriesModal && (
+        <ManageCategoriesModal
+          categories={categories || []}
+          onClose={() => setShowCategoriesModal(false)}
+          onCreate={createCategory}
+          onUpdate={updateCategory}
+          onDelete={deleteCategory}
         />
       )}
     </div>
