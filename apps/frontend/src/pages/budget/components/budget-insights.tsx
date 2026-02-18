@@ -39,21 +39,17 @@ function useIsMobileInsights(bp = 768) {
   return is;
 }
 
-// ── Tooltip generico ──────────────────────────────────────────────────────────
+// ── Tooltip — liquid-glass + CSS vars ────────────────────────────────────────
 const ChartTooltip = ({ active, payload, label, prefix = '€', suffix = '' }: any) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{
-      background: 'rgba(255,255,255,0.97)',
-      border: '1px solid rgba(0,0,0,0.06)',
-      borderRadius: '10px',
-      padding: '9px 13px',
-      boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-      fontSize: '12px',
-    }}>
-      {label && <p style={{ color: '#6b7280', marginBottom: 4, fontWeight: 500 }}>{label}</p>}
+    <div
+      className="liquid-glass"
+      style={{ borderRadius: '10px', padding: '9px 13px', fontSize: '12px' }}
+    >
+      {label && <p style={{ color: 'var(--muted-foreground)', marginBottom: 4, fontWeight: 500 }}>{label}</p>}
       {payload.map((p: any, i: number) => (
-        <p key={i} style={{ color: p.color ?? p.fill ?? '#111827', margin: '2px 0', fontWeight: 600 }}>
+        <p key={i} style={{ color: p.color ?? p.fill ?? 'var(--foreground)', margin: '2px 0', fontWeight: 600 }}>
           {p.name}: {prefix}{typeof p.value === 'number' ? p.value.toLocaleString('en-US', { minimumFractionDigits: 0 }) : p.value}{suffix}
         </p>
       ))}
@@ -61,32 +57,36 @@ const ChartTooltip = ({ active, payload, label, prefix = '€', suffix = '' }: a
   );
 };
 
-// ── Card wrapper ──────────────────────────────────────────────────────────────
+// ── Card wrapper — CSS vars ───────────────────────────────────────────────────
 const Card: React.FC<{ title: string; subtitle?: string; children: React.ReactNode; minHeight?: number }> = ({
   title, subtitle, children, minHeight = 260,
 }) => (
   <div style={{
-    background: '#ffffff',
-    border: '1px solid rgba(0,0,0,0.06)',
+    background: 'var(--card)',
+    border: '1px solid var(--border)',
     borderRadius: '16px',
     padding: '1.1rem 1.25rem',
     boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
   }}>
     <div style={{ marginBottom: '0.9rem' }}>
-      <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: '#111827', margin: 0 }}>{title}</h3>
-      {subtitle && <p style={{ fontSize: '0.72rem', color: '#9ca3af', margin: '2px 0 0', fontWeight: 500 }}>{subtitle}</p>}
+      <h3 style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>{title}</h3>
+      {subtitle && <p style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', margin: '2px 0 0', fontWeight: 500 }}>{subtitle}</p>}
     </div>
     <div style={{ minHeight }}>{children}</div>
   </div>
 );
 
-// ── Stat badge inline ─────────────────────────────────────────────────────────
+// ── Stat badge ────────────────────────────────────────────────────────────────
 const Badge: React.FC<{ value: string; positive?: boolean }> = ({ value, positive }) => (
   <span style={{
     fontSize: '0.7rem', fontWeight: 700,
     padding: '2px 7px', borderRadius: '999px',
-    background: positive === undefined ? '#f3f4f6' : positive ? '#f0fdf4' : '#fef2f2',
-    color:      positive === undefined ? '#6b7280'  : positive ? '#16a34a' : '#dc2626',
+    background: positive === undefined
+      ? 'var(--muted)'
+      : positive
+        ? 'color-mix(in srgb, #16a34a 12%, var(--background))'
+        : 'color-mix(in srgb, #dc2626 12%, var(--background))',
+    color: positive === undefined ? 'var(--muted-foreground)' : positive ? '#16a34a' : '#dc2626',
   }}>{value}</span>
 );
 
@@ -102,11 +102,11 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
   const savingsRate = totalIncome > 0 ? Math.round(((totalIncome - totalExpenses) / totalIncome) * 100) : 0;
   const expenseRate = 100 - Math.max(savingsRate, 0);
   const radialData = [
-    { name: 'Expenses', value: expenseRate,  fill: '#ef4444' },
+    { name: 'Expenses', value: expenseRate,            fill: '#ef4444' },
     { name: 'Savings',  value: Math.max(savingsRate, 0), fill: '#16a34a' },
   ];
 
-  // ── 2. Daily spending — last 30 days ─────────────────────────────────────
+  // ── 2. Daily spending — last 30 days ──────────────────────────────────────
   const dailySpending = useMemo(() => {
     const now = new Date();
     const days: { label: string; amount: number; date: Date }[] = [];
@@ -132,7 +132,7 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
     ? dailySpending.reduce((s, d) => s + d.amount, 0) / dailySpending.length
     : 0;
 
-  // ── 3. Monthly income vs expenses (last 6 months) ─────────────────────────
+  // ── 3. Monthly income vs expenses (last 6 months) ────────────────────────
   const monthlyComparison = useMemo(() => {
     const now = new Date();
     return Array.from({ length: 6 }, (_, i) => {
@@ -154,7 +154,7 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
     });
   }, [allTransactions]);
 
-  // ── 4. Top categories — current month ────────────────────────────────────
+  // ── 4. Top categories — current month ─────────────────────────────────────
   const topCategories = useMemo(() => {
     const map = new Map<string, { name: string; icon: string; amount: number; count: number }>();
     transactions
@@ -194,6 +194,9 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
 
   const maxDow = Math.max(...byDayOfWeek.map((d) => d.avg), 1);
 
+  // Axis tick style helper (Recharts requires inline style object with `fill`)
+  const axisTick = { fontSize: 10, fill: 'var(--muted-foreground)' } as any;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
@@ -212,30 +215,30 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
                   data={radialData}
                   barSize={12}
                 >
-                  <RadialBar dataKey="value" background={{ fill: '#f3f4f6' }} cornerRadius={6} />
+                  {/* Track uses --muted for both themes */}
+                  <RadialBar dataKey="value" background={{ fill: 'var(--muted)' }} cornerRadius={6} />
                 </RadialBarChart>
               </ResponsiveContainer>
-              {/* Centre label */}
               <div style={{
                 position: 'absolute', inset: 0,
                 display: 'flex', flexDirection: 'column',
                 alignItems: 'center', justifyContent: 'center',
                 pointerEvents: 'none',
               }}>
-                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: savingsRate >= 0 ? '#111827' : '#dc2626', letterSpacing: '-0.04em' }}>
+                <span style={{ fontSize: '1.75rem', fontWeight: 800, color: savingsRate >= 0 ? 'var(--foreground)' : '#dc2626', letterSpacing: '-0.04em' }}>
                   {savingsRate}%
                 </span>
-                <span style={{ fontSize: '0.68rem', color: '#9ca3af', fontWeight: 500 }}>saved</span>
+                <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>saved</span>
               </div>
             </div>
             <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.25rem' }}>
               {[
-                { color: '#ef4444', label: 'Spent',  pct: expenseRate  },
-                { color: '#16a34a', label: 'Saved',  pct: Math.max(savingsRate, 0) },
+                { color: '#ef4444', label: 'Spent', pct: expenseRate },
+                { color: '#16a34a', label: 'Saved', pct: Math.max(savingsRate, 0) },
               ].map(({ color, label, pct }) => (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-                  <span style={{ fontSize: '0.72rem', color: '#6b7280' }}>{label} {pct}%</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>{label} {pct}%</span>
                 </div>
               ))}
             </div>
@@ -247,10 +250,11 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
           <ResponsiveContainer width="100%" height={isMobile ? 155 : 195}>
             <BarChart data={monthlyComparison} barCategoryGap="28%" margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.07} vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={42}
+              <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
+              <YAxis tick={axisTick} axisLine={false} tickLine={false} width={42}
                 tickFormatter={(v) => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
               <Tooltip content={<ChartTooltip />} />
+              {/* Keep the same pastel bar colours — readable in both themes */}
               <Bar dataKey="income"   name="Income"   fill="#bbf7d0" radius={[4, 4, 0, 0]} />
               <Bar dataKey="expenses" name="Expenses" fill="#fca5a5" radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -266,17 +270,16 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
           <ResponsiveContainer width="100%" height={isMobile ? 155 : 195}>
             <LineChart data={dailySpending} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.07} vertical={false} />
-              <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#9ca3af' }} axisLine={false} tickLine={false}
-                interval={4} />
-              <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={42}
+              <XAxis dataKey="label" tick={{ ...axisTick, fontSize: 9 }} axisLine={false} tickLine={false} interval={4} />
+              <YAxis tick={axisTick} axisLine={false} tickLine={false} width={42}
                 tickFormatter={(v) => `€${v}`} />
               <Tooltip content={<ChartTooltip />} />
               <ReferenceLine
                 y={avgDailySpend}
-                stroke="#9ca3af"
+                stroke="var(--muted-foreground)"
                 strokeDasharray="4 3"
                 strokeWidth={1.5}
-                label={{ value: `avg €${Math.round(avgDailySpend)}`, position: 'right', fontSize: 9, fill: '#9ca3af' }}
+                label={{ value: `avg €${Math.round(avgDailySpend)}`, position: 'right', fontSize: 9, fill: 'var(--muted-foreground)' }}
               />
               <Line
                 type="monotone" dataKey="amount" name="Spent"
@@ -297,9 +300,9 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{
                     fontSize: '0.72rem', fontWeight: 600, width: 28, flexShrink: 0,
-                    color: isWeekend ? '#6366f1' : '#6b7280',
+                    color: isWeekend ? '#6366f1' : 'var(--muted-foreground)',
                   }}>{label}</span>
-                  <div style={{ flex: 1, background: '#f3f4f6', borderRadius: '999px', height: 7, overflow: 'hidden' }}>
+                  <div style={{ flex: 1, background: 'var(--muted)', borderRadius: '999px', height: 7, overflow: 'hidden' }}>
                     <div style={{
                       height: '100%', borderRadius: '999px',
                       width: `${barPct}%`,
@@ -309,7 +312,7 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
                       transition: 'width 0.5s ease',
                     }} />
                   </div>
-                  <span style={{ fontSize: '0.7rem', color: '#9ca3af', fontWeight: 600, width: 38, textAlign: 'right', flexShrink: 0 }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', fontWeight: 600, width: 38, textAlign: 'right', flexShrink: 0 }}>
                     {avg > 0 ? `€${avg}` : '—'}
                   </span>
                 </div>
@@ -322,39 +325,36 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
       {/* Row 3: Top categories breakdown */}
       <Card title="Top Categories" subtitle="This month · by spend" minHeight={0}>
         {topCategories.length === 0 ? (
-          <p style={{ color: '#9ca3af', fontSize: '0.82rem', textAlign: 'center', padding: '1.5rem 0' }}>
+          <p style={{ color: 'var(--muted-foreground)', fontSize: '0.82rem', textAlign: 'center', padding: '1.5rem 0' }}>
             No expenses this month
           </p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {topCategories.map((cat, idx) => (
               <div key={cat.name}>
-                {/* Label row */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
                     <span style={{
                       width: 24, height: 24, borderRadius: '7px',
-                      background: '#f3f4f6', display: 'inline-flex',
+                      background: 'var(--muted)', display: 'inline-flex',
                       alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem',
                     }}>{cat.icon}</span>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#374151' }}>{cat.name}</span>
-                    <span style={{ fontSize: '0.68rem', color: '#9ca3af' }}>{cat.count} transactions</span>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--foreground)' }}>{cat.name}</span>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)' }}>{cat.count} transactions</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#111827' }}>
+                    <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--foreground)' }}>
                       €{cat.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
                     </span>
                     <Badge value={`${cat.pct.toFixed(0)}%`} />
                   </div>
                 </div>
                 {/* Progress bar */}
-                <div style={{ background: '#f3f4f6', borderRadius: '999px', height: 5, overflow: 'hidden' }}>
+                <div style={{ background: 'var(--muted)', borderRadius: '999px', height: 5, overflow: 'hidden' }}>
                   <div style={{
                     height: '100%', borderRadius: '999px',
                     width: `${cat.pct}%`,
-                    background: [
-                      '#f97316', '#fb923c', '#fdba74', '#fed7aa', '#ffedd5',
-                    ][idx] ?? '#f97316',
+                    background: ['#f97316', '#fb923c', '#fdba74', '#fed7aa', '#ffedd5'][idx] ?? '#f97316',
                     transition: 'width 0.6s ease',
                   }} />
                 </div>
