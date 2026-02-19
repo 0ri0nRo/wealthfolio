@@ -1209,6 +1209,45 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       url = url.replace(":id", id.toString());
       break;
     }
+
+    // ── NEW: Budget Categories ─────────────────────────────────────────────
+    case "create_budget_category": {
+      const { name, type, color, icon, parentId } = payload as {
+        name: string;
+        type: string;
+        color: string;
+        icon?: string | null;
+        parentId?: number | null;
+      };
+      body = JSON.stringify({
+        name,
+        type,
+        color,
+        icon: icon || null,
+        parent_id: parentId || null,
+      });
+      break;
+    }
+    case "update_budget_category": {
+      const { id, ...data } = payload as { id: number | string } & Record<string, unknown>;
+      url = url.replace(":id", id.toString());
+
+      const snakeCaseData: any = {};
+      if (data.name) snakeCaseData.name = data.name;
+      if (data.type) snakeCaseData.type = data.type;
+      if (data.color) snakeCaseData.color = data.color;
+      if (data.icon !== undefined) snakeCaseData.icon = data.icon;
+      if (data.parentId !== undefined) snakeCaseData.parent_id = data.parentId;
+      if (data.isActive !== undefined) snakeCaseData.is_active = data.isActive;
+
+      body = JSON.stringify(snakeCaseData);
+      break;
+    }
+    case "delete_budget_category": {
+      const { id } = payload as { id: number | string };
+      url = url.replace(":id", id.toString());
+      break;
+    }
   }
 
   const headers: HeadersInit = {};
