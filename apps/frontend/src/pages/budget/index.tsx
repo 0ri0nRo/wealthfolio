@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { AddTransactionModal } from "./components/add-transaction-modal";
 import { BudgetChart } from "./components/budget-chart";
 import { BudgetInsights } from "./components/budget-insights";
+import { ExportModal } from "./components/ExportModal";
 import { ManageCategoriesModal } from "./components/ManageCategoriesModal";
 import { MonthSelector } from "./components/month-selector";
 import { TransactionList } from "./components/transaction-list";
@@ -40,6 +41,7 @@ export const BudgetPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [showCategoriesModal, setShowCategoriesModal] = useState<boolean>(false);
+  const [showExportModal, setShowExportModal] = useState<boolean>(false);
   const [editingTransaction, setEditingTransaction] = useState<BudgetTransaction | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const isMobile = useIsMobile();
@@ -484,9 +486,25 @@ export const BudgetPage: React.FC = () => {
               <h2 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>
                 All Transactions
               </h2>
-              <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>
-                {(transactions || []).length} total
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>
+                  {(transactions || []).length} total
+                </span>
+                <button
+                  onClick={() => setShowExportModal(true)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                    padding: '5px 12px',
+                    background: 'var(--foreground)', color: 'var(--background)',
+                    border: 'none', borderRadius: '8px',
+                    fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+                    fontFamily: 'var(--font-sans)',
+                    WebkitTapHighlightColor: 'transparent',
+                  }}
+                >
+                  ↓ Export
+                </button>
+              </div>
             </div>
             <TransactionList
               transactions={transactions || []}
@@ -498,6 +516,12 @@ export const BudgetPage: React.FC = () => {
       </div>
 
       {/* Modals */}
+      {showExportModal && (
+        <ExportModal
+          transactions={allTransactions || []}
+          onClose={() => setShowExportModal(false)}
+        />
+      )}
       {showAddModal && (
         <AddTransactionModal
           categories={categories || []}
