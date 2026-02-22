@@ -1,14 +1,15 @@
 // src/pages/Budget/index.tsx
 import { useBudget } from '@/hooks/useBudget';
 import { BudgetTransaction } from '@/lib/types/budget';
-import { Plus, Tag, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
+import { BarChart2, Plus, Tag, TrendingDown, TrendingUp, Wallet } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { AddTransactionModal } from "./components/add-transaction-modal";
 import { BudgetChart } from "./components/budget-chart";
 import { BudgetInsights } from "./components/budget-insights";
+import { ManageCategoriesModal } from "./components/ManageCategoriesModal";
 import { MonthSelector } from "./components/month-selector";
 import { TransactionList } from "./components/transaction-list";
-import { ManageCategoriesModal } from "./components/ManageCategoriesModal";
+import { YearlyStats } from "./components/YearlyStats";
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(
@@ -22,12 +23,14 @@ function useIsMobile(breakpoint = 768) {
   return isMobile;
 }
 
+type ActiveTab = 'overview' | 'transactions' | 'yearly';
+
 export const BudgetPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [showAddModal, setShowAddModal] = useState<boolean>(false);
   const [showCategoriesModal, setShowCategoriesModal] = useState<boolean>(false);
   const [editingTransaction, setEditingTransaction] = useState<BudgetTransaction | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'transactions'>('overview');
+  const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const isMobile = useIsMobile();
 
   const {
@@ -102,7 +105,32 @@ export const BudgetPage: React.FC = () => {
     },
   ];
 
-  const TABS: [string, string][] = [['overview', 'Overview'], ['transactions', 'Transactions']];
+  // ── Se la tab è "yearly" renderizza la pagina annuale direttamente ────────
+  if (activeTab === 'yearly') {
+    return (
+      <>
+        <YearlyStats
+          allTransactions={allTransactions || []}
+          onBack={() => setActiveTab('overview')}
+        />
+        {/* Modals rimangono accessibili anche in yearly view */}
+        {showAddModal && (
+          <AddTransactionModal
+            categories={categories || []}
+            onClose={() => { setShowAddModal(false); setEditingTransaction(null); }}
+            onSave={handleAddTransaction}
+            initialData={editingTransaction || undefined}
+          />
+        )}
+      </>
+    );
+  }
+
+  const TABS: [ActiveTab, string][] = [
+    ['overview', 'Overview'],
+    ['transactions', isMobile ? 'Trans.' : 'Transactions'],
+    ['yearly', isMobile ? 'Annual' : 'Annual Report'],
+  ];
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--background)', fontFamily: 'var(--font-sans)' }}>
@@ -132,18 +160,20 @@ export const BudgetPage: React.FC = () => {
               {TABS.map(([key, label]) => (
                 <span
                   key={key}
-                  onClick={() => setActiveTab(key as 'overview' | 'transactions')}
+                  onClick={() => setActiveTab(key)}
                   style={{
                     fontSize: '0.75rem', fontWeight: 600, whiteSpace: 'nowrap',
                     padding: isMobile ? '4px 8px' : '4px 12px',
                     borderRadius: '8px', cursor: 'pointer',
+                    display: 'inline-flex', alignItems: 'center', gap: '4px',
                     background: activeTab === key ? 'var(--card)' : 'transparent',
                     color: activeTab === key ? 'var(--foreground)' : 'var(--muted-foreground)',
                     boxShadow: activeTab === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
                     transition: 'all 0.15s',
                   }}
                 >
-                  {isMobile && key === 'transactions' ? 'Trans.' : label}
+                  {key === 'yearly' && <BarChart2 size={11} />}
+                  {label}
                 </span>
               ))}
             </div>
@@ -153,8 +183,7 @@ export const BudgetPage: React.FC = () => {
             {!isMobile && (
               <MonthSelector selectedMonth={selectedMonth} onChange={(d: Date) => setSelectedMonth(d)} />
             )}
-            
-            {/* Pulsante Categorie */}
+
             <button
               onClick={() => setShowCategoriesModal(true)}
               style={{
@@ -278,6 +307,42 @@ export const BudgetPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* Annual Report shortcut banner */}
+                <div
+                  onClick={() => setActiveTab('yearly')}
+                  style={{
+                    marginTop: '1.25rem',
+                    padding: '1rem 1.25rem',
+                    background: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '14px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s',
+                    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'var(--card)')}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                    <div style={{
+                      width: 36, height: 36, borderRadius: 10,
+                      background: 'color-mix(in srgb, #2563eb 12%, var(--background))',
+                      color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <BarChart2 size={16} />
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Annual Report</p>
+                      <p style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', margin: '2px 0 0' }}>
+                        Year-over-year trends, streaks, category breakdowns and more
+                      </p>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '1rem', color: 'var(--muted-foreground)' }}>→</span>
+                </div>
+
                 <div style={{ marginTop: '1.25rem' }}>
                   <BudgetInsights
                     transactions={transactions || []}
@@ -300,6 +365,35 @@ export const BudgetPage: React.FC = () => {
                   savings={investments}
                   fmtEur={fmtEur}
                 />
+
+                {/* Annual report shortcut — mobile */}
+                <div
+                  onClick={() => setActiveTab('yearly')}
+                  style={{
+                    padding: '0.9rem 1rem',
+                    background: 'var(--card)',
+                    border: '1px solid var(--border)',
+                    borderRadius: '14px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                    <div style={{
+                      width: 32, height: 32, borderRadius: 9,
+                      background: 'color-mix(in srgb, #2563eb 12%, var(--background))',
+                      color: '#2563eb', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <BarChart2 size={14} />
+                    </div>
+                    <div>
+                      <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Annual Report</p>
+                      <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>Statistiche annuali dettagliate</p>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: '1rem', color: 'var(--muted-foreground)' }}>→</span>
+                </div>
+
                 <div style={{
                   background: 'var(--card)', border: '1px solid var(--border)',
                   borderRadius: '16px', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
