@@ -18,6 +18,8 @@ import {
 interface BudgetChartProps {
   transactions: BudgetTransaction[];
   showLast12Months?: boolean;
+  /** Saldo cumulativo Buoni Pasto (calcolato su allTransactions in index.tsx) */
+  bpBalance?: number;
 }
 
 const isInvestment = (transaction: BudgetTransaction) => {
@@ -64,20 +66,14 @@ const PERIOD_LABEL: Record<TimePeriod, string> = {
   '6M': 'past 6 months', 'YTD': 'year to date', '1Y': 'past year', 'ALL': 'all time',
 };
 
-// ── TOOLTIPS ─────────────────────────────────────────────────────────────────
-// Uses .liquid-glass from global.css for the frosted-glass look in both
-// light and dark mode (CSS vars handle the background/border automatically).
+// ── TOOLTIPS ──────────────────────────────────────────────────────────────────
 
 const HeroTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div
       className="liquid-glass"
-      style={{
-        borderRadius: '10px',
-        padding: '10px 14px',
-        fontSize: '12px',
-      }}
+      style={{ borderRadius: '10px', padding: '10px 14px', fontSize: '12px' }}
     >
       <p style={{ color: 'var(--muted-foreground)', marginBottom: 4, fontWeight: 500 }}>{label}</p>
       {payload.map((p: any) => (
@@ -95,11 +91,7 @@ const CategoryTooltip = ({ active, payload }: any) => {
   return (
     <div
       className="liquid-glass"
-      style={{
-        borderRadius: '10px',
-        padding: '10px 14px',
-        fontSize: '12px',
-      }}
+      style={{ borderRadius: '10px', padding: '10px 14px', fontSize: '12px' }}
     >
       <p style={{ color: 'var(--foreground)', fontWeight: 600, margin: '0 0 2px' }}>
         {payload[0]?.payload?.name}
@@ -111,16 +103,17 @@ const CategoryTooltip = ({ active, payload }: any) => {
   );
 };
 
-// ── MAIN COMPONENT ────────────────────────────────────────────────────────────
+// ── MAIN COMPONENT ─────────────────────────────────────────────────────────────
 
 export const BudgetChart: React.FC<BudgetChartProps> = ({
   transactions = [],
   showLast12Months = false,
+  bpBalance,
 }) => {
   const [chartType, setChartType] = useState<'pie' | 'bar'>('pie');
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('1W');
 
-  // ── HERO CHART DATA ────────────────────────────────────────────────────────
+  // ── HERO CHART DATA ──────────────────────────────────────────────────────
   const heroChartData = useMemo(() => {
     if (!showLast12Months) return [];
 
@@ -198,21 +191,21 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     return { totalIncome, totalExpenses, balance, balancePct };
   }, [heroChartData]);
 
-  // ── HERO CHART RENDER ──────────────────────────────────────────────────────
+  // ── HERO CHART RENDER ────────────────────────────────────────────────────
   if (showLast12Months) {
     const isPositive = heroStats.balance >= 0;
-    // Gradient adapts automatically: green tint in light, fades to --background in dark
     const heroGradient = `linear-gradient(180deg, color-mix(in srgb, #16a34a 8%, var(--background)) 0%, var(--background) 70%)`;
+    const hasBp = bpBalance !== undefined;
+    const bpPositive = (bpBalance ?? 0) >= 0;
 
     return (
       <div style={{ background: heroGradient, position: 'relative' }}>
 
-        {/* Stats */}
+        {/* Stats row */}
         <div style={{ padding: '1.75rem 1.75rem 0' }}>
           <p style={{
             fontSize: '2.25rem',
             fontWeight: 700,
-            // animate-subtle-pulse only when income is 0 (no data yet)
             color: 'var(--foreground)',
             letterSpacing: '-0.03em',
             lineHeight: 1,
@@ -220,28 +213,39 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
           }}>
             €{heroStats.totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            {/* Balance badge — uses animate-subtle-pulse when exactly zero */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
             <span
               className={heroStats.balance === 0 ? 'animate-subtle-pulse' : ''}
-              style={{
-                fontSize: '0.82rem',
-                fontWeight: 600,
-                color: isPositive ? '#16a34a' : '#dc2626',
-              }}
+              style={{ fontSize: '0.82rem', fontWeight: 600, color: isPositive ? '#16a34a' : '#dc2626' }}
             >
               {isPositive ? '+' : ''}€{heroStats.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </span>
-            <span style={{
-              fontSize: '0.82rem',
-              fontWeight: 600,
-              color: isPositive ? '#16a34a' : '#dc2626',
-            }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isPositive ? '#16a34a' : '#dc2626' }}>
               {isPositive ? '+' : ''}{heroStats.balancePct.toFixed(2)}%
             </span>
             <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
               {PERIOD_LABEL[selectedPeriod]}
             </span>
+
+            {/* ── Buoni Pasto badge (cumulativo) ──────────────────────────── */}
+            {hasBp && (
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '0.78rem',
+                fontWeight: 700,
+                padding: '2px 9px',
+                borderRadius: '999px',
+                background: bpPositive
+                  ? 'color-mix(in srgb, #d97706 12%, var(--background))'
+                  : 'color-mix(in srgb, #dc2626 12%, var(--background))',
+                color: bpPositive ? '#d97706' : '#dc2626',
+                border: `1px solid ${bpPositive ? 'color-mix(in srgb, #d97706 25%, transparent)' : 'color-mix(in srgb, #dc2626 25%, transparent)'}`,
+              }}>
+                🎟️ {bpPositive ? '' : '-'}€{Math.abs(bpBalance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+            )}
           </div>
         </div>
 
@@ -313,6 +317,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
                 transition: 'all 0.15s ease',
                 background: selectedPeriod === period ? 'var(--foreground)' : 'transparent',
                 color: selectedPeriod === period ? 'var(--background)' : 'var(--muted-foreground)',
+                WebkitTapHighlightColor: 'transparent',
               }}
             >
               {period}
@@ -320,25 +325,50 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
           ))}
         </div>
 
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: '1.5rem', padding: '0 1.75rem 1.25rem' }}>
-          {[
-            { color: '#16a34a', label: 'Income', value: heroStats.totalIncome },
-            { color: '#ef4444', label: 'Expenses', value: heroStats.totalExpenses },
-          ].map(({ color, label, value }) => (
-            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+        {/* Legend + BP cumulative note */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.5rem',
+          padding: '0 1.75rem 1.25rem',
+        }}>
+          <div style={{ display: 'flex', gap: '1.5rem' }}>
+            {[
+              { color: '#16a34a', label: 'Income', value: heroStats.totalIncome },
+              { color: '#ef4444', label: 'Expenses', value: heroStats.totalExpenses },
+            ].map(({ color, label, value }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+                <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
+                  {label} · €{value.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          {/* BP cumulative balance note */}
+          {hasBp && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#d97706' }} />
               <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
-                {label} · €{value.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                Buoni Pasto rimanenti · €{(bpBalance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
               </span>
             </div>
-          ))}
+          )}
         </div>
       </div>
     );
   }
 
   // ── CATEGORY CHART ─────────────────────────────────────────────────────────
+  const allExpensesTotal = useMemo(() => {
+    return transactions
+      .filter((t) => t.type === 'expense' && !isInvestment(t))
+      .reduce((sum, t) => sum + t.amount, 0);
+  }, [transactions]);
+
   const expensesByCategory = useMemo(() => {
     type CategoryData = { name: string; value: number; color: string; icon: string };
     const categoryMap = new Map<string, CategoryData>();
@@ -367,19 +397,15 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
       .map((item, index) => ({ ...item, color: COLORS[index % COLORS.length] }));
   }, [transactions]);
 
-  const total = expensesByCategory.reduce((sum, item) => sum + item.value, 0);
+  const total = allExpensesTotal;
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
   const innerRadius = isMobile ? 55 : 80;
   const outerRadius = isMobile ? 80 : 115;
 
   return (
-    // liquid-glass gives the frosted-card look; CSS vars inside it adapt to .dark automatically
     <div
       className="liquid-glass"
-      style={{
-        borderRadius: '16px',
-        padding: '1.25rem',
-      }}
+      style={{ borderRadius: '16px', padding: '1.25rem' }}
     >
       {/* Header */}
       <div style={{
@@ -388,22 +414,11 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         alignItems: 'center',
         marginBottom: '1rem',
       }}>
-        <h3 style={{
-          fontSize: '0.9rem',
-          fontWeight: 700,
-          color: 'var(--foreground)',
-          margin: 0,
-        }}>
+        <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>
           Expenses by category
         </h3>
-
-        {/* Chart type toggle — uses --muted / --card CSS vars */}
         <div style={{
-          background: 'var(--muted)',
-          borderRadius: '10px',
-          padding: '3px',
-          display: 'flex',
-          gap: '2px',
+          background: 'var(--muted)', borderRadius: '10px', padding: '3px', display: 'flex', gap: '2px',
         }}>
           {(['pie', 'bar'] as const).map((type) => (
             <button
@@ -428,7 +443,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </div>
       </div>
 
-      {/* ── DONUT CHART ───────────────────────────────────────────────────── */}
+      {/* ── DONUT CHART ─────────────────────────────────────────────────── */}
       {chartType === 'pie' && expensesByCategory.length > 0 && (
         <div>
           <div style={{ width: '100%', height: isMobile ? 180 : 240 }}>
@@ -436,8 +451,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
               <PieChart>
                 <Pie
                   data={expensesByCategory}
-                  cx="50%"
-                  cy="50%"
+                  cx="50%" cy="50%"
                   innerRadius={innerRadius}
                   outerRadius={outerRadius}
                   paddingAngle={3}
@@ -448,17 +462,10 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
                     <Cell key={index} fill={entry.color} style={{ cursor: 'pointer' }} />
                   ))}
                 </Pie>
-                {/* Center label — color via CSS var so it flips in dark mode */}
                 <text
-                  x="50%"
-                  y="50%"
-                  textAnchor="middle"
-                  dominantBaseline="middle"
-                  style={{
-                    fontSize: isMobile ? '1rem' : '1.1rem',
-                    fontWeight: 700,
-                    fill: 'var(--foreground)',
-                  }}
+                  x="50%" y="50%"
+                  textAnchor="middle" dominantBaseline="middle"
+                  style={{ fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700, fill: 'var(--foreground)' }}
                 >
                   €{total.toLocaleString('en-US')}
                 </text>
@@ -475,35 +482,16 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
                 <div
                   key={item.name}
                   style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '7px 10px',
-                    borderRadius: '8px',
-                    // --accent is the hover-ready muted surface in both themes
-                    background: 'var(--accent)',
-                    cursor: 'default',
-                    transition: 'background 0.15s',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '7px 10px', borderRadius: '8px',
+                    background: 'var(--accent)', cursor: 'default', transition: 'background 0.15s',
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--muted)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--accent)')}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
-                    <div style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: '50%',
-                      flexShrink: 0,
-                      background: item.color,
-                    }} />
-                    <span style={{
-                      fontSize: '0.8rem',
-                      fontWeight: 500,
-                      color: 'var(--foreground)',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: item.color }} />
+                    <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {item.icon} {item.name}
                     </span>
                   </div>
@@ -511,9 +499,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
                     <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>
                       €{item.value.toLocaleString('en-US')}
                     </p>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', margin: 0 }}>
-                      {percent}%
-                    </p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', margin: 0 }}>{percent}%</p>
                   </div>
                 </div>
               );
@@ -522,26 +508,17 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </div>
       )}
 
-      {/* ── BAR CHART ─────────────────────────────────────────────────────── */}
+      {/* ── BAR CHART ───────────────────────────────────────────────────── */}
       {chartType === 'bar' && expensesByCategory.length > 0 && (
         <ResponsiveContainer width="100%" height={isMobile ? 200 : 300}>
-          <BarChart
-            data={expensesByCategory}
-            margin={{ top: 5, right: 5, left: 0, bottom: 50 }}
-          >
+          <BarChart data={expensesByCategory} margin={{ top: 5, right: 5, left: 0, bottom: 50 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
             <XAxis
               dataKey="name"
               tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any}
-              angle={-35}
-              textAnchor="end"
-              interval={0}
-              stroke="transparent"
+              angle={-35} textAnchor="end" interval={0} stroke="transparent"
             />
-            <YAxis
-              tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any}
-              stroke="transparent"
-            />
+            <YAxis tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any} stroke="transparent" />
             <Tooltip content={<CategoryTooltip />} />
             <Bar dataKey="value" radius={[6, 6, 0, 0]} animationDuration={800}>
               {expensesByCategory.map((entry, index) => (
@@ -552,14 +529,8 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </ResponsiveContainer>
       )}
 
-      {/* Empty state — uses animate-subtle-pulse on the icon for a living feel */}
       {expensesByCategory.length === 0 && (
-        <div style={{
-          textAlign: 'center',
-          padding: '3rem 1rem',
-          color: 'var(--muted-foreground)',
-          fontSize: '0.85rem',
-        }}>
+        <div style={{ textAlign: 'center', padding: '3rem 1rem', color: 'var(--muted-foreground)', fontSize: '0.85rem' }}>
           <span className="animate-subtle-pulse" style={{ display: 'inline-block', fontSize: '1.5rem', marginBottom: '0.5rem' }}>
             💸
           </span>
