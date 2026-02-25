@@ -227,6 +227,10 @@ export const COMMANDS: CommandMap = {
   create_budget_category: { method: "POST", path: "/budget/categories" },
   update_budget_category: { method: "PUT", path: "/budget/categories/:id" },
   delete_budget_category: { method: "DELETE", path: "/budget/categories/:id" },
+  // FIRE
+  get_fire_data: { method: "GET", path: "/fire/data" },
+  get_fire_settings: { method: "GET", path: "/fire/settings" },
+  save_fire_settings: { method: "POST", path: "/fire/settings" },
 
 
 };
@@ -1202,6 +1206,13 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       if (data.notes !== undefined) snakeCaseData.notes = data.notes;
 
       body = JSON.stringify(snakeCaseData);
+      break;
+    }
+    case "get_fire_data":
+    case "get_fire_settings":
+      break;
+    case "save_fire_settings": {
+      body = JSON.stringify(payload);
       break;
     }
     case "delete_budget_transaction": {

@@ -1,6 +1,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 
+import { FirePage } from "@/pages/fire";
 import { AppLayout } from "@/pages/layouts/app-layout";
 import { OnboardingLayout } from "@/pages/layouts/onboarding-layout";
 import SettingsLayout from "@/pages/settings/settings-layout";
@@ -91,6 +92,7 @@ export function AppRoutes() {
           <Route path="insights" element={<PortfolioInsightsPage />} />
           <Route path="health" element={<HealthPage />} />
           <Route path="budget" element={<BudgetPage />} />
+          <Route path="fire" element={<FirePage />} />
           <Route path="assistant" element={<AiAssistantPage />} />
           <Route path="connect" element={<ConnectPage />} />
           {/* Dynamic addon routes */}

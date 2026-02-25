@@ -24,6 +24,7 @@ mod ai_providers;
 mod alternative_assets;
 mod assets;
 mod budget;
+mod fire;
 pub mod connect;
 mod device_sync;
 mod exchange_rates;
@@ -97,6 +98,7 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
         .merge(alternative_assets::router())
         .merge(ai_providers::router())
         .merge(ai_chat::router())
+        .merge(fire::router())
         .merge(sync_crypto::router())
         .merge(health::router())
         .merge(budget::router());

@@ -1,7 +1,7 @@
 import { getDynamicNavItems, subscribeToNavigationUpdates } from "@/addons/addons-runtime-context";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
+import { Flame } from "lucide-react";
 import { useEffect, useState } from "react";
-
 export interface NavLink {
   title: string;
   href: string;
@@ -60,6 +60,13 @@ const staticNavigation: NavigationProps = {
       keywords: ["ai", "assistant", "chat", "help", "ask"],
       label: "AI Assistant",
     },
+    {
+      icon: <Flame className="size-6" />,
+      title: "FIRE",
+      href: "/fire",
+      keywords: ["fire", "freedom", "retire", "runway", "indipendenza finanziaria"],
+      label: "FIRE Dashboard",
+    }
 
   ],
   secondary: [
