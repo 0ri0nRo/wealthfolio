@@ -48,6 +48,11 @@ const COLORS = [
 type TimePeriod = '1W' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
 const TIME_PERIODS: TimePeriod[] = ['1W', '1M', '3M', '6M', 'YTD', '1Y', 'ALL'];
 
+function parseDate(dateStr: string): Date {
+  // Append time to avoid UTC timezone shift
+  return new Date(dateStr + 'T00:00:00');
+}
+
 function getDateRangeForPeriod(period: TimePeriod): Date {
   const now = new Date();
   switch (period) {
@@ -122,7 +127,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     let fromDate = getDateRangeForPeriod(selectedPeriod);
     if (selectedPeriod === 'ALL' && transactions.length > 0) {
       const earliest = transactions.reduce((min, t) => {
-        const d = new Date(t.date);
+        const d = parseDate(t.date);
         return d < min ? d : min;
       }, new Date());
       fromDate = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
@@ -168,9 +173,9 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     }
 
     transactions
-      .filter((t) => new Date(t.date) >= fromDate)
+      .filter((t) => parseDate(t.date) >= fromDate)
       .forEach((t) => {
-        const d = new Date(t.date);
+        const d = parseDate(t.date);
         const key = isShortPeriod
           ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
           : `${d.getFullYear()}-${d.getMonth()}`;

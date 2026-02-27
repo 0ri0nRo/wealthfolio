@@ -27,7 +27,7 @@ const staticNavigation: NavigationProps = {
       label: "View Dashboard",
     },
     {
-      icon: <Icons.Wallet className="size-6" />,
+      icon: <Icons.Holdings className="size-6" />,
       title: "Budget",
       href: "/budget",
       keywords: ["budget", "expenses", "income", "transactions", "spending"],
@@ -41,7 +41,7 @@ const staticNavigation: NavigationProps = {
       label: "View Insights",
     },
     {
-      icon: <Icons.Holdings className="size-6" />,
+      icon: <Icons.Sparkles className="size-6" />,
       title: "Holdings",
       href: "/holdings",
       keywords: ["Holdings", "portfolio", "assets", "positions", "stocks"],
@@ -53,13 +53,6 @@ const staticNavigation: NavigationProps = {
       href: "/activities",
       keywords: ["transactions", "trades", "history"],
       label: "View Activities",
-    },
-    {
-      icon: <Icons.Sparkles className="size-6" />,
-      title: "Assistant",
-      href: "/assistant",
-      keywords: ["ai", "assistant", "chat", "help", "ask"],
-      label: "AI Assistant",
     },
     {
       icon: <Flame className="size-6" />,

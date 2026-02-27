@@ -1,7 +1,7 @@
 // Web adapter core - Internal invoke function, COMMANDS map, and helpers
 // This module exports invoke, logger, and platform constants for shared modules
 
-import { getAuthToken } from "@/lib/auth-token";
+import { getAuthToken, notifyUnauthorized } from "@/lib/auth-token";
 import type { Logger } from "../types";
 
 /** True when running in the desktop (Tauri) environment */
@@ -1367,9 +1367,9 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     "clear_sync_session",
     "get_sync_session_status",
   ];
-// Handle responses with no body (204 No Content, 202 Accepted, or empty 200)
-  if (res.status === 204 || res.status === 202) {
-    return undefined as T;
+  // Handle responses with no body (204 No Content, 202 Accepted, or empty 200)
+  if (res.status === 401 && !connectCommands.includes(command)) {
+    notifyUnauthorized();
   }
 
   if (command === "get_budget_categories") {

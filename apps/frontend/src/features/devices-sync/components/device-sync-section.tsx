@@ -360,7 +360,7 @@ export function DeviceSyncSection() {
                 ) : isBackgroundRunning ? (
                   <Icons.PauseCircle className="h-4 w-4" />
                 ) : (
-                  <Icons.PlayCircle className="h-4 w-4" />
+                  <Icons.PlusCircle className="h-4 w-4" />
                 )}
               </Button>
               <Button
@@ -382,7 +382,7 @@ export function DeviceSyncSection() {
                   </>
                 ) : (
                   <>
-                    <Icons.PlayCircle className="h-4 w-4" />
+                    <Icons.PlusCircle className="h-4 w-4" />
                     Resume Sync
                   </>
                 )}

@@ -47,15 +47,16 @@ export const useBudget = (month: Date) => {
 
       const categoriesMap = new Map(cats.map((c: BudgetCategory) => [String(c.id), c]));
 
-      const enrichedTxns = txns.map((txn: any) => ({
+      // Normalize fields: backend may return snake_case (transaction_type, category_id)
+      const normalizeTxn = (txn: any): BudgetTransaction => ({
         ...txn,
-        category: categoriesMap.get(String(txn.categoryId)) || undefined,
-      }));
+        type: txn.type ?? txn.transaction_type,
+        categoryId: txn.categoryId ?? txn.category_id,
+        category: categoriesMap.get(String(txn.categoryId ?? txn.category_id)) || undefined,
+      });
 
-      const enrichedAllTxns = allTxns.map((txn: any) => ({
-        ...txn,
-        category: categoriesMap.get(String(txn.categoryId)) || undefined,
-      }));
+      const enrichedTxns = txns.map(normalizeTxn);
+      const enrichedAllTxns = allTxns.map(normalizeTxn);
 
       const categoryBreakdown = Array.from(
         enrichedTxns
@@ -151,7 +152,6 @@ export const useBudget = (month: Date) => {
     }
   };
 
-  // ── NEW: funzioni per gestire le categorie ────────────────────────────────
   const createCategory = async (data: {
     name: string;
     type: 'income' | 'expense';
@@ -220,7 +220,6 @@ export const useBudget = (month: Date) => {
     createTransaction,
     updateTransaction,
     deleteTransaction,
-    // NEW exports
     createCategory,
     updateCategory,
     deleteCategory,
