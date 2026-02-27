@@ -1,7 +1,7 @@
 import { isWeb } from "@/adapters";
 import { AuthGate, AuthProvider } from "@/context/auth-context";
-import { WealthfolioConnectProvider } from "@/features/wealthfolio-connect";
 import { DeviceSyncProvider } from "@/features/devices-sync";
+import { WealthfolioConnectProvider } from "@/features/wealthfolio-connect";
 import { SettingsProvider } from "@/lib/settings-provider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@wealthfolio/ui";
