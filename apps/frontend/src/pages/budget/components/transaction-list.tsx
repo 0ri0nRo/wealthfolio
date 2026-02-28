@@ -6,6 +6,7 @@ interface TransactionListProps {
   transactions: BudgetTransaction[];
   onEdit: (transaction: BudgetTransaction) => void;
   onDelete: (id: string | number) => void;
+  isBalanceHidden?: boolean; // ← NEW
 }
 
 type FilterType = 'all' | 'income' | 'expense';
@@ -36,6 +37,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   transactions,
   onEdit,
   onDelete,
+  isBalanceHidden = false, // ← NEW
 }) => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [sort, setSort]     = useState<SortKey>('date');
@@ -55,7 +57,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
 
   return (
     <div style={{ background: 'var(--card)' }}>
-      {/* ── Filter + Sort bar ────────────────────────────────────────────── */}
+      {/* Filter + Sort bar */}
       <div style={{
         padding: '0.6rem 1rem',
         borderBottom: '1px solid var(--border)',
@@ -65,7 +67,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         justifyContent: 'space-between',
         gap: '0.5rem',
       }}>
-        {/* Type filter pills */}
         <div style={{ display: 'flex', gap: '3px', background: 'var(--muted)', borderRadius: '8px', padding: '3px' }}>
           {FILTERS.map(({ key, label }) => (
             <button
@@ -74,12 +75,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               style={{
                 flex: isMobile ? 1 : undefined,
                 padding: '5px 10px',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                transition: 'all 0.15s',
+                fontSize: '0.72rem', fontWeight: 600,
+                border: 'none', borderRadius: '6px', cursor: 'pointer', transition: 'all 0.15s',
                 background: filter === key ? 'var(--foreground)' : 'transparent',
                 color:      filter === key ? 'var(--background)' : 'var(--muted-foreground)',
                 boxShadow:  filter === key ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
@@ -90,7 +87,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
           ))}
         </div>
 
-        {/* Sort selector */}
         <div style={{ display: 'flex', gap: '3px', background: 'var(--muted)', borderRadius: '8px', padding: '3px' }}>
           {SORTS.map(({ key, label }) => (
             <button
@@ -99,12 +95,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               style={{
                 flex: isMobile ? 1 : undefined,
                 padding: '5px 9px',
-                fontSize: '0.72rem',
-                fontWeight: 600,
-                border: 'none',
-                borderRadius: '6px',
-                cursor: 'pointer',
-                transition: 'all 0.15s',
+                fontSize: '0.72rem', fontWeight: 600,
+                border: 'none', borderRadius: '6px', cursor: 'pointer', transition: 'all 0.15s',
                 background: sort === key ? 'var(--card)' : 'transparent',
                 color:      sort === key ? 'var(--foreground)' : 'var(--muted-foreground)',
                 boxShadow:  sort === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
@@ -116,14 +108,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         </div>
       </div>
 
-      {/* ── List ─────────────────────────────────────────────────────────── */}
+      {/* List */}
       {filtered.length === 0 ? (
-        <div style={{
-          padding: '2.5rem 1rem',
-          textAlign: 'center',
-          color: 'var(--muted-foreground)',
-          fontSize: '0.82rem',
-        }}>
+        <div style={{ padding: '2.5rem 1rem', textAlign: 'center', color: 'var(--muted-foreground)', fontSize: '0.82rem' }}>
           No transactions found
         </div>
       ) : (
@@ -141,14 +128,10 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               <div
                 key={String(t.id)}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   padding: '0.7rem 1rem',
                   borderBottom: idx < filtered.length - 1 ? '1px solid var(--border)' : 'none',
-                  gap: '0.75rem',
-                  transition: 'background 0.12s',
-                  background: 'transparent',
+                  gap: '0.75rem', transition: 'background 0.12s', background: 'transparent',
                 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent)')}
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
@@ -190,12 +173,15 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   </div>
                 </div>
 
-                {/* Amount */}
+                {/* Amount — ← NEW: masked when hidden */}
                 <p style={{
                   fontSize: '0.88rem', fontWeight: 700,
-                  color: amtColor, margin: 0, flexShrink: 0, letterSpacing: '-0.01em',
+                  color: amtColor, margin: 0, flexShrink: 0,
+                  letterSpacing: isBalanceHidden ? '0.04em' : '-0.01em',
                 }}>
-                  {amtPrefix}€{t.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  {isBalanceHidden
+                    ? `${amtPrefix}€••••`
+                    : `${amtPrefix}€${t.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
                 </p>
 
                 {/* Actions */}

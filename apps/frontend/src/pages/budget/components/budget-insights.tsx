@@ -1,18 +1,9 @@
 import { BudgetTransaction } from '@/lib/types/budget';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Line,
-  LineChart,
-  RadialBar,
-  RadialBarChart,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis
+  Bar, BarChart, CartesianGrid, Line, LineChart,
+  RadialBar, RadialBarChart, ReferenceLine,
+  ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts';
 
 interface BudgetInsightsProps {
@@ -21,6 +12,7 @@ interface BudgetInsightsProps {
   totalIncome: number;
   totalExpenses: number;
   savings: number;
+  isBalanceHidden?: boolean; // ← NEW
 }
 
 const isInvestment = (t: BudgetTransaction) => {
@@ -39,33 +31,31 @@ function useIsMobileInsights(bp = 768) {
   return is;
 }
 
-// ── Tooltip — liquid-glass + CSS vars ────────────────────────────────────────
-const ChartTooltip = ({ active, payload, label, prefix = '€', suffix = '' }: any) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div
-      className="liquid-glass"
-      style={{ borderRadius: '10px', padding: '9px 13px', fontSize: '12px' }}
-    >
-      {label && <p style={{ color: 'var(--muted-foreground)', marginBottom: 4, fontWeight: 500 }}>{label}</p>}
-      {payload.map((p: any, i: number) => (
-        <p key={i} style={{ color: p.color ?? p.fill ?? 'var(--foreground)', margin: '2px 0', fontWeight: 600 }}>
-          {p.name}: {prefix}{typeof p.value === 'number' ? p.value.toLocaleString('en-US', { minimumFractionDigits: 0 }) : p.value}{suffix}
-        </p>
-      ))}
-    </div>
-  );
-};
+// ← NEW: tooltip respects privacy — receives isBalanceHidden via closure from parent
+const makeChartTooltip = (isBalanceHidden: boolean, prefix = '€', suffix = '') =>
+  ({ active, payload, label }: any) => {
+    if (!active || !payload?.length) return null;
+    return (
+      <div className="liquid-glass" style={{ borderRadius: '10px', padding: '9px 13px', fontSize: '12px' }}>
+        {label && <p style={{ color: 'var(--muted-foreground)', marginBottom: 4, fontWeight: 500 }}>{label}</p>}
+        {payload.map((p: any, i: number) => (
+          <p key={i} style={{ color: p.color ?? p.fill ?? 'var(--foreground)', margin: '2px 0', fontWeight: 600 }}>
+            {p.name}:{' '}
+            {isBalanceHidden
+              ? `${prefix}••••`
+              : `${prefix}${typeof p.value === 'number' ? p.value.toLocaleString('en-US', { minimumFractionDigits: 0 }) : p.value}${suffix}`}
+          </p>
+        ))}
+      </div>
+    );
+  };
 
-// ── Card wrapper — CSS vars ───────────────────────────────────────────────────
 const Card: React.FC<{ title: string; subtitle?: string; children: React.ReactNode; minHeight?: number }> = ({
   title, subtitle, children, minHeight = 260,
 }) => (
   <div style={{
-    background: 'var(--card)',
-    border: '1px solid var(--border)',
-    borderRadius: '16px',
-    padding: '1.1rem 1.25rem',
+    background: 'var(--card)', border: '1px solid var(--border)',
+    borderRadius: '16px', padding: '1.1rem 1.25rem',
     boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
   }}>
     <div style={{ marginBottom: '0.9rem' }}>
@@ -76,11 +66,9 @@ const Card: React.FC<{ title: string; subtitle?: string; children: React.ReactNo
   </div>
 );
 
-// ── Stat badge ────────────────────────────────────────────────────────────────
 const Badge: React.FC<{ value: string; positive?: boolean }> = ({ value, positive }) => (
   <span style={{
-    fontSize: '0.7rem', fontWeight: 700,
-    padding: '2px 7px', borderRadius: '999px',
+    fontSize: '0.7rem', fontWeight: 700, padding: '2px 7px', borderRadius: '999px',
     background: positive === undefined
       ? 'var(--muted)'
       : positive
@@ -95,14 +83,18 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
   allTransactions,
   totalIncome,
   totalExpenses,
+  isBalanceHidden = false, // ← NEW
 }) => {
   const isMobile = useIsMobileInsights();
 
-  // ── 1. Savings Rate radial ────────────────────────────────────────────────
+  // ← NEW: memoised tooltip components that close over isBalanceHidden
+  const ChartTooltip = useMemo(() => makeChartTooltip(isBalanceHidden), [isBalanceHidden]);
+
+  // ── 1. Savings Rate ───────────────────────────────────────────────────────
   const savingsRate = totalIncome > 0 ? Math.round(((totalIncome - totalExpenses) / totalIncome) * 100) : 0;
   const expenseRate = 100 - Math.max(savingsRate, 0);
-  const radialData = [
-    { name: 'Expenses', value: expenseRate,            fill: '#ef4444' },
+  const radialData  = [
+    { name: 'Expenses', value: expenseRate,              fill: '#ef4444' },
     { name: 'Savings',  value: Math.max(savingsRate, 0), fill: '#16a34a' },
   ];
 
@@ -117,7 +109,7 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
     allTransactions
       .filter((t) => t.type === 'expense' && !isInvestment(t))
       .forEach((t) => {
-        const td = new Date(t.date);
+        const td  = new Date(t.date);
         const idx = days.findIndex(
           (d) => d.date.getFullYear() === td.getFullYear() &&
                  d.date.getMonth()   === td.getMonth()    &&
@@ -138,23 +130,21 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
     return Array.from({ length: 6 }, (_, i) => {
       const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
       const label = d.toLocaleDateString('en-GB', { month: 'short' });
-      return { label, income: 0, expenses: 0 };
-    }).map((item, i) => {
-      const d = new Date(new Date().getFullYear(), new Date().getMonth() - (5 - i), 1);
+      let income = 0, expenses = 0;
       allTransactions
         .filter((t) => {
           const td = new Date(t.date);
           return td.getFullYear() === d.getFullYear() && td.getMonth() === d.getMonth();
         })
         .forEach((t) => {
-          if (t.type === 'income') item.income += t.amount;
-          if (t.type === 'expense' && !isInvestment(t)) item.expenses += t.amount;
+          if (t.type === 'income') income += t.amount;
+          if (t.type === 'expense' && !isInvestment(t)) expenses += t.amount;
         });
-      return item;
+      return { label, income, expenses };
     });
   }, [allTransactions]);
 
-  // ── 4. Top categories — current month ─────────────────────────────────────
+  // ── 4. Top categories ─────────────────────────────────────────────────────
   const topCategories = useMemo(() => {
     const map = new Map<string, { name: string; icon: string; amount: number; count: number }>();
     transactions
@@ -163,7 +153,7 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
         const cat = t.category;
         if (!cat) return;
         const key = String(cat.id);
-        const ex = map.get(key);
+        const ex  = map.get(key);
         if (ex) { ex.amount += t.amount; ex.count++; }
         else map.set(key, { name: cat.name, icon: cat.icon ?? '📦', amount: t.amount, count: 1 });
       });
@@ -174,9 +164,9 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
       .map((c) => ({ ...c, pct: total > 0 ? (c.amount / total) * 100 : 0 }));
   }, [transactions]);
 
-  // ── 5. Spending by day of week ─────────────────────────────────────────────
+  // ── 5. Spending by day of week ────────────────────────────────────────────
   const byDayOfWeek = useMemo(() => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const days   = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const counts = new Array(7).fill(0);
     const totals = new Array(7).fill(0);
     allTransactions
@@ -192,10 +182,15 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
     }));
   }, [allTransactions]);
 
-  const maxDow = Math.max(...byDayOfWeek.map((d) => d.avg), 1);
-
-  // Axis tick style helper (Recharts requires inline style object with `fill`)
+  const maxDow  = Math.max(...byDayOfWeek.map((d) => d.avg), 1);
   const axisTick = { fontSize: 10, fill: 'var(--muted-foreground)' } as any;
+
+  // ← NEW: Y-axis tick formatter — hides values when privacy is on
+  const yTickFmt = (v: number) =>
+    isBalanceHidden ? '•••' : `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`;
+
+  const yTickFmtSimple = (v: number) =>
+    isBalanceHidden ? '•••' : `€${v}`;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -203,19 +198,16 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
       {/* Row 1: Savings Rate + Monthly Comparison */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '280px 1fr', gap: '1.25rem' }}>
 
-        {/* Savings Rate — radial */}
+        {/* Savings Rate */}
         <Card title="Savings Rate" subtitle="This month" minHeight={isMobile ? 160 : 200}>
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <div style={{ position: 'relative', width: '100%', height: isMobile ? 140 : 160 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <RadialBarChart
-                  cx="50%" cy="50%"
-                  innerRadius="55%" outerRadius="85%"
+                  cx="50%" cy="50%" innerRadius="55%" outerRadius="85%"
                   startAngle={210} endAngle={-30}
-                  data={radialData}
-                  barSize={12}
+                  data={radialData} barSize={12}
                 >
-                  {/* Track uses --muted for both themes */}
                   <RadialBar dataKey="value" background={{ fill: 'var(--muted)' }} cornerRadius={6} />
                 </RadialBarChart>
               </ResponsiveContainer>
@@ -225,8 +217,9 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
                 alignItems: 'center', justifyContent: 'center',
                 pointerEvents: 'none',
               }}>
+                {/* ← NEW: mask percentage */}
                 <span style={{ fontSize: '1.75rem', fontWeight: 800, color: savingsRate >= 0 ? 'var(--foreground)' : '#dc2626', letterSpacing: '-0.04em' }}>
-                  {savingsRate}%
+                  {isBalanceHidden ? '••%' : `${savingsRate}%`}
                 </span>
                 <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>saved</span>
               </div>
@@ -238,7 +231,10 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
               ].map(({ color, label, pct }) => (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-                  <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>{label} {pct}%</span>
+                  {/* ← NEW: hide pct in legend too */}
+                  <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>
+                    {label} {isBalanceHidden ? '••%' : `${pct}%`}
+                  </span>
                 </div>
               ))}
             </div>
@@ -251,10 +247,9 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
             <BarChart data={monthlyComparison} barCategoryGap="28%" margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.07} vertical={false} />
               <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
-              <YAxis tick={axisTick} axisLine={false} tickLine={false} width={42}
-                tickFormatter={(v) => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`} />
+              {/* ← NEW: hide Y values */}
+              <YAxis tick={isBalanceHidden ? false : axisTick} axisLine={false} tickLine={false} width={isBalanceHidden ? 0 : 42} tickFormatter={yTickFmt} />
               <Tooltip content={<ChartTooltip />} />
-              {/* Keep the same pastel bar colours — readable in both themes */}
               <Bar dataKey="income"   name="Income"   fill="#bbf7d0" radius={[4, 4, 0, 0]} />
               <Bar dataKey="expenses" name="Expenses" fill="#fca5a5" radius={[4, 4, 0, 0]} />
             </BarChart>
@@ -271,15 +266,18 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
             <LineChart data={dailySpending} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" opacity={0.07} vertical={false} />
               <XAxis dataKey="label" tick={{ ...axisTick, fontSize: 9 }} axisLine={false} tickLine={false} interval={4} />
-              <YAxis tick={axisTick} axisLine={false} tickLine={false} width={42}
-                tickFormatter={(v) => `€${v}`} />
+              {/* ← NEW: hide Y values */}
+              <YAxis tick={isBalanceHidden ? false : axisTick} axisLine={false} tickLine={false} width={isBalanceHidden ? 0 : 42} tickFormatter={yTickFmtSimple} />
               <Tooltip content={<ChartTooltip />} />
               <ReferenceLine
                 y={avgDailySpend}
                 stroke="var(--muted-foreground)"
-                strokeDasharray="4 3"
-                strokeWidth={1.5}
-                label={{ value: `avg €${Math.round(avgDailySpend)}`, position: 'right', fontSize: 9, fill: 'var(--muted-foreground)' }}
+                strokeDasharray="4 3" strokeWidth={1.5}
+                label={{
+                  // ← NEW: mask avg label
+                  value: isBalanceHidden ? 'avg •••' : `avg €${Math.round(avgDailySpend)}`,
+                  position: 'right', fontSize: 9, fill: 'var(--muted-foreground)',
+                }}
               />
               <Line
                 type="monotone" dataKey="amount" name="Spent"
@@ -290,30 +288,29 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
           </ResponsiveContainer>
         </Card>
 
-        {/* Spending by day of week — horizontal bars */}
+        {/* Spending by day of week */}
         <Card title="Spending by Weekday" subtitle="Average per transaction" minHeight={200}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '4px' }}>
             {byDayOfWeek.map(({ label, avg }) => {
-              const barPct = (avg / maxDow) * 100;
+              const barPct    = (avg / maxDow) * 100;
               const isWeekend = label === 'Sat' || label === 'Sun';
               return (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{
-                    fontSize: '0.72rem', fontWeight: 600, width: 28, flexShrink: 0,
-                    color: isWeekend ? '#6366f1' : 'var(--muted-foreground)',
-                  }}>{label}</span>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, width: 28, flexShrink: 0, color: isWeekend ? '#6366f1' : 'var(--muted-foreground)' }}>
+                    {label}
+                  </span>
                   <div style={{ flex: 1, background: 'var(--muted)', borderRadius: '999px', height: 7, overflow: 'hidden' }}>
                     <div style={{
-                      height: '100%', borderRadius: '999px',
-                      width: `${barPct}%`,
+                      height: '100%', borderRadius: '999px', width: `${barPct}%`,
                       background: isWeekend
                         ? 'linear-gradient(90deg, #818cf8, #6366f1)'
                         : 'linear-gradient(90deg, #93c5fd, #3b82f6)',
                       transition: 'width 0.5s ease',
                     }} />
                   </div>
+                  {/* ← NEW: mask per-day avg */}
                   <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', fontWeight: 600, width: 38, textAlign: 'right', flexShrink: 0 }}>
-                    {avg > 0 ? `€${avg}` : '—'}
+                    {isBalanceHidden ? (avg > 0 ? '€••' : '—') : (avg > 0 ? `€${avg}` : '—')}
                   </span>
                 </div>
               );
@@ -322,7 +319,7 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
         </Card>
       </div>
 
-      {/* Row 3: Top categories breakdown */}
+      {/* Row 3: Top categories */}
       <Card title="Top Categories" subtitle="This month · by spend" minHeight={0}>
         {topCategories.length === 0 ? (
           <p style={{ color: 'var(--muted-foreground)', fontSize: '0.82rem', textAlign: 'center', padding: '1.5rem 0' }}>
@@ -334,26 +331,23 @@ export const BudgetInsights: React.FC<BudgetInsightsProps> = ({
               <div key={cat.name}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-                    <span style={{
-                      width: 24, height: 24, borderRadius: '7px',
-                      background: 'var(--muted)', display: 'inline-flex',
-                      alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem',
-                    }}>{cat.icon}</span>
+                    <span style={{ width: 24, height: 24, borderRadius: '7px', background: 'var(--muted)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem' }}>
+                      {cat.icon}
+                    </span>
                     <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--foreground)' }}>{cat.name}</span>
                     <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)' }}>{cat.count} transactions</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {/* ← NEW: mask amount, keep % badge (relative info is less sensitive) */}
                     <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--foreground)' }}>
-                      €{cat.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                      {isBalanceHidden ? '€••••' : `€${cat.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
                     </span>
                     <Badge value={`${cat.pct.toFixed(0)}%`} />
                   </div>
                 </div>
-                {/* Progress bar */}
                 <div style={{ background: 'var(--muted)', borderRadius: '999px', height: 5, overflow: 'hidden' }}>
                   <div style={{
-                    height: '100%', borderRadius: '999px',
-                    width: `${cat.pct}%`,
+                    height: '100%', borderRadius: '999px', width: `${cat.pct}%`,
                     background: ['#f97316', '#fb923c', '#fdba74', '#fed7aa', '#ffedd5'][idx] ?? '#f97316',
                     transition: 'width 0.6s ease',
                   }} />
