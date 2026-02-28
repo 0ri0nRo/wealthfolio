@@ -102,7 +102,7 @@ function Legend({
                 onMouseLeave={() => onHover(undefined)}
               >
                 <span
-                  className="h-2 w-2 flex-shrink-0 rounded-full"
+                  className="h-2 w-2 shrink-0 rounded-full"
                   style={{ backgroundColor: entry.color }}
                 />
                 <span className="flex-1 truncate text-foreground/80">{entry.name}</span>

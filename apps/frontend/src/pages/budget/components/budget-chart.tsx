@@ -1,4 +1,3 @@
-// src/pages/Budget/components/budget-chart.tsx  — diff highlights marked with  ← NEW
 import { BudgetTransaction } from '@/lib/types/budget';
 import React, { useMemo, useState } from 'react';
 import {
@@ -10,18 +9,25 @@ interface BudgetChartProps {
   transactions: BudgetTransaction[];
   showLast12Months?: boolean;
   bpBalance?: number;
-  isBalanceHidden?: boolean;  // ← NEW
+  isBalanceHidden?: boolean;
 }
 
-const isInvestment = (transaction: BudgetTransaction) => {
-  if (!transaction.category) return false;
-  const name = transaction.category.name.toLowerCase();
-  return name.includes('invest') || name.includes('crypto') || name.includes('etf') || name.includes('stock');
+const isInvestment = (t: BudgetTransaction) => {
+  if (!t.category) return false;
+  const n = t.category.name.toLowerCase();
+  return n.includes('invest') || n.includes('crypto') || n.includes('etf') || n.includes('stock');
 };
 
+// Palette from global.css @theme chart colors
 const COLORS = [
-  '#f9ae77', '#87d3c3', '#c4b9e0', '#bec97e',
-  '#92bfdb', '#f4a4c2', '#f89a8a', '#f6e2a0',
+  '#f9ae77', // chart-1 orange-200
+  '#87d3c3', // chart-2 cyan-200
+  '#c4b9e0', // chart-3 purple-200
+  '#bec97e', // chart-4 green-200
+  '#92bfdb', // chart-5 blue-200
+  '#f4a4c2', // chart-6 magenta-200
+  '#f89a8a', // chart-7 red-200
+  '#f6e2a0', // chart-8 yellow-100
 ];
 
 type TimePeriod = '1W' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
@@ -49,9 +55,6 @@ const PERIOD_LABEL: Record<TimePeriod, string> = {
   '6M': 'past 6 months', 'YTD': 'year to date', '1Y': 'past year', 'ALL': 'all time',
 };
 
-// ── TOOLTIPS ──────────────────────────────────────────────────────────────────
-
-// ← NEW: tooltips respect privacy mode
 const HeroTooltip = ({ active, payload, label, isBalanceHidden }: any) => {
   if (!active || !payload?.length) return null;
   return (
@@ -67,13 +70,11 @@ const HeroTooltip = ({ active, payload, label, isBalanceHidden }: any) => {
   );
 };
 
-const CategoryTooltip = ({ active, payload, isBalanceHidden }: any) => {  // ← NEW param
+const CategoryTooltip = ({ active, payload, isBalanceHidden }: any) => {
   if (!active || !payload?.length) return null;
   return (
     <div className="liquid-glass" style={{ borderRadius: '10px', padding: '10px 14px', fontSize: '12px' }}>
-      <p style={{ color: 'var(--foreground)', fontWeight: 600, margin: '0 0 2px' }}>
-        {payload[0]?.payload?.name}
-      </p>
+      <p style={{ color: 'var(--foreground)', fontWeight: 600, margin: '0 0 2px' }}>{payload[0]?.payload?.name}</p>
       <p style={{ color: 'var(--muted-foreground)', margin: 0 }}>
         {isBalanceHidden ? '€••••••' : `€${Number(payload[0]?.value).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
       </p>
@@ -81,37 +82,26 @@ const CategoryTooltip = ({ active, payload, isBalanceHidden }: any) => {  // ←
   );
 };
 
-// ── MAIN COMPONENT ────────────────────────────────────────────────────────────
-
 export const BudgetChart: React.FC<BudgetChartProps> = ({
   transactions = [],
   showLast12Months = false,
   bpBalance,
-  isBalanceHidden = false,  // ← NEW
+  isBalanceHidden = false,
 }) => {
   const [chartType, setChartType] = useState<'pie' | 'bar'>('pie');
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('1W');
 
-  // ← NEW: helper to mask or format a number
   const fmtOrHide = (n: number) =>
-    isBalanceHidden
-      ? '€••••••'
-      : `€${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
+    isBalanceHidden ? '€••••••' : `€${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
 
-  // ── HERO CHART DATA ──────────────────────────────────────────────────────
   const heroChartData = useMemo(() => {
     if (!showLast12Months) return [];
-
     const now = new Date();
     let fromDate = getDateRangeForPeriod(selectedPeriod);
     if (selectedPeriod === 'ALL' && transactions.length > 0) {
-      const earliest = transactions.reduce((min, t) => {
-        const d = parseDate(t.date);
-        return d < min ? d : min;
-      }, new Date());
+      const earliest = transactions.reduce((min, t) => { const d = parseDate(t.date); return d < min ? d : min; }, new Date());
       fromDate = new Date(earliest.getFullYear(), earliest.getMonth(), 1);
     }
-
     const isShortPeriod = selectedPeriod === '1W' || selectedPeriod === '1M';
     type DataPoint = { label: string; income: number; expenses: number };
     const points = new Map<string, DataPoint>();
@@ -120,8 +110,9 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
       const days = selectedPeriod === '1W' ? 7 : 30;
       for (let i = days - 1; i >= 0; i--) {
         const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
-        const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-        points.set(key, { label: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), income: 0, expenses: 0 });
+        points.set(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`, {
+          label: d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), income: 0, expenses: 0,
+        });
       }
     } else {
       let cursor = new Date(fromDate.getFullYear(), fromDate.getMonth(), 1);
@@ -142,17 +133,16 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
       }
     }
 
-    transactions
-      .filter(t => parseDate(t.date) >= fromDate)
-      .forEach(t => {
-        const d = parseDate(t.date);
-        const key = isShortPeriod ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : `${d.getFullYear()}-${d.getMonth()}`;
-        const point = points.get(key);
-        if (!point) return;
-        if (t.type === 'income') point.income += t.amount;
-        if (t.type === 'expense' && !isInvestment(t)) point.expenses += t.amount;
-      });
-
+    transactions.filter(t => parseDate(t.date) >= fromDate).forEach(t => {
+      const d   = parseDate(t.date);
+      const key = isShortPeriod
+        ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+        : `${d.getFullYear()}-${d.getMonth()}`;
+      const point = points.get(key);
+      if (!point) return;
+      if (t.type === 'income') point.income += t.amount;
+      if (t.type === 'expense' && !isInvestment(t)) point.expenses += t.amount;
+    });
     return Array.from(points.values());
   }, [transactions, showLast12Months, selectedPeriod]);
 
@@ -164,80 +154,65 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     return { totalIncome, totalExpenses, balance, balancePct };
   }, [heroChartData]);
 
-  // ── HERO CHART RENDER ────────────────────────────────────────────────────
+  // ── HERO CHART ─────────────────────────────────────────────────────────────
   if (showLast12Months) {
     const isPositive = heroStats.balance >= 0;
-    const heroGradient = `linear-gradient(180deg, color-mix(in srgb, #16a34a 8%, var(--background)) 0%, var(--background) 70%)`;
-    const hasBp = bpBalance !== undefined;
+    const heroGradient = `linear-gradient(180deg, color-mix(in srgb, var(--success) 8%, var(--background)) 0%, var(--background) 70%)`;
+    const hasBp      = bpBalance !== undefined;
     const bpPositive = (bpBalance ?? 0) >= 0;
 
     return (
       <div style={{ background: heroGradient, position: 'relative' }}>
-
-        {/* Stats row */}
         <div style={{ padding: '1.75rem 1.75rem 0' }}>
-          {/* ← NEW: hero total income masked */}
           <p style={{ fontSize: '2.25rem', fontWeight: 700, color: 'var(--foreground)', letterSpacing: '-0.03em', lineHeight: 1, margin: '0 0 0.45rem' }}>
             {isBalanceHidden ? '€••••••' : `€${heroStats.totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
           </p>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-            {/* ← NEW: balance amount & pct masked */}
-            <span
-              className={heroStats.balance === 0 ? 'animate-subtle-pulse' : ''}
-              style={{ fontSize: '0.82rem', fontWeight: 600, color: isPositive ? '#16a34a' : '#dc2626' }}
-            >
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isPositive ? 'var(--success)' : 'var(--destructive)' }}>
               {isBalanceHidden
-                ? (isPositive ? '+' : '') + '€••••••'
+                ? `${isPositive ? '+' : ''}€••••••`
                 : `${isPositive ? '+' : ''}€${heroStats.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
             </span>
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isPositive ? '#16a34a' : '#dc2626' }}>
-              {isBalanceHidden ? '••••%' : `${isPositive ? '+' : ''}${heroStats.balancePct.toFixed(2)}%`}  {/* ← NEW */}
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isPositive ? 'var(--success)' : 'var(--destructive)' }}>
+              {isBalanceHidden ? '••••%' : `${isPositive ? '+' : ''}${heroStats.balancePct.toFixed(2)}%`}
             </span>
             <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
               {PERIOD_LABEL[selectedPeriod]}
             </span>
-
-            {/* Buoni Pasto badge */}
             {hasBp && (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: '4px',
                 fontSize: '0.78rem', fontWeight: 700, padding: '2px 9px', borderRadius: '999px',
-                background: bpPositive ? 'color-mix(in srgb, #d97706 12%, var(--background))' : 'color-mix(in srgb, #dc2626 12%, var(--background))',
-                color: bpPositive ? '#d97706' : '#dc2626',
-                border: `1px solid ${bpPositive ? 'color-mix(in srgb, #d97706 25%, transparent)' : 'color-mix(in srgb, #dc2626 25%, transparent)'}`,
+                background: bpPositive
+                  ? 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))'
+                  : 'color-mix(in srgb, var(--destructive) 12%, var(--background))',
+                color: bpPositive ? 'var(--color-orange-400)' : 'var(--destructive)',
+                border: `1px solid ${bpPositive ? 'color-mix(in srgb, var(--color-orange-400) 25%, transparent)' : 'color-mix(in srgb, var(--destructive) 25%, transparent)'}`,
               }}>
-                {/* ← NEW */}
                 🎟️ {isBalanceHidden ? '€••••••' : `${bpPositive ? '' : '-'}€${Math.abs(bpBalance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
               </span>
             )}
           </div>
         </div>
 
-        {/* Chart */}
         <div style={{ width: '100%', height: 220, marginTop: '1rem' }}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={heroChartData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="heroIncome" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#16a34a" stopOpacity={0.15} />
-                  <stop offset="100%" stopColor="#16a34a" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#30a46c" stopOpacity={0.15} />
+                  <stop offset="100%" stopColor="#30a46c" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="heroExpenses" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#dc2626" stopOpacity={0.12} />
-                  <stop offset="100%" stopColor="#dc2626" stopOpacity={0} />
+                  <stop offset="0%" stopColor="#e5484d" stopOpacity={0.12} />
+                  <stop offset="100%" stopColor="#e5484d" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any}
-                axisLine={false} tickLine={false}
-                interval="preserveStartEnd" height={28}
-              />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any} axisLine={false} tickLine={false} interval="preserveStartEnd" height={28} />
               <YAxis hide />
-              {/* ← NEW: pass isBalanceHidden into tooltip */}
               <Tooltip content={<HeroTooltip isBalanceHidden={isBalanceHidden} />} />
-              <Area type="monotone" dataKey="income"   stroke="#16a34a" strokeWidth={2} fill="url(#heroIncome)"   dot={false} activeDot={{ r: 4, fill: '#16a34a', strokeWidth: 0 }} />
-              <Area type="monotone" dataKey="expenses" stroke="#ef4444" strokeWidth={2} fill="url(#heroExpenses)" dot={false} activeDot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} />
+              <Area type="monotone" dataKey="income"   stroke="#30a46c" strokeWidth={2} fill="url(#heroIncome)"   dot={false} activeDot={{ r: 4, fill: '#30a46c', strokeWidth: 0 }} />
+              <Area type="monotone" dataKey="expenses" stroke="#e5484d" strokeWidth={2} fill="url(#heroExpenses)" dot={false} activeDot={{ r: 4, fill: '#e5484d', strokeWidth: 0 }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -266,23 +241,22 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', padding: '0 1.75rem 1.25rem' }}>
           <div style={{ display: 'flex', gap: '1.5rem' }}>
             {[
-              { color: '#16a34a', label: 'Income',   value: heroStats.totalIncome   },
-              { color: '#ef4444', label: 'Expenses', value: heroStats.totalExpenses },
+              { color: '#30a46c', label: 'Income',   value: heroStats.totalIncome   },
+              { color: '#e5484d', label: 'Expenses', value: heroStats.totalExpenses },
             ].map(({ color, label, value }) => (
               <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
                 <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
-                  {label} · {fmtOrHide(value)}  {/* ← NEW */}
+                  {label} · {fmtOrHide(value)}
                 </span>
               </div>
             ))}
           </div>
-
           {hasBp && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#d97706' }} />
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-orange-400)' }} />
               <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
-                Buoni Pasto rimanenti · {fmtOrHide(bpBalance ?? 0)}  {/* ← NEW */}
+                Meal vouchers remaining · {fmtOrHide(bpBalance ?? 0)}
               </span>
             </div>
           )}
@@ -293,39 +267,33 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
 
   // ── CATEGORY CHART ─────────────────────────────────────────────────────────
   const allExpensesTotal = useMemo(() =>
-    transactions.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((sum, t) => sum + t.amount, 0),
+    transactions.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0),
     [transactions]
   );
 
   const expensesByCategory = useMemo(() => {
     type CategoryData = { name: string; value: number; color: string; icon: string };
-    const categoryMap = new Map<string, CategoryData>();
-    transactions
-      .filter(t => t.type === 'expense' && !isInvestment(t))
-      .forEach(transaction => {
-        const category = transaction.category;
-        if (!category) return;
-        const existing = categoryMap.get(String(category.id));
-        if (existing) {
-          existing.value += transaction.amount;
-        } else {
-          categoryMap.set(String(category.id), { name: category.name, value: transaction.amount, color: category.color, icon: category.icon || '📦' });
-        }
-      });
-    return Array.from(categoryMap.values())
+    const map = new Map<string, CategoryData>();
+    transactions.filter(t => t.type === 'expense' && !isInvestment(t)).forEach(t => {
+      const cat = t.category;
+      if (!cat) return;
+      const existing = map.get(String(cat.id));
+      if (existing) { existing.value += t.amount; }
+      else map.set(String(cat.id), { name: cat.name, value: t.amount, color: cat.color, icon: cat.icon || '📦' });
+    });
+    return Array.from(map.values())
       .sort((a, b) => b.value - a.value)
       .slice(0, 8)
-      .map((item, index) => ({ ...item, color: COLORS[index % COLORS.length] }));
+      .map((item, i) => ({ ...item, color: COLORS[i % COLORS.length] }));
   }, [transactions]);
 
-  const total = allExpensesTotal;
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+  const total     = allExpensesTotal;
+  const isMobile  = typeof window !== 'undefined' && window.innerWidth < 640;
   const innerRadius = isMobile ? 55 : 80;
   const outerRadius = isMobile ? 80 : 115;
 
   return (
     <div className="liquid-glass" style={{ borderRadius: '16px', padding: '1.25rem' }}>
-      {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Expenses by category</h3>
         <div style={{ background: 'var(--muted)', borderRadius: '10px', padding: '3px', display: 'flex', gap: '2px' }}>
@@ -347,36 +315,24 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </div>
       </div>
 
-      {/* DONUT */}
+      {/* Donut */}
       {chartType === 'pie' && expensesByCategory.length > 0 && (
         <div>
           <div style={{ width: '100%', height: isMobile ? 180 : 240 }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie
-                  data={expensesByCategory}
-                  cx="50%" cy="50%"
-                  innerRadius={innerRadius} outerRadius={outerRadius}
-                  paddingAngle={3} dataKey="value" animationDuration={800}
-                >
-                  {expensesByCategory.map((entry, index) => (
-                    <Cell key={index} fill={entry.color} style={{ cursor: 'pointer' }} />
+                <Pie data={expensesByCategory} cx="50%" cy="50%" innerRadius={innerRadius} outerRadius={outerRadius} paddingAngle={3} dataKey="value" animationDuration={800}>
+                  {expensesByCategory.map((entry, i) => (
+                    <Cell key={i} fill={entry.color} style={{ cursor: 'pointer' }} />
                   ))}
                 </Pie>
-                {/* ← NEW: mask center total */}
-                <text
-                  x="50%" y="50%"
-                  textAnchor="middle" dominantBaseline="middle"
-                  style={{ fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700, fill: 'var(--foreground)' }}
-                >
+                <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: isMobile ? '1rem' : '1.1rem', fontWeight: 700, fill: 'var(--foreground)' }}>
                   {isBalanceHidden ? '€•••••' : `€${total.toLocaleString('en-US')}`}
                 </text>
-                <Tooltip content={<CategoryTooltip isBalanceHidden={isBalanceHidden} />} />  {/* ← NEW */}
+                <Tooltip content={<CategoryTooltip isBalanceHidden={isBalanceHidden} />} />
               </PieChart>
             </ResponsiveContainer>
           </div>
-
-          {/* Legend rows */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '0.5rem' }}>
             {expensesByCategory.map(item => {
               const percent = total ? ((item.value / total) * 100).toFixed(1) : '0';
@@ -394,12 +350,11 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
                     </span>
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: '12px' }}>
-                    {/* ← NEW: mask amount, keep percentage */}
                     <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>
                       {isBalanceHidden ? '€•••••' : `€${item.value.toLocaleString('en-US')}`}
                     </p>
                     <p style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', margin: 0 }}>
-                      {isBalanceHidden ? '••%' : `${percent}%`}  {/* ← optional: hide pct too */}
+                      {isBalanceHidden ? '••%' : `${percent}%`}
                     </p>
                   </div>
                 </div>
@@ -409,22 +364,16 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </div>
       )}
 
-      {/* BAR */}
+      {/* Bar */}
       {chartType === 'bar' && expensesByCategory.length > 0 && (
         <ResponsiveContainer width="100%" height={isMobile ? 200 : 300}>
           <BarChart data={expensesByCategory} margin={{ top: 5, right: 5, left: 0, bottom: 50 }}>
             <CartesianGrid strokeDasharray="3 3" opacity={0.08} />
             <XAxis dataKey="name" tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any} angle={-35} textAnchor="end" interval={0} stroke="transparent" />
-            {/* ← NEW: hide Y-axis labels when hidden */}
-            <YAxis
-              tick={isBalanceHidden ? false : { fontSize: 10, fill: 'var(--muted-foreground)' } as any}
-              stroke="transparent"
-            />
-            <Tooltip content={<CategoryTooltip isBalanceHidden={isBalanceHidden} />} />  {/* ← NEW */}
+            <YAxis tick={isBalanceHidden ? false : { fontSize: 10, fill: 'var(--muted-foreground)' } as any} stroke="transparent" />
+            <Tooltip content={<CategoryTooltip isBalanceHidden={isBalanceHidden} />} />
             <Bar dataKey="value" radius={[6, 6, 0, 0]} animationDuration={800}>
-              {expensesByCategory.map((entry, index) => (
-                <Cell key={index} fill={entry.color} />
-              ))}
+              {expensesByCategory.map((entry, i) => <Cell key={i} fill={entry.color} />)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>

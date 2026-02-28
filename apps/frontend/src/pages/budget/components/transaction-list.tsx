@@ -6,7 +6,7 @@ interface TransactionListProps {
   transactions: BudgetTransaction[];
   onEdit: (transaction: BudgetTransaction) => void;
   onDelete: (id: string | number) => void;
-  isBalanceHidden?: boolean; // ← NEW
+  isBalanceHidden?: boolean;
 }
 
 type FilterType = 'all' | 'income' | 'expense';
@@ -37,7 +37,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   transactions,
   onEdit,
   onDelete,
-  isBalanceHidden = false, // ← NEW
+  isBalanceHidden = false,
 }) => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [sort, setSort]     = useState<SortKey>('date');
@@ -46,8 +46,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
   const filtered = useMemo(() => {
     const base = filter === 'all'
       ? transactions
-      : transactions.filter((t) => t.type === filter);
-
+      : transactions.filter(t => t.type === filter);
     return [...base].sort((a, b) => {
       if (sort === 'date')   return new Date(b.date).getTime() - new Date(a.date).getTime();
       if (sort === 'amount') return b.amount - a.amount;
@@ -74,8 +73,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               onClick={() => setFilter(key)}
               style={{
                 flex: isMobile ? 1 : undefined,
-                padding: '5px 10px',
-                fontSize: '0.72rem', fontWeight: 600,
+                padding: '5px 10px', fontSize: '0.72rem', fontWeight: 600,
                 border: 'none', borderRadius: '6px', cursor: 'pointer', transition: 'all 0.15s',
                 background: filter === key ? 'var(--foreground)' : 'transparent',
                 color:      filter === key ? 'var(--background)' : 'var(--muted-foreground)',
@@ -86,7 +84,6 @@ export const TransactionList: React.FC<TransactionListProps> = ({
             </button>
           ))}
         </div>
-
         <div style={{ display: 'flex', gap: '3px', background: 'var(--muted)', borderRadius: '8px', padding: '3px' }}>
           {SORTS.map(({ key, label }) => (
             <button
@@ -94,8 +91,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
               onClick={() => setSort(key)}
               style={{
                 flex: isMobile ? 1 : undefined,
-                padding: '5px 9px',
-                fontSize: '0.72rem', fontWeight: 600,
+                padding: '5px 9px', fontSize: '0.72rem', fontWeight: 600,
                 border: 'none', borderRadius: '6px', cursor: 'pointer', transition: 'all 0.15s',
                 background: sort === key ? 'var(--card)' : 'transparent',
                 color:      sort === key ? 'var(--foreground)' : 'var(--muted-foreground)',
@@ -117,12 +113,9 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         <div>
           {filtered.map((t, idx) => {
             const isIncome  = t.type === 'income';
-            const amtColor  = isIncome ? '#16a34a' : '#dc2626';
+            const amtColor  = isIncome ? 'var(--success)' : 'var(--destructive)';
             const amtPrefix = isIncome ? '+' : '−';
-
-            const dateStr = new Date(t.date).toLocaleDateString('en-GB', {
-              day: 'numeric', month: 'short', year: 'numeric',
-            });
+            const dateStr   = new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 
             return (
               <div
@@ -133,38 +126,33 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   borderBottom: idx < filtered.length - 1 ? '1px solid var(--border)' : 'none',
                   gap: '0.75rem', transition: 'background 0.12s', background: 'transparent',
                 }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--accent)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
-                {/* Category icon bubble */}
+                {/* Icon bubble */}
                 <div style={{
-                  width: 34, height: 34, borderRadius: '9px',
+                  width: 34, height: 34, borderRadius: '9px', flexShrink: 0,
                   background: isIncome
-                    ? 'color-mix(in srgb, #16a34a 12%, var(--background))'
-                    : 'color-mix(in srgb, #dc2626 12%, var(--background))',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '1rem', flexShrink: 0,
+                    ? 'color-mix(in srgb, var(--success) 12%, var(--background))'
+                    : 'color-mix(in srgb, var(--destructive) 12%, var(--background))',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem',
                 }}>
                   {t.category?.icon ?? (isIncome ? '💰' : '💸')}
                 </div>
 
                 {/* Description + meta */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{
-                    fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground)',
-                    margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  }}>
+                  <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {t.description || t.category?.name || '—'}
                   </p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                     {t.category && (
                       <span style={{
-                        fontSize: '0.68rem', fontWeight: 600,
-                        padding: '1px 6px', borderRadius: '4px',
+                        fontSize: '0.68rem', fontWeight: 600, padding: '1px 6px', borderRadius: '4px',
                         background: isIncome
-                          ? 'color-mix(in srgb, #16a34a 15%, var(--background))'
-                          : 'color-mix(in srgb, #dc2626 15%, var(--background))',
-                        color: isIncome ? '#16a34a' : '#dc2626',
+                          ? 'color-mix(in srgb, var(--success) 15%, var(--background))'
+                          : 'color-mix(in srgb, var(--destructive) 15%, var(--background))',
+                        color: amtColor,
                       }}>
                         {t.category.name}
                       </span>
@@ -173,12 +161,8 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   </div>
                 </div>
 
-                {/* Amount — ← NEW: masked when hidden */}
-                <p style={{
-                  fontSize: '0.88rem', fontWeight: 700,
-                  color: amtColor, margin: 0, flexShrink: 0,
-                  letterSpacing: isBalanceHidden ? '0.04em' : '-0.01em',
-                }}>
+                {/* Amount */}
+                <p style={{ fontSize: '0.88rem', fontWeight: 700, color: amtColor, margin: 0, flexShrink: 0, letterSpacing: isBalanceHidden ? '0.04em' : '-0.01em' }}>
                   {isBalanceHidden
                     ? `${amtPrefix}€••••`
                     : `${amtPrefix}€${t.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
@@ -189,40 +173,18 @@ export const TransactionList: React.FC<TransactionListProps> = ({
                   <button
                     onClick={() => onEdit(t)}
                     title="Edit"
-                    style={{
-                      width: 28, height: 28, border: 'none', borderRadius: '7px',
-                      background: 'transparent', cursor: 'pointer', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      color: 'var(--muted-foreground)', transition: 'all 0.12s',
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = 'var(--muted)';
-                      (e.currentTarget as HTMLButtonElement).style.color = 'var(--foreground)';
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                      (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)';
-                    }}
+                    style={{ width: 28, height: 28, border: 'none', borderRadius: '7px', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', transition: 'all 0.12s' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--foreground)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)'; }}
                   >
                     <Pencil size={13} />
                   </button>
                   <button
                     onClick={() => onDelete(t.id)}
                     title="Delete"
-                    style={{
-                      width: 28, height: 28, border: 'none', borderRadius: '7px',
-                      background: 'transparent', cursor: 'pointer', display: 'flex',
-                      alignItems: 'center', justifyContent: 'center',
-                      color: 'var(--muted-foreground)', transition: 'all 0.12s',
-                    }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, #dc2626 12%, var(--background))';
-                      (e.currentTarget as HTMLButtonElement).style.color = '#dc2626';
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                      (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)';
-                    }}
+                    style={{ width: 28, height: 28, border: 'none', borderRadius: '7px', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', transition: 'all 0.12s' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, var(--destructive) 12%, var(--background))'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--destructive)'; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)'; }}
                   >
                     <Trash2 size={13} />
                   </button>
