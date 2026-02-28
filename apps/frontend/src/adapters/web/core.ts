@@ -1372,28 +1372,13 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     notifyUnauthorized();
   }
 
-  if (command === "get_budget_categories") {
-    const data = await res.json();
-    return data.map((cat: any) => ({
-      id: String(cat.id),
-      name: cat.name,
-      type: cat.type,
-      color: cat.color,
-      icon: cat.icon,
-      parentId: cat.parent_id,
-      isActive: cat.is_active,
-      createdAt: cat.created_at,
-      updatedAt: cat.updated_at,
-    })) as T;
-  }
-
-  if (command === "get_budget_transactions") {
+if (command === "get_budget_transactions") {
     const data = await res.json();
     return data.map((txn: any) => ({
       id: String(txn.id),
       categoryId: txn.category_id,
       amount: txn.amount,
-      type: txn.transaction_type,
+      type: txn.type,
       description: txn.description,
       date: txn.date,
       notes: txn.notes,
