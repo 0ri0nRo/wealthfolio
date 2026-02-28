@@ -79,9 +79,11 @@ export function MobileNavBar({ navigation }: MobileNavBarProps) {
 
   return (
     <div className={containerClassName}>
+      {/* Solid bg fill for iOS home indicator — prevents content bleeding through glass */}
+      <div className="fixed bottom-0 inset-x-0 h-[env(safe-area-inset-bottom,0px)] bg-background" />
       {/* Lift off bottom by the design gap while respecting safe area */}
       <div className="flex justify-center px-4 pb-[max(var(--mobile-nav-gap),env(safe-area-inset-bottom))]">
-        <LiquidGlass
+            <LiquidGlass
           variant="floating"
           intensity="subtle"
           className={cn("pointer-events-auto w-full px-1 py-1", "h-[var(--mobile-nav-ui-height)]")}
