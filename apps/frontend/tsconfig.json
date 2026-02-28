@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "types": ["@tauri-apps/api", "vitest/globals"],
     "noEmit": true,
     "composite": false,
