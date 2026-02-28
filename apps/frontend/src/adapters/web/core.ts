@@ -1372,20 +1372,7 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
     notifyUnauthorized();
   }
 
-if (command === "get_budget_transactions") {
-    const data = await res.json();
-    return data.map((txn: any) => ({
-      id: String(txn.id),
-      categoryId: txn.category_id,
-      amount: txn.amount,
-      type: txn.type,
-      description: txn.description,
-      date: txn.date,
-      notes: txn.notes,
-    })) as T;
-  }
-
-if (command === "get_budget_transactions") {
+  if (command === "get_budget_transactions") {
     const data = await res.json();
     return data.map((txn: any) => ({
       id: String(txn.id),
