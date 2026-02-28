@@ -13,6 +13,7 @@ import { AllocationDetailSheet } from "./components/allocation-detail-sheet";
 import { CashHoldingsWidget } from "./components/cash-holdings-widget";
 import { CompactAllocationStrip } from "./components/compact-allocation-strip";
 import { PortfolioComposition } from "./components/composition-chart";
+import { CountryAllocationChart } from "./components/country-allocation-chart";
 import { HoldingCurrencyChart } from "./components/currency-chart";
 import { DrillableAccountChart } from "./components/drillable-account-chart";
 import { DrillableDonutChart } from "./components/drillable-donut-chart";
@@ -56,7 +57,6 @@ export const HoldingsInsightsPage = ({ accountId: accountIdProp }: HoldingsInsig
         case "securityType":
           return allocations?.securityTypes;
         default:
-          // Check custom groups
           if (type === "custom" && allocations?.customGroups?.length) {
             return allocations.customGroups[0];
           }
@@ -83,7 +83,7 @@ export const HoldingsInsightsPage = ({ accountId: accountIdProp }: HoldingsInsig
   const openAllocationSheet = useCallback((allocation: TaxonomyAllocation | undefined) => {
     if (allocation) {
       setSelectedAllocation(allocation);
-      setInitialCategoryId(null); // Will default to first category
+      setInitialCategoryId(null);
       setIsSheetOpen(true);
     }
   }, []);
@@ -192,7 +192,21 @@ export const HoldingsInsightsPage = ({ accountId: accountIdProp }: HoldingsInsig
           />
         </div>
 
-        {/* Row 3: Composition (col-span-3) + Right column (Security Type, Risk Profile, Sectors) */}
+        {/* Row 3: Country Allocation (full width, individual countries) */}
+        <CountryAllocationChart
+          allocation={allocations?.regions}
+          isLoading={isLoading}
+          onCountryClick={(countryName) =>
+            handleChartSectionClick(
+              "country",
+              countryName,
+              `Holdings in ${countryName}`,
+              countryName,
+            )
+          }
+        />
+
+        {/* Row 4: Composition (col-span-3) + Right column (Security Type, Risk Profile, Sectors) */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
           <div className="col-span-1 lg:col-span-3">
             <PortfolioComposition holdings={nonCashHoldings ?? []} isLoading={isLoading} />
@@ -249,7 +263,7 @@ export const HoldingsInsightsPage = ({ accountId: accountIdProp }: HoldingsInsig
           </div>
         </div>
 
-        {/* Row 4: Custom Groups (under composition, col-span-3) */}
+        {/* Row 5: Custom Groups */}
         {hasCustomGroups && (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
             <div className="col-span-1 space-y-4 lg:col-span-3">
