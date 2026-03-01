@@ -1,4 +1,5 @@
 // src/pages/fire/index.tsx
+import { useBalancePrivacy } from '@/hooks/use-balance-privacy';
 import { FireSettings, useFire } from '@/hooks/useFire';
 import {
   Activity, ArrowRight, BarChart2, Eye, EyeOff, Flame, Play,
@@ -9,7 +10,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 // ── Utils ─────────────────────────────────────────────────────────────────────
 function useIsMobile(bp = 768) {
   const [v, setV] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
-  useEffect(() => { const h = () => setV(window.innerWidth < bp); window.addEventListener('resize', h); return () => window.removeEventListener('resize', h); }, [bp]);
+  useEffect(() => {
+    const h = () => setV(window.innerWidth < bp);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, [bp]);
   return v;
 }
 
@@ -21,14 +26,12 @@ const fmtEur = (n: number, compact = true) => {
   return `€${n.toLocaleString('en-US', { minimumFractionDigits: 0 })}`;
 };
 
-const HIDDEN_COMPACT = '€•••••';
-const HIDDEN_FULL    = '€••••••';
-
-const fmtEurOrHide = (n: number, isHidden: boolean, compact = true) =>
-  isHidden ? (compact ? HIDDEN_COMPACT : HIDDEN_FULL) : fmtEur(n, compact);
+const fmtEurOrHide = (n: number, hidden: boolean, compact = true) =>
+  hidden ? (compact ? '€•••••' : '€••••••') : fmtEur(n, compact);
 
 const fmtPct   = (n: number) => `${n.toFixed(1)}%`;
-const fmtYears = (months: number) => months >= 9990 ? '∞' : months >= 24 ? `${(months / 12).toFixed(1)} yrs` : `${Math.round(months)} mo`;
+const fmtYears = (months: number) =>
+  months >= 9990 ? '∞' : months >= 24 ? `${(months / 12).toFixed(1)} yrs` : `${Math.round(months)} mo`;
 
 const NOW_LABEL = (() => {
   const d = new Date();
@@ -40,22 +43,22 @@ function fmtDateShort(d: Date) { return `${d.getMonth() + 1}/${String(d.getFullY
 
 // ── Settings Modal ────────────────────────────────────────────────────────────
 const SettingsModal: React.FC<{
-  initial: FireSettings;
-  onSave: (s: FireSettings) => Promise<void>;
-  onClose: () => void;
-  saving: boolean;
-  isHidden: boolean;
-  onToggleHidden: () => void;
-}> = ({ initial, onSave, onClose, saving, isHidden, onToggleHidden }) => {
+  initial:        FireSettings;
+  onSave:         (s: FireSettings) => Promise<void>;
+  onClose:        () => void;
+  saving:         boolean;
+  isBalanceHidden:       boolean;
+  onToggleBalanceHidden: () => void;
+}> = ({ initial, onSave, onClose, saving, isBalanceHidden, onToggleBalanceHidden }) => {
   const [form, setForm] = useState<FireSettings>({ ...initial });
   const set = (k: keyof FireSettings, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   const field = (
-    label: string, field: keyof FireSettings,
+    label: string, fieldKey: keyof FireSettings,
     opts: { prefix?: string; step?: number; hint?: string; placeholder?: string; pct?: boolean } = {}
   ) => {
     const { prefix = '€', step = 50, hint, placeholder, pct } = opts;
-    const raw = form[field] as number | null;
+    const raw     = form[fieldKey] as number | null;
     const display = pct && raw != null ? (raw * 100).toFixed(1) : (raw ?? '');
     return (
       <div>
@@ -63,35 +66,21 @@ const SettingsModal: React.FC<{
         {hint && <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '-0.1rem 0 0.35rem' }}>{hint}</p>}
         <div style={{ position: 'relative' }}>
           {prefix && <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)', fontSize: '0.82rem', fontWeight: 600 }}>{prefix}</span>}
-          <input type="number" step={step} value={display} placeholder={placeholder}
-            onChange={e => { if (!e.target.value) { set(field, null); return; } const v = parseFloat(e.target.value); set(field, pct ? v / 100 : v); }}
-            style={{ width: '100%', padding: prefix ? '0.6rem 0.75rem 0.6rem 1.75rem' : '0.6rem 0.75rem', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' }} />
+          <input
+            type="number" step={step} value={display} placeholder={placeholder}
+            onChange={e => { if (!e.target.value) { set(fieldKey, null); return; } const v = parseFloat(e.target.value); set(fieldKey, pct ? v / 100 : v); }}
+            style={{ width: '100%', padding: prefix ? '0.6rem 0.75rem 0.6rem 1.75rem' : '0.6rem 0.75rem', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' }}
+          />
         </div>
       </div>
     );
   };
 
-  // Reusable toggle row
-  const toggleRow = (label: string, hint: string, value: boolean, onToggle: () => void, icon?: React.ReactNode) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--accent)', borderRadius: '12px', gap: '1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', minWidth: 0 }}>
-        {icon && <div style={{ color: 'var(--muted-foreground)', flexShrink: 0 }}>{icon}</div>}
-        <div>
-          <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>{label}</p>
-          <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>{hint}</p>
-        </div>
-      </div>
-      <div
-        onClick={onToggle}
-        style={{ width: 38, height: 22, borderRadius: 999, background: value ? 'var(--foreground)' : 'var(--muted)', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
-        <div style={{ position: 'absolute', top: 3, left: value ? 19 : 3, width: 16, height: 16, borderRadius: '50%', background: value ? 'var(--background)' : 'var(--muted-foreground)', transition: 'left 0.2s' }} />
-      </div>
-    </div>
-  );
-
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
-      onClick={e => e.target === e.currentTarget && onClose()}>
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
       <div style={{ background: 'var(--card)', borderRadius: '20px', border: '1px solid var(--border)', width: '100%', maxWidth: 500, boxShadow: '0 24px 60px rgba(0,0,0,0.2)', maxHeight: '90vh', overflowY: 'auto' }}>
 
         {/* Header */}
@@ -105,46 +94,62 @@ const SettingsModal: React.FC<{
 
         <div style={{ padding: '1.4rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
-          {/* ── Display preferences section ── */}
+          {/* ── Display section — same pattern as Budget gear menu ── */}
           <div>
             <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: '0 0 0.6rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Display</p>
-            {toggleRow(
-              'Hide values',
-              'Mask all monetary amounts with ••••••',
-              isHidden,
-              onToggleHidden,
-              isHidden ? <EyeOff size={14} /> : <Eye size={14} />,
-            )}
+            <div
+              onClick={onToggleBalanceHidden}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.75rem 1rem', background: 'var(--accent)', borderRadius: '12px', cursor: 'pointer', transition: 'background 0.12s' }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--muted)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'var(--accent)')}
+            >
+              <div style={{ width: 30, height: 30, borderRadius: '9px', background: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: '14px' }}>
+                {isBalanceHidden ? '👁️' : '🙈'}
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground)', margin: 0 }}>Hide balances</p>
+                <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '1px 0 0', fontWeight: 500 }}>
+                  {isBalanceHidden ? 'Active across the app' : 'Tap to activate'}
+                </p>
+              </div>
+              {/* Same toggle pill as Budget */}
+              <div style={{ width: 36, height: 20, borderRadius: '999px', flexShrink: 0, background: isBalanceHidden ? 'var(--foreground)' : 'var(--muted)', position: 'relative', transition: 'background 0.2s' }}>
+                <div style={{ position: 'absolute', top: 2, left: isBalanceHidden ? 'calc(100% - 18px)' : '2px', width: 16, height: 16, borderRadius: '50%', background: isBalanceHidden ? 'var(--background)' : 'var(--muted-foreground)', transition: 'left 0.2s' }} />
+              </div>
+            </div>
           </div>
 
           <div style={{ height: 1, background: 'var(--border)' }} />
 
-          {/* ── FIRE calculation params ── */}
+          {/* ── Calculation parameters ── */}
           <div>
             <p style={{ fontSize: '0.72rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: '0 0 0.6rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Calculation parameters</p>
             <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '0 0 1rem', fontStyle: 'italic' }}>
               These drive all FIRE calculations. Monthly expenses are auto-derived from your last 12 months of budget data unless overridden.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              {field('Monthly target spending', 'monthly_expenses', { hint: 'Override: leave empty to use 12-month budget average' })}
-              {field('Monthly net income', 'monthly_income_override', { hint: 'Override: leave empty to use budget average' })}
-              {field('INPS unemployment benefit', 'inps_monthly', { hint: 'Monthly INPS amount for the safety-net scenario' })}
+              {field('Monthly target spending',    'monthly_expenses',       { hint: 'Override: leave empty to use 12-month budget average' })}
+              {field('Monthly net income',         'monthly_income_override', { hint: 'Override: leave empty to use budget average' })}
+              {field('INPS unemployment benefit',  'inps_monthly',           { hint: 'Monthly INPS amount for the safety-net scenario' })}
               <div>
                 <label style={{ display: 'block', fontSize: '0.72rem', fontWeight: 700, color: 'var(--muted-foreground)', marginBottom: '0.3rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>FIRE Number (optional)</label>
                 <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '-0.1rem 0 0.35rem' }}>If empty: expenses × 12 × 25 (4% rule)</p>
                 <div style={{ position: 'relative' }}>
                   <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)', fontSize: '0.82rem', fontWeight: 600 }}>€</span>
-                  <input type="number" step={5000} value={form.fire_number ?? ''} placeholder={`Auto: ${fmtEur((form.monthly_expenses || 2000) * 12 * 25, false)}`}
+                  <input
+                    type="number" step={5000} value={form.fire_number ?? ''}
+                    placeholder={`Auto: ${fmtEur((form.monthly_expenses || 2000) * 12 * 25, false)}`}
                     onChange={e => set('fire_number', e.target.value ? parseFloat(e.target.value) : null)}
-                    style={{ width: '100%', padding: '0.6rem 0.75rem 0.6rem 1.75rem', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' }} />
+                    style={{ width: '100%', padding: '0.6rem 0.75rem 0.6rem 1.75rem', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: '10px', fontSize: '0.88rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' }}
+                  />
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 {field('Annual return %', 'annual_return_rate', { prefix: '%', step: 0.5, pct: true })}
-                {field('Inflation %', 'inflation_rate', { prefix: '%', step: 0.5, pct: true })}
+                {field('Inflation %',     'inflation_rate',     { prefix: '%', step: 0.5, pct: true })}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                {field('Current age', 'current_age', { prefix: '', step: 1, placeholder: '—' })}
+                {field('Current age',     'current_age',     { prefix: '', step: 1, placeholder: '—' })}
                 {field('Target FIRE age', 'target_fire_age', { prefix: '', step: 1, placeholder: '—' })}
               </div>
             </div>
@@ -165,7 +170,7 @@ const SettingsModal: React.FC<{
 };
 
 // ── FIRE Progress Bar ─────────────────────────────────────────────────────────
-const FireProgress: React.FC<{ netWorth: number; fireNumber: number; isHidden: boolean }> = ({ netWorth, fireNumber, isHidden }) => {
+const FireProgress: React.FC<{ netWorth: number; fireNumber: number; isBalanceHidden: boolean }> = ({ netWorth, fireNumber, isBalanceHidden }) => {
   const pct = Math.min((netWorth / fireNumber) * 100, 100);
   const milestones = [25, 50, 75, 100];
   return (
@@ -181,19 +186,17 @@ const FireProgress: React.FC<{ netWorth: number; fireNumber: number; isHidden: b
         ))}
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>{fmtEurOrHide(netWorth, isHidden)} saved</span>
-        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: pct >= 100 ? 'var(--success)' : 'var(--foreground)' }}>{isHidden ? '••.•%' : `${pct.toFixed(1)}%`}</span>
-        <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>Target: {fmtEurOrHide(fireNumber, isHidden)}</span>
+        <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>{fmtEurOrHide(netWorth, isBalanceHidden)} saved</span>
+        <span style={{ fontSize: '0.8rem', fontWeight: 800, color: pct >= 100 ? 'var(--success)' : 'var(--foreground)' }}>{isBalanceHidden ? '••.•%' : `${pct.toFixed(1)}%`}</span>
+        <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>Target: {fmtEurOrHide(fireNumber, isBalanceHidden)}</span>
       </div>
     </div>
   );
 };
 
 // ── Runway Card ───────────────────────────────────────────────────────────────
-const RunwayCard: React.FC<{
-  scenarios: { label: string; months: number; description: string }[];
-}> = ({ scenarios }) => {
-  const COLORS = ['var(--color-blue-600)', 'var(--color-orange-400)', 'var(--success)'];
+const RunwayCard: React.FC<{ scenarios: { label: string; months: number; description: string }[] }> = ({ scenarios }) => {
+  const COLORS  = ['var(--color-blue-600)', 'var(--color-orange-400)', 'var(--success)'];
   const maxMonths = Math.max(...scenarios.filter(s => s.months < 9990).map(s => s.months), 60);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
@@ -218,8 +221,8 @@ const RunwayCard: React.FC<{
   );
 };
 
-// ── Time-to-Broke SVG Chart ───────────────────────────────────────────────────
-const TtbChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualReturn: number; isMobile: boolean; isHidden: boolean }> = ({ netWorth, monthlyExpenses, annualReturn, isMobile, isHidden }) => {
+// ── Capital Depletion Chart ───────────────────────────────────────────────────
+const TtbChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualReturn: number; isMobile: boolean; isBalanceHidden: boolean }> = ({ netWorth, monthlyExpenses, annualReturn, isMobile, isBalanceHidden }) => {
   const pts = useMemo(() => {
     const r = annualReturn / 12;
     const res: { m: number; d: Date; cap: number; ret: number }[] = [];
@@ -237,11 +240,9 @@ const TtbChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualRetu
   const zeroCap = pts.find(p => p.cap <= 0);
   const zeroRet = pts.find(p => p.ret <= 0);
   const maxM    = pts[pts.length - 1].m;
-  const W = isMobile ? 320 : 520;
-  const H = 190;
+  const W = isMobile ? 320 : 520, H = 190;
   const P = { t: 18, b: 28, l: 50, r: 12 };
-  const cW = W - P.l - P.r;
-  const cH = H - P.t - P.b;
+  const cW = W - P.l - P.r, cH = H - P.t - P.b;
   const sx = (m: number) => P.l + (m / maxM) * cW;
   const sy = (v: number) => P.t + (1 - Math.min(v, netWorth) / netWorth) * cH;
 
@@ -253,14 +254,12 @@ const TtbChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualRetu
     return active.map((p, i) => `${i === 0 ? 'M' : 'L'} ${sx(p.m)},${sy(p[key])}`).join(' ') + tail;
   };
   const buildArea = (key: 'cap' | 'ret') => {
-    const path  = buildPath(key);
-    const zero  = key === 'cap' ? (zeroCap ? sx(zeroCap.m) : sx(maxM)) : (zeroRet ? sx(zeroRet.m) : sx(maxM));
+    const path = buildPath(key);
+    const zero = key === 'cap' ? (zeroCap ? sx(zeroCap.m) : sx(maxM)) : (zeroRet ? sx(zeroRet.m) : sx(maxM));
     return `${path} L ${zero},${sy(0)} L ${P.l},${sy(0)} Z`;
   };
 
   const tickEvery = maxM <= 36 ? 6 : maxM <= 120 ? 12 : 24;
-  const xTicks    = pts.filter(p => p.m % tickEvery === 0);
-  const yTicks    = [0, 0.25, 0.5, 0.75, 1];
 
   return (
     <div>
@@ -281,9 +280,9 @@ const TtbChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualRetu
           <linearGradient id="ttbRed"   x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#e5484d" stopOpacity=".14"/><stop offset="100%" stopColor="#e5484d" stopOpacity="0"/></linearGradient>
           <linearGradient id="ttbGreen" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#30a46c" stopOpacity=".12"/><stop offset="100%" stopColor="#30a46c" stopOpacity="0"/></linearGradient>
         </defs>
-        {yTicks.map(f => {
-          const y = sy(netWorth * f);
-          const label = isHidden ? '•••' : (netWorth * f >= 1000 ? `€${((netWorth * f) / 1000).toFixed(0)}k` : `€${netWorth * f}`);
+        {[0, 0.25, 0.5, 0.75, 1].map(f => {
+          const y     = sy(netWorth * f);
+          const label = isBalanceHidden ? '•••' : (netWorth * f >= 1000 ? `€${((netWorth * f) / 1000).toFixed(0)}k` : `€${netWorth * f}`);
           return (
             <g key={f}>
               <line x1={P.l} y1={y} x2={W - P.r} y2={y} stroke="var(--border)" strokeWidth=".6" strokeDasharray="3,3" />
@@ -305,16 +304,16 @@ const TtbChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualRetu
           <circle cx={sx(zeroRet.m)} cy={sy(0)} r={4} fill="#30a46c" />
           <text x={sx(zeroRet.m)} y={P.t - 3} textAnchor="middle" fontSize="8" fill="#30a46c" fontFamily="var(--font-sans)" fontWeight="700">{fmtDateShort(zeroRet.d)}</text>
         </>}
-        {xTicks.map(p => (
+        {pts.filter(p => p.m % tickEvery === 0).map(p => (
           <text key={p.m} x={sx(p.m)} y={H - 4} textAnchor="middle" fontSize="8" fill="var(--muted-foreground)" fontFamily="var(--font-sans)">{fmtDateShort(p.d)}</text>
         ))}
       </svg>
 
       <div style={{ display: 'flex', gap: '0.65rem', marginTop: '0.85rem', flexWrap: 'wrap' }}>
         {[
-          { label: 'Capital only',  value: zeroCap ? `${zeroCap.m} months` : '∞', color: 'var(--destructive)' },
-          { label: 'With returns',  value: zeroRet ? `${zeroRet.m} months` : '∞', color: 'var(--success)' },
-          { label: 'Extra runway',  value: zeroCap && zeroRet ? `+${zeroRet.m - zeroCap.m} months` : '∞', color: 'var(--color-purple-600)' },
+          { label: 'Capital only', value: zeroCap ? `${zeroCap.m} months` : '∞', color: 'var(--destructive)' },
+          { label: 'With returns', value: zeroRet ? `${zeroRet.m} months` : '∞', color: 'var(--success)' },
+          { label: 'Extra runway', value: zeroCap && zeroRet ? `+${zeroRet.m - zeroCap.m} months` : '∞', color: 'var(--color-purple-600)' },
         ].map(({ label, value, color }) => (
           <div key={label} style={{ flex: 1, background: `color-mix(in srgb, ${color} 10%, var(--background))`, border: `1px solid color-mix(in srgb, ${color} 22%, transparent)`, borderRadius: '10px', padding: '0.55rem 0.9rem' }}>
             <p style={{ fontSize: '0.62rem', color: 'var(--muted-foreground)', margin: '0 0 2px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
@@ -329,33 +328,26 @@ const TtbChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualRetu
 // ── Net Worth Sparkline ───────────────────────────────────────────────────────
 const NetWorthSparkline: React.FC<{ history: { date: string; total_value: number }[]; isMobile: boolean }> = ({ history, isMobile }) => {
   if (history.length < 2) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100, color: 'var(--muted-foreground)', fontSize: '0.8rem' }}>
-      Not enough data yet
-    </div>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100, color: 'var(--muted-foreground)', fontSize: '0.8rem' }}>Not enough data yet</div>
   );
-  const W = isMobile ? 300 : 460;
-  const H = 100;
+  const W = isMobile ? 300 : 460, H = 100;
   const P = { t: 8, b: 22, l: 6, r: 6 };
   const vals = history.map(p => p.total_value);
-  const min = Math.min(...vals), max = Math.max(...vals);
-  const rng = max - min || 1;
-  const pts = history.map((p, i) => {
+  const min  = Math.min(...vals), max = Math.max(...vals), rng = max - min || 1;
+  const pts  = history.map((p, i) => {
     const x = P.l + (i / (history.length - 1)) * (W - P.l - P.r);
     const y = P.t + (1 - (p.total_value - min) / rng) * (H - P.t - P.b);
     return `${x},${y}`;
   });
-  const pathD = `M ${pts.join(' L ')}`;
-  const areaD = `${pathD} L ${W - P.r},${H - P.b} L ${P.l},${H - P.b} Z`;
+  const pathD = `M ${pts.join(' L ')}`, areaD = `${pathD} L ${W - P.r},${H - P.b} L ${P.l},${H - P.b} Z`;
   const isUp  = vals[vals.length - 1] >= vals[0];
   const color = isUp ? '#30a46c' : '#e5484d';
   const [lx, ly] = pts[pts.length - 1].split(',').map(Number);
-
   return (
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
       <defs>
         <linearGradient id="sparkG" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity=".18"/>
-          <stop offset="100%" stopColor={color} stopOpacity="0"/>
+          <stop offset="0%" stopColor={color} stopOpacity=".18"/><stop offset="100%" stopColor={color} stopOpacity="0"/>
         </linearGradient>
       </defs>
       <path d={areaD} fill="url(#sparkG)" />
@@ -374,9 +366,8 @@ const NetWorthSparkline: React.FC<{ history: { date: string; total_value: number
 interface SimResult { months: number; finalWealth: number; totalContributions: number; totalGains: number; }
 
 function runSimulation(startCapital: number, monthlyContrib: number, annualReturn: number, horizonYears: number): SimResult {
-  const months = horizonYears * 12;
-  const r      = annualReturn / 12;
-  let w        = startCapital;
+  const months = horizonYears * 12, r = annualReturn / 12;
+  let w = startCapital;
   for (let i = 0; i < months; i++) w = w * (1 + r) + monthlyContrib;
   const totalContrib = monthlyContrib * months;
   return { months, finalWealth: w, totalContributions: startCapital + totalContrib, totalGains: w - startCapital - totalContrib };
@@ -395,39 +386,25 @@ function buildSimPath(startCapital: number, monthlyContrib: number, annualReturn
   return pts;
 }
 
-const SimulationPanel: React.FC<{ currentNetWorth: number; defaultMonthlyContrib: number; defaultReturn: number; isMobile: boolean; isHidden: boolean }> = ({
-  currentNetWorth, defaultMonthlyContrib, defaultReturn, isMobile, isHidden,
+const SimulationPanel: React.FC<{ currentNetWorth: number; defaultMonthlyContrib: number; defaultReturn: number; isMobile: boolean; isBalanceHidden: boolean }> = ({
+  currentNetWorth, defaultMonthlyContrib, defaultReturn, isMobile, isBalanceHidden,
 }) => {
-  const [monthly, setMonthly]   = useState(defaultMonthlyContrib > 0 ? Math.round(defaultMonthlyContrib) : 500);
-  const [returnPct, setReturn]  = useState(+(defaultReturn * 100).toFixed(1) || 6);
-  const [horizon, setHorizon]   = useState(10);
-  const [includeBase, setBase]  = useState(true);
+  const [monthly,     setMonthly]  = useState(defaultMonthlyContrib > 0 ? Math.round(defaultMonthlyContrib) : 500);
+  const [returnPct,   setReturn]   = useState(+(defaultReturn * 100).toFixed(1) || 6);
+  const [horizon,     setHorizon]  = useState(10);
+  const [includeBase, setBase]     = useState(true);
 
-  const result = useMemo(() =>
-    runSimulation(includeBase ? currentNetWorth : 0, monthly, returnPct / 100, horizon),
-    [includeBase, currentNetWorth, monthly, returnPct, horizon]
-  );
+  const result = useMemo(() => runSimulation(includeBase ? currentNetWorth : 0, monthly, returnPct / 100, horizon), [includeBase, currentNetWorth, monthly, returnPct, horizon]);
+  const simPts = useMemo(() => buildSimPath(includeBase ? currentNetWorth : 0, monthly, returnPct / 100, horizon), [includeBase, currentNetWorth, monthly, returnPct, horizon]);
 
-  const simPts = useMemo(() =>
-    buildSimPath(includeBase ? currentNetWorth : 0, monthly, returnPct / 100, horizon),
-    [includeBase, currentNetWorth, monthly, returnPct, horizon]
-  );
-
-  // SVG chart
-  const W = isMobile ? 320 : 500;
-  const H = 160;
+  const W = isMobile ? 320 : 500, H = 160;
   const P = { t: 12, b: 24, l: 52, r: 12 };
-  const cW = W - P.l - P.r;
-  const cH = H - P.t - P.b;
-  const maxW = Math.max(...simPts.map(p => p.wealth));
-  const maxC = Math.max(...simPts.map(p => p.contributions));
-  const maxY = Math.max(maxW, maxC, 1);
-  const sx   = (m: number) => P.l + (m / result.months) * cW;
-  const sy   = (v: number) => P.t + (1 - v / maxY) * cH;
+  const maxY  = Math.max(...simPts.map(p => p.wealth), ...simPts.map(p => p.contributions), 1);
+  const sx    = (m: number) => P.l + (m / result.months) * (W - P.l - P.r);
+  const sy    = (v: number) => P.t + (1 - v / maxY) * (H - P.t - P.b);
   const wPath = simPts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${sx(p.m)},${sy(p.wealth)}`).join(' ');
   const cPath = simPts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${sx(p.m)},${sy(p.contributions)}`).join(' ');
   const wArea = `${wPath} L ${sx(result.months)},${sy(0)} L ${P.l},${sy(0)} Z`;
-  const yTicks = [0, 0.25, 0.5, 0.75, 1];
 
   const range = (label: string, val: number, min: number, max: number, step: number, fmt: (v: number) => string, onChange: (v: number) => void) => (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
@@ -435,40 +412,34 @@ const SimulationPanel: React.FC<{ currentNetWorth: number; defaultMonthlyContrib
         <label style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</label>
         <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>{fmt(val)}</span>
       </div>
-      <input type="range" min={min} max={max} step={step} value={val}
-        onChange={e => onChange(parseFloat(e.target.value))}
+      <input type="range" min={min} max={max} step={step} value={val} onChange={e => onChange(parseFloat(e.target.value))}
         style={{ width: '100%', accentColor: 'var(--foreground)', cursor: 'pointer', height: 4 }} />
     </div>
   );
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-      {/* Controls */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '1.25rem' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {range('Monthly savings', monthly, 0, 5000, 50, v => `€${v.toLocaleString()}`, setMonthly)}
-          {range('Annual return', returnPct, 0, 15, 0.5, v => `${v.toFixed(1)}%`, setReturn)}
-          {range('Time horizon', horizon, 1, 40, 1, v => `${v} years`, setHorizon)}
+          {range('Monthly savings', monthly,    0,    5000, 50,  v => `€${v.toLocaleString()}`, setMonthly)}
+          {range('Annual return',   returnPct,  0,    15,   0.5, v => `${v.toFixed(1)}%`,       setReturn)}
+          {range('Time horizon',    horizon,    1,    40,   1,   v => `${v} years`,              setHorizon)}
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingTop: '0.25rem' }}>
-            <div
-              onClick={() => setBase(v => !v)}
+            <div onClick={() => setBase(v => !v)}
               style={{ width: 36, height: 20, borderRadius: 999, background: includeBase ? 'var(--foreground)' : 'var(--muted)', position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0 }}>
               <div style={{ position: 'absolute', top: 2, left: includeBase ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: includeBase ? 'var(--background)' : 'var(--muted-foreground)', transition: 'left 0.2s' }} />
             </div>
             <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--muted-foreground)' }}>
-              Start from current net worth ({fmtEurOrHide(currentNetWorth, isHidden)})
+              Start from current net worth ({fmtEurOrHide(currentNetWorth, isBalanceHidden)})
             </span>
           </div>
         </div>
-
-        {/* Result cards */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem', alignContent: 'start' }}>
           {[
-            { label: 'Final wealth',      value: fmtEurOrHide(result.finalWealth, isHidden, false),       color: 'var(--success)',             large: true  },
-            { label: 'Total gains',       value: fmtEurOrHide(result.totalGains, isHidden, false),        color: 'var(--color-purple-600)',    large: false },
-            { label: 'Total contributed', value: fmtEurOrHide(result.totalContributions, isHidden, false), color: 'var(--foreground)',          large: false },
-            { label: 'Gain multiple',     value: isHidden ? '×••••' : result.totalContributions > 0 ? `${(result.finalWealth / result.totalContributions).toFixed(2)}×` : '—', color: 'var(--color-orange-400)', large: false },
+            { label: 'Final wealth',      value: fmtEurOrHide(result.finalWealth,        isBalanceHidden, false), color: 'var(--success)',          large: true  },
+            { label: 'Total gains',       value: fmtEurOrHide(result.totalGains,          isBalanceHidden, false), color: 'var(--color-purple-600)', large: false },
+            { label: 'Total contributed', value: fmtEurOrHide(result.totalContributions,  isBalanceHidden, false), color: 'var(--foreground)',        large: false },
+            { label: 'Gain multiple',     value: isBalanceHidden ? '×••••' : result.totalContributions > 0 ? `${(result.finalWealth / result.totalContributions).toFixed(2)}×` : '—', color: 'var(--color-orange-400)', large: false },
           ].map(({ label, value, color, large }) => (
             <div key={label} style={{ background: 'var(--accent)', borderRadius: '12px', padding: '0.75rem 0.9rem', gridColumn: large ? 'span 2' : undefined }}>
               <p style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
@@ -477,14 +448,9 @@ const SimulationPanel: React.FC<{ currentNetWorth: number; defaultMonthlyContrib
           ))}
         </div>
       </div>
-
-      {/* Projection chart */}
       <div>
         <div style={{ display: 'flex', gap: '1.25rem', marginBottom: '0.6rem', flexWrap: 'wrap' }}>
-          {[
-            { color: '#30a46c', label: 'Projected wealth (with compound returns)' },
-            { color: 'var(--muted-foreground)', label: 'Total contributions (no returns)' },
-          ].map(({ color, label }) => (
+          {[{ color: '#30a46c', label: 'Projected wealth (with compound returns)' }, { color: 'var(--muted-foreground)', label: 'Total contributions (no returns)' }].map(({ color, label }) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <div style={{ width: 18, height: 3, borderRadius: 2, background: color }} />
               <span style={{ fontSize: '0.67rem', color: 'var(--muted-foreground)' }}>{label}</span>
@@ -492,15 +458,10 @@ const SimulationPanel: React.FC<{ currentNetWorth: number; defaultMonthlyContrib
           ))}
         </div>
         <svg width="100%" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', overflow: 'visible' }}>
-          <defs>
-            <linearGradient id="simGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#30a46c" stopOpacity=".16"/>
-              <stop offset="100%" stopColor="#30a46c" stopOpacity="0"/>
-            </linearGradient>
-          </defs>
-          {yTicks.map(f => {
-            const y = sy(maxY * f);
-            const label = isHidden ? '•••' : (maxY * f >= 1_000_000 ? `€${((maxY * f) / 1_000_000).toFixed(1)}M` : maxY * f >= 1_000 ? `€${((maxY * f) / 1_000).toFixed(0)}k` : `€${Math.round(maxY * f)}`);
+          <defs><linearGradient id="simGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#30a46c" stopOpacity=".16"/><stop offset="100%" stopColor="#30a46c" stopOpacity="0"/></linearGradient></defs>
+          {[0, 0.25, 0.5, 0.75, 1].map(f => {
+            const y     = sy(maxY * f);
+            const label = isBalanceHidden ? '•••' : (maxY * f >= 1_000_000 ? `€${((maxY * f) / 1_000_000).toFixed(1)}M` : maxY * f >= 1_000 ? `€${((maxY * f) / 1_000).toFixed(0)}k` : `€${Math.round(maxY * f)}`);
             return (
               <g key={f}>
                 <line x1={P.l} y1={y} x2={W - P.r} y2={y} stroke="var(--border)" strokeWidth=".5" strokeDasharray="3,3" />
@@ -513,15 +474,10 @@ const SimulationPanel: React.FC<{ currentNetWorth: number; defaultMonthlyContrib
           <path d={wPath} fill="none" stroke="#30a46c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           {Array.from({ length: horizon + 1 }, (_, i) => {
             if (i % Math.max(1, Math.floor(horizon / 5)) !== 0) return null;
-            const m = i * 12;
-            const x = sx(m);
-            const d = addMonths(new Date(), m);
+            const x = sx(i * 12), d = addMonths(new Date(), i * 12);
             return <text key={i} x={x} y={H - 5} textAnchor="middle" fontSize="8" fill="var(--muted-foreground)" fontFamily="var(--font-sans)">{d.getFullYear()}</text>;
           })}
-          {(() => {
-            const lp = simPts[simPts.length - 1];
-            return <circle cx={sx(lp.m)} cy={sy(lp.wealth)} r={5} fill="#30a46c" stroke="var(--background)" strokeWidth="2" />;
-          })()}
+          {(() => { const lp = simPts[simPts.length - 1]; return <circle cx={sx(lp.m)} cy={sy(lp.wealth)} r={5} fill="#30a46c" stroke="var(--background)" strokeWidth="2" />; })()}
         </svg>
       </div>
     </div>
@@ -530,10 +486,10 @@ const SimulationPanel: React.FC<{ currentNetWorth: number; defaultMonthlyContrib
 
 // ── FIRE Scenario Card ────────────────────────────────────────────────────────
 const FireScenario: React.FC<{
-  s: { label: string; monthly_target: number; fire_number: number; months_to_fire: number | null; years_to_fire: number | null };
-  highlight?: boolean;
-  isHidden: boolean;
-}> = ({ s, highlight, isHidden }) => {
+  s:               { label: string; monthly_target: number; fire_number: number; months_to_fire: number | null; years_to_fire: number | null };
+  highlight?:      boolean;
+  isBalanceHidden: boolean;
+}> = ({ s, highlight, isBalanceHidden }) => {
   const map: Record<string, { color: string; icon: React.ReactNode }> = {
     'Lean FIRE':    { color: 'var(--color-blue-600)',    icon: <Zap size={13} /> },
     'Regular FIRE': { color: 'var(--color-orange-400)', icon: <Flame size={13} /> },
@@ -551,11 +507,11 @@ const FireScenario: React.FC<{
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
         <div>
           <p style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Monthly</p>
-          <p style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--foreground)', margin: 0 }}>{fmtEurOrHide(s.monthly_target, isHidden)}</p>
+          <p style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--foreground)', margin: 0 }}>{fmtEurOrHide(s.monthly_target, isBalanceHidden)}</p>
         </div>
         <div>
           <p style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Number</p>
-          <p style={{ fontSize: '0.95rem', fontWeight: 800, color, margin: 0 }}>{fmtEurOrHide(s.fire_number, isHidden)}</p>
+          <p style={{ fontSize: '0.95rem', fontWeight: 800, color, margin: 0 }}>{fmtEurOrHide(s.fire_number, isBalanceHidden)}</p>
         </div>
         <div style={{ gridColumn: 'span 2' }}>
           <p style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Time to FIRE</p>
@@ -573,13 +529,11 @@ const FireScenario: React.FC<{
 
 // ── Wealth Health Score ───────────────────────────────────────────────────────
 const HealthScore: React.FC<{ score: number; isMobile: boolean }> = ({ score, isMobile }) => {
-  const size  = isMobile ? 130 : 160;
-  const sw    = 11;
-  const r     = (size - sw * 2) / 2;
-  const circ  = 2 * Math.PI * r;
+  const size   = isMobile ? 130 : 160, sw = 11;
+  const r      = (size - sw * 2) / 2, circ = 2 * Math.PI * r;
   const offset = circ - (score / 100) * circ;
-  const color = score < 25 ? 'var(--destructive)' : score < 50 ? 'var(--color-orange-400)' : score < 75 ? 'var(--color-yellow-400, #d0a215)' : 'var(--success)';
-  const label = score < 25 ? 'Critical' : score < 50 ? 'Caution' : score < 75 ? 'Good' : 'Excellent';
+  const color  = score < 25 ? 'var(--destructive)' : score < 50 ? 'var(--color-orange-400)' : score < 75 ? 'var(--color-yellow-400, #d0a215)' : 'var(--success)';
+  const label  = score < 25 ? 'Critical' : score < 50 ? 'Caution' : score < 75 ? 'Good' : 'Excellent';
   return (
     <div style={{ position: 'relative', width: size, height: size, flexShrink: 0 }}>
       <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
@@ -594,7 +548,7 @@ const HealthScore: React.FC<{ score: number; isMobile: boolean }> = ({ score, is
   );
 };
 
-// ── Section Card wrapper ──────────────────────────────────────────────────────
+// ── Card wrapper ──────────────────────────────────────────────────────────────
 const Card: React.FC<{ title: string; subtitle?: string; icon?: React.ReactNode; children: React.ReactNode; style?: React.CSSProperties; action?: React.ReactNode }> = ({ title, subtitle, icon, children, style, action }) => (
   <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.25rem', ...style }}>
     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1rem' }}>
@@ -620,9 +574,11 @@ const CardIcon: React.FC<{ color: string; children: React.ReactNode }> = ({ colo
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export const FirePage: React.FC = () => {
   const { data, loading, error, saving, refresh, saveSettings } = useFire();
-  const [showSettings, setShowSettings]  = useState(false);
-  const [activeTab, setActiveTab]        = useState<'overview' | 'simulation' | 'scenarios'>('overview');
-  const [isHidden, setIsHidden]          = useState(false);
+  // Same hook as Budget — state is shared automatically via whatever storage
+  // mechanism use-balance-privacy uses (localStorage, context, etc.)
+  const { isBalanceHidden, toggleBalanceVisibility } = useBalancePrivacy();
+  const [showSettings, setShowSettings] = useState(false);
+  const [activeTab,    setActiveTab]    = useState<'overview' | 'simulation' | 'scenarios'>('overview');
   const isMobile = useIsMobile();
 
   if (loading) return (
@@ -630,7 +586,6 @@ export const FirePage: React.FC = () => {
       <div style={{ width: 28, height: 28, border: '2.5px solid var(--foreground)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
     </div>
   );
-
   if (error || !data) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--background)' }}>
       <div style={{ textAlign: 'center', padding: '0 1.5rem' }}>
@@ -641,9 +596,9 @@ export const FirePage: React.FC = () => {
     </div>
   );
 
-  const s        = data.settings;
-  const fireNum  = s.fire_number ?? data.avg_monthly_expenses * 12 * 25;
-  const firePct  = Math.min((data.net_worth / fireNum) * 100, 100);
+  const s              = data.settings;
+  const fireNum        = s.fire_number ?? data.avg_monthly_expenses * 12 * 25;
+  const firePct        = Math.min((data.net_worth / fireNum) * 100, 100);
   const passiveMonthly = data.net_worth * s.annual_return_rate / 12;
   const coverageRatio  = data.avg_monthly_expenses > 0 ? (passiveMonthly / data.avg_monthly_expenses) * 100 : 0;
 
@@ -660,51 +615,92 @@ export const FirePage: React.FC = () => {
     ['scenarios',  'FIRE Scenarios'],
   ];
 
+  const statTiles = [
+    { label: 'Avg income/mo',  value: fmtEurOrHide(data.avg_monthly_income,   isBalanceHidden), color: 'var(--success)' },
+    { label: 'Avg expenses/mo', value: fmtEurOrHide(data.avg_monthly_expenses, isBalanceHidden), color: 'var(--destructive)' },
+    { label: 'Savings/mo',      value: fmtEurOrHide(data.avg_monthly_savings,  isBalanceHidden), color: data.avg_monthly_savings >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)' },
+    { label: 'Savings rate',    value: isBalanceHidden ? '••.•%' : fmtPct(data.savings_rate),   color: data.savings_rate >= 20 ? 'var(--success)' : 'var(--color-orange-400)' },
+  ];
+
   return (
     <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
 
-      {/* ── NAV ─────────────────────────────────────────────────────────── */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
-        <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '0 1rem' : '0 1.5rem', height: 52, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+      {/* ── NAV ─────────────────────────────────────────────────────────────── */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 20,
+        background: 'color-mix(in srgb, var(--background) 92%, transparent)',
+        backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
+        borderBottom: '1px solid var(--border)',
+        paddingTop: 'env(safe-area-inset-top)',
+      }}>
+        <div style={{
+          maxWidth: 1200, margin: '0 auto',
+          paddingLeft:  'max(1rem, env(safe-area-inset-left))',
+          paddingRight: 'max(1rem, env(safe-area-inset-right))',
+          height: 52, display: 'flex', alignItems: 'center', gap: '0.4rem',
+          overflow: 'hidden',
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexShrink: 0 }}>
             <Flame size={16} color="#f97316" />
             <span style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>FIRE</span>
           </div>
 
-          <div style={{ display: 'flex', gap: '2px', background: 'var(--muted)', borderRadius: '10px', padding: '3px', marginLeft: '6px' }}>
+          <div style={{ display: 'flex', gap: '2px', background: 'var(--muted)', borderRadius: '10px', padding: '3px', marginLeft: '6px', minWidth: 0, overflow: 'hidden' }}>
             {TABS.map(([key, label]) => (
-              <span key={key} onClick={() => setActiveTab(key)} style={{ fontSize: '0.75rem', fontWeight: 600, padding: isMobile ? '4px 8px' : '4px 12px', borderRadius: '8px', cursor: 'pointer', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', background: activeTab === key ? 'var(--card)' : 'transparent', color: activeTab === key ? 'var(--foreground)' : 'var(--muted-foreground)', boxShadow: activeTab === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none', transition: 'all 0.15s', WebkitTapHighlightColor: 'transparent', userSelect: 'none' }}>
-                {label}
-              </span>
+              <span key={key} onClick={() => setActiveTab(key)} style={{
+                fontSize: '0.73rem', fontWeight: 600,
+                padding: isMobile ? '4px 7px' : '4px 11px',
+                borderRadius: '8px', cursor: 'pointer', whiteSpace: 'nowrap',
+                display: 'inline-flex', alignItems: 'center',
+                background:  activeTab === key ? 'var(--card)' : 'transparent',
+                color:       activeTab === key ? 'var(--foreground)' : 'var(--muted-foreground)',
+                boxShadow:   activeTab === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                transition: 'all 0.15s', WebkitTapHighlightColor: 'transparent', userSelect: 'none',
+              }}>{label}</span>
             ))}
           </div>
 
           <div style={{ flex: 1 }} />
 
-          {/* Timestamp */}
           {!isMobile && (
-            <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>
+            <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', fontWeight: 500, flexShrink: 0 }}>
               Snapshot · <strong style={{ color: 'var(--foreground)' }}>{NOW_LABEL}</strong>
             </span>
           )}
 
-          {/* Hide/show toggle */}
+          {/* Hide/show — same visual as Budget gear button when active */}
           <button
-            onClick={() => setIsHidden(v => !v)}
-            title={isHidden ? 'Show values' : 'Hide values'}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '7px 12px', background: isHidden ? 'var(--foreground)' : 'var(--muted)', color: isHidden ? 'var(--background)' : 'var(--foreground)', border: 'none', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', WebkitTapHighlightColor: 'transparent', transition: 'all 0.2s' }}>
-            {isHidden ? <EyeOff size={13} /> : <Eye size={13} />}
-            {!isMobile && (isHidden ? 'Show' : 'Hide')}
+            onClick={toggleBalanceVisibility}
+            title={isBalanceHidden ? 'Show values' : 'Hide values'}
+            style={{
+              width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              gap: isMobile ? 0 : '0.3rem',
+              background: isBalanceHidden ? 'var(--foreground)' : 'var(--muted)',
+              color:      isBalanceHidden ? 'var(--background)' : 'var(--muted-foreground)',
+              border: 'none', borderRadius: '10px', cursor: 'pointer',
+              fontSize: '0.78rem', fontWeight: 600,
+              WebkitTapHighlightColor: 'transparent', transition: 'all 0.15s',
+              flexShrink: 0,
+            }}
+          >
+            {isBalanceHidden ? <EyeOff size={15} /> : <Eye size={15} />}
           </button>
 
-          <button onClick={() => setShowSettings(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '7px 12px', background: 'var(--muted)', color: 'var(--foreground)', border: 'none', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+          <button onClick={() => setShowSettings(true)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: isMobile ? 0 : '0.3rem',
+              padding: isMobile ? '7px 9px' : '7px 12px',
+              background: 'var(--muted)', color: 'var(--foreground)',
+              border: 'none', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 600,
+              cursor: 'pointer', WebkitTapHighlightColor: 'transparent', flexShrink: 0,
+            }}>
             <Settings size={13} />
             {!isMobile && 'Settings'}
           </button>
         </div>
       </div>
 
-      {/* ── HERO ────────────────────────────────────────────────────────── */}
+      {/* ── HERO ─────────────────────────────────────────────────────────────── */}
       <div style={{ background: `linear-gradient(180deg, color-mix(in srgb, var(--success) 7%, var(--background)) 0%, var(--background) 65%)`, borderBottom: '1px solid var(--border)' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? '1.5rem 1rem 1.25rem' : '2rem 1.5rem 1.5rem' }}>
           {isMobile && <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '0 0 0.5rem', fontWeight: 500 }}>Snapshot · {NOW_LABEL}</p>}
@@ -715,15 +711,14 @@ export const FirePage: React.FC = () => {
             <div style={{ flex: 1 }}>
               <p style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 0.35rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Net Worth</p>
               <p style={{ fontSize: isMobile ? '2.5rem' : '3rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.04em', lineHeight: 1, margin: '0 0 0.6rem' }}>
-                {fmtEurOrHide(data.net_worth, isHidden, false)}
+                {fmtEurOrHide(data.net_worth, isBalanceHidden, false)}
               </p>
-
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
                 <span style={{ fontSize: '0.82rem', fontWeight: 700, color: coverageRatio >= 100 ? 'var(--success)' : 'var(--color-orange-400)' }}>
-                  {isHidden ? '••%' : `${coverageRatio.toFixed(0)}%`} passive coverage
+                  {isBalanceHidden ? '••%' : `${coverageRatio.toFixed(0)}%`} passive coverage
                 </span>
                 <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
-                  {fmtEurOrHide(passiveMonthly, isHidden)}/mo from returns
+                  {fmtEurOrHide(passiveMonthly, isBalanceHidden)}/mo from returns
                 </span>
                 {isCoastFire && (
                   <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 9px', borderRadius: 999, background: 'color-mix(in srgb, var(--success) 12%, var(--background))', color: 'var(--success)', border: '1px solid color-mix(in srgb, var(--success) 25%, transparent)' }}>
@@ -731,25 +726,17 @@ export const FirePage: React.FC = () => {
                   </span>
                 )}
               </div>
-
-              {/* FIRE Progress */}
               <div style={{ maxWidth: 540 }}>
                 <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: '0 0 0.5rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  FIRE Progress · {isHidden ? '••.•%' : fmtPct(firePct)}
+                  FIRE Progress · {isBalanceHidden ? '••.•%' : fmtPct(firePct)}
                 </p>
-                <FireProgress netWorth={data.net_worth} fireNumber={fireNum} isHidden={isHidden} />
+                <FireProgress netWorth={data.net_worth} fireNumber={fireNum} isBalanceHidden={isBalanceHidden} />
               </div>
             </div>
 
-            {/* Top stats grid */}
             {!isMobile && (
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px', background: 'var(--border)', borderRadius: '14px', overflow: 'hidden', flexShrink: 0, width: 280 }}>
-                {[
-                  { label: 'Avg income/mo',  value: fmtEurOrHide(data.avg_monthly_income, isHidden),   color: 'var(--success)' },
-                  { label: 'Avg expenses/mo', value: fmtEurOrHide(data.avg_monthly_expenses, isHidden), color: 'var(--destructive)' },
-                  { label: 'Savings/mo',      value: fmtEurOrHide(data.avg_monthly_savings, isHidden),  color: data.avg_monthly_savings >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)' },
-                  { label: 'Savings rate',    value: isHidden ? '••.•%' : fmtPct(data.savings_rate),   color: data.savings_rate >= 20 ? 'var(--success)' : 'var(--color-orange-400)' },
-                ].map(({ label, value, color }) => (
+                {statTiles.map(({ label, value, color }) => (
                   <div key={label} style={{ background: 'var(--card)', padding: '0.85rem 1rem' }}>
                     <p style={{ fontSize: '0.62rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px' }}>{label}</p>
                     <p style={{ fontSize: '0.95rem', fontWeight: 800, margin: 0, color, letterSpacing: '-0.02em' }}>{value}</p>
@@ -761,18 +748,18 @@ export const FirePage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── CONTENT ─────────────────────────────────────────────────────── */}
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: isMobile ? `1.25rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '1.75rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      {/* ── CONTENT ──────────────────────────────────────────────────────────── */}
+      <div style={{
+        maxWidth: 1200, margin: '0 auto',
+        padding: isMobile
+          ? `1.25rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)`
+          : '1.75rem 1.5rem',
+        display: 'flex', flexDirection: 'column', gap: '1.25rem',
+      }}>
 
-        {/* Mobile stats */}
         {isMobile && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px', background: 'var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
-            {[
-              { label: 'Avg income/mo',  value: fmtEurOrHide(data.avg_monthly_income, isHidden),   color: 'var(--success)' },
-              { label: 'Avg expenses',   value: fmtEurOrHide(data.avg_monthly_expenses, isHidden),  color: 'var(--destructive)' },
-              { label: 'Savings/mo',     value: fmtEurOrHide(data.avg_monthly_savings, isHidden),   color: data.avg_monthly_savings >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)' },
-              { label: 'Savings rate',   value: isHidden ? '••.•%' : fmtPct(data.savings_rate),    color: data.savings_rate >= 20 ? 'var(--success)' : 'var(--color-orange-400)' },
-            ].map(({ label, value, color }) => (
+            {statTiles.map(({ label, value, color }) => (
               <div key={label} style={{ background: 'var(--card)', padding: '0.85rem 1rem' }}>
                 <p style={{ fontSize: '0.62rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px' }}>{label}</p>
                 <p style={{ fontSize: '0.9rem', fontWeight: 800, margin: 0, color, letterSpacing: '-0.02em' }}>{value}</p>
@@ -781,52 +768,31 @@ export const FirePage: React.FC = () => {
           </div>
         )}
 
-        {/* ── OVERVIEW ── */}
         {activeTab === 'overview' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '1.25rem' }}>
-              <Card
-                title="Runway — how long can you live without working?"
-                subtitle="Based on your 12-month average expenses"
-                icon={<CardIcon color="var(--color-blue-600)"><Shield size={13} /></CardIcon>}
-              >
+              <Card title="Runway — how long can you live without working?" subtitle="Based on your 12-month average expenses" icon={<CardIcon color="var(--color-blue-600)"><Shield size={13} /></CardIcon>}>
                 <div style={{ marginBottom: '1.25rem' }}>
-                  <p style={{ fontSize: '2.5rem', fontWeight: 900, color: 'var(--foreground)', margin: 0, letterSpacing: '-0.04em', lineHeight: 1 }}>
-                    {fmtYears(data.runway_scenarios[0]?.months ?? 0)}
-                  </p>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', margin: '4px 0 0' }}>
-                    without any income · {fmtEurOrHide(data.avg_monthly_expenses, isHidden)}/mo avg expense (last 12 months)
-                  </p>
+                  <p style={{ fontSize: '2.5rem', fontWeight: 900, color: 'var(--foreground)', margin: 0, letterSpacing: '-0.04em', lineHeight: 1 }}>{fmtYears(data.runway_scenarios[0]?.months ?? 0)}</p>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', margin: '4px 0 0' }}>without any income · {fmtEurOrHide(data.avg_monthly_expenses, isBalanceHidden)}/mo avg expense (last 12 months)</p>
                 </div>
                 <RunwayCard scenarios={data.runway_scenarios} />
               </Card>
-
-              <Card
-                title="Net Worth History"
-                subtitle="Portfolio value over time"
-                icon={<CardIcon color="var(--success)"><TrendingUp size={13} /></CardIcon>}
-                action={<span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--foreground)' }}>{fmtEurOrHide(data.net_worth, isHidden)}</span>}
-              >
+              <Card title="Net Worth History" subtitle="Portfolio value over time" icon={<CardIcon color="var(--success)"><TrendingUp size={13} /></CardIcon>} action={<span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--foreground)' }}>{fmtEurOrHide(data.net_worth, isBalanceHidden)}</span>}>
                 <NetWorthSparkline history={data.net_worth_history} isMobile={isMobile} />
               </Card>
             </div>
 
-            {/* Capital Depletion */}
-            <Card
-              title="Capital Depletion"
-              subtitle="Month-by-month simulation of how long your wealth lasts"
-              icon={<CardIcon color="var(--destructive)"><Activity size={13} /></CardIcon>}
-            >
-              <TtbChart netWorth={data.net_worth} monthlyExpenses={data.avg_monthly_expenses} annualReturn={s.annual_return_rate} isMobile={isMobile} isHidden={isHidden} />
+            <Card title="Capital Depletion" subtitle="Month-by-month simulation of how long your wealth lasts" icon={<CardIcon color="var(--destructive)"><Activity size={13} /></CardIcon>}>
+              <TtbChart netWorth={data.net_worth} monthlyExpenses={data.avg_monthly_expenses} annualReturn={s.annual_return_rate} isMobile={isMobile} isBalanceHidden={isBalanceHidden} />
             </Card>
 
-            {/* Key metrics row */}
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
               {[
-                { label: 'Passive income/mo', value: fmtEurOrHide(passiveMonthly, isHidden),                                                                                              icon: <Zap size={13} />,      color: 'var(--color-orange-400)' },
-                { label: 'Expense coverage',  value: isHidden ? '••%' : `${coverageRatio.toFixed(0)}%`,                                                                                   icon: <Target size={13} />,    color: coverageRatio >= 100 ? 'var(--success)' : 'var(--color-orange-400)' },
-                { label: 'Annual return',     value: `${(s.annual_return_rate * 100).toFixed(1)}%`,                                                                                        icon: <BarChart2 size={13} />, color: 'var(--color-purple-600)' },
-                { label: 'Time to FIRE',      value: data.fire_scenarios[1]?.years_to_fire != null ? `${data.fire_scenarios[1].years_to_fire.toFixed(1)} yrs` : '—', icon: <Flame size={13} />, color: '#f97316' },
+                { label: 'Passive income/mo', value: fmtEurOrHide(passiveMonthly, isBalanceHidden),                                                                                         icon: <Zap size={13} />,      color: 'var(--color-orange-400)' },
+                { label: 'Expense coverage',  value: isBalanceHidden ? '••%' : `${coverageRatio.toFixed(0)}%`,                                                                              icon: <Target size={13} />,    color: coverageRatio >= 100 ? 'var(--success)' : 'var(--color-orange-400)' },
+                { label: 'Annual return',     value: `${(s.annual_return_rate * 100).toFixed(1)}%`,                                                                                         icon: <BarChart2 size={13} />, color: 'var(--color-purple-600)' },
+                { label: 'Time to FIRE',      value: data.fire_scenarios[1]?.years_to_fire != null ? `${data.fire_scenarios[1].years_to_fire.toFixed(1)} yrs` : '—',                       icon: <Flame size={13} />,     color: '#f97316' },
               ].map(({ label, value, icon, color }) => (
                 <div key={label} style={{ background: 'var(--card)', padding: '1rem 1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
@@ -838,15 +804,11 @@ export const FirePage: React.FC = () => {
               ))}
             </div>
 
-            {/* CTA → Simulator */}
             <div onClick={() => setActiveTab('simulation')} style={{ padding: '1rem 1.25rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', transition: 'background 0.15s', WebkitTapHighlightColor: 'transparent' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'var(--card)')}
-            >
+              onMouseLeave={e => (e.currentTarget.style.background = 'var(--card)')}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'color-mix(in srgb, #f97316 12%, var(--background))', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Play size={15} />
-                </div>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: 'color-mix(in srgb, #f97316 12%, var(--background))', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={15} /></div>
                 <div>
                   <p style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>What-if Simulator</p>
                   <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '2px 0 0' }}>Project your wealth: adjust monthly savings, return rate and horizon</p>
@@ -857,42 +819,23 @@ export const FirePage: React.FC = () => {
           </>
         )}
 
-        {/* ── SIMULATOR ── */}
         {activeTab === 'simulation' && (
-          <Card
-            title="What-if Simulator"
-            subtitle="Adjust the sliders to project your wealth growth"
-            icon={<CardIcon color="#f97316"><Play size={13} /></CardIcon>}
-          >
-            <SimulationPanel
-              currentNetWorth={data.net_worth}
-              defaultMonthlyContrib={data.avg_monthly_savings}
-              defaultReturn={s.annual_return_rate}
-              isMobile={isMobile}
-              isHidden={isHidden}
-            />
+          <Card title="What-if Simulator" subtitle="Adjust the sliders to project your wealth growth" icon={<CardIcon color="#f97316"><Play size={13} /></CardIcon>}>
+            <SimulationPanel currentNetWorth={data.net_worth} defaultMonthlyContrib={data.avg_monthly_savings} defaultReturn={s.annual_return_rate} isMobile={isMobile} isBalanceHidden={isBalanceHidden} />
           </Card>
         )}
 
-        {/* ── SCENARIOS ── */}
         {activeTab === 'scenarios' && (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1rem' }}>
-              {data.fire_scenarios.map((s, i) => (
-                <FireScenario key={s.label} s={s} highlight={i === 1} isHidden={isHidden} />
-              ))}
+              {data.fire_scenarios.map((s, i) => <FireScenario key={s.label} s={s} highlight={i === 1} isBalanceHidden={isBalanceHidden} />)}
             </div>
-
-            <Card
-              title="Data sources"
-              subtitle="Figures derived from your last 12 months of budget transactions"
-              icon={<CardIcon color="var(--color-blue-600)"><BarChart2 size={13} /></CardIcon>}
-            >
+            <Card title="Data sources" subtitle="Figures derived from your last 12 months of budget transactions" icon={<CardIcon color="var(--color-blue-600)"><BarChart2 size={13} /></CardIcon>}>
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '0.65rem' }}>
                 {[
-                  { label: '12-month avg income',  value: fmtEurOrHide(data.avg_monthly_income, isHidden, false),   sub: 'per month' },
-                  { label: '12-month avg expenses', value: fmtEurOrHide(data.avg_monthly_expenses, isHidden, false), sub: 'per month' },
-                  { label: 'Avg net savings',       value: fmtEurOrHide(data.avg_monthly_savings, isHidden, false),  sub: 'per month' },
+                  { label: '12-month avg income',  value: fmtEurOrHide(data.avg_monthly_income,   isBalanceHidden, false), sub: 'per month' },
+                  { label: '12-month avg expenses', value: fmtEurOrHide(data.avg_monthly_expenses, isBalanceHidden, false), sub: 'per month' },
+                  { label: 'Avg net savings',       value: fmtEurOrHide(data.avg_monthly_savings,  isBalanceHidden, false), sub: 'per month' },
                 ].map(({ label, value, sub }) => (
                   <div key={label} style={{ background: 'var(--accent)', borderRadius: '12px', padding: '0.85rem 1rem' }}>
                     <p style={{ fontSize: '0.65rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
@@ -904,7 +847,6 @@ export const FirePage: React.FC = () => {
             </Card>
           </>
         )}
-
       </div>
 
       {showSettings && (
@@ -913,8 +855,8 @@ export const FirePage: React.FC = () => {
           onSave={saveSettings}
           onClose={() => setShowSettings(false)}
           saving={saving}
-          isHidden={isHidden}
-          onToggleHidden={() => setIsHidden(v => !v)}
+          isBalanceHidden={isBalanceHidden}
+          onToggleBalanceHidden={toggleBalanceVisibility}
         />
       )}
     </div>
