@@ -8,6 +8,10 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '../adapters/shared/platform';
 
+// How many years back to fetch for allTransactions (used by YearlyStats and charts).
+// Increase this value if you have data older than 2 years.
+const YEARS_BACK = 2;
+
 export const useBudget = (month: Date) => {
   const [transactions, setTransactions] = useState<BudgetTransaction[]>([]);
   const [allTransactions, setAllTransactions] = useState<BudgetTransaction[]>([]);
@@ -21,7 +25,13 @@ export const useBudget = (month: Date) => {
     setError(null);
     try {
       const now = new Date();
-      const startDate = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+
+      // Start from January of (currentYear - YEARS_BACK) so YearlyStats always
+      // receives complete calendar years rather than a rolling 12-month window.
+      const startDate = new Date(now.getFullYear() - YEARS_BACK, 0, 1);
+      const totalMonths =
+        (now.getFullYear() - startDate.getFullYear()) * 12 +
+        (now.getMonth() - startDate.getMonth()) + 1;
 
       const [cats, txns, sum, allTxns] = await Promise.all([
         invoke<BudgetCategory[]>('get_budget_categories'),
@@ -34,9 +44,8 @@ export const useBudget = (month: Date) => {
           year: month.getFullYear(),
         }),
         Promise.all(
-          Array.from({ length: 12 }, (_, i) => {
-            const d = new Date(startDate);
-            d.setMonth(startDate.getMonth() + i);
+          Array.from({ length: totalMonths }, (_, i) => {
+            const d = new Date(startDate.getFullYear(), startDate.getMonth() + i, 1);
             return invoke<BudgetTransaction[]>('get_budget_transactions', {
               month: d.getMonth() + 1,
               year: d.getFullYear(),
@@ -55,7 +64,7 @@ export const useBudget = (month: Date) => {
         category: categoriesMap.get(String(txn.categoryId ?? txn.category_id)) || undefined,
       });
 
-      const enrichedTxns = txns.map(normalizeTxn);
+      const enrichedTxns    = txns.map(normalizeTxn);
       const enrichedAllTxns = allTxns.map(normalizeTxn);
 
       const categoryBreakdown = Array.from(
@@ -94,10 +103,7 @@ export const useBudget = (month: Date) => {
       setCategories(cats);
       setTransactions(enrichedTxns);
       setAllTransactions(enrichedAllTxns);
-      setSummary({
-        ...sum,
-        categoryBreakdown,
-      });
+      setSummary({ ...sum, categoryBreakdown });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error loading data');
       console.error('Error fetching budget data:', err);
@@ -113,12 +119,12 @@ export const useBudget = (month: Date) => {
   const createTransaction = async (data: CreateBudgetTransactionInput) => {
     try {
       await invoke('create_budget_transaction', {
-        categoryId: data.categoryId,
-        amount: data.amount,
+        categoryId:      data.categoryId,
+        amount:          data.amount,
         transactionType: data.type,
-        description: data.description,
-        date: data.date,
-        notes: data.notes || null,
+        description:     data.description,
+        date:            data.date,
+        notes:           data.notes || null,
       });
       await fetchData();
     } catch (err) {
@@ -130,12 +136,12 @@ export const useBudget = (month: Date) => {
     try {
       await invoke('update_budget_transaction', {
         id,
-        categoryId: data.categoryId,
-        amount: data.amount,
+        categoryId:      data.categoryId,
+        amount:          data.amount,
         transactionType: data.type,
-        description: data.description,
-        date: data.date,
-        notes: data.notes,
+        description:     data.description,
+        date:            data.date,
+        notes:           data.notes,
       });
       await fetchData();
     } catch (err) {
@@ -161,10 +167,10 @@ export const useBudget = (month: Date) => {
   }) => {
     try {
       await invoke('create_budget_category', {
-        name: data.name,
-        type: data.type,
-        color: data.color,
-        icon: data.icon || null,
+        name:     data.name,
+        type:     data.type,
+        color:    data.color,
+        icon:     data.icon || null,
         parentId: data.parentId || null,
       });
       await fetchData();
@@ -187,12 +193,12 @@ export const useBudget = (month: Date) => {
     try {
       await invoke('update_budget_category', {
         id,
-        name: data.name,
+        name:         data.name,
         categoryType: data.type ?? null,
-        color: data.color,
-        icon: data.icon,
-        parentId: data.parentId,
-        isActive: data.isActive,
+        color:        data.color,
+        icon:         data.icon,
+        parentId:     data.parentId,
+        isActive:     data.isActive,
       });
       await fetchData();
     } catch (err) {
@@ -232,8 +238,8 @@ export const useFilteredTransactions = (
 ) => {
   return transactions.filter(transaction => {
     if (filters.startDate && transaction.date < filters.startDate) return false;
-    if (filters.endDate && transaction.date > filters.endDate) return false;
-    if (filters.type && transaction.type !== filters.type) return false;
+    if (filters.endDate   && transaction.date > filters.endDate)   return false;
+    if (filters.type      && transaction.type !== filters.type)    return false;
     return true;
   });
 };

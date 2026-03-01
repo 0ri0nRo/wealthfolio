@@ -164,7 +164,7 @@ export const BudgetPage: React.FC = () => {
   ];
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--background)', fontFamily: 'var(--font-sans)' }}>
+    <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
 
       {/* ── NAVBAR ────────────────────────────────────────────────────────── */}
       <div style={{
