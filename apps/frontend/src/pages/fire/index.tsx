@@ -38,13 +38,58 @@ function mmyy(d: Date) { return `${d.getMonth() + 1}/${String(d.getFullYear()).s
 
 const NOW_LABEL = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
+// ── Slider CSS injector ───────────────────────────────────────────────────────
+const SLIDER_STYLES = `
+  .fire-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 5px;
+    border-radius: 999px;
+    outline: none;
+    cursor: pointer;
+    background: var(--border);
+    position: relative;
+  }
+  .fire-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--foreground);
+    cursor: pointer;
+    border: 2px solid var(--background);
+    box-shadow: 0 0 0 1px var(--border), 0 2px 6px rgba(0,0,0,.2);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .fire-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 0 0 1px var(--border), 0 4px 12px rgba(0,0,0,.25);
+  }
+  .fire-slider::-webkit-slider-thumb:active {
+    transform: scale(1.1);
+  }
+  .fire-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--foreground);
+    cursor: pointer;
+    border: 2px solid var(--background);
+    box-shadow: 0 0 0 1px var(--border), 0 2px 6px rgba(0,0,0,.2);
+  }
+  .fire-slider::-webkit-slider-runnable-track { border-radius: 999px; }
+  .fire-slider::-moz-range-track { height: 5px; border-radius: 999px; background: var(--border); }
+`;
+
 // ── Net Worth Sparkline ───────────────────────────────────────────────────────
 const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hidden: boolean }> = ({ history, hidden }) => {
   const [hover, setHover] = useState<{ x: number; y: number; val: number; date: string } | null>(null);
 
   const sorted = useMemo(() => [...history].sort((a, b) => a.date.localeCompare(b.date)), [history]);
   if (sorted.length < 2) return (
-    <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', fontSize: '0.82rem' }}>
+    <div style={{ height: 220, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', fontSize: '0.82rem' }}>
       Not enough history to display chart
     </div>
   );
@@ -52,7 +97,7 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
   const vals = sorted.map(p => p.total_value);
   const minV = Math.min(...vals), maxV = Math.max(...vals), rng = maxV - minV || 1;
 
-  const W = 1000, H = 180, PL = 0, PR = 0, PT = 16, PB = 0;
+  const W = 1000, H = 200, PL = 0, PR = 0, PT = 16, PB = 0;
   const sx = (i: number) => PL + (i / (sorted.length - 1)) * (W - PL - PR);
   const sy = (v: number) => PT + (1 - (v - minV) / rng) * (H - PT - PB);
 
@@ -76,19 +121,19 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
     <div style={{ position: 'relative', width: '100%' }}>
       <svg
         viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
-        style={{ display: 'block', width: '100%', height: 200, cursor: 'crosshair' }}
+        style={{ display: 'block', width: '100%', height: 'clamp(180px, 25vw, 280px)', cursor: 'crosshair' }}
         onMouseMove={handleMouseMove} onMouseLeave={() => setHover(null)}
       >
         <defs>
           <linearGradient id="heroGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity=".18" />
+            <stop offset="0%" stopColor={color} stopOpacity=".22" />
             <stop offset="100%" stopColor={color} stopOpacity="0" />
           </linearGradient>
         </defs>
         <path d={areaPath} fill="url(#heroGrad)" />
         <path d={linePath} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         {hover && <>
-          <line x1={hover.x / 100 * W} y1={PT} x2={hover.x / 100 * W} y2={H} stroke={color} strokeWidth="1" strokeDasharray="4,3" opacity=".5" />
+          <line x1={hover.x / 100 * W} y1={PT} x2={hover.x / 100 * W} y2={H} stroke={color} strokeWidth="1" strokeDasharray="4,3" opacity=".6" />
           <circle cx={hover.x / 100 * W} cy={hover.y / 100 * H} r={5} fill={color} stroke="white" strokeWidth="2" />
         </>}
       </svg>
@@ -110,7 +155,7 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
           left: `clamp(0px, calc(${hover.x}% - 70px), calc(100% - 140px))`,
           background: 'var(--card)', border: '1px solid var(--border)',
           borderRadius: '10px', padding: '6px 12px', pointerEvents: 'none',
-          boxShadow: '0 4px 12px rgba(0,0,0,.08)', fontSize: '0.75rem', whiteSpace: 'nowrap',
+          boxShadow: '0 4px 16px rgba(0,0,0,.12)', fontSize: '0.75rem', whiteSpace: 'nowrap',
         }}>
           <span style={{ color: 'var(--muted-foreground)', fontWeight: 500, marginRight: 8 }}>
             {new Date(hover.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -131,10 +176,10 @@ const FireProgress: React.FC<{ netWorth: number; fireNumber: number; hidden: boo
         <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>FIRE Progress</span>
         <span style={{ fontSize: '0.82rem', fontWeight: 700, color: pct >= 100 ? '#30a46c' : 'var(--foreground)' }}>{hidden ? '••.•%' : `${pct.toFixed(1)}%`}</span>
       </div>
-      <div style={{ height: 6, background: 'var(--border)', borderRadius: 999, overflow: 'hidden' }}>
+      <div style={{ height: 7, background: 'var(--border)', borderRadius: 999, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, borderRadius: 999, background: pct >= 100 ? '#30a46c' : `linear-gradient(90deg, #f97316 0%, ${pct > 60 ? '#30a46c' : '#f59e0b'} 100%)`, transition: 'width 1.2s ease' }} />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '4px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '5px' }}>
         <span style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)' }}>{hidden ? '€••••••' : fmtEurCompact(netWorth)} saved</span>
         <span style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)' }}>Goal: {hidden ? '€••••••' : fmtEurCompact(fireNumber)}</span>
       </div>
@@ -143,7 +188,6 @@ const FireProgress: React.FC<{ netWorth: number; fireNumber: number; hidden: boo
 };
 
 // ── Runway bars ───────────────────────────────────────────────────────────────
-// FIX MOBILE: etichetta non si tronca, larghezza ridotta da 140px a 110px
 const RunwayRow: React.FC<{ label: string; months: number; description: string; color: string; maxMonths: number }> = ({ label, months, color, maxMonths }) => {
   const isInf = months >= 9990;
   const pct   = isInf ? 100 : Math.min((months / maxMonths) * 100, 100);
@@ -159,7 +203,7 @@ const RunwayRow: React.FC<{ label: string; months: number; description: string; 
 };
 
 // ── Capital Depletion Chart ───────────────────────────────────────────────────
-const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualReturn: number; hidden: boolean }> = ({ netWorth, monthlyExpenses, annualReturn, hidden }) => {
+const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualReturn: number; hidden: boolean; isMobile?: boolean }> = ({ netWorth, monthlyExpenses, annualReturn, hidden, isMobile = false }) => {
   const pts = useMemo(() => {
     const r = annualReturn / 12;
     const res: { m: number; d: Date; cap: number; ret: number }[] = [];
@@ -176,7 +220,7 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
   const zeroCap = pts.find(p => p.cap <= 0);
   const zeroRet = pts.find(p => p.ret <= 0);
   const maxM = pts[pts.length - 1].m;
-  const W = 1000, H = 180, PL = 52, PR = 12, PT = 18, PB = 24;
+  const W = 1000, H = 260, PL = 56, PR = 12, PT = 18, PB = 28;
   const sx = (m: number) => PL + (m / maxM) * (W - PL - PR);
   const sy = (v: number) => PT + (1 - Math.min(v, netWorth) / netWorth) * (H - PT - PB);
   const buildLine = (key: 'cap' | 'ret') => {
@@ -202,15 +246,16 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
           { color: '#30a46c', label: `With returns → ${zeroRet ? mmyy(zeroRet.d) : '∞'}` },
         ].map(({ color, label }) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 18, height: 2.5, borderRadius: 2, background: color }} />
+            <div style={{ width: 20, height: 3, borderRadius: 2, background: color }} />
             <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)' }}>{label}</span>
           </div>
         ))}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', width: '100%', height: 180, overflow: 'visible' }}>
+      <div style={{ width: '100%', height: isMobile ? 220 : 'clamp(220px, 26vw, 300px)' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block', width: '100%', height: '100%', overflow: 'visible' }}>
         <defs>
-          <linearGradient id="dr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#e5484d" stopOpacity=".12"/><stop offset="100%" stopColor="#e5484d" stopOpacity="0"/></linearGradient>
-          <linearGradient id="dg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#30a46c" stopOpacity=".10"/><stop offset="100%" stopColor="#30a46c" stopOpacity="0"/></linearGradient>
+          <linearGradient id="dr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#e5484d" stopOpacity=".14"/><stop offset="100%" stopColor="#e5484d" stopOpacity="0"/></linearGradient>
+          <linearGradient id="dg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#30a46c" stopOpacity=".12"/><stop offset="100%" stopColor="#30a46c" stopOpacity="0"/></linearGradient>
         </defs>
         {yTicks.map(f => {
           const y = sy(netWorth * f);
@@ -238,6 +283,7 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
           <text key={p.m} x={sx(p.m)} y={H - 4} textAnchor="middle" fontSize="8" fill="var(--muted-foreground)" fontFamily="var(--font-sans)">{mmyy(p.d)}</text>
         ))}
       </svg>
+      </div>
     </div>
   );
 };
@@ -258,7 +304,57 @@ function simPath(capital: number, monthly: number, rate: number, years: number) 
   return pts;
 }
 
-// FIX MOBILE: aggiunta prop isMobile
+// ── Custom Slider ─────────────────────────────────────────────────────────────
+interface SliderProps {
+  label: string;
+  val: number;
+  min: number;
+  max: number;
+  step: number;
+  fmt: (v: number) => string;
+  onChange: (v: number) => void;
+  color?: string;
+}
+const CustomSlider: React.FC<SliderProps> = ({ label, val, min, max, step, fmt, onChange, color = '#30a46c' }) => {
+  const pct = ((val - min) / (max - min)) * 100;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+        <span style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{fmt(val)}</span>
+      </div>
+      <div style={{ position: 'relative', height: 20, display: 'flex', alignItems: 'center' }}>
+        {/* Track background */}
+        <div style={{ position: 'absolute', inset: '0 0 0 0', height: 5, top: '50%', transform: 'translateY(-50%)', borderRadius: 999, background: 'var(--border)' }} />
+        {/* Track fill */}
+        <div style={{ position: 'absolute', left: 0, height: 5, top: '50%', transform: 'translateY(-50%)', borderRadius: 999, width: `${pct}%`, background: `linear-gradient(90deg, var(--color-orange-400), ${color})`, transition: 'width 0.05s' }} />
+        <input
+          type="range" min={min} max={max} step={step} value={val}
+          onChange={e => onChange(parseFloat(e.target.value))}
+          className="fire-slider"
+          style={{ position: 'absolute', width: '100%', opacity: 0, height: 20, cursor: 'pointer', zIndex: 2, margin: 0, padding: 0 }}
+        />
+        {/* Custom thumb */}
+        <div style={{
+          position: 'absolute',
+          left: `calc(${pct}% - 9px)`,
+          width: 18, height: 18, borderRadius: '50%',
+          background: 'var(--foreground)',
+          border: '2px solid var(--background)',
+          boxShadow: '0 0 0 1.5px var(--border), 0 2px 8px rgba(0,0,0,.2)',
+          transition: 'left 0.05s',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }} />
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)' }}>{fmt(min)}</span>
+        <span style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)' }}>{fmt(max)}</span>
+      </div>
+    </div>
+  );
+};
+
 const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRate: number; hidden: boolean; isMobile: boolean }> = ({ netWorth, defaultContrib, defaultRate, hidden, isMobile }) => {
   const [monthly, setMonthly] = useState(Math.max(Math.round(defaultContrib), 0));
   const [pct,     setPct]     = useState(+(defaultRate * 100).toFixed(1) || 6);
@@ -269,7 +365,7 @@ const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRat
   const result  = useMemo(() => runSim(capital, monthly, pct / 100, years), [capital, monthly, pct, years]);
   const pts     = useMemo(() => simPath(capital, monthly, pct / 100, years), [capital, monthly, pct, years]);
 
-  const W = 1000, H = 160, PL = 55, PR = 12, PT = 10, PB = 22;
+  const W = 1000, H = 280, PL = 58, PR = 16, PT = 12, PB = 30;
   const maxY = Math.max(...pts.map(p => p.w), 1);
   const sxP = (m: number) => PL + (m / (years * 12)) * (W - PL - PR);
   const sy  = (v: number) => PT + (1 - v / maxY) * (H - PT - PB);
@@ -277,68 +373,112 @@ const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRat
   const cPath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${sxP(p.m)} ${sy(p.c)}`).join(' ');
   const wArea = `${wPath} L ${sxP(years * 12)} ${sy(0)} L ${PL} ${sy(0)} Z`;
 
-  const Slider = ({ label, val, min, max, step, fmt, onChange }: any) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: '0.7rem', fontWeight: 600, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
-        <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)' }}>{fmt(val)}</span>
-      </div>
-      <input type="range" min={min} max={max} step={step} value={val} onChange={e => onChange(parseFloat(e.target.value))} style={{ width: '100%', accentColor: 'var(--foreground)', height: 4, cursor: 'pointer' }} />
-    </div>
-  );
+  const statCards = [
+    { label: 'Final Wealth',      value: fmtOrHide(result.finalWealth,        hidden, true), color: '#30a46c',                   sub: `in ${years} years` },
+    { label: 'Investment Gains',  value: fmtOrHide(result.totalGains,         hidden, true), color: 'var(--foreground)',          sub: 'from returns' },
+    { label: 'Total Contributed', value: fmtOrHide(result.totalContributions, hidden, true), color: 'var(--muted-foreground)',    sub: 'your savings' },
+  ];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      {/* FIX MOBILE: layout a colonna singola su mobile, due colonne su desktop */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '280px 1fr', gap: isMobile ? '1.25rem' : '2rem', alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
-          <Slider label="Monthly savings" val={monthly} min={0} max={5000} step={50}  fmt={(v: number) => `€${v.toLocaleString()}`} onChange={setMonthly} />
-          <Slider label="Annual return"   val={pct}     min={0} max={15}   step={0.5} fmt={(v: number) => `${v.toFixed(1)}%`}        onChange={setPct} />
-          <Slider label="Horizon"         val={years}   min={1} max={40}   step={1}   fmt={(v: number) => `${v} years`}               onChange={setYears} />
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.75rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>
-            <div onClick={() => setUseBase(v => !v)} style={{ width: 34, height: 18, borderRadius: 999, background: useBase ? 'var(--foreground)' : 'var(--border)', position: 'relative', cursor: 'pointer', transition: 'background .2s', flexShrink: 0 }}>
-              <div style={{ position: 'absolute', top: 2, left: useBase ? 16 : 2, width: 14, height: 14, borderRadius: '50%', background: useBase ? 'var(--background)' : 'var(--muted-foreground)', transition: 'left .2s' }} />
-            </div>
-            Start from current net worth ({hidden ? '€••••••' : fmtEurCompact(netWorth)})
-          </label>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
 
-        {/* FIX MOBILE: 1 colonna su mobile, 3 colonne su desktop */}
-        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '1px', background: 'var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
-          {[
-            { label: 'Final wealth',      value: fmtOrHide(result.finalWealth,        hidden, true), color: '#30a46c' },
-            { label: 'Total gains',       value: fmtOrHide(result.totalGains,         hidden, true), color: 'var(--foreground)' },
-            { label: 'Total contributed', value: fmtOrHide(result.totalContributions, hidden, true), color: 'var(--muted-foreground)' },
-          ].map(({ label, value, color }) => (
-            <div key={label} style={{ background: 'var(--card)', padding: '0.9rem 1rem' }}>
-              <p style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
-              <p style={{ fontSize: '1.15rem', fontWeight: 800, color, margin: 0, letterSpacing: '-0.03em' }}>{value}</p>
-            </div>
-          ))}
-        </div>
+      {/* ── Stat cards row ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
+        {statCards.map(({ label, value, color, sub }) => (
+          <div key={label} style={{ background: 'var(--card)', padding: '1.1rem 1.25rem' }}>
+            <p style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+            <p style={{ fontSize: '1.4rem', fontWeight: 900, color, margin: '0 0 2px', letterSpacing: '-0.04em', lineHeight: 1 }}>{value}</p>
+            <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: 0 }}>{sub}</p>
+          </div>
+        ))}
       </div>
 
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', width: '100%', height: 160, overflow: 'visible' }}>
-        <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#30a46c" stopOpacity=".15"/><stop offset="100%" stopColor="#30a46c" stopOpacity="0"/></linearGradient></defs>
-        {[0, 0.25, 0.5, 0.75, 1].map(f => {
-          const y = sy(maxY * f);
-          const lbl = hidden ? '•••' : maxY * f >= 1_000_000 ? `€${((maxY * f) / 1_000_000).toFixed(1)}M` : maxY * f >= 1_000 ? `€${((maxY * f) / 1_000).toFixed(0)}k` : `€${Math.round(maxY * f)}`;
-          return (
-            <g key={f}>
-              <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="var(--border)" strokeWidth=".5" strokeDasharray="3,3" />
-              <text x={PL - 5} y={y + 3} textAnchor="end" fontSize="9" fill="var(--muted-foreground)" fontFamily="var(--font-sans)">{lbl}</text>
-            </g>
-          );
-        })}
-        <path d={wArea} fill="url(#sg)" />
-        <path d={cPath} fill="none" stroke="var(--border)" strokeWidth="1.5" strokeDasharray="5,4" />
-        <path d={wPath} fill="none" stroke="#30a46c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
-        {Array.from({ length: years + 1 }, (_, i) => {
-          if (i % Math.max(1, Math.floor(years / 5)) !== 0) return null;
-          return <text key={i} x={sxP(i * 12)} y={H - 5} textAnchor="middle" fontSize="8.5" fill="var(--muted-foreground)" fontFamily="var(--font-sans)">{addMonths(new Date(), i * 12).getFullYear()}</text>;
-        })}
-        {(() => { const lp = pts[pts.length - 1]; return <circle cx={sxP(lp.m)} cy={sy(lp.w)} r={5} fill="#30a46c" stroke="var(--background)" strokeWidth="2" />; })()}
-      </svg>
+      {/* ── Controls + Chart ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '260px 1fr', gap: isMobile ? '1.5rem' : '2.5rem', alignItems: 'start' }}>
+
+        {/* Sliders */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.4rem', padding: '1.25rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '14px' }}>
+          <CustomSlider
+            label="Monthly savings" val={monthly} min={0} max={5000} step={50}
+            fmt={(v) => `€${v.toLocaleString()}`} onChange={setMonthly}
+          />
+          <div style={{ height: 1, background: 'var(--border)' }} />
+          <CustomSlider
+            label="Annual return" val={pct} min={0} max={15} step={0.5}
+            fmt={(v) => `${v.toFixed(1)}%`} onChange={setPct}
+          />
+          <div style={{ height: 1, background: 'var(--border)' }} />
+          <CustomSlider
+            label="Horizon" val={years} min={1} max={40} step={1}
+            fmt={(v) => `${v} yrs`} onChange={setYears}
+          />
+          <div style={{ height: 1, background: 'var(--border)' }} />
+          {/* Toggle */}
+          <div
+            onClick={() => setUseBase(v => !v)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
+              padding: '0.65rem 0.75rem', borderRadius: '10px',
+              background: useBase ? 'color-mix(in srgb, #30a46c 8%, var(--background))' : 'var(--accent)',
+              border: `1px solid ${useBase ? 'color-mix(in srgb, #30a46c 25%, transparent)' : 'var(--border)'}`,
+              transition: 'all .2s',
+            }}
+          >
+            <div style={{ width: 34, height: 19, borderRadius: 999, background: useBase ? '#30a46c' : 'var(--border)', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+              <div style={{ position: 'absolute', top: 2.5, left: useBase ? 'calc(100% - 16.5px)' : '2.5px', width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left .2s' }} />
+            </div>
+            <div>
+              <p style={{ fontSize: '0.75rem', fontWeight: 600, margin: 0, color: 'var(--foreground)' }}>Start from net worth</p>
+              <p style={{ fontSize: '0.64rem', margin: '1px 0 0', color: 'var(--muted-foreground)' }}>{hidden ? '€••••••' : fmtEurCompact(netWorth)} current balance</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Chart */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+          <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+            {[
+              { color: '#30a46c', label: 'Projected wealth', dash: false },
+              { color: 'var(--border)', label: 'Contributions only', dash: true },
+            ].map(({ color, label, dash }) => (
+              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 20, height: 2.5, borderRadius: 2, background: dash ? 'transparent' : color, borderBottom: dash ? '2px dashed var(--muted-foreground)' : 'none' }} />
+                <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)' }}>{label}</span>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ width: '100%', height: isMobile ? 240 : 'clamp(240px, 30vw, 360px)' }}>
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
+            style={{ display: 'block', width: '100%', height: '100%', overflow: 'visible' }}>
+            <defs>
+              <linearGradient id="sg" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#30a46c" stopOpacity=".18"/>
+                <stop offset="100%" stopColor="#30a46c" stopOpacity="0"/>
+              </linearGradient>
+            </defs>
+            {[0, 0.25, 0.5, 0.75, 1].map(f => {
+              const y = sy(maxY * f);
+              const lbl = hidden ? '•••' : maxY * f >= 1_000_000 ? `€${((maxY * f) / 1_000_000).toFixed(1)}M` : maxY * f >= 1_000 ? `€${((maxY * f) / 1_000).toFixed(0)}k` : `€${Math.round(maxY * f)}`;
+              return (
+                <g key={f}>
+                  <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="var(--border)" strokeWidth=".6" strokeDasharray="4,4" />
+                  <text x={PL - 6} y={y + 3} textAnchor="end" fontSize="9.5" fill="var(--muted-foreground)" fontFamily="var(--font-sans)" fontWeight="500">{lbl}</text>
+                </g>
+              );
+            })}
+            <path d={wArea} fill="url(#sg)" />
+            <path d={cPath} fill="none" stroke="var(--muted-foreground)" strokeWidth="1.5" strokeDasharray="6,5" opacity=".5" />
+            <path d={wPath} fill="none" stroke="#30a46c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+            {Array.from({ length: years + 1 }, (_, i) => {
+              if (i % Math.max(1, Math.floor(years / 6)) !== 0) return null;
+              return <text key={i} x={sxP(i * 12)} y={H - 6} textAnchor="middle" fontSize="9" fill="var(--muted-foreground)" fontFamily="var(--font-sans)">{addMonths(new Date(), i * 12).getFullYear()}</text>;
+            })}
+            {(() => { const lp = pts[pts.length - 1]; return <circle cx={sxP(lp.m)} cy={sy(lp.w)} r={5.5} fill="#30a46c" stroke="var(--background)" strokeWidth="2.5" />; })()}
+          </svg>
+          </div>
+        </div>
+      </div>
     </div>
   );
 };
@@ -372,9 +512,9 @@ const SettingsModal: React.FC<{
   };
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,.45)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
+    <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: 'var(--card)', borderRadius: '18px', border: '1px solid var(--border)', width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,.18)' }}>
+      <div style={{ background: 'var(--card)', borderRadius: '20px', border: '1px solid var(--border)', width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 32px 80px rgba(0,0,0,.22)' }}>
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
             <Settings size={14} color="var(--muted-foreground)" />
@@ -396,8 +536,8 @@ const SettingsModal: React.FC<{
                 <p style={{ fontSize: '0.8rem', fontWeight: 600, margin: 0 }}>Hide balances</p>
                 <p style={{ fontSize: '0.67rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>{isBalanceHidden ? 'Active across the app' : 'Tap to activate'}</p>
               </div>
-              <div style={{ width: 34, height: 19, borderRadius: 999, background: isBalanceHidden ? 'var(--foreground)' : 'var(--border)', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
-                <div style={{ position: 'absolute', top: 2.5, left: isBalanceHidden ? 'calc(100% - 16.5px)' : '2.5px', width: 14, height: 14, borderRadius: '50%', background: isBalanceHidden ? 'var(--background)' : 'var(--muted-foreground)', transition: 'left .2s' }} />
+              <div style={{ width: 34, height: 19, borderRadius: 999, background: isBalanceHidden ? '#30a46c' : 'var(--border)', position: 'relative', transition: 'background .2s', flexShrink: 0 }}>
+                <div style={{ position: 'absolute', top: 2.5, left: isBalanceHidden ? 'calc(100% - 16.5px)' : '2.5px', width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left .2s' }} />
               </div>
             </div>
           </div>
@@ -441,6 +581,18 @@ export const FirePage: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [activeTab,    setActiveTab]    = useState<'overview' | 'simulation' | 'scenarios'>('overview');
   const isMobile = useIsMobile();
+
+  // Inject slider CSS once
+  useEffect(() => {
+    const id = 'fire-slider-styles';
+    if (!document.getElementById(id)) {
+      const el = document.createElement('style');
+      el.id = id;
+      el.textContent = SLIDER_STYLES;
+      document.head.appendChild(el);
+    }
+    return () => { document.getElementById(id)?.remove(); };
+  }, []);
 
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
@@ -487,36 +639,32 @@ export const FirePage: React.FC = () => {
       {/* ── NAVBAR ────────────────────────────────────────────────────────── */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 20,
-        background: 'color-mix(in srgb, var(--background) 90%, transparent)',
-        backdropFilter: 'blur(18px)', WebkitBackdropFilter: 'blur(18px)',
+        background: 'color-mix(in srgb, var(--background) 88%, transparent)',
+        backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
         borderBottom: '1px solid var(--border)',
         paddingTop: 'env(safe-area-inset-top)',
       }}>
-        <div style={{ padding: `0 ${isMobile ? '1rem' : '2rem'}`, height: 48, display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
+        <div style={{ padding: `0 ${isMobile ? '1rem' : '2rem'}`, height: 50, display: 'flex', alignItems: 'center', gap: '0.5rem', overflow: 'hidden' }}>
 
-          {/* Brand */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
             <Flame size={15} color="#f97316" />
             <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>FIRE</span>
           </div>
 
-          {/* FIX MOBILE: overflow hidden + flexShrink per non tagliare i tab */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '6px', overflow: 'hidden', flexShrink: 1, minWidth: 0 }}>
             {TABS.map(([key, labelFull, labelShort]) => {
               const active = activeTab === key;
               return (
                 <span key={key} onClick={() => setActiveTab(key)} style={{
-                  // FIX MOBILE: padding e font ridotti su mobile
                   fontSize: isMobile ? '0.72rem' : '0.78rem',
                   fontWeight: active ? 700 : 500,
-                  padding: isMobile ? '4px 8px' : '4px 12px',
-                  borderRadius: '8px', cursor: 'pointer',
+                  padding: isMobile ? '5px 9px' : '5px 13px',
+                  borderRadius: '9px', cursor: 'pointer',
                   background: active ? 'var(--muted)' : 'transparent',
                   color:      active ? 'var(--foreground)' : 'var(--muted-foreground)',
-                  boxShadow:  active ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
+                  boxShadow:  active ? '0 1px 3px rgba(0,0,0,.07)' : 'none',
                   transition: 'all .15s', whiteSpace: 'nowrap',
-                  WebkitTapHighlightColor: 'transparent', userSelect: 'none',
-                  flexShrink: 0,
+                  WebkitTapHighlightColor: 'transparent', userSelect: 'none', flexShrink: 0,
                 }}>
                   {isMobile ? labelShort : labelFull}
                 </span>
@@ -526,22 +674,19 @@ export const FirePage: React.FC = () => {
 
           <div style={{ flex: 1 }} />
 
-          {/* Snapshot label (desktop only) */}
           {!isMobile && (
             <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', flexShrink: 0 }}>
               {NOW_LABEL}
             </span>
           )}
 
-          {/* Eye */}
           <button onClick={toggleBalanceVisibility}
-            style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isBalanceHidden ? 'var(--foreground)' : 'var(--muted)', color: isBalanceHidden ? 'var(--background)' : 'var(--muted-foreground)', border: 'none', borderRadius: '9px', cursor: 'pointer', flexShrink: 0, transition: 'all .15s' }}>
+            style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isBalanceHidden ? 'var(--foreground)' : 'var(--muted)', color: isBalanceHidden ? 'var(--background)' : 'var(--muted-foreground)', border: 'none', borderRadius: '9px', cursor: 'pointer', flexShrink: 0, transition: 'all .15s' }}>
             {isBalanceHidden ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
 
-          {/* Settings */}
           <button onClick={() => setShowSettings(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '0 12px', height: 32, background: 'var(--muted)', color: 'var(--muted-foreground)', border: 'none', borderRadius: '9px', cursor: 'pointer', flexShrink: 0, fontSize: '0.78rem', fontWeight: 600, transition: 'all .15s' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '0 12px', height: 34, background: 'var(--muted)', color: 'var(--muted-foreground)', border: 'none', borderRadius: '9px', cursor: 'pointer', flexShrink: 0, fontSize: '0.78rem', fontWeight: 600, transition: 'all .15s' }}>
             <Settings size={13} />
             {!isMobile && 'Settings'}
           </button>
@@ -549,12 +694,12 @@ export const FirePage: React.FC = () => {
       </div>
 
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <div style={{ background: `linear-gradient(180deg, color-mix(in srgb, #30a46c 6%, var(--background)) 0%, var(--background) 80%)`, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
+      <div style={{ background: `linear-gradient(180deg, color-mix(in srgb, #30a46c 7%, var(--background)) 0%, var(--background) 85%)`, borderBottom: '1px solid var(--border)' }}>
 
-        <div style={{ padding: isMobile ? '1.25rem 1rem 0.75rem' : '1.5rem 2rem 0.75rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ padding: isMobile ? '1.5rem 1rem 0.75rem' : '1.75rem 2rem 0.75rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
           <div>
-            <p style={{ fontSize: '0.68rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 4px' }}>Net Worth</p>
-            <p style={{ fontSize: isMobile ? '2.4rem' : '2.8rem', fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1, margin: '0 0 6px', color: 'var(--foreground)' }}>
+            <p style={{ fontSize: '0.68rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 6px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Net Worth</p>
+            <p style={{ fontSize: isMobile ? '2.6rem' : '3rem', fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1, margin: '0 0 8px', color: 'var(--foreground)' }}>
               {isBalanceHidden ? '€••••••' : (() => {
                 const n = data.net_worth;
                 const int = Math.floor(n).toLocaleString('en-US');
@@ -562,19 +707,24 @@ export const FirePage: React.FC = () => {
                 return <>{int}<span style={{ fontSize: '55%', fontWeight: 700, color: 'var(--muted-foreground)' }}>{dec}</span></>;
               })()}
             </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: firePct >= 100 ? '#30a46c' : 'var(--color-orange-400)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: firePct >= 100 ? '#30a46c' : 'var(--color-orange-400)' }}>
                 {isBalanceHidden ? '••.•%' : `${firePct.toFixed(1)}%`} to FIRE
               </span>
-              <span style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)' }}>
+              <span style={{ width: 1, height: 12, background: 'var(--border)', display: 'inline-block' }} />
+              <span style={{ fontSize: '0.77rem', color: 'var(--muted-foreground)' }}>
                 {isBalanceHidden ? '€••••••' : fmtEurCompact(passiveMonthly)}/mo passive
               </span>
-              {isCoastFire && <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: 'color-mix(in srgb, #30a46c 12%, var(--background))', color: '#30a46c', border: '1px solid color-mix(in srgb, #30a46c 25%, transparent)' }}>🏖️ Coast FIRE</span>}
+              {isCoastFire && (
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '2px 9px', borderRadius: 999, background: 'color-mix(in srgb, #30a46c 12%, var(--background))', color: '#30a46c', border: '1px solid color-mix(in srgb, #30a46c 25%, transparent)' }}>
+                  🏖️ Coast FIRE
+                </span>
+              )}
             </div>
           </div>
 
           {!isMobile && (
-            <div style={{ width: 340, paddingTop: '0.5rem' }}>
+            <div style={{ width: 360, paddingTop: '0.5rem' }}>
               <FireProgress netWorth={data.net_worth} fireNumber={fireNum} hidden={isBalanceHidden} />
             </div>
           )}
@@ -585,40 +735,48 @@ export const FirePage: React.FC = () => {
           <HeroChart history={data.net_worth_history} hidden={isBalanceHidden} />
         </div>
 
+        {/* Stat bar */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : `repeat(${statBar.length}, 1fr)`, borderTop: '1px solid var(--border)', marginTop: '0.75rem' }}>
           {statBar.map(({ label, value, color }, idx) => (
-            <div key={label} style={{ padding: isMobile ? '0.9rem 1rem' : '1rem 1.5rem', borderRight: idx < statBar.length - 1 ? '1px solid var(--border)' : 'none', ...(isMobile && idx === 4 ? { gridColumn: 'span 2', borderRight: 'none' } : {}) }}>
-              <p style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
-              <p style={{ fontSize: '1.1rem', fontWeight: 800, margin: 0, color, letterSpacing: '-0.02em' }}>{value}</p>
+            <div key={label} style={{
+              padding: isMobile ? '0.9rem 1rem' : '1rem 1.5rem',
+              borderRight: idx < statBar.length - 1 ? '1px solid var(--border)' : 'none',
+              ...(isMobile && idx === 4 ? { gridColumn: 'span 2', borderRight: 'none' } : {}),
+            }}>
+              <p style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
+              <p style={{ fontSize: '1.12rem', fontWeight: 800, margin: 0, color, letterSpacing: '-0.02em' }}>{value}</p>
             </div>
           ))}
         </div>
       </div>
 
       {/* ── CONTENT ───────────────────────────────────────────────────────── */}
-      <div style={{ padding: isMobile ? `1.25rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '2rem 2rem 3rem' }}>
+      <div style={{ padding: isMobile ? `1.5rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '2rem 2rem 3rem' }}>
 
+        {/* ── OVERVIEW ── */}
         {activeTab === 'overview' && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 360px', gap: '2rem', alignItems: 'start' }}>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
 
-              <section>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              {/* Capital depletion */}
+              <section style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '1.1rem' }}>
                   <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0 }}>Capital Depletion</h2>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>How long your wealth lasts without working</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)' }}>How long your wealth lasts</span>
                 </div>
-                <DepletionChart netWorth={data.net_worth} monthlyExpenses={data.avg_monthly_expenses} annualReturn={s.annual_return_rate} hidden={isBalanceHidden} />
+                <DepletionChart netWorth={data.net_worth} monthlyExpenses={data.avg_monthly_expenses} annualReturn={s.annual_return_rate} hidden={isBalanceHidden} isMobile={isMobile} />
               </section>
 
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
+              {/* Mini stats */}
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
                 {[
-                  { label: 'Avg Income / mo',  value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true), color: '#30a46c',                      icon: <TrendingUp size={13} /> },
-                  { label: 'Avg Expenses / mo', value: fmtOrHide(data.avg_monthly_expenses, isBalanceHidden, true), color: '#e5484d',                      icon: <Activity size={13} /> },
-                  { label: 'Passive / mo',      value: fmtOrHide(passiveMonthly,            isBalanceHidden, true), color: 'var(--color-orange-400)',       icon: <Zap size={13} /> },
+                  { label: 'Avg Income / mo',  value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true), color: '#30a46c',                       icon: <TrendingUp size={13} /> },
+                  { label: 'Avg Expenses / mo', value: fmtOrHide(data.avg_monthly_expenses, isBalanceHidden, true), color: '#e5484d',                       icon: <Activity size={13} /> },
+                  { label: 'Passive / mo',      value: fmtOrHide(passiveMonthly,            isBalanceHidden, true), color: 'var(--color-orange-400)',        icon: <Zap size={13} /> },
                   { label: 'Coverage',          value: isBalanceHidden ? '••%' : `${coverageRatio.toFixed(0)}%`, color: coverageRatio >= 100 ? '#30a46c' : 'var(--color-orange-400)', icon: <Target size={13} /> },
                 ].map(({ label, value, color, icon }) => (
-                  <div key={label} style={{ background: 'var(--card)', padding: '0.9rem 1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div key={label} style={{ background: 'var(--card)', padding: '1rem 1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
                       <p style={{ fontSize: '0.62rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px' }}>{label}</p>
                       <p style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, color, letterSpacing: '-0.02em' }}>{value}</p>
@@ -628,29 +786,32 @@ export const FirePage: React.FC = () => {
                 ))}
               </div>
 
+              {/* CTA to simulator */}
               <div onClick={() => setActiveTab('simulation')}
-                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.9rem 1.1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '12px', cursor: 'pointer', transition: 'background .15s' }}
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '14px', cursor: 'pointer', transition: 'background .15s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'var(--card)')}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
-                  <div style={{ width: 34, height: 34, borderRadius: 9, background: 'color-mix(in srgb, #f97316 12%, var(--background))', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={14} /></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+                  <div style={{ width: 38, height: 38, borderRadius: 11, background: 'color-mix(in srgb, #f97316 12%, var(--background))', color: '#f97316', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Play size={15} /></div>
                   <div>
-                    <p style={{ fontSize: '0.83rem', fontWeight: 700, margin: 0 }}>What-if Simulator</p>
-                    <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>Project wealth growth with adjustable savings, return rate and time horizon</p>
+                    <p style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0 }}>What-if Simulator</p>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '2px 0 0' }}>Project wealth growth with adjustable savings, return rate & time horizon</p>
                   </div>
                 </div>
                 <ArrowRight size={15} color="var(--muted-foreground)" />
               </div>
             </div>
 
+            {/* Right column */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-              <section>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+              {/* Runway */}
+              <section style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
                   <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0 }}>Runway</h2>
                   <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)' }}>Without working</span>
                 </div>
-                <p style={{ fontSize: '2.5rem', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, margin: '0 0 4px', color: 'var(--foreground)' }}>
+                <p style={{ fontSize: '2.8rem', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, margin: '0 0 4px', color: 'var(--foreground)' }}>
                   {fmtYears(data.runway_scenarios[0]?.months ?? 0)}
                 </p>
                 <p style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', margin: '0 0 1.25rem' }}>
@@ -660,48 +821,45 @@ export const FirePage: React.FC = () => {
                   const maxM = Math.max(...data.runway_scenarios.filter(s => s.months < 9990).map(s => s.months), 60);
                   const colors = ['var(--color-blue-600)', 'var(--color-orange-400)', '#30a46c'];
                   return (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
                       {data.runway_scenarios.map((s, i) => <RunwayRow key={s.label} label={s.label} months={s.months} description={s.description} color={colors[i]} maxMonths={maxM} />)}
                     </div>
                   );
                 })()}
               </section>
 
-              <div style={{ height: 1, background: 'var(--border)' }} />
-
-              <section>
-                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+              {/* FIRE Scenarios preview */}
+              <section style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
+                <div style={{ padding: '1rem 1.25rem 0', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                   <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0 }}>FIRE Scenarios</h2>
                   <span onClick={() => setActiveTab('scenarios')} style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', cursor: 'pointer' }}>View all →</span>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: 'var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ marginTop: '0.75rem' }}>
                   {data.fire_scenarios.map((sc, i) => {
                     const colors = ['var(--color-blue-600)', 'var(--color-orange-400)', '#30a46c'];
                     const icons  = [<Zap size={12} />, <Flame size={12} />, <Shield size={12} />];
                     const c = colors[i];
                     return (
-                      <div key={sc.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.8rem 1rem', background: 'var(--card)', transition: 'background .12s' }}
+                      <div key={sc.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1.25rem', borderTop: i === 0 ? '1px solid var(--border)' : '1px solid var(--border)', transition: 'background .12s' }}
                         onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'var(--card)')}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <div style={{ width: 24, height: 24, borderRadius: 7, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icons[i]}</div>
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                          <div style={{ width: 26, height: 26, borderRadius: 7, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icons[i]}</div>
                           <div>
-                            <p style={{ fontSize: '0.8rem', fontWeight: 700, margin: 0 }}>{sc.label}</p>
+                            <p style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0 }}>{sc.label}</p>
                             <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>{fmtOrHide(sc.monthly_target, isBalanceHidden, true)}/mo · {fmtOrHide(sc.fire_number, isBalanceHidden, true)}</p>
                           </div>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <p style={{ fontSize: '0.88rem', fontWeight: 800, margin: 0, color: sc.months_to_fire === 0 ? '#30a46c' : 'var(--foreground)' }}>
-                            {sc.months_to_fire === 0 ? '🎉 Done!' : sc.years_to_fire != null ? `${sc.years_to_fire.toFixed(1)} yrs` : '—'}
-                          </p>
-                        </div>
+                        <p style={{ fontSize: '0.9rem', fontWeight: 800, margin: 0, color: sc.months_to_fire === 0 ? '#30a46c' : 'var(--foreground)' }}>
+                          {sc.months_to_fire === 0 ? '🎉 Done!' : sc.years_to_fire != null ? `${sc.years_to_fire.toFixed(1)} yrs` : '—'}
+                        </p>
                       </div>
                     );
                   })}
                 </div>
               </section>
 
-              <div onClick={() => setShowSettings(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '10px', cursor: 'pointer', transition: 'background .12s' }}
+              <div onClick={() => setShowSettings(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.8rem 1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '12px', cursor: 'pointer', transition: 'background .12s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'var(--card)')}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '0.78rem', fontWeight: 600, color: 'var(--muted-foreground)' }}>
@@ -713,42 +871,43 @@ export const FirePage: React.FC = () => {
           </div>
         )}
 
+        {/* ── SIMULATOR ── */}
         {activeTab === 'simulation' && (
           <section>
-            <div style={{ marginBottom: '1.5rem' }}>
-              <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 4px' }}>What-if Simulator</h2>
-              <p style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', margin: 0 }}>Adjust the sliders to project your wealth growth over time</p>
+            <div style={{ marginBottom: '1.75rem' }}>
+              <h2 style={{ fontSize: '1.1rem', fontWeight: 800, margin: '0 0 4px', letterSpacing: '-0.02em' }}>What-if Simulator</h2>
+              <p style={{ fontSize: '0.77rem', color: 'var(--muted-foreground)', margin: 0 }}>Adjust the sliders to project your wealth growth over time</p>
             </div>
-            {/* FIX MOBILE: passa isMobile al Simulator */}
             <Simulator netWorth={data.net_worth} defaultContrib={data.avg_monthly_savings} defaultRate={s.annual_return_rate} hidden={isBalanceHidden} isMobile={isMobile} />
           </section>
         )}
 
+        {/* ── SCENARIOS ── */}
         {activeTab === 'scenarios' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
               {data.fire_scenarios.map((sc, i) => {
                 const colors = ['var(--color-blue-600)', 'var(--color-orange-400)', '#30a46c'];
                 const icons  = [<Zap size={14} />, <Flame size={14} />, <Shield size={14} />];
                 const c = colors[i]; const isTarget = i === 1;
                 return (
-                  <div key={sc.label} style={{ background: 'var(--card)', padding: '1.5rem', borderLeft: isTarget ? `3px solid ${c}` : undefined }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.1rem' }}>
-                      <div style={{ width: 28, height: 28, borderRadius: 8, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icons[i]}</div>
-                      <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>{sc.label}</span>
-                      {isTarget && <span style={{ marginLeft: 'auto', fontSize: '0.62rem', fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c }}>Target</span>}
+                  <div key={sc.label} style={{ background: 'var(--card)', padding: '1.5rem 1.75rem', borderLeft: isTarget ? `3px solid ${c}` : undefined }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '1.25rem' }}>
+                      <div style={{ width: 30, height: 30, borderRadius: 9, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icons[i]}</div>
+                      <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{sc.label}</span>
+                      {isTarget && <span style={{ marginLeft: 'auto', fontSize: '0.62rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c }}>Target</span>}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                       {[
                         { label: 'Monthly spending', value: fmtOrHide(sc.monthly_target, isBalanceHidden) },
                         { label: 'FIRE number',       value: fmtOrHide(sc.fire_number,    isBalanceHidden), color: c },
                         { label: 'Time to FIRE',      value: sc.months_to_fire === 0 ? '🎉 Achieved!' : sc.years_to_fire != null ? `${sc.years_to_fire.toFixed(1)} years` : '—', large: true },
                       ].map(({ label, value, color, large }: any) => (
                         <div key={label}>
-                          <p style={{ fontSize: '0.62rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
-                          <p style={{ fontSize: large ? '1.5rem' : '0.95rem', fontWeight: large ? 900 : 700, margin: 0, color: color ?? 'var(--foreground)', letterSpacing: large ? '-0.04em' : '-0.02em', lineHeight: 1 }}>{value}</p>
+                          <p style={{ fontSize: '0.62rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+                          <p style={{ fontSize: large ? '1.6rem' : '0.95rem', fontWeight: large ? 900 : 700, margin: 0, color: color ?? 'var(--foreground)', letterSpacing: large ? '-0.04em' : '-0.02em', lineHeight: 1 }}>{value}</p>
                           {sc.months_to_fire !== null && sc.months_to_fire > 0 && large && (
-                            <p style={{ fontSize: '0.67rem', color: 'var(--muted-foreground)', margin: '2px 0 0' }}>{Math.round(sc.months_to_fire)} months</p>
+                            <p style={{ fontSize: '0.67rem', color: 'var(--muted-foreground)', margin: '3px 0 0' }}>{Math.round(sc.months_to_fire)} months</p>
                           )}
                         </div>
                       ))}
@@ -760,16 +919,16 @@ export const FirePage: React.FC = () => {
 
             <section>
               <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: '0 0 0.75rem' }}>Data sources</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
                 {[
                   { label: '12-mo avg income',  value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true) },
                   { label: '12-mo avg expenses', value: fmtOrHide(data.avg_monthly_expenses, isBalanceHidden, true) },
                   { label: 'Avg net savings',    value: fmtOrHide(data.avg_monthly_savings,  isBalanceHidden, true) },
                 ].map(({ label, value }) => (
-                  <div key={label} style={{ background: 'var(--card)', padding: '1rem 1.25rem' }}>
+                  <div key={label} style={{ background: 'var(--card)', padding: '1.1rem 1.25rem' }}>
                     <p style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
-                    <p style={{ fontSize: '1.15rem', fontWeight: 800, margin: 0, letterSpacing: '-0.03em' }}>{value}</p>
-                    <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '2px 0 0' }}>per month</p>
+                    <p style={{ fontSize: '1.2rem', fontWeight: 800, margin: 0, letterSpacing: '-0.03em' }}>{value}</p>
+                    <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '3px 0 0' }}>per month</p>
                   </div>
                 ))}
               </div>
