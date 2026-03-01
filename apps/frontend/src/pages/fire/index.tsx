@@ -38,7 +38,7 @@ function mmyy(d: Date) { return `${d.getMonth() + 1}/${String(d.getFullYear()).s
 
 const NOW_LABEL = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
 
-// ── Net Worth Sparkline (full-width, like Investments chart) ──────────────────
+// ── Net Worth Sparkline ───────────────────────────────────────────────────────
 const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hidden: boolean }> = ({ history, hidden }) => {
   const [hover, setHover] = useState<{ x: number; y: number; val: number; date: string } | null>(null);
 
@@ -70,7 +70,6 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
     setHover({ x: p.x / W * 100, y: p.y / H * 100, val: p.val, date: sorted[clamped].date });
   };
 
-  // tick labels: first, middle, last (+ a couple in between)
   const tickIdxs = [0, Math.floor(sorted.length / 4), Math.floor(sorted.length / 2), Math.floor(3 * sorted.length / 4), sorted.length - 1];
 
   return (
@@ -94,7 +93,6 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
         </>}
       </svg>
 
-      {/* Tick labels */}
       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0 0', position: 'relative' }}>
         {tickIdxs.map(i => {
           const d = new Date(sorted[i].date);
@@ -106,7 +104,6 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
         })}
       </div>
 
-      {/* Hover tooltip */}
       {hover && (
         <div style={{
           position: 'absolute', top: 12,
@@ -146,12 +143,13 @@ const FireProgress: React.FC<{ netWorth: number; fireNumber: number; hidden: boo
 };
 
 // ── Runway bars ───────────────────────────────────────────────────────────────
+// FIX MOBILE: etichetta non si tronca, larghezza ridotta da 140px a 110px
 const RunwayRow: React.FC<{ label: string; months: number; description: string; color: string; maxMonths: number }> = ({ label, months, color, maxMonths }) => {
   const isInf = months >= 9990;
   const pct   = isInf ? 100 : Math.min((months / maxMonths) * 100, 100);
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 72px', alignItems: 'center', gap: '12px' }}>
-      <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--foreground)' }}>{label}</span>
+    <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 72px', alignItems: 'center', gap: '10px' }}>
+      <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{label}</span>
       <div style={{ background: 'var(--border)', borderRadius: 999, height: 7, overflow: 'hidden' }}>
         <div style={{ height: '100%', borderRadius: 999, width: `${pct}%`, background: color, transition: 'width 1s ease' }} />
       </div>
@@ -260,7 +258,8 @@ function simPath(capital: number, monthly: number, rate: number, years: number) 
   return pts;
 }
 
-const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRate: number; hidden: boolean }> = ({ netWorth, defaultContrib, defaultRate, hidden }) => {
+// FIX MOBILE: aggiunta prop isMobile
+const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRate: number; hidden: boolean; isMobile: boolean }> = ({ netWorth, defaultContrib, defaultRate, hidden, isMobile }) => {
   const [monthly, setMonthly] = useState(Math.max(Math.round(defaultContrib), 0));
   const [pct,     setPct]     = useState(+(defaultRate * 100).toFixed(1) || 6);
   const [years,   setYears]   = useState(10);
@@ -290,7 +289,8 @@ const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRat
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '2rem', alignItems: 'start' }}>
+      {/* FIX MOBILE: layout a colonna singola su mobile, due colonne su desktop */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '280px 1fr', gap: isMobile ? '1.25rem' : '2rem', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
           <Slider label="Monthly savings" val={monthly} min={0} max={5000} step={50}  fmt={(v: number) => `€${v.toLocaleString()}`} onChange={setMonthly} />
           <Slider label="Annual return"   val={pct}     min={0} max={15}   step={0.5} fmt={(v: number) => `${v.toFixed(1)}%`}        onChange={setPct} />
@@ -302,11 +302,13 @@ const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRat
             Start from current net worth ({hidden ? '€••••••' : fmtEurCompact(netWorth)})
           </label>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1px', background: 'var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
+
+        {/* FIX MOBILE: 1 colonna su mobile, 3 colonne su desktop */}
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '1px', background: 'var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
           {[
-            { label: 'Final wealth',      value: fmtOrHide(result.finalWealth,       hidden, true), color: '#30a46c',              full: true },
-            { label: 'Total gains',       value: fmtOrHide(result.totalGains,        hidden, true), color: 'var(--foreground)',     full: false },
-            { label: 'Total contributed', value: fmtOrHide(result.totalContributions, hidden, true), color: 'var(--muted-foreground)', full: false },
+            { label: 'Final wealth',      value: fmtOrHide(result.finalWealth,        hidden, true), color: '#30a46c' },
+            { label: 'Total gains',       value: fmtOrHide(result.totalGains,         hidden, true), color: 'var(--foreground)' },
+            { label: 'Total contributed', value: fmtOrHide(result.totalContributions, hidden, true), color: 'var(--muted-foreground)' },
           ].map(({ label, value, color }) => (
             <div key={label} style={{ background: 'var(--card)', padding: '0.9rem 1rem' }}>
               <p style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
@@ -315,6 +317,7 @@ const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRat
           ))}
         </div>
       </div>
+
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="xMidYMid meet" style={{ display: 'block', width: '100%', height: 160, overflow: 'visible' }}>
         <defs><linearGradient id="sg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#30a46c" stopOpacity=".15"/><stop offset="100%" stopColor="#30a46c" stopOpacity="0"/></linearGradient></defs>
         {[0, 0.25, 0.5, 0.75, 1].map(f => {
@@ -381,7 +384,6 @@ const SettingsModal: React.FC<{
         </div>
 
         <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.1rem' }}>
-          {/* Display */}
           <div>
             <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: '0 0 0.5rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Display</p>
             <div onClick={onToggleBalanceHidden} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '0.7rem 0.9rem', background: 'var(--accent)', borderRadius: '10px', cursor: 'pointer', transition: 'background .12s' }}
@@ -405,8 +407,8 @@ const SettingsModal: React.FC<{
           <div>
             <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: '0 0 0.75rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Parameters</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-              <Field label="Monthly target spending"   fk="monthly_expenses"       hint="Leave empty → 12-month budget average" />
-              <Field label="Monthly net income"        fk="monthly_income_override" hint="Leave empty → budget average" />
+              <Field label="Monthly target spending"   fk="monthly_expenses"        hint="Leave empty → 12-month budget average" />
+              <Field label="Monthly net income"        fk="monthly_income_override"  hint="Leave empty → budget average" />
               <Field label="INPS unemployment benefit" fk="inps_monthly" />
               <Field label="FIRE Number (optional)"    fk="fire_number"  hint="Empty → expenses × 12 × 25" />
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
@@ -466,24 +468,23 @@ export const FirePage: React.FC = () => {
   })();
 
   const TABS: [typeof activeTab, string, string][] = [
-    ['overview',   'Overview',        'Overview'],
-    ['simulation', '💡 Simulator',    'Simulator'],
-    ['scenarios',  'FIRE Scenarios',  'Scenarios'],
+    ['overview',   'Overview',       'Overview'],
+    ['simulation', '💡 Simulator',   'Simulator'],
+    ['scenarios',  'FIRE Scenarios', 'Scenarios'],
   ];
 
-  // Stat bar items (like Budget's Income / Expenses / Savings / Cash / Meal Vouchers)
   const statBar = [
-    { label: 'Net Worth',      value: fmtOrHide(data.net_worth,            isBalanceHidden, true), raw: data.net_worth,            color: 'var(--foreground)' },
-    { label: 'Monthly Savings', value: fmtOrHide(data.avg_monthly_savings,  isBalanceHidden, true), raw: data.avg_monthly_savings,  color: data.avg_monthly_savings >= 0 ? '#30a46c' : '#e5484d' },
-    { label: 'Savings Rate',   value: isBalanceHidden ? '••.•%' : `${data.savings_rate.toFixed(1)}%`,                              color: data.savings_rate >= 20 ? '#30a46c' : 'var(--color-orange-400)' },
-    { label: 'Freedom Score',  value: isBalanceHidden ? '••%' : `${firePct.toFixed(1)}%`,                                          color: firePct >= 100 ? '#30a46c' : firePct >= 50 ? 'var(--color-orange-400)' : 'var(--foreground)' },
-    { label: 'Time to FIRE',   value: timeToFire?.years_to_fire != null ? `${timeToFire.years_to_fire.toFixed(1)} yrs` : '—',      color: 'var(--foreground)' },
+    { label: 'Net Worth',       value: fmtOrHide(data.net_worth,            isBalanceHidden, true), color: 'var(--foreground)' },
+    { label: 'Monthly Savings', value: fmtOrHide(data.avg_monthly_savings,  isBalanceHidden, true), color: data.avg_monthly_savings >= 0 ? '#30a46c' : '#e5484d' },
+    { label: 'Savings Rate',    value: isBalanceHidden ? '••.•%' : `${data.savings_rate.toFixed(1)}%`, color: data.savings_rate >= 20 ? '#30a46c' : 'var(--color-orange-400)' },
+    { label: 'Freedom Score',   value: isBalanceHidden ? '••%' : `${firePct.toFixed(1)}%`, color: firePct >= 100 ? '#30a46c' : firePct >= 50 ? 'var(--color-orange-400)' : 'var(--foreground)' },
+    { label: 'Time to FIRE',    value: timeToFire?.years_to_fire != null ? `${timeToFire.years_to_fire.toFixed(1)} yrs` : '—', color: 'var(--foreground)' },
   ];
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
 
-      {/* ── NAVBAR — same style as Budget ─────────────────────────────────── */}
+      {/* ── NAVBAR ────────────────────────────────────────────────────────── */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 20,
         background: 'color-mix(in srgb, var(--background) 90%, transparent)',
@@ -499,19 +500,23 @@ export const FirePage: React.FC = () => {
             <span style={{ fontSize: '0.9rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>FIRE</span>
           </div>
 
-          {/* Tabs — same pill style as Budget */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '6px' }}>
+          {/* FIX MOBILE: overflow hidden + flexShrink per non tagliare i tab */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2px', marginLeft: '6px', overflow: 'hidden', flexShrink: 1, minWidth: 0 }}>
             {TABS.map(([key, labelFull, labelShort]) => {
               const active = activeTab === key;
               return (
                 <span key={key} onClick={() => setActiveTab(key)} style={{
-                  fontSize: '0.78rem', fontWeight: active ? 700 : 500,
-                  padding: '4px 12px', borderRadius: '8px', cursor: 'pointer',
+                  // FIX MOBILE: padding e font ridotti su mobile
+                  fontSize: isMobile ? '0.72rem' : '0.78rem',
+                  fontWeight: active ? 700 : 500,
+                  padding: isMobile ? '4px 8px' : '4px 12px',
+                  borderRadius: '8px', cursor: 'pointer',
                   background: active ? 'var(--muted)' : 'transparent',
                   color:      active ? 'var(--foreground)' : 'var(--muted-foreground)',
                   boxShadow:  active ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
                   transition: 'all .15s', whiteSpace: 'nowrap',
                   WebkitTapHighlightColor: 'transparent', userSelect: 'none',
+                  flexShrink: 0,
                 }}>
                   {isMobile ? labelShort : labelFull}
                 </span>
@@ -528,7 +533,7 @@ export const FirePage: React.FC = () => {
             </span>
           )}
 
-          {/* Eye — same size/style as Budget's gear button */}
+          {/* Eye */}
           <button onClick={toggleBalanceVisibility}
             style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isBalanceHidden ? 'var(--foreground)' : 'var(--muted)', color: isBalanceHidden ? 'var(--background)' : 'var(--muted-foreground)', border: 'none', borderRadius: '9px', cursor: 'pointer', flexShrink: 0, transition: 'all .15s' }}>
             {isBalanceHidden ? <EyeOff size={14} /> : <Eye size={14} />}
@@ -543,10 +548,9 @@ export const FirePage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── HERO — full width, edge-to-edge like Investments ──────────────── */}
+      {/* ── HERO ──────────────────────────────────────────────────────────── */}
       <div style={{ background: `linear-gradient(180deg, color-mix(in srgb, #30a46c 6%, var(--background)) 0%, var(--background) 80%)`, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
 
-        {/* Number + meta */}
         <div style={{ padding: isMobile ? '1.25rem 1rem 0.75rem' : '1.5rem 2rem 0.75rem', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
           <div>
             <p style={{ fontSize: '0.68rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 4px' }}>Net Worth</p>
@@ -569,7 +573,6 @@ export const FirePage: React.FC = () => {
             </div>
           </div>
 
-          {/* FIRE progress (desktop, right side of hero) */}
           {!isMobile && (
             <div style={{ width: 340, paddingTop: '0.5rem' }}>
               <FireProgress netWorth={data.net_worth} fireNumber={fireNum} hidden={isBalanceHidden} />
@@ -577,13 +580,11 @@ export const FirePage: React.FC = () => {
           )}
         </div>
 
-        {/* Net Worth sparkline — edge-to-edge like Investments chart */}
         <div style={{ padding: isMobile ? '0 1rem' : '0 2rem' }}>
           {isMobile && <div style={{ marginBottom: '0.75rem' }}><FireProgress netWorth={data.net_worth} fireNumber={fireNum} hidden={isBalanceHidden} /></div>}
           <HeroChart history={data.net_worth_history} hidden={isBalanceHidden} />
         </div>
 
-        {/* Stat bar — like Budget's Income/Expenses/Savings/Cash/Meal Vouchers */}
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : `repeat(${statBar.length}, 1fr)`, borderTop: '1px solid var(--border)', marginTop: '0.75rem' }}>
           {statBar.map(({ label, value, color }, idx) => (
             <div key={label} style={{ padding: isMobile ? '0.9rem 1rem' : '1rem 1.5rem', borderRight: idx < statBar.length - 1 ? '1px solid var(--border)' : 'none', ...(isMobile && idx === 4 ? { gridColumn: 'span 2', borderRight: 'none' } : {}) }}>
@@ -594,16 +595,14 @@ export const FirePage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── CONTENT — two-column like Budget/Investments ───────────────────── */}
+      {/* ── CONTENT ───────────────────────────────────────────────────────── */}
       <div style={{ padding: isMobile ? `1.25rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '2rem 2rem 3rem' }}>
 
         {activeTab === 'overview' && (
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 360px', gap: '2rem', alignItems: 'start' }}>
 
-            {/* ── Left column ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
 
-              {/* Capital Depletion */}
               <section>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '1rem' }}>
                   <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0 }}>Capital Depletion</h2>
@@ -612,13 +611,12 @@ export const FirePage: React.FC = () => {
                 <DepletionChart netWorth={data.net_worth} monthlyExpenses={data.avg_monthly_expenses} annualReturn={s.annual_return_rate} hidden={isBalanceHidden} />
               </section>
 
-              {/* Quick stats row */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
                 {[
-                  { label: 'Avg Income / mo',   value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true), color: '#30a46c',              icon: <TrendingUp size={13} /> },
-                  { label: 'Avg Expenses / mo',  value: fmtOrHide(data.avg_monthly_expenses, isBalanceHidden, true), color: '#e5484d',              icon: <Activity size={13} /> },
-                  { label: 'Passive / mo',       value: fmtOrHide(passiveMonthly,            isBalanceHidden, true), color: 'var(--color-orange-400)', icon: <Zap size={13} /> },
-                  { label: 'Coverage',           value: isBalanceHidden ? '••%' : `${coverageRatio.toFixed(0)}%`, color: coverageRatio >= 100 ? '#30a46c' : 'var(--color-orange-400)', icon: <Target size={13} /> },
+                  { label: 'Avg Income / mo',  value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true), color: '#30a46c',                      icon: <TrendingUp size={13} /> },
+                  { label: 'Avg Expenses / mo', value: fmtOrHide(data.avg_monthly_expenses, isBalanceHidden, true), color: '#e5484d',                      icon: <Activity size={13} /> },
+                  { label: 'Passive / mo',      value: fmtOrHide(passiveMonthly,            isBalanceHidden, true), color: 'var(--color-orange-400)',       icon: <Zap size={13} /> },
+                  { label: 'Coverage',          value: isBalanceHidden ? '••%' : `${coverageRatio.toFixed(0)}%`, color: coverageRatio >= 100 ? '#30a46c' : 'var(--color-orange-400)', icon: <Target size={13} /> },
                 ].map(({ label, value, color, icon }) => (
                   <div key={label} style={{ background: 'var(--card)', padding: '0.9rem 1.1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
@@ -630,7 +628,6 @@ export const FirePage: React.FC = () => {
                 ))}
               </div>
 
-              {/* CTA to simulator */}
               <div onClick={() => setActiveTab('simulation')}
                 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.9rem 1.1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '12px', cursor: 'pointer', transition: 'background .15s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
@@ -646,16 +643,13 @@ export const FirePage: React.FC = () => {
               </div>
             </div>
 
-            {/* ── Right sidebar ── */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
 
-              {/* Runway */}
               <section>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                   <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0 }}>Runway</h2>
                   <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)' }}>Without working</span>
                 </div>
-                {/* Big number — first scenario */}
                 <p style={{ fontSize: '2.5rem', fontWeight: 900, letterSpacing: '-0.04em', lineHeight: 1, margin: '0 0 4px', color: 'var(--foreground)' }}>
                   {fmtYears(data.runway_scenarios[0]?.months ?? 0)}
                 </p>
@@ -675,7 +669,6 @@ export const FirePage: React.FC = () => {
 
               <div style={{ height: 1, background: 'var(--border)' }} />
 
-              {/* FIRE scenarios list */}
               <section>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                   <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0 }}>FIRE Scenarios</h2>
@@ -708,7 +701,6 @@ export const FirePage: React.FC = () => {
                 </div>
               </section>
 
-              {/* Settings link */}
               <div onClick={() => setShowSettings(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '10px', cursor: 'pointer', transition: 'background .12s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'var(--card)')}>
@@ -727,7 +719,8 @@ export const FirePage: React.FC = () => {
               <h2 style={{ fontSize: '1rem', fontWeight: 700, margin: '0 0 4px' }}>What-if Simulator</h2>
               <p style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', margin: 0 }}>Adjust the sliders to project your wealth growth over time</p>
             </div>
-            <Simulator netWorth={data.net_worth} defaultContrib={data.avg_monthly_savings} defaultRate={s.annual_return_rate} hidden={isBalanceHidden} />
+            {/* FIX MOBILE: passa isMobile al Simulator */}
+            <Simulator netWorth={data.net_worth} defaultContrib={data.avg_monthly_savings} defaultRate={s.annual_return_rate} hidden={isBalanceHidden} isMobile={isMobile} />
           </section>
         )}
 
@@ -765,14 +758,13 @@ export const FirePage: React.FC = () => {
               })}
             </div>
 
-            {/* Data sources */}
             <section>
               <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: '0 0 0.75rem' }}>Data sources</h2>
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: '12px', overflow: 'hidden' }}>
                 {[
-                  { label: '12-mo avg income',   value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true) },
-                  { label: '12-mo avg expenses',  value: fmtOrHide(data.avg_monthly_expenses, isBalanceHidden, true) },
-                  { label: 'Avg net savings',     value: fmtOrHide(data.avg_monthly_savings,  isBalanceHidden, true) },
+                  { label: '12-mo avg income',  value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true) },
+                  { label: '12-mo avg expenses', value: fmtOrHide(data.avg_monthly_expenses, isBalanceHidden, true) },
+                  { label: 'Avg net savings',    value: fmtOrHide(data.avg_monthly_savings,  isBalanceHidden, true) },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ background: 'var(--card)', padding: '1rem 1.25rem' }}>
                     <p style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
