@@ -27,7 +27,7 @@ interface GeographicExposurePageProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Constants
+// Design tokens — all CSS vars from global.css, light/dark auto
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REGION_COLORS: Record<GeographicRegion, string> = {
@@ -132,8 +132,7 @@ function useGeographicExposure(accountId: string) {
   useEffect(() => {
     setIsLoading(true);
     setError(null);
-    const params = new URLSearchParams({ accountId });
-    fetch(`/api/v1/allocations?${params}`)
+    fetch(`/api/v1/allocations?${new URLSearchParams({ accountId })}`)
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<AllocationsResponse>;
@@ -197,11 +196,14 @@ const renderActiveShape = (props: any) => {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// WorldMap — hidden on mobile (shown only md+)
+// WorldMap — desktop only
 // ─────────────────────────────────────────────────────────────────────────────
 
 function WorldMap({
-  countries, hoveredCountry, selectedRegion, onHover,
+  countries,
+  hoveredCountry,
+  selectedRegion,
+  onHover,
 }: {
   countries: CountryExposure[];
   hoveredCountry: CountryExposure | null;
@@ -216,10 +218,12 @@ function WorldMap({
       <svg viewBox="0 0 860 380" className="w-full h-auto">
         <rect width="860" height="380" fill="var(--muted)" rx="6" opacity="0.35" />
         {[95, 190, 285].map((y) => (
-          <line key={`h${y}`} x1="0" y1={y} x2="860" y2={y} stroke="var(--border)" strokeWidth="0.6" />
+          <line key={`h${y}`} x1="0" y1={y} x2="860" y2={y}
+            stroke="var(--border)" strokeWidth="0.6" />
         ))}
         {[215, 430, 645].map((x) => (
-          <line key={`v${x}`} x1={x} y1="0" x2={x} y2="380" stroke="var(--border)" strokeWidth="0.6" />
+          <line key={`v${x}`} x1={x} y1="0" x2={x} y2="380"
+            stroke="var(--border)" strokeWidth="0.6" />
         ))}
         <ellipse cx="190" cy="155" rx="78" ry="68" fill="var(--accent)" opacity="0.8" />
         <ellipse cx="248" cy="268" rx="44" ry="60" fill="var(--accent)" opacity="0.8" />
@@ -237,9 +241,12 @@ function WorldMap({
           const ly = parseFloat(parts[2]) + 30;
           return (
             <g key={country.code}>
-              <path d={path} fill={country.color}
+              <path
+                d={path}
+                fill={country.color}
                 opacity={isFiltered ? 0.06 : isHovered ? 1 : 0.75}
-                stroke="var(--card)" strokeWidth="0.8"
+                stroke="var(--card)"
+                strokeWidth="0.8"
                 className="cursor-pointer transition-opacity duration-150"
                 onMouseEnter={() => onHover(country)}
                 onMouseLeave={() => onHover(null)}
@@ -283,60 +290,65 @@ function WorldMap({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Region cards — horizontal scroll on mobile
+// RegionCards
 // ─────────────────────────────────────────────────────────────────────────────
 
 function RegionCards({
-  regionData, selectedRegion, onSelect,
+  regionData,
+  selectedRegion,
+  onSelect,
 }: {
   regionData: RegionSummary[];
   selectedRegion: GeographicRegion | null;
   onSelect: (r: GeographicRegion | null) => void;
 }) {
   return (
-    // On mobile: horizontal scroll strip. On md+: regular grid.
-    <div className="md:grid md:grid-cols-3 md:gap-2 lg:grid-cols-6">
-      {/* Mobile: scrollable row */}
-      <div className="flex gap-2 overflow-x-auto pb-1 md:contents scrollbar-hide">
-        {regionData.map((r) => {
-          const active = selectedRegion === r.name;
-          return (
-            <button
-              key={r.name}
-              onClick={() => onSelect(active ? null : r.name)}
-              className="shrink-0 rounded-lg border p-3 text-left transition-all hover:bg-accent w-36 md:w-auto"
-              style={{
-                borderColor: active ? r.color : "var(--border)",
-                background: active ? "var(--accent)" : "var(--card)",
-                outline: active ? `1px solid ${r.color}` : "none",
-              }}
-            >
-              <p className="truncate text-xs font-medium text-muted-foreground">{r.name}</p>
-              <p className="mt-1 text-lg font-bold tabular-nums" style={{ color: r.color }}>
-                {r.value.toFixed(1)}%
-              </p>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {r.countries.length} {r.countries.length === 1 ? "country" : "countries"}
-              </p>
-              <div className="mt-2 h-0.5 overflow-hidden rounded-full bg-muted">
-                <div className="h-full rounded-full"
-                  style={{ width: `${Math.min(r.value, 100)}%`, background: r.color }} />
-              </div>
-            </button>
-          );
-        })}
-      </div>
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
+      {regionData.map((r) => {
+        const active = selectedRegion === r.name;
+        return (
+          <button
+            key={r.name}
+            onClick={() => onSelect(active ? null : r.name)}
+            className="rounded-md border p-2.5 text-left transition-all hover:bg-accent"
+            style={{
+              borderColor: active ? r.color : "var(--border)",
+              background: active ? "var(--accent)" : "var(--card)",
+              outline: active ? `1px solid ${r.color}` : "none",
+            }}
+          >
+            <p className="truncate text-xs font-medium text-muted-foreground">{r.name}</p>
+            <p className="mt-0.5 text-base font-bold tabular-nums leading-tight"
+              style={{ color: r.color }}>
+              {r.value.toFixed(1)}%
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {r.countries.length} {r.countries.length === 1 ? "country" : "countries"}
+            </p>
+            <div className="mt-1.5 h-0.5 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full"
+                style={{ width: `${Math.min(r.value, 100)}%`, background: r.color }} />
+            </div>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Country list — used standalone on mobile inside the breakdown card
+// CountryList
 // ─────────────────────────────────────────────────────────────────────────────
 
 function CountryList({
-  countries, maxValue, hoveredCountry, showAll,
-  onHover, onActiveIndex, onToggleShowAll, selectedRegion,
+  countries,
+  maxValue,
+  hoveredCountry,
+  showAll,
+  selectedRegion,
+  onHover,
+  onActiveIndex,
+  onToggleShowAll,
 }: {
   countries: CountryExposure[];
   maxValue: number;
@@ -372,8 +384,10 @@ function CountryList({
                   <span className="truncate text-sm font-medium text-foreground">
                     {country.name}
                   </span>
-                  <span className="shrink-0 text-sm font-semibold tabular-nums"
-                    style={{ color: country.color }}>
+                  <span
+                    className="shrink-0 text-sm font-semibold tabular-nums"
+                    style={{ color: country.color }}
+                  >
                     {country.value.toFixed(1)}%
                   </span>
                 </div>
@@ -392,7 +406,6 @@ function CountryList({
         })}
       </div>
 
-      {/* Show all / less — only when no region filter */}
       {!selectedRegion && (
         <button
           onClick={onToggleShowAll}
@@ -416,17 +429,22 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
 
   const [activeIndex, setActiveIndex]       = useState(0);
   const [showAll, setShowAll]               = useState(false);
-  // Desktop view toggle; mobile always shows stacked layout
   const [view, setView]                     = useState<ViewMode>("split");
   const [hoveredCountry, setHoveredCountry] = useState<CountryExposure | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<GeographicRegion | null>(null);
 
-  // All hooks before conditional returns
+  // ── All hooks before any conditional return ───────────────────────────────
+
   const regionData = useMemo<RegionSummary[]>(() => {
     const map = new Map<GeographicRegion, RegionSummary>();
     allCountries.forEach((c) => {
       if (!map.has(c.region)) {
-        map.set(c.region, { name: c.region, value: 0, countries: [], color: REGION_COLORS[c.region] });
+        map.set(c.region, {
+          name: c.region,
+          value: 0,
+          countries: [],
+          color: REGION_COLORS[c.region],
+        });
       }
       const r = map.get(c.region)!;
       r.value += c.value;
@@ -435,23 +453,22 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
     return Array.from(map.values()).sort((a, b) => b.value - a.value);
   }, [allCountries]);
 
-  // visibleCountries: respects showAll and selectedRegion filter
   const visibleCountries = useMemo(() => {
     const base = selectedRegion
       ? allCountries.filter((c) => c.region === selectedRegion)
       : allCountries;
-    // When showAll is false AND no region filter, cap at 8
     if (!showAll && !selectedRegion) return base.slice(0, 8);
     return base;
   }, [allCountries, selectedRegion, showAll]);
 
-  const maxValue = allCountries[0]?.value ?? 100;
-
-  // Pie data: top-12 or filtered by region
   const pieData = useMemo(() => {
     if (selectedRegion) return allCountries.filter((c) => c.region === selectedRegion);
     return allCountries.slice(0, 12);
   }, [allCountries, selectedRegion]);
+
+  const maxValue = allCountries[0]?.value ?? 100;
+
+  // ── Conditional renders ───────────────────────────────────────────────────
 
   if (isLoading) {
     return (
@@ -469,8 +486,15 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
     );
   }
 
+  // ── Render ────────────────────────────────────────────────────────────────
+  // pb-safe-nav: padding-bottom accounts for the fixed mobile nav bar so the
+  // last item is always reachable. Uses env(safe-area-inset-bottom) + nav height.
+
   return (
-    <div className="flex flex-col gap-4 p-4">
+    <div
+      className="flex flex-col gap-4 p-4"
+      style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 6rem)" }}
+    >
 
       {/* ── Header ────────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -479,7 +503,7 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
             Geographic Exposure
           </h3>
           <p className="text-xs text-muted-foreground">
-            {allCountries.length} countries &middot; allocation by market
+            {allCountries.length} countries · allocation by market
           </p>
         </div>
 
@@ -501,17 +525,17 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         </div>
       </div>
 
-      {/* ── Region filter pills — horizontal scroll on mobile ─────────────── */}
-      <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide">
+      {/* ── Region filter pills: 2-col grid on mobile, flex-wrap on sm+ ───── */}
+      <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
         <button
           onClick={() => setSelectedRegion(null)}
-          className={`shrink-0 rounded-full border px-3 py-0.5 text-xs font-medium transition-colors ${
+          className={`col-span-2 sm:col-auto rounded-full border px-3 py-1 text-xs font-medium text-center transition-colors ${
             !selectedRegion
               ? "border-primary bg-primary text-primary-foreground"
               : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
           }`}
         >
-          All
+          All regions
         </button>
         {regionData.map((r) => {
           const active = selectedRegion === r.name;
@@ -519,7 +543,7 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
             <button
               key={r.name}
               onClick={() => setSelectedRegion(active ? null : r.name)}
-              className="shrink-0 rounded-full border px-3 py-0.5 text-xs font-medium transition-colors"
+              className="truncate rounded-full border px-2 py-1 text-xs font-medium text-center transition-colors"
               style={{
                 borderColor: active ? r.color : "var(--border)",
                 color: active ? r.color : "var(--muted-foreground)",
@@ -534,8 +558,11 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         })}
       </div>
 
-      {/* ── MOBILE layout: stacked cards ──────────────────────────────────── */}
-      {/* Region summary cards — horizontal scroll strip on mobile */}
+      {/* ════════════════════════════════════════════════════════════════════ */}
+      {/* MOBILE layout (< md): stacked cards, no fixed heights               */}
+      {/* ════════════════════════════════════════════════════════════════════ */}
+
+      {/* Region summary cards */}
       <div className="md:hidden">
         <RegionCards
           regionData={regionData}
@@ -544,7 +571,7 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         />
       </div>
 
-      {/* Donut chart card — mobile */}
+      {/* Donut chart */}
       <div className="md:hidden rounded-lg border bg-card p-4">
         <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Allocation
@@ -555,13 +582,16 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
               <Pie
                 {...({ activeIndex, activeShape: renderActiveShape } as any)}
                 data={pieData}
-                cx="50%" cy="50%"
-                innerRadius={58} outerRadius={78}
+                cx="50%"
+                cy="50%"
+                innerRadius={58}
+                outerRadius={78}
                 dataKey="value"
                 onMouseEnter={(_: any, index: number) => setActiveIndex(index)}
               >
                 {pieData.map((entry) => (
-                  <Cell key={entry.code} fill={entry.color} stroke="var(--card)" strokeWidth={1.5} />
+                  <Cell key={entry.code} fill={entry.color}
+                    stroke="var(--card)" strokeWidth={1.5} />
                 ))}
               </Pie>
             </PieChart>
@@ -569,7 +599,7 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         </div>
       </div>
 
-      {/* Country list card — mobile (no maxHeight cap, shows all when expanded) */}
+      {/* Country list — no maxHeight cap, expands freely */}
       <div className="md:hidden rounded-lg border bg-card p-4">
         <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Countries
@@ -586,12 +616,14 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         />
       </div>
 
-      {/* ── DESKTOP layout: split / map / chart panels ────────────────────── */}
+      {/* ════════════════════════════════════════════════════════════════════ */}
+      {/* DESKTOP layout (≥ md): split / map / chart panels side by side       */}
+      {/* ════════════════════════════════════════════════════════════════════ */}
+
       <div
         className="hidden md:grid gap-4"
         style={{ gridTemplateColumns: view === "split" ? "1fr 1fr" : "1fr" }}
       >
-        {/* Map panel */}
         {(view === "map" || view === "split") && (
           <WorldMap
             countries={allCountries}
@@ -601,34 +633,35 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
           />
         )}
 
-        {/* Chart + list panel */}
         {(view === "chart" || view === "split") && (
           <div className="flex flex-col rounded-lg border bg-card p-4">
             <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
               Allocation Breakdown
             </p>
 
-            {/* Donut */}
             <div className="h-52 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
                     {...({ activeIndex, activeShape: renderActiveShape } as any)}
                     data={pieData}
-                    cx="50%" cy="50%"
-                    innerRadius={66} outerRadius={88}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={66}
+                    outerRadius={88}
                     dataKey="value"
                     onMouseEnter={(_: any, index: number) => setActiveIndex(index)}
                   >
                     {pieData.map((entry) => (
-                      <Cell key={entry.code} fill={entry.color} stroke="var(--card)" strokeWidth={1.5} />
+                      <Cell key={entry.code} fill={entry.color}
+                        stroke="var(--card)" strokeWidth={1.5} />
                     ))}
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
             </div>
 
-            {/* List — no maxHeight when showAll is true */}
+            {/* List — remove maxHeight when expanded */}
             <div
               className="mt-2 overflow-y-auto"
               style={!showAll && !selectedRegion ? { maxHeight: 320 } : undefined}
@@ -648,7 +681,7 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         )}
       </div>
 
-      {/* Region summary cards — desktop grid */}
+      {/* Region summary cards — desktop */}
       <div className="hidden md:block">
         <RegionCards
           regionData={regionData}
@@ -656,6 +689,7 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
           onSelect={setSelectedRegion}
         />
       </div>
+
     </div>
   );
 }
