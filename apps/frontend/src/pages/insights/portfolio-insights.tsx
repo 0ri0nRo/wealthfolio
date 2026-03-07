@@ -2,6 +2,7 @@ import { AccountSelector } from "@/components/account-selector";
 import { SwipablePage, SwipablePageView } from "@/components/page";
 import { PORTFOLIO_ACCOUNT_ID } from "@/lib/constants";
 import type { Account } from "@/lib/types";
+import GeographicExposurePage from "@/pages/geography/geographic-exposure-page";
 import IncomePage from "@/pages/income/income-page";
 import PerformancePage from "@/pages/performance/performance-page";
 import { Icons } from "@wealthfolio/ui";
@@ -62,7 +63,21 @@ export default function PortfolioInsightsPage() {
     [selectedAccount],
   );
 
-  // Define the views with icons
+  // Reuse the same account selector for the geography tab
+  const geographyActions = useMemo(
+    () => (
+      <AccountSelector
+        selectedAccount={selectedAccount}
+        setSelectedAccount={setSelectedAccount}
+        variant="dropdown"
+        includePortfolio={true}
+        iconOnly={true}
+        icon={Icons.ListFilter}
+      />
+    ),
+    [selectedAccount],
+  );
+
   const views: SwipablePageView[] = useMemo(
     () => [
       {
@@ -75,6 +90,17 @@ export default function PortfolioInsightsPage() {
           </Suspense>
         ),
         actions: holdingsActions,
+      },
+      {
+        value: "geography",
+        label: "Geography",
+        icon: Icons.Globe,            // use whichever globe/map icon is available in @wealthfolio/ui
+        content: (
+          <Suspense fallback={<DashboardLoader />}>
+            <GeographicExposurePage accountId={accountId} />
+          </Suspense>
+        ),
+        actions: geographyActions,
       },
       {
         value: "performance",
@@ -97,7 +123,7 @@ export default function PortfolioInsightsPage() {
         ),
       },
     ],
-    [accountId, holdingsActions],
+    [accountId, holdingsActions, geographyActions],
   );
 
   return <SwipablePage views={views} defaultView="holdings" withPadding={true} />;
