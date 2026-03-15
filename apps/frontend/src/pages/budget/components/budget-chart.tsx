@@ -48,7 +48,6 @@ const PERIOD_LABEL: Record<TimePeriod, string> = {
   '6M': 'past 6 months', 'YTD': 'year to date', '1Y': 'past year', 'ALL': 'all time',
 };
 
-// ── Option B pill tooltip — rendered below the chart ──────────────────────────
 const PillTooltip = ({
   active, payload, label, isBalanceHidden,
 }: { active?: boolean; payload?: readonly any[]; label?: string | number; isBalanceHidden: boolean }) => {
@@ -100,7 +99,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
   isBalanceHidden = false,
 }) => {
   const [chartType, setChartType] = useState<'pie' | 'bar'>('pie');
-  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('1M'); // ← default 30 days
+  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('1M');
 
   const fmtOrHide = (n: number) =>
     isBalanceHidden ? '€••••••' : `€${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
@@ -162,20 +161,23 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     return { totalIncome, totalExpenses, balance, balancePct };
   }, [heroChartData]);
 
-  // ── HERO CHART ─────────────────────────────────────────────────────────────
+  // ── HERO CHART — full bleed, matches Investments aesthetic ────────────────
   if (showLast12Months) {
     const isPositive = heroStats.balance >= 0;
-    const heroGradient = `linear-gradient(180deg, color-mix(in srgb, var(--success) 8%, var(--background)) 0%, var(--background) 70%)`;
     const hasBp      = bpBalance !== undefined;
     const bpPositive = (bpBalance ?? 0) >= 0;
+    const isMobileHero = typeof window !== 'undefined' && window.innerWidth < 768;
+    const chartHeight  = isMobileHero ? 200 : 320;
+    const hPad         = isMobileHero ? '1rem' : '1.5rem';
 
     return (
-      <div style={{ background: heroGradient, position: 'relative' }}>
-        <div style={{ padding: '1.75rem 1.75rem 0' }}>
-          <p style={{ fontSize: '2.25rem', fontWeight: 700, color: 'var(--foreground)', letterSpacing: '-0.03em', lineHeight: 1, margin: '0 0 0.45rem' }}>
+      <div style={{ background: 'var(--background)', position: 'relative' }}>
+        {/* Amount + stats */}
+        <div style={{ padding: `1.25rem ${hPad} 0` }}>
+          <p style={{ fontSize: isMobileHero ? '1.75rem' : '2.25rem', fontWeight: 700, color: 'var(--foreground)', letterSpacing: '-0.03em', lineHeight: 1, margin: '0 0 0.4rem' }}>
             {isBalanceHidden ? '€••••••' : `€${heroStats.totalIncome.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
           </p>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: isPositive ? 'var(--success)' : 'var(--destructive)' }}>
               {isBalanceHidden ? `${isPositive ? '+' : ''}€••••••` : `${isPositive ? '+' : ''}€${heroStats.balance.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
             </span>
@@ -188,7 +190,7 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
             {hasBp && (
               <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: '4px',
-                fontSize: '0.78rem', fontWeight: 700, padding: '2px 9px', borderRadius: '999px',
+                fontSize: '0.75rem', fontWeight: 700, padding: '2px 8px', borderRadius: '999px',
                 background: bpPositive
                   ? 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))'
                   : 'color-mix(in srgb, var(--destructive) 12%, var(--background))',
@@ -201,13 +203,13 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
           </div>
         </div>
 
-        {/* Chart — pill tooltip positioned at the bottom of chart area */}
-        <div style={{ width: '100%', height: 220, marginTop: '1rem', position: 'relative' }}>
+        {/* Chart */}
+        <div style={{ width: '100%', height: chartHeight, marginTop: '0.75rem' }}>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={heroChartData} margin={{ top: 5, right: 0, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="heroIncome" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#30a46c" stopOpacity={0.15} />
+                  <stop offset="0%" stopColor="#30a46c" stopOpacity={0.18} />
                   <stop offset="100%" stopColor="#30a46c" stopOpacity={0} />
                 </linearGradient>
                 <linearGradient id="heroExpenses" x1="0" y1="0" x2="0" y2="1">
@@ -219,12 +221,12 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
                 dataKey="label"
                 tick={{ fontSize: 10, fill: 'var(--muted-foreground)' } as any}
                 axisLine={false} tickLine={false}
-                interval="preserveStartEnd" height={28}
+                interval="preserveStartEnd" height={24}
               />
               <YAxis hide />
               <Tooltip
                 content={(props) => <PillTooltip {...props} isBalanceHidden={isBalanceHidden} />}
-                position={{ y: 175 }}   /* pin to bottom of chart area */
+                position={{ y: chartHeight - 60 }}
                 wrapperStyle={{ display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}
               />
               <Area type="monotone" dataKey="income"   stroke="#30a46c" strokeWidth={2} fill="url(#heroIncome)"   dot={false} activeDot={{ r: 4, fill: '#30a46c',  strokeWidth: 0 }} />
@@ -233,19 +235,21 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
           </ResponsiveContainer>
         </div>
 
-        {/* Period selector */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '2px', padding: '0.5rem 1.75rem 0.75rem', borderTop: '1px solid var(--border)' }}>
+        {/* Period selector — right aligned, scrollable on mobile */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '1px', padding: `0.4rem ${hPad}`, borderTop: '1px solid color-mix(in srgb, var(--border) 60%, transparent)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' as any }}>
           {TIME_PERIODS.map(period => (
             <button
               key={period}
               onClick={() => setSelectedPeriod(period)}
               style={{
-                padding: '5px 12px', fontSize: '0.78rem',
+                padding: isMobileHero ? '4px 9px' : '5px 12px',
+                fontSize: isMobileHero ? '0.72rem' : '0.78rem',
                 fontWeight: selectedPeriod === period ? 700 : 500,
                 borderRadius: '999px', border: 'none', cursor: 'pointer', transition: 'all 0.15s ease',
                 background: selectedPeriod === period ? 'var(--foreground)' : 'transparent',
                 color:      selectedPeriod === period ? 'var(--background)' : 'var(--muted-foreground)',
                 WebkitTapHighlightColor: 'transparent',
+                flexShrink: 0,
               }}
             >
               {period}
@@ -254,25 +258,23 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
         </div>
 
         {/* Legend */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', padding: '0 1.75rem 1.25rem' }}>
-          <div style={{ display: 'flex', gap: '1.5rem' }}>
-            {[
-              { color: '#30a46c', label: 'Income',   value: heroStats.totalIncome   },
-              { color: '#e5484d', label: 'Expenses', value: heroStats.totalExpenses },
-            ].map(({ color, label, value }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
-                <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
-                  {label} · {fmtOrHide(value)}
-                </span>
-              </div>
-            ))}
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap', padding: `0 ${hPad} 1rem` }}>
+          {[
+            { color: '#30a46c', label: 'Income',   value: heroStats.totalIncome   },
+            { color: '#e5484d', label: 'Expenses', value: heroStats.totalExpenses },
+          ].map(({ color, label, value }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+              <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>
+                {label} · {fmtOrHide(value)}
+              </span>
+            </div>
+          ))}
           {hasBp && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-orange-400)' }} />
-              <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)' }}>
-                Meal vouchers remaining · {fmtOrHide(bpBalance ?? 0)}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-orange-400)', flexShrink: 0 }} />
+              <span style={{ fontSize: '0.78rem', color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>
+                Meal vouchers · {fmtOrHide(bpBalance ?? 0)}
               </span>
             </div>
           )}
@@ -312,20 +314,23 @@ export const BudgetChart: React.FC<BudgetChartProps> = ({
     <div className="liquid-glass" style={{ borderRadius: '16px', padding: '1.25rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <h3 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Expenses by category</h3>
-        <div style={{ background: 'var(--muted)', borderRadius: '10px', padding: '3px', display: 'flex', gap: '2px' }}>
+        <div style={{ background: 'var(--muted)', borderRadius: '999px', padding: '3px', display: 'flex', gap: '2px' }}>
           {(['pie', 'bar'] as const).map(type => (
             <button
               key={type}
               onClick={() => setChartType(type)}
               style={{
+                position: 'relative',
                 padding: '4px 12px', fontSize: '0.78rem', fontWeight: 600,
-                borderRadius: '8px', border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-                background: chartType === type ? 'var(--card)' : 'transparent',
-                color:      chartType === type ? 'var(--foreground)' : 'var(--muted-foreground)',
-                boxShadow:  chartType === type ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                borderRadius: '999px', border: 'none', cursor: 'pointer', transition: 'color 0.2s',
+                background: 'transparent',
+                color: chartType === type ? 'var(--foreground)' : 'var(--muted-foreground)',
               }}
             >
-              {type === 'pie' ? 'Donut' : 'Bar'}
+              {chartType === type && (
+                <span style={{ position: 'absolute', inset: 0, borderRadius: '999px', background: 'var(--background)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }} />
+              )}
+              <span style={{ position: 'relative', zIndex: 1 }}>{type === 'pie' ? 'Donut' : 'Bar'}</span>
             </button>
           ))}
         </div>
