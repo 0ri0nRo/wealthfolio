@@ -26,7 +26,7 @@ const toBase64 = (bytes: Uint8Array): string => {
 const shareFileOnIOS = async (content: Uint8Array, fileName: string): Promise<boolean> => {
   try {
     // @ts-ignore
-    const { shareBinary } = await import("tauri-plugin-mobile-share");
+    const { shareBinary } = await (new Function('return import("tauri-plugin-mobile-share")'))();
 
     const extensionIndex = fileName.lastIndexOf(".");
     const hasExtension = extensionIndex > 0 && extensionIndex < fileName.length - 1;
