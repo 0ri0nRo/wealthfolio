@@ -2,6 +2,7 @@ import { getDynamicNavItems, subscribeToNavigationUpdates } from "@/addons/addon
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Flame } from "lucide-react";
 import { useEffect, useState } from "react";
+
 export interface NavLink {
   title: string;
   href: string;
@@ -34,17 +35,17 @@ const staticNavigation: NavigationProps = {
     },
     {
       icon: <Icons.Insight className="size-6" />,
-      title: "Holdings",
-      href: "/holdings",
-      keywords: ["Holdings", "portfolio", "assets", "positions", "stocks"],
-      label: "View Holdings",
-    },
-    {
-      icon: <Icons.BarChart className="size-6" />,
       title: "Insights",
       href: "/insights",
       keywords: ["insights", "Analytics"],
       label: "View Insights",
+    },
+    {
+      icon: <Icons.Sparkles className="size-6" />,
+      title: "Holdings",
+      href: "/holdings",
+      keywords: ["Holdings", "portfolio", "assets", "positions", "stocks"],
+      label: "View Holdings",
     },
     {
       icon: <Icons.Activity className="size-6" />,
@@ -54,20 +55,12 @@ const staticNavigation: NavigationProps = {
       label: "View Activities",
     },
     {
-      icon: <Icons.Sparkles className="size-6" />,
-      title: "Assistant",
-      href: "/assistant",
-      keywords: ["ai", "assistant", "chat", "help", "ask"],
-      label: "AI Assistant",
-    },
-    {
       icon: <Flame className="size-6" />,
       title: "FIRE",
       href: "/fire",
       keywords: ["fire", "freedom", "retire", "runway", "indipendenza finanziaria"],
       label: "FIRE Dashboard",
-    }
-
+    },
   ],
   secondary: [
     {
@@ -80,7 +73,7 @@ const staticNavigation: NavigationProps = {
 };
 
 export function useNavigation() {
-  const [dynamicItems, setDynamicItems] = useState<NavigationProps["primary"]>([]);
+  const [dynamicItems, setDynamicItems] = useState<NavigationProps["addons"]>([]);
 
   // Subscribe to navigation updates from addons
   useEffect(() => {

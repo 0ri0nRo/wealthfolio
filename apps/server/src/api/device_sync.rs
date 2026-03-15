@@ -12,7 +12,6 @@ use axum::{
 };
 use serde::Deserialize;
 use tracing::{debug, info};
-use wealthfolio_connect::DEFAULT_CLOUD_API_URL;
 
 use crate::error::{ApiError, ApiResult};
 use crate::main_lib::AppState;
@@ -22,45 +21,61 @@ use wealthfolio_device_sync::{
     CompletePairingRequest, ConfirmPairingRequest, ConfirmPairingResponse, CreatePairingRequest,
     CreatePairingResponse, Device, DeviceSyncClient, EnrollDeviceResponse, GetPairingResponse,
     InitializeKeysResult, PairingMessagesResponse, RegisterDeviceRequest, ResetTeamSyncResponse,
-    RotateKeysResponse, SuccessResponse, UpdateDeviceRequest,
+    RotateKeysResponse, SuccessResponse, SyncIdentity, UpdateDeviceRequest,
 };
 
 // Storage keys (without prefix - the SecretStore adds "wealthfolio_" prefix)
-const CLOUD_ACCESS_TOKEN_KEY: &str = "sync_access_token";
 const DEVICE_ID_KEY: &str = "sync_device_id";
+const SYNC_IDENTITY_KEY: &str = "sync_identity";
 
 fn cloud_api_base_url() -> String {
-    std::env::var("CONNECT_API_URL")
-        .ok()
-        .map(|v| v.trim().trim_end_matches('/').to_string())
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| DEFAULT_CLOUD_API_URL.to_string())
+    crate::features::cloud_api_base_url().unwrap_or_default()
 }
 
-/// Get the access token from secret store.
-fn get_access_token(state: &AppState) -> ApiResult<String> {
-    state
-        .secret_store
-        .get_secret(CLOUD_ACCESS_TOKEN_KEY)
-        .map_err(|e| ApiError::Internal(format!("Failed to get access token: {}", e)))?
-        .ok_or_else(|| {
-            ApiError::Unauthorized("No access token configured. Please sign in first.".to_string())
-        })
+/// Get a fresh access token by refreshing via the stored refresh token.
+async fn get_access_token(state: &AppState) -> ApiResult<String> {
+    super::connect::mint_access_token(state).await
 }
 
 /// Get the device ID from secret store.
 fn get_device_id(state: &AppState) -> Option<String> {
+    // Preferred source: sync_identity (used by DeviceEnrollService).
+    match state.secret_store.get_secret(SYNC_IDENTITY_KEY) {
+        Ok(Some(identity_json)) => match serde_json::from_str::<SyncIdentity>(&identity_json) {
+            Ok(identity) => {
+                if let Some(device_id) = identity.device_id {
+                    debug!(
+                        "[DeviceSync] Using device ID from sync_identity: {}",
+                        device_id
+                    );
+                    return Some(device_id);
+                }
+                debug!("[DeviceSync] sync_identity present but missing deviceId");
+            }
+            Err(e) => {
+                tracing::warn!("[DeviceSync] Failed to parse sync_identity: {}", e);
+            }
+        },
+        Ok(None) => {
+            debug!("[DeviceSync] No sync_identity in store");
+        }
+        Err(e) => {
+            tracing::warn!("[DeviceSync] Failed to read sync_identity: {}", e);
+        }
+    }
+
+    // Legacy fallback for older flows.
     match state.secret_store.get_secret(DEVICE_ID_KEY) {
         Ok(Some(id)) => {
-            debug!("[DeviceSync] Using device ID from store: {}", id);
+            debug!("[DeviceSync] Using legacy device ID from store: {}", id);
             Some(id)
         }
         Ok(None) => {
-            debug!("[DeviceSync] No device ID in store");
+            debug!("[DeviceSync] No legacy device ID in store");
             None
         }
         Err(e) => {
-            tracing::warn!("[DeviceSync] Failed to read device ID: {}", e);
+            tracing::warn!("[DeviceSync] Failed to read legacy device ID: {}", e);
             None
         }
     }
@@ -152,7 +167,7 @@ async fn register_device(
 ) -> ApiResult<Json<EnrollDeviceResponse>> {
     info!("[DeviceSync] Registering device: {}", body.display_name);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let client = create_client();
 
     let request = RegisterDeviceRequest {
@@ -190,7 +205,7 @@ async fn get_device_endpoint(
     State(state): State<Arc<AppState>>,
     Path(device_id): Path<String>,
 ) -> ApiResult<Json<Device>> {
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
 
     let device = create_client()
         .get_device(&token, &device_id)
@@ -201,7 +216,7 @@ async fn get_device_endpoint(
 }
 
 async fn get_current_device(State(state): State<Arc<AppState>>) -> ApiResult<Json<Device>> {
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -219,7 +234,7 @@ async fn list_devices(
 ) -> ApiResult<Json<Vec<Device>>> {
     info!("[DeviceSync] Listing devices (scope: {:?})...", query.scope);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
 
     let devices = create_client()
         .list_devices(&token, query.scope.as_deref())
@@ -240,7 +255,7 @@ async fn update_device_endpoint(
         device_id, body.display_name
     );
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
 
     let result = create_client()
         .update_device(
@@ -263,7 +278,7 @@ async fn delete_device_endpoint(
 ) -> ApiResult<Json<SuccessResponse>> {
     info!("Deleting device: {}", device_id);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
 
     let result = create_client()
         .delete_device(&token, &device_id)
@@ -279,7 +294,7 @@ async fn revoke_device_endpoint(
 ) -> ApiResult<Json<SuccessResponse>> {
     info!("Revoking device: {}", device_id);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
 
     let result = create_client()
         .revoke_device(&token, &device_id)
@@ -298,7 +313,7 @@ async fn initialize_team_keys(
 ) -> ApiResult<Json<InitializeKeysResult>> {
     info!("[DeviceSync] Initializing team keys...");
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -316,7 +331,7 @@ async fn commit_initialize_team_keys(
 ) -> ApiResult<Json<CommitInitializeKeysResponse>> {
     info!("[DeviceSync] Committing team key initialization...");
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -342,7 +357,7 @@ async fn rotate_team_keys(
 ) -> ApiResult<Json<RotateKeysResponse>> {
     info!("[DeviceSync] Starting key rotation...");
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -360,7 +375,7 @@ async fn commit_rotate_team_keys(
 ) -> ApiResult<Json<CommitRotateKeysResponse>> {
     info!("[DeviceSync] Committing key rotation...");
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -378,7 +393,7 @@ async fn reset_team_sync(
 ) -> ApiResult<Json<ResetTeamSyncResponse>> {
     info!("[DeviceSync] Resetting team sync...");
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
 
     let result = create_client()
         .reset_team_sync(&token, body.reason.as_deref())
@@ -398,7 +413,7 @@ async fn create_pairing(
 ) -> ApiResult<Json<CreatePairingResponse>> {
     debug!("Creating pairing session...");
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -423,7 +438,7 @@ async fn get_pairing(
 ) -> ApiResult<Json<GetPairingResponse>> {
     debug!("Getting pairing session: {}", pairing_id);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -441,7 +456,7 @@ async fn approve_pairing(
 ) -> ApiResult<Json<SuccessResponse>> {
     debug!("Approving pairing session: {}", pairing_id);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -460,7 +475,7 @@ async fn complete_pairing(
 ) -> ApiResult<Json<SuccessResponse>> {
     debug!("Completing pairing session: {}", pairing_id);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -487,7 +502,7 @@ async fn cancel_pairing(
 ) -> ApiResult<Json<SuccessResponse>> {
     debug!("Canceling pairing session: {}", pairing_id);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -509,7 +524,7 @@ async fn claim_pairing(
 ) -> ApiResult<Json<ClaimPairingResponse>> {
     debug!("Claiming pairing session with code...");
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -534,7 +549,7 @@ async fn get_pairing_messages(
 ) -> ApiResult<Json<PairingMessagesResponse>> {
     debug!("Getting pairing messages: {}", pairing_id);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -553,7 +568,7 @@ async fn confirm_pairing_endpoint(
 ) -> ApiResult<Json<ConfirmPairingResponse>> {
     debug!("Confirming pairing session: {}", pairing_id);
 
-    let token = get_access_token(&state)?;
+    let token = get_access_token(&state).await?;
     let device_id = get_device_id(&state)
         .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
 
@@ -577,6 +592,10 @@ async fn confirm_pairing_endpoint(
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub fn router() -> Router<Arc<AppState>> {
+    if !crate::features::device_sync_enabled() {
+        return Router::new();
+    }
+
     Router::new()
         // Device management
         .route("/sync/device/register", post(register_device))

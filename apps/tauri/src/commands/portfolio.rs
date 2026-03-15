@@ -105,6 +105,31 @@ pub async fn get_holding(
 }
 
 #[tauri::command]
+pub async fn get_asset_holdings(
+    state: State<'_, Arc<ServiceContext>>,
+    asset_id: String,
+) -> Result<Vec<Holding>, String> {
+    debug!("Get holdings for asset {} across all accounts", asset_id);
+    let base_currency = state.get_base_currency();
+    let accounts = state
+        .account_service()
+        .get_active_accounts()
+        .map_err(|e| format!("Failed to get accounts: {}", e))?;
+
+    let mut result = Vec::new();
+    for account in accounts {
+        if let Ok(Some(holding)) = state
+            .holdings_service()
+            .get_holding(&account.id, &asset_id, &base_currency)
+            .await
+        {
+            result.push(holding);
+        }
+    }
+    Ok(result)
+}
+
+#[tauri::command]
 pub async fn get_portfolio_allocations(
     state: State<'_, Arc<ServiceContext>>,
     account_id: String,
@@ -357,6 +382,12 @@ pub struct HoldingInput {
     pub average_cost: Option<String>,
     /// Exchange MIC code for new holdings (e.g., "XNAS", "XTSE"). Used when asset_id is not provided.
     pub exchange_mic: Option<String>,
+    /// Asset name for new custom assets
+    pub name: Option<String>,
+    /// Data source (e.g., "MANUAL" for custom assets) — sets quote mode to manual
+    pub data_source: Option<String>,
+    /// Asset kind (e.g., "INVESTMENT", "OTHER")
+    pub asset_kind: Option<String>,
 }
 
 /// Saves manual holdings for a HOLDINGS-mode account.
@@ -416,6 +447,9 @@ pub async fn save_manual_holdings(
             quantity,
             currency: holding.currency,
             average_cost,
+            name: holding.name,
+            data_source: holding.data_source,
+            asset_kind: holding.asset_kind,
         });
     }
 
@@ -431,6 +465,7 @@ pub async fn save_manual_holdings(
         state.asset_service(),
         state.fx_service(),
         state.snapshot_service(),
+        state.quote_service(),
     );
 
     let asset_ids = manual_snapshot_service
@@ -471,6 +506,140 @@ pub async fn save_manual_holdings(
 }
 
 // ============================================================================
+// Holdings Import Check Types and Command
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolCheckResult {
+    pub symbol: String,
+    pub found: bool,
+    pub asset_name: Option<String>,
+    pub asset_id: Option<String>,
+    pub currency: Option<String>,
+    pub exchange_mic: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckHoldingsImportResult {
+    pub existing_dates: Vec<String>,
+    pub symbols: Vec<SymbolCheckResult>,
+    pub validation_errors: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn check_holdings_import(
+    state: State<'_, Arc<ServiceContext>>,
+    account_id: String,
+    snapshots: Vec<HoldingsSnapshotInput>,
+) -> Result<CheckHoldingsImportResult, String> {
+    debug!(
+        "Checking {} holdings snapshots for account {}",
+        snapshots.len(),
+        account_id
+    );
+
+    // Verify account exists
+    state
+        .account_service()
+        .get_account(&account_id)
+        .map_err(|e| format!("Failed to get account: {}", e))?;
+
+    let mut validation_errors: Vec<String> = Vec::new();
+    let mut valid_dates: Vec<NaiveDate> = Vec::new();
+    let mut unique_symbols: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for snapshot in &snapshots {
+        // Validate date
+        match NaiveDate::parse_from_str(&snapshot.date, "%Y-%m-%d") {
+            Ok(d) => valid_dates.push(d),
+            Err(_) => {
+                validation_errors.push(format!("Invalid date format: '{}'", snapshot.date));
+                continue;
+            }
+        }
+
+        // Validate positions
+        for pos in &snapshot.positions {
+            if pos.symbol.trim().is_empty() {
+                validation_errors.push(format!("Date {}: empty symbol found", snapshot.date));
+            }
+            if pos.quantity.parse::<Decimal>().is_err() {
+                validation_errors.push(format!(
+                    "Date {}: invalid quantity '{}' for {}",
+                    snapshot.date, pos.quantity, pos.symbol
+                ));
+            }
+            if let Some(ref c) = pos.avg_cost {
+                if !c.is_empty() && c.parse::<Decimal>().is_err() {
+                    validation_errors.push(format!(
+                        "Date {}: invalid avg cost '{}' for {}",
+                        snapshot.date, c, pos.symbol
+                    ));
+                }
+            }
+            unique_symbols.insert(pos.symbol.to_uppercase());
+        }
+    }
+
+    // Check existing snapshots
+    let existing_dates = if !valid_dates.is_empty() {
+        let min_date = *valid_dates.iter().min().unwrap();
+        let max_date = *valid_dates.iter().max().unwrap();
+        let existing = state
+            .snapshot_service()
+            .get_holdings_keyframes(&account_id, Some(min_date), Some(max_date))
+            .map_err(|e| format!("Failed to query snapshots: {}", e))?;
+
+        let import_dates: std::collections::HashSet<NaiveDate> = valid_dates.into_iter().collect();
+        existing
+            .into_iter()
+            .filter(|s| import_dates.contains(&s.snapshot_date))
+            .map(|s| s.snapshot_date.format("%Y-%m-%d").to_string())
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    // Symbol lookup: search DB first, then market data providers (like activity import)
+    let mut symbols: Vec<SymbolCheckResult> = Vec::new();
+    for sym in unique_symbols {
+        let results = state
+            .quote_service()
+            .search_symbol_with_currency(&sym, None)
+            .await
+            .unwrap_or_default();
+
+        if let Some(hit) = results.first() {
+            symbols.push(SymbolCheckResult {
+                symbol: sym,
+                found: true,
+                asset_name: Some(hit.long_name.clone()),
+                asset_id: hit.existing_asset_id.clone(),
+                currency: hit.currency.clone(),
+                exchange_mic: hit.exchange_mic.clone(),
+            });
+        } else {
+            symbols.push(SymbolCheckResult {
+                symbol: sym,
+                found: false,
+                asset_name: None,
+                asset_id: None,
+                currency: None,
+                exchange_mic: None,
+            });
+        }
+    }
+
+    Ok(CheckHoldingsImportResult {
+        existing_dates,
+        symbols,
+        validation_errors,
+    })
+}
+
+// ============================================================================
 // Holdings CSV Import Types and Command
 // ============================================================================
 
@@ -482,10 +651,12 @@ pub struct HoldingsPositionInput {
     pub symbol: String,
     /// Quantity held
     pub quantity: String,
-    /// Optional price per unit at snapshot date
-    pub price: Option<String>,
+    /// Optional average cost per unit
+    pub avg_cost: Option<String>,
     /// Currency for this position
     pub currency: String,
+    /// Exchange MIC code (e.g., "XNAS", "XTSE") resolved during check step
+    pub exchange_mic: Option<String>,
 }
 
 /// A single snapshot from CSV import (one date's worth of holdings)
@@ -633,9 +804,9 @@ async fn import_single_snapshot(
             .parse::<Decimal>()
             .map_err(|e| format!("Invalid quantity for {}: {}", pos_input.symbol, e))?;
 
-        // Parse price from CSV if provided, use for cost basis calculation
-        let price = pos_input
-            .price
+        // Parse average cost from CSV if provided, use for cost basis calculation
+        let average_cost = pos_input
+            .avg_cost
             .as_ref()
             .and_then(|p| p.parse::<Decimal>().ok())
             .unwrap_or(Decimal::ZERO);
@@ -643,10 +814,13 @@ async fn import_single_snapshot(
         positions.push(ManualHoldingInput {
             asset_id: None,
             symbol: pos_input.symbol.clone(),
-            exchange_mic: None,
+            exchange_mic: pos_input.exchange_mic.clone(),
             quantity,
             currency: pos_input.currency.clone(),
-            average_cost: price,
+            average_cost,
+            name: None,
+            data_source: None,
+            asset_kind: None,
         });
     }
 
@@ -665,6 +839,7 @@ async fn import_single_snapshot(
         state.asset_service(),
         state.fx_service(),
         state.snapshot_service(),
+        state.quote_service(),
     );
 
     manual_snapshot_service
@@ -970,6 +1145,36 @@ pub async fn delete_snapshot(
         "Deleted {:?} snapshot for account {} on date {}",
         snapshot.source, account_id, date
     );
+
+    // If no user-created snapshots remain, clean up orphan SYNTHETIC snapshots
+    let remaining = state
+        .snapshot_repository()
+        .get_snapshots_by_account(&account_id, None, None)
+        .map_err(|e| format!("Failed to check remaining snapshots: {}", e))?;
+
+    let has_user_snapshots = remaining
+        .iter()
+        .any(|s| s.source != SnapshotSource::Calculated && s.source != SnapshotSource::Synthetic);
+
+    if !has_user_snapshots {
+        let synthetic_dates: Vec<NaiveDate> = remaining
+            .iter()
+            .filter(|s| s.source == SnapshotSource::Synthetic)
+            .map(|s| s.snapshot_date)
+            .collect();
+        if !synthetic_dates.is_empty() {
+            state
+                .snapshot_repository()
+                .delete_snapshots_for_account_and_dates(&account_id, &synthetic_dates)
+                .await
+                .map_err(|e| format!("Failed to clean up synthetic snapshots: {}", e))?;
+            info!(
+                "Cleaned up {} orphan SYNTHETIC snapshots for account {}",
+                synthetic_dates.len(),
+                account_id
+            );
+        }
+    }
 
     // Trigger portfolio update to recalculate valuations
     let payload = PortfolioRequestPayload::builder()

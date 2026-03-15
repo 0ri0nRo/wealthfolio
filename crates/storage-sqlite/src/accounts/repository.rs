@@ -37,16 +37,20 @@ impl AccountRepositoryTrait for AccountRepository {
         new_account.validate()?;
 
         self.writer
-            .exec(move |conn| {
+            .exec_tx(move |tx| {
                 let mut account_db: AccountDB = new_account.into();
                 account_db.id = uuid::Uuid::new_v4().to_string();
 
                 diesel::insert_into(accounts::table)
                     .values(&account_db)
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
 
-                Ok(account_db.into())
+                let payload_db = account_db.clone();
+                let account: Account = account_db.into();
+                tx.insert(&payload_db)?;
+
+                Ok(account)
             })
             .await
     }
@@ -59,13 +63,13 @@ impl AccountRepositoryTrait for AccountRepository {
         let tracking_mode_provided = account_update.tracking_mode.is_some();
 
         self.writer
-            .exec(move |conn| {
+            .exec_tx(move |tx| {
                 let mut account_db: AccountDB = account_update.into();
 
                 let existing = accounts
                     .select(AccountDB::as_select())
                     .find(&account_db.id)
-                    .first::<AccountDB>(conn)
+                    .first::<AccountDB>(tx.conn())
                     .map_err(StorageError::from)?;
 
                 // Preserve fields that shouldn't change
@@ -90,10 +94,14 @@ impl AccountRepositoryTrait for AccountRepository {
 
                 diesel::update(accounts.find(&account_db.id))
                     .set(&account_db)
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
 
-                Ok(account_db.into())
+                let payload_db = account_db.clone();
+                let account: Account = account_db.into();
+                tx.update(&payload_db)?;
+
+                Ok(account)
             })
             .await
     }
@@ -147,11 +155,16 @@ impl AccountRepositoryTrait for AccountRepository {
     /// Deletes an account by its ID and returns the number of deleted records
     async fn delete(&self, account_id_param: &str) -> Result<usize> {
         let id_to_delete_owned = account_id_param.to_string();
+        let event_entity_id = id_to_delete_owned.clone();
         self.writer
-            .exec(move |conn| {
+            .exec_tx(move |tx| {
                 let affected_rows = diesel::delete(accounts.find(id_to_delete_owned))
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
+
+                if affected_rows > 0 {
+                    tx.delete::<AccountDB>(event_entity_id.clone());
+                }
                 Ok(affected_rows)
             })
             .await

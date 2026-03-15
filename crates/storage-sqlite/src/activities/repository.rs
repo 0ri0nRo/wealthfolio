@@ -277,14 +277,16 @@ impl ActivityRepositoryTrait for ActivityRepository {
         let activity_db_owned: ActivityDB = new_activity.into();
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<Activity> {
+            .exec_tx(move |tx| -> Result<Activity> {
                 let mut activity_to_insert = activity_db_owned;
                 activity_to_insert.id = Uuid::new_v4().to_string();
                 let inserted_activity = diesel::insert_into(activities::table)
                     .values(&activity_to_insert)
-                    .get_result::<ActivityDB>(conn)
+                    .get_result::<ActivityDB>(tx.conn())
                     .map_err(StorageError::from)?;
-                Ok(Activity::from(inserted_activity))
+                let activity = Activity::from(inserted_activity);
+                tx.insert(&activity_to_insert)?;
+                Ok(activity)
             })
             .await
     }
@@ -296,12 +298,12 @@ impl ActivityRepositoryTrait for ActivityRepository {
         let activity_id_owned = activity_db_owned.id.clone();
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<Activity> {
+            .exec_tx(move |tx| -> Result<Activity> {
                 let mut activity_to_update = activity_db_owned;
                 let existing = activities::table
                     .select(ActivityDB::as_select())
                     .find(&activity_id_owned)
-                    .first::<ActivityDB>(conn)
+                    .first::<ActivityDB>(tx.conn())
                     .map_err(StorageError::from)?;
 
                 // Preserve fields from existing record that shouldn't be overwritten
@@ -372,24 +374,27 @@ impl ActivityRepositoryTrait for ActivityRepository {
                 let updated_activity =
                     diesel::update(activities::table.find(&activity_to_update.id))
                         .set(&activity_to_update)
-                        .get_result::<ActivityDB>(conn)
+                        .get_result::<ActivityDB>(tx.conn())
                         .map_err(StorageError::from)?;
-                Ok(Activity::from(updated_activity))
+                let activity = Activity::from(updated_activity);
+                tx.update(&activity_to_update)?;
+                Ok(activity)
             })
             .await
     }
 
     async fn delete_activity(&self, activity_id: String) -> Result<Activity> {
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<Activity> {
+            .exec_tx(move |tx| -> Result<Activity> {
                 let activity = activities::table
                     .select(ActivityDB::as_select())
                     .find(&activity_id)
-                    .first::<ActivityDB>(conn)
+                    .first::<ActivityDB>(tx.conn())
                     .map_err(StorageError::from)?;
                 diesel::delete(activities::table.filter(activities::id.eq(&activity_id)))
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
+                tx.delete::<ActivityDB>(activity_id.clone());
                 Ok(activity.into())
             })
             .await
@@ -402,125 +407,125 @@ impl ActivityRepositoryTrait for ActivityRepository {
         delete_ids: Vec<String>,
     ) -> Result<ActivityBulkMutationResult> {
         self.writer
-            .exec(
-                move |conn: &mut SqliteConnection| -> Result<ActivityBulkMutationResult> {
-                    let mut outcome = ActivityBulkMutationResult::default();
+            .exec_tx(move |tx| -> Result<ActivityBulkMutationResult> {
+                let mut outcome = ActivityBulkMutationResult::default();
 
-                    for delete_id in delete_ids {
-                        let activity_db = activities::table
-                            .select(ActivityDB::as_select())
-                            .find(&delete_id)
-                            .first::<ActivityDB>(conn)
-                            .map_err(StorageError::from)?;
-                        diesel::delete(activities::table.filter(activities::id.eq(&delete_id)))
-                            .execute(conn)
-                            .map_err(StorageError::from)?;
-                        outcome.deleted.push(Activity::from(activity_db));
+                for delete_id in delete_ids {
+                    let activity_db = activities::table
+                        .select(ActivityDB::as_select())
+                        .find(&delete_id)
+                        .first::<ActivityDB>(tx.conn())
+                        .map_err(StorageError::from)?;
+                    diesel::delete(activities::table.filter(activities::id.eq(&delete_id)))
+                        .execute(tx.conn())
+                        .map_err(StorageError::from)?;
+                    tx.delete::<ActivityDB>(delete_id.clone());
+                    outcome.deleted.push(Activity::from(activity_db));
+                }
+
+                for update in updates {
+                    update.validate()?;
+                    let update_owned = update.clone();
+                    let mut activity_db: ActivityDB = update.into();
+                    let existing = activities::table
+                        .select(ActivityDB::as_select())
+                        .find(&activity_db.id)
+                        .first::<ActivityDB>(tx.conn())
+                        .map_err(StorageError::from)?;
+
+                    // Preserve fields from existing record
+                    let ActivityDB {
+                        created_at,
+                        source_system,
+                        source_record_id,
+                        source_group_id,
+                        idempotency_key,
+                        import_run_id,
+                        activity_type_override,
+                        source_type,
+                        subtype,
+                        settlement_date,
+                        metadata,
+                        quantity,
+                        unit_price,
+                        amount,
+                        fee,
+                        fx_rate,
+                        ..
+                    } = existing;
+
+                    activity_db.created_at = created_at;
+                    activity_db.quantity = apply_decimal_patch(quantity, update_owned.quantity);
+                    activity_db.unit_price =
+                        apply_decimal_patch(unit_price, update_owned.unit_price);
+                    activity_db.amount = apply_decimal_patch(amount, update_owned.amount);
+                    activity_db.fee = apply_decimal_patch(fee, update_owned.fee);
+                    activity_db.fx_rate = apply_decimal_patch(fx_rate, update_owned.fx_rate);
+                    if activity_db.source_system.is_none() {
+                        activity_db.source_system = source_system;
                     }
-
-                    for update in updates {
-                        update.validate()?;
-                        let update_owned = update.clone();
-                        let mut activity_db: ActivityDB = update.into();
-                        let existing = activities::table
-                            .select(ActivityDB::as_select())
-                            .find(&activity_db.id)
-                            .first::<ActivityDB>(conn)
-                            .map_err(StorageError::from)?;
-
-                        // Preserve fields from existing record
-                        let ActivityDB {
-                            created_at,
-                            source_system,
-                            source_record_id,
-                            source_group_id,
-                            idempotency_key,
-                            import_run_id,
-                            activity_type_override,
-                            source_type,
-                            subtype,
-                            settlement_date,
-                            metadata,
-                            quantity,
-                            unit_price,
-                            amount,
-                            fee,
-                            fx_rate,
-                            ..
-                        } = existing;
-
-                        activity_db.created_at = created_at;
-                        activity_db.quantity = apply_decimal_patch(quantity, update_owned.quantity);
-                        activity_db.unit_price =
-                            apply_decimal_patch(unit_price, update_owned.unit_price);
-                        activity_db.amount = apply_decimal_patch(amount, update_owned.amount);
-                        activity_db.fee = apply_decimal_patch(fee, update_owned.fee);
-                        activity_db.fx_rate = apply_decimal_patch(fx_rate, update_owned.fx_rate);
-                        if activity_db.source_system.is_none() {
-                            activity_db.source_system = source_system;
-                        }
-                        if activity_db.source_record_id.is_none() {
-                            activity_db.source_record_id = source_record_id;
-                        }
-                        if activity_db.source_group_id.is_none() {
-                            activity_db.source_group_id = source_group_id;
-                        }
-                        if activity_db.idempotency_key.is_none() {
-                            activity_db.idempotency_key = idempotency_key;
-                        }
-                        if activity_db.import_run_id.is_none() {
-                            activity_db.import_run_id = import_run_id;
-                        }
-                        if activity_db.activity_type_override.is_none() {
-                            activity_db.activity_type_override = activity_type_override;
-                        }
-                        if activity_db.source_type.is_none() {
-                            activity_db.source_type = source_type;
-                        }
-                        if activity_db.subtype.is_none() {
-                            activity_db.subtype = subtype;
-                        }
-                        if activity_db.settlement_date.is_none() {
-                            activity_db.settlement_date = settlement_date;
-                        }
-                        if activity_db.metadata.is_none() {
-                            activity_db.metadata = metadata;
-                        }
-                        activity_db.updated_at = chrono::Utc::now().to_rfc3339();
-
-                        let updated_activity =
-                            diesel::update(activities::table.find(&activity_db.id))
-                                .set(&activity_db)
-                                .get_result::<ActivityDB>(conn)
-                                .map_err(StorageError::from)?;
-                        outcome.updated.push(Activity::from(updated_activity));
+                    if activity_db.source_record_id.is_none() {
+                        activity_db.source_record_id = source_record_id;
                     }
-
-                    for new_activity in creates {
-                        new_activity.validate()?;
-                        let temp_id = new_activity.id.clone();
-                        let mut activity_db: ActivityDB = new_activity.into();
-                        // Always generate a new UUID for created activities
-                        let generated_id = Uuid::new_v4().to_string();
-                        activity_db.id = generated_id.clone();
-                        let inserted_activity = diesel::insert_into(activities::table)
-                            .values(&activity_db)
-                            .get_result::<ActivityDB>(conn)
-                            .map_err(StorageError::from)?;
-                        outcome
-                            .created
-                            .push(Activity::from(inserted_activity.clone()));
-                        outcome
-                            .created_mappings
-                            .push(ActivityBulkIdentifierMapping {
-                                temp_id: temp_id.filter(|id| !id.is_empty()),
-                                activity_id: generated_id,
-                            });
+                    if activity_db.source_group_id.is_none() {
+                        activity_db.source_group_id = source_group_id;
                     }
+                    if activity_db.idempotency_key.is_none() {
+                        activity_db.idempotency_key = idempotency_key;
+                    }
+                    if activity_db.import_run_id.is_none() {
+                        activity_db.import_run_id = import_run_id;
+                    }
+                    if activity_db.activity_type_override.is_none() {
+                        activity_db.activity_type_override = activity_type_override;
+                    }
+                    if activity_db.source_type.is_none() {
+                        activity_db.source_type = source_type;
+                    }
+                    if activity_db.subtype.is_none() {
+                        activity_db.subtype = subtype;
+                    }
+                    if activity_db.settlement_date.is_none() {
+                        activity_db.settlement_date = settlement_date;
+                    }
+                    if activity_db.metadata.is_none() {
+                        activity_db.metadata = metadata;
+                    }
+                    activity_db.updated_at = chrono::Utc::now().to_rfc3339();
 
-                    Ok(outcome)
-                },
-            )
+                    let updated_activity = diesel::update(activities::table.find(&activity_db.id))
+                        .set(&activity_db)
+                        .get_result::<ActivityDB>(tx.conn())
+                        .map_err(StorageError::from)?;
+                    tx.update(&activity_db)?;
+                    outcome.updated.push(Activity::from(updated_activity));
+                }
+
+                for new_activity in creates {
+                    new_activity.validate()?;
+                    let temp_id = new_activity.id.clone();
+                    let mut activity_db: ActivityDB = new_activity.into();
+                    // Always generate a new UUID for created activities
+                    let generated_id = Uuid::new_v4().to_string();
+                    activity_db.id = generated_id.clone();
+                    let inserted_activity = diesel::insert_into(activities::table)
+                        .values(&activity_db)
+                        .get_result::<ActivityDB>(tx.conn())
+                        .map_err(StorageError::from)?;
+                    tx.insert(&inserted_activity)?;
+                    outcome
+                        .created
+                        .push(Activity::from(inserted_activity.clone()));
+                    outcome
+                        .created_mappings
+                        .push(ActivityBulkIdentifierMapping {
+                            temp_id: temp_id.filter(|id| !id.is_empty()),
+                            activity_id: generated_id,
+                        });
+                }
+
+                Ok(outcome)
+            })
             .await
     }
 
@@ -615,14 +620,15 @@ impl ActivityRepositoryTrait for ActivityRepository {
     async fn save_import_mapping(&self, mapping: &ImportMapping) -> Result<()> {
         let mapping_db: ImportMappingDB = mapping.clone().into();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<()> {
+            .exec_tx(move |tx| -> Result<()> {
                 diesel::insert_into(activity_import_profiles::table)
                     .values(&mapping_db)
                     .on_conflict(activity_import_profiles::account_id)
                     .do_update()
                     .set(&mapping_db)
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
+                tx.update(&mapping_db)?;
                 Ok(())
             })
             .await
@@ -647,11 +653,14 @@ impl ActivityRepositoryTrait for ActivityRepository {
             .collect();
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<usize> {
+            .exec_tx(move |tx| -> Result<usize> {
                 let num_inserted = diesel::insert_into(activities::table)
                     .values(&activities_db_owned)
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
+                for activity_db in &activities_db_owned {
+                    tx.insert(activity_db)?;
+                }
                 Ok(num_inserted)
             })
             .await
@@ -966,7 +975,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
             activities_vec.into_iter().map(ActivityDB::from).collect();
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<BulkUpsertResult> {
+            .exec_tx(move |tx| -> Result<BulkUpsertResult> {
                 // Collect all activity IDs and idempotency keys for batch lookup
                 let activity_ids: Vec<String> =
                     activity_rows.iter().map(|a| a.id.clone()).collect();
@@ -988,7 +997,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                         activities::idempotency_key,
                         activities::is_user_modified,
                     ))
-                    .load::<(String, Option<String>, i32)>(conn)
+                    .load::<(String, Option<String>, i32)>(tx.conn())
                     .map_err(StorageError::from)?;
 
                 // Build lookup maps for quick access
@@ -1081,10 +1090,15 @@ impl ActivityRepositoryTrait for ActivityRepository {
                             activities::import_run_id.eq(excluded(activities::import_run_id)),
                             activities::updated_at.eq(now_update),
                         ))
-                        .execute(conn)
+                        .execute(tx.conn())
                     {
                         Ok(count) => {
                             if count > 0 {
+                                if will_update {
+                                    tx.update(&activity_db)?;
+                                } else {
+                                    tx.insert(&activity_db)?;
+                                }
                                 result.upserted += count;
                                 if will_update {
                                     result.updated += count;
@@ -1129,12 +1143,34 @@ impl ActivityRepositoryTrait for ActivityRepository {
         let old_id = old_asset_id.to_string();
         let new_id = new_asset_id.to_string();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<u32> {
+            .exec_tx(move |tx| -> Result<u32> {
+                let affected_ids = activities::table
+                    .filter(activities::asset_id.eq(&old_id))
+                    .select(activities::id)
+                    .load::<String>(tx.conn())
+                    .map_err(StorageError::from)?;
+                if affected_ids.is_empty() {
+                    return Ok(0);
+                }
+
+                let now = chrono::Utc::now().to_rfc3339();
                 let count =
                     diesel::update(activities::table.filter(activities::asset_id.eq(&old_id)))
-                        .set(activities::asset_id.eq(&new_id))
-                        .execute(conn)
+                        .set((
+                            activities::asset_id.eq(&new_id),
+                            activities::updated_at.eq(&now),
+                        ))
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
+
+                let updated_rows = activities::table
+                    .filter(activities::id.eq_any(&affected_ids))
+                    .select(ActivityDB::as_select())
+                    .load::<ActivityDB>(tx.conn())
+                    .map_err(StorageError::from)?;
+                for updated_row in updated_rows {
+                    tx.update(&updated_row)?;
+                }
                 Ok(count as u32)
             })
             .await

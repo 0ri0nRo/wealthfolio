@@ -266,40 +266,44 @@ impl TaxonomyRepositoryTrait for TaxonomyRepository {
         assignment: NewAssetTaxonomyAssignment,
     ) -> Result<AssetTaxonomyAssignment> {
         self.writer
-            .exec(
-                move |conn: &mut SqliteConnection| -> Result<AssetTaxonomyAssignment> {
-                    let mut db: NewAssetTaxonomyAssignmentDB = assignment.into();
-                    db.id = Some(db.id.unwrap_or_else(|| Uuid::new_v4().to_string()));
+            .exec_tx(move |tx| -> Result<AssetTaxonomyAssignment> {
+                let mut db: NewAssetTaxonomyAssignmentDB = assignment.into();
+                db.id = Some(db.id.unwrap_or_else(|| Uuid::new_v4().to_string()));
 
-                    let result = diesel::insert_into(asset_taxonomy_assignments::table)
-                        .values(&db)
-                        .on_conflict((
-                            asset_taxonomy_assignments::asset_id,
-                            asset_taxonomy_assignments::taxonomy_id,
-                            asset_taxonomy_assignments::category_id,
-                        ))
-                        .do_update()
-                        .set((
-                            asset_taxonomy_assignments::weight.eq(&db.weight),
-                            asset_taxonomy_assignments::source.eq(&db.source),
-                        ))
-                        .returning(AssetTaxonomyAssignmentDB::as_returning())
-                        .get_result(conn)
-                        .map_err(StorageError::from)?;
+                let result = diesel::insert_into(asset_taxonomy_assignments::table)
+                    .values(&db)
+                    .on_conflict((
+                        asset_taxonomy_assignments::asset_id,
+                        asset_taxonomy_assignments::taxonomy_id,
+                        asset_taxonomy_assignments::category_id,
+                    ))
+                    .do_update()
+                    .set((
+                        asset_taxonomy_assignments::weight.eq(&db.weight),
+                        asset_taxonomy_assignments::source.eq(&db.source),
+                    ))
+                    .returning(AssetTaxonomyAssignmentDB::as_returning())
+                    .get_result(tx.conn())
+                    .map_err(StorageError::from)?;
 
-                    Ok(AssetTaxonomyAssignment::from(result))
-                },
-            )
+                tx.update(&result)?;
+
+                Ok(AssetTaxonomyAssignment::from(result))
+            })
             .await
     }
 
     async fn delete_assignment(&self, id: &str) -> Result<usize> {
         let id = id.to_string();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<usize> {
-                Ok(diesel::delete(asset_taxonomy_assignments::table.find(&id))
-                    .execute(conn)
-                    .map_err(StorageError::from)?)
+            .exec_tx(move |tx| -> Result<usize> {
+                let affected = diesel::delete(asset_taxonomy_assignments::table.find(&id))
+                    .execute(tx.conn())
+                    .map_err(StorageError::from)?;
+                if affected > 0 {
+                    tx.delete::<AssetTaxonomyAssignmentDB>(id.clone());
+                }
+                Ok(affected)
             })
             .await
     }
@@ -308,14 +312,27 @@ impl TaxonomyRepositoryTrait for TaxonomyRepository {
         let asset_id = asset_id.to_string();
         let taxonomy_id = taxonomy_id.to_string();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<usize> {
-                Ok(diesel::delete(
+            .exec_tx(move |tx| -> Result<usize> {
+                let existing_ids = asset_taxonomy_assignments::table
+                    .filter(asset_taxonomy_assignments::asset_id.eq(&asset_id))
+                    .filter(asset_taxonomy_assignments::taxonomy_id.eq(&taxonomy_id))
+                    .select(asset_taxonomy_assignments::id)
+                    .load::<String>(tx.conn())
+                    .map_err(StorageError::from)?;
+
+                let affected = diesel::delete(
                     asset_taxonomy_assignments::table
                         .filter(asset_taxonomy_assignments::asset_id.eq(&asset_id))
                         .filter(asset_taxonomy_assignments::taxonomy_id.eq(&taxonomy_id)),
                 )
-                .execute(conn)
-                .map_err(StorageError::from)?)
+                .execute(tx.conn())
+                .map_err(StorageError::from)?;
+
+                for assignment_id in existing_ids {
+                    tx.delete::<AssetTaxonomyAssignmentDB>(assignment_id.clone());
+                }
+
+                Ok(affected)
             })
             .await
     }

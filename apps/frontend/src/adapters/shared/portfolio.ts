@@ -9,6 +9,7 @@ import type {
   SimplePerformanceMetrics,
   HoldingsSnapshotInput,
   ImportHoldingsCsvResult,
+  CheckHoldingsImportResult,
   SnapshotInfo,
 } from "@/lib/types";
 
@@ -127,6 +128,10 @@ export const getHolding = async (accountId: string, assetId: string): Promise<Ho
   return invoke<Holding | null>("get_holding", { accountId, assetId });
 };
 
+export const getAssetHoldings = async (assetId: string): Promise<Holding[]> => {
+  return invoke<Holding[]>("get_asset_holdings", { assetId });
+};
+
 export const getPortfolioAllocations = async (accountId: string): Promise<PortfolioAllocations> => {
   return invoke<PortfolioAllocations>("get_portfolio_allocations", { accountId });
 };
@@ -164,6 +169,12 @@ export interface HoldingInput {
   averageCost?: string;
   /** Exchange MIC code for new holdings (e.g., "XNAS", "XTSE"). Required for symbols without Yahoo suffixes. */
   exchangeMic?: string;
+  /** Asset name for new custom assets */
+  name?: string;
+  /** Data source (e.g., "MANUAL" for custom assets) — sets quote mode to manual */
+  dataSource?: string;
+  /** Asset kind (e.g., "INVESTMENT", "OTHER") */
+  assetKind?: string;
 }
 
 /**
@@ -200,6 +211,20 @@ export const saveManualHoldings = async (
  * - Rows with the same date form one snapshot
  * - Multiple dates create multiple snapshots
  */
+/**
+ * Checks holdings import data before committing.
+ * Returns existing snapshot dates (overwrite warnings), symbol lookup results, and validation errors.
+ */
+export const checkHoldingsImport = async (
+  accountId: string,
+  snapshots: HoldingsSnapshotInput[],
+): Promise<CheckHoldingsImportResult> => {
+  return invoke<CheckHoldingsImportResult>("check_holdings_import", {
+    accountId,
+    snapshots,
+  });
+};
+
 export const importHoldingsCsv = async (
   accountId: string,
   snapshots: HoldingsSnapshotInput[],

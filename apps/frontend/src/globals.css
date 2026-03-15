@@ -557,8 +557,20 @@ body.qr-scan-active .scan-hide-target {
     -webkit-overflow-scrolling: touch;
   }
 
+  /* Keep last content visible above the floating mobile nav.
+     Put clearance on the last content block so it inherits route/page visuals
+     instead of creating a plain painted strip under the nav. */
+  [data-page-scroll-container][data-with-mobile-nav-offset="true"] [data-page-content="true"],
   [data-page-scroll-container][data-with-mobile-nav-offset="true"] main[data-ptr-content] {
     padding-bottom: 0 !important;
+  }
+
+  [data-page-scroll-container][data-with-mobile-nav-offset="true"]
+    [data-page-content="true"]
+    > :last-child {
+    padding-bottom: calc(
+      var(--mobile-nav-ui-height) + max(var(--mobile-nav-gap), env(safe-area-inset-bottom))
+    ) !important;
   }
 
   .touch-manipulation {
@@ -650,6 +662,17 @@ body.qr-scan-active .scan-hide-target {
     max-width: 100%;
     overflow-x: hidden;
   }
+
+  /* assistant-ui thread needs native overflow behavior for sticky footer + viewport */
+  .aui-root,
+  .aui-root .flex,
+  .aui-root .grid {
+    overflow-x: visible;
+  }
+
+  .aui-thread-viewport {
+    overflow-x: auto;
+  }
 }
 
 number-flow-react::part(left),
@@ -721,6 +744,41 @@ html.app-lockdown .allow-select {
 /* Prevent zoom on double tap */
 * {
   touch-action: manipulation;
+}
+
+/* Print styles — let chat content flow across pages */
+@media print {
+  /* Remove fixed height/overflow so content flows naturally */
+  html,
+  body,
+  #root,
+  #root * {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Hide non-printable UI */
+  .aui-thread-viewport-footer,
+  .aui-thread-scroll-to-bottom,
+  .aui-assistant-action-bar-root,
+  .aui-user-action-bar-root,
+  .aui-branch-picker-root,
+  .aui-thread-welcome-suggestions {
+    display: none !important;
+  }
+
+  /* Hide sidebar and header */
+  aside,
+  header {
+    display: none !important;
+  }
+
+  /* Disable animations */
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 /* ── Liquid Glass ──────────────────────────────────────────────────────────── */

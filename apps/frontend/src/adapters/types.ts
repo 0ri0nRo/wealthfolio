@@ -162,10 +162,19 @@ export interface UpdateCheckPayload {
 /**
  * Platform information for the current runtime environment.
  */
+export interface PlatformCapabilities {
+  connect_sync: boolean;
+  device_sync: boolean;
+  cloud_sync: boolean;
+}
+
 export interface PlatformInfo {
   os: string;
+  arch?: string;
   is_mobile: boolean;
   is_desktop: boolean;
+  is_tauri?: boolean;
+  capabilities?: PlatformCapabilities;
 }
 
 // ============================================================================
@@ -197,6 +206,104 @@ export interface BackendEnableSyncResult {
   serverKeyVersion: number | null;
   needsPairing: boolean;
   trustedDevices: TrustedDeviceSummary[];
+}
+
+/**
+ * Result from sync_engine_status command.
+ */
+export interface BackendSyncEngineStatusResult {
+  cursor: number;
+  lastPushAt: string | null;
+  lastPullAt: string | null;
+  lastError: string | null;
+  consecutiveFailures: number;
+  nextRetryAt: string | null;
+  lastCycleStatus: string | null;
+  lastCycleDurationMs: number | null;
+  backgroundRunning: boolean;
+  bootstrapRequired: boolean;
+}
+
+export interface BackendSyncBootstrapOverwriteCheckTableResult {
+  table: string;
+  rows: number;
+}
+
+/**
+ * Result from device_sync_bootstrap_overwrite_check command.
+ */
+export interface BackendSyncBootstrapOverwriteCheckResult {
+  bootstrapRequired: boolean;
+  hasLocalData: boolean;
+  localRows: number;
+  nonEmptyTables: BackendSyncBootstrapOverwriteCheckTableResult[];
+}
+
+export interface BackendSyncReconcileReadyResult {
+  action?: "PULL_TAIL" | "BOOTSTRAP_SNAPSHOT" | "WAIT_SNAPSHOT" | "NOOP";
+  bootstrapAction: "PULL_REMOTE_OVERWRITE" | "NO_REMOTE_PULL" | "NO_BOOTSTRAP";
+  reason?: string;
+  reconcileReason?: string;
+  cursor?: number;
+  deviceCursor?: number;
+  gcWatermark?: number;
+  staleCursor?: boolean;
+  diagnostics?: {
+    remoteSnapshotExists?: boolean;
+    trustedDeviceCount?: number;
+    teamKeyVersion?: number;
+    latestSnapshot?: {
+      snapshotId: string;
+      schemaVersion: number;
+      oplogSeq: number;
+    } | null;
+  };
+  status: "ok" | "skipped_not_ready" | "error";
+  message: string;
+  bootstrapStatus: "applied" | "skipped" | "requested" | "not_attempted";
+  bootstrapMessage: string | null;
+  bootstrapSnapshotId: string | null;
+  cycleStatus: string | null;
+  cycleNeedsBootstrap: boolean;
+  retryAttempted: boolean;
+  retryCycleStatus: string | null;
+  backgroundStatus: "started" | "skipped" | "failed";
+}
+
+/**
+ * Result from sync_bootstrap_snapshot_if_needed command.
+ */
+export interface BackendSyncBootstrapResult {
+  status: string;
+  message: string;
+  snapshotId: string | null;
+  cursor: number | null;
+}
+
+/**
+ * Result from sync_trigger_cycle command.
+ */
+export interface BackendSyncCycleResult {
+  status: string;
+  lockVersion: number;
+  pushedCount: number;
+  pulledCount: number;
+  cursor: number;
+  needsBootstrap: boolean;
+  bootstrapSnapshotId: string | null;
+  bootstrapSnapshotSeq: number | null;
+}
+
+export interface BackendSyncBackgroundEngineResult {
+  status: string;
+  message: string;
+}
+
+export interface BackendSyncSnapshotUploadResult {
+  status: string;
+  snapshotId: string | null;
+  oplogSeq: number | null;
+  message: string;
 }
 
 /**

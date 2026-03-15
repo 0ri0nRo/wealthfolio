@@ -19,6 +19,7 @@ import {
   Label,
   Alert,
   AlertDescription,
+  CurrencyInput,
 } from "@wealthfolio/ui";
 import {
   Form,
@@ -43,6 +44,7 @@ import { EDITABLE_ASSET_KINDS, ASSET_KIND_DISPLAY_NAMES, type AssetKind } from "
 import type { Asset, Quote } from "@/lib/types";
 import { formatAmount } from "@/lib/utils";
 import { getExchanges } from "@/adapters";
+import { useMarketDataProviders } from "@/hooks/use-market-data-providers";
 import { useAssetProfileMutations } from "./hooks/use-asset-profile-mutations";
 
 const PROVIDERS = [
@@ -80,8 +82,10 @@ const assetFormSchema = z.object({
   name: z.string().optional(),
   notes: z.string().optional(),
   kind: z.string().optional(),
+  quoteCcy: z.string().min(1, "Currency is required"),
   instrumentExchangeMic: z.string().optional(),
   quoteMode: z.enum([QuoteMode.MARKET, QuoteMode.MANUAL]),
+  preferredProvider: z.string().optional(),
   providerConfig: z.array(providerOverrideSchema).optional(),
 });
 
@@ -96,13 +100,16 @@ const kindOptions: ResponsiveSelectOption[] = EDITABLE_ASSET_KINDS.map((kind) =>
   value: kind,
 }));
 
-// Helper to convert provider_overrides JSON to array format for the form
+// Parse provider overrides from config JSON (supports nested and flat formats)
 function parseProviderOverrides(
-  overrides: Record<string, unknown> | null | undefined,
+  config: Record<string, unknown> | null | undefined,
 ): ProviderOverride[] {
-  if (!overrides) return [];
+  if (!config) return [];
+  // Nested format: { overrides: { YAHOO: { symbol: "..." } } }
+  // Flat format (legacy): { YAHOO: { symbol: "..." } }
+  const source = (config.overrides as Record<string, unknown> | undefined) ?? config;
   const result: ProviderOverride[] = [];
-  for (const [provider, value] of Object.entries(overrides)) {
+  for (const [provider, value] of Object.entries(source)) {
     if (typeof value === "object" && value !== null) {
       const obj = value as Record<string, unknown>;
       const symbol = obj.symbol as string;
@@ -114,23 +121,38 @@ function parseProviderOverrides(
   return result;
 }
 
-// Helper to convert form array back to JSON format (type is derived from asset kind)
-function serializeProviderOverrides(
+// Extract preferred_provider from config JSON
+function parsePreferredProvider(
+  config: Record<string, unknown> | null | undefined,
+): string | undefined {
+  if (!config) return undefined;
+  const pref = config.preferred_provider;
+  return typeof pref === "string" ? pref : undefined;
+}
+
+// Serialize form values to nested provider config JSON
+function serializeProviderConfig(
+  preferredProvider: string | undefined,
   overrides: ProviderOverride[],
   assetKind: string,
 ): Record<string, unknown> | null {
-  if (!overrides || overrides.length === 0) return null;
   const overrideType = getOverrideTypeForKind(assetKind);
-  const result: Record<string, unknown> = {};
-  for (const override of overrides) {
+  const overridesMap: Record<string, unknown> = {};
+  for (const override of overrides ?? []) {
     if (override.provider && override.symbol) {
-      result[override.provider] = {
+      overridesMap[override.provider] = {
         type: overrideType,
         symbol: override.symbol,
       };
     }
   }
-  return Object.keys(result).length > 0 ? result : null;
+  const hasOverrides = Object.keys(overridesMap).length > 0;
+  const hasPref = !!preferredProvider;
+  if (!hasOverrides && !hasPref) return null;
+  const result: Record<string, unknown> = {};
+  if (hasPref) result.preferred_provider = preferredProvider;
+  if (hasOverrides) result.overrides = overridesMap;
+  return result;
 }
 
 type EditTab = "general" | "classification" | "market-data";
@@ -231,6 +253,14 @@ export function AssetEditSheet({
   const [activeTab, setActiveTab] = useState<EditTab>(defaultTab);
   const { data: taxonomies = [], isLoading: isTaxonomiesLoading } = useTaxonomies();
   const { updateAssetProfileMutation } = useAssetProfileMutations();
+  const { data: marketDataProviders = [] } = useMarketDataProviders();
+
+  const providerOptions: ResponsiveSelectOption[] = useMemo(() => {
+    return [
+      { value: "__auto__", label: "Auto (default)" },
+      ...marketDataProviders.map((p) => ({ value: p.id, label: p.name })),
+    ];
+  }, [marketDataProviders]);
 
   const { data: exchanges = [] } = useQuery({
     queryKey: ["exchanges"],
@@ -271,8 +301,12 @@ export function AssetEditSheet({
       name: asset?.name ?? "",
       notes: asset?.notes ?? "",
       kind: asset?.kind ?? "INVESTMENT",
+      quoteCcy: asset?.quoteCcy ?? "",
       instrumentExchangeMic: normalizeMic(asset?.instrumentExchangeMic),
       quoteMode: asset?.quoteMode === "MANUAL" ? QuoteMode.MANUAL : QuoteMode.MARKET,
+      preferredProvider: parsePreferredProvider(
+        asset?.providerConfig as Record<string, unknown> | null,
+      ),
       providerConfig: parseProviderOverrides(
         asset?.providerConfig as Record<string, unknown> | null,
       ),
@@ -295,8 +329,12 @@ export function AssetEditSheet({
         name: asset.name ?? "",
         notes: asset.notes ?? "",
         kind: asset.kind ?? "INVESTMENT",
+        quoteCcy: asset.quoteCcy ?? "",
         instrumentExchangeMic: normalizeMic(asset.instrumentExchangeMic),
         quoteMode: asset.quoteMode === "MANUAL" ? QuoteMode.MANUAL : QuoteMode.MARKET,
+        preferredProvider: parsePreferredProvider(
+          asset.providerConfig as Record<string, unknown> | null,
+        ),
         providerConfig: parseProviderOverrides(
           asset.providerConfig as Record<string, unknown> | null,
         ),
@@ -315,9 +353,10 @@ export function AssetEditSheet({
     async (values: AssetFormValues) => {
       if (!asset) return;
 
-      // Serialize provider overrides back to JSON format (type derived from asset kind)
+      // Serialize provider config to nested JSON format
       const assetKind = values.kind ?? asset.kind ?? "INVESTMENT";
-      const serializedOverrides = serializeProviderOverrides(
+      const serializedOverrides = serializeProviderConfig(
+        values.preferredProvider,
         values.providerConfig ?? [],
         assetKind,
       );
@@ -332,6 +371,7 @@ export function AssetEditSheet({
           notes: values.notes ?? "",
           kind: values.kind as AssetKind | undefined,
           quoteMode: values.quoteMode,
+          quoteCcy: values.quoteCcy,
           instrumentExchangeMic: normalizedMic || null,
           providerConfig: serializedOverrides,
         });
@@ -355,7 +395,7 @@ export function AssetEditSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="flex h-full w-full flex-col sm:max-w-2xl">
+      <SheetContent side="right" className="pb-safe flex h-full w-full flex-col sm:max-w-2xl">
         <SheetHeader className="shrink-0 pb-4">
           <div className="flex items-center gap-3">
             <TickerAvatar symbol={asset.displayCode ?? ""} className="size-10" />
@@ -386,16 +426,30 @@ export function AssetEditSheet({
             <TabsContent value="general" className="mt-0 h-full">
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(handleSave)} className="space-y-6">
-                  {/* Read-only fields */}
+                  {/* Symbol (read-only) and Currency */}
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Symbol</label>
                       <Input value={asset.displayCode ?? ""} disabled className="bg-muted/50" />
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">Currency</label>
-                      <Input value={asset.quoteCcy} disabled className="bg-muted/50" />
-                    </div>
+                    <FormField
+                      control={form.control}
+                      name="quoteCcy"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Currency</FormLabel>
+                          <FormControl>
+                            <CurrencyInput
+                              value={field.value}
+                              onChange={field.onChange}
+                              placeholder="Select currency"
+                              valueDisplay="code"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   </div>
 
                   {/* Editable fields */}
@@ -589,6 +643,35 @@ export function AssetEditSheet({
                       }}
                     />
 
+                    {/* Preferred Provider - Only show for automatic pricing */}
+                    {!isManualMode && (
+                      <FormField
+                        control={form.control}
+                        name="preferredProvider"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Preferred Provider</FormLabel>
+                            <FormControl>
+                              <ResponsiveSelect
+                                value={field.value ?? "__auto__"}
+                                onValueChange={(v) =>
+                                  field.onChange(v === "__auto__" ? undefined : v)
+                                }
+                                options={providerOptions}
+                                placeholder="Auto (default)"
+                                sheetTitle="Preferred Provider"
+                                sheetDescription="Select which provider to use first for this asset"
+                                triggerClassName="h-11"
+                              />
+                            </FormControl>
+                            <p className="text-muted-foreground text-xs">
+                              Choose which provider to try first when fetching prices.
+                            </p>
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
                     {/* Symbol Mapping - Only show for automatic pricing */}
                     {!isManualMode && (
                       <div className="space-y-3">
@@ -728,6 +811,17 @@ export function AssetEditSheet({
             </TabsContent>
           </div>
         </Tabs>
+
+        <div className="mt-auto border-t pt-4 sm:hidden">
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full"
+            onClick={() => onOpenChange(false)}
+          >
+            Close
+          </Button>
+        </div>
       </SheetContent>
     </Sheet>
   );

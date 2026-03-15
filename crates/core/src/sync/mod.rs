@@ -1,10 +1,5 @@
-//! Sync domain models and services.
+//! Generic app/device sync contracts shared across layers.
 
-mod import_run_model;
-mod sync_state_model;
+mod app_sync_model;
 
-pub use import_run_model::*;
-pub use sync_state_model::*;
-
-#[cfg(test)]
-mod tests;
+pub use app_sync_model::*;

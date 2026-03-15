@@ -16,6 +16,7 @@ export type PairingRole = "issuer" | "claimer";
 export type PairingStatus = "open" | "claimed" | "approved" | "completed" | "cancelled" | "expired";
 export type KeyState = "ACTIVE" | "PENDING";
 export type EnrollmentMode = "BOOTSTRAP" | "PAIR" | "READY";
+export type BootstrapAction = "PULL_REMOTE_OVERWRITE" | "NO_REMOTE_PULL" | "NO_BOOTSTRAP";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Device Sync State Machine
@@ -245,6 +246,10 @@ export interface SuccessResponse {
   success: boolean;
 }
 
+export interface CompletePairingResponse extends SuccessResponse {
+  remoteSeedPresent?: boolean;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Claimer-Side Pairing Types
 // ─────────────────────────────────────────────────────────────────────────────
@@ -287,6 +292,7 @@ export interface ConfirmPairingRequest {
 export interface ConfirmPairingResponse {
   success: boolean;
   keyVersion: number;
+  remoteSeedPresent?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -356,6 +362,41 @@ export interface SyncState {
   /** Current error (if any) */
   error: SyncError | null;
 
+  /** Snapshot bootstrap status (desktop-only). */
+  bootstrapStatus: "idle" | "running" | "success" | "error";
+
+  /** Last bootstrap status message from backend. */
+  bootstrapMessage: string | null;
+
+  /** Last snapshot ID applied/requested by bootstrap flow. */
+  bootstrapSnapshotId: string | null;
+
+  /** Latest sync engine telemetry (desktop runtime). */
+  engineStatus: {
+    cursor: number;
+    lastPushAt: string | null;
+    lastPullAt: string | null;
+    lastError: string | null;
+    consecutiveFailures: number;
+    nextRetryAt: string | null;
+    lastCycleStatus: string | null;
+    lastCycleDurationMs: number | null;
+    backgroundRunning: boolean;
+    bootstrapRequired: boolean;
+  } | null;
+
+  /** Pending overwrite guard before applying remote bootstrap snapshot. */
+  bootstrapOverwriteRisk: {
+    localRows: number;
+    nonEmptyTables: { table: string; rows: number }[];
+  } | null;
+
+  /** Server-authoritative bootstrap action for the current reconcile pass. */
+  bootstrapAction: BootstrapAction | null;
+
+  /** Whether a remote seed exists after pairing complete/confirm. */
+  remoteSeedPresent: boolean | null;
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Identity & Device
   // ─────────────────────────────────────────────────────────────────────────────
@@ -394,6 +435,13 @@ export const INITIAL_SYNC_STATE: SyncState = {
   isDetecting: true,
   isLoading: false,
   error: null,
+  bootstrapStatus: "idle",
+  bootstrapMessage: null,
+  bootstrapSnapshotId: null,
+  engineStatus: null,
+  bootstrapOverwriteRisk: null,
+  bootstrapAction: null,
+  remoteSeedPresent: null,
   identity: null,
   device: null,
   serverKeyVersion: null,

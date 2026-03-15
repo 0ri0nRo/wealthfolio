@@ -27,9 +27,12 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     notes: initialData?.notes || '',
   });
 
+  const [amountDisplay, setAmountDisplay] = useState(
+    initialData?.amount ? String(initialData.amount) : ''
+  );
+
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // ── Blocca lo scroll del body su iOS ──────────────────────────────────────
   useEffect(() => {
     const originalOverflow = document.body.style.overflow;
     const originalPosition = document.body.style.position;
@@ -79,6 +82,16 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     }
   };
 
+  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const raw = e.target.value;
+    // Permette solo cifre, punto e virgola
+    if (/^[0-9]*[.,]?[0-9]*$/.test(raw) || raw === '') {
+      setAmountDisplay(raw);
+      const normalized = raw.replace(',', '.');
+      updateField('amount', parseFloat(normalized) || 0);
+    }
+  };
+
   const inputStyle: React.CSSProperties = {
     width: '100%',
     padding: '0 1rem',
@@ -87,7 +100,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
     background: 'var(--muted)',
     border: '1.5px solid transparent',
     color: 'var(--foreground)',
-    fontSize: '16px', // >= 16px previene lo zoom su iOS Safari
+    fontSize: '16px',
     fontFamily: 'var(--font-sans)',
     outline: 'none',
     transition: 'border-color 0.15s',
@@ -119,11 +132,9 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         position: 'fixed',
         inset: 0,
         zIndex: 50,
-        // Centrato sia verticalmente che orizzontalmente
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        // Padding che rispetta la safe area di iPhone (notch + home indicator)
         padding: `max(env(safe-area-inset-top, 0px), 16px) 16px max(env(safe-area-inset-bottom, 0px), 16px)`,
       }}
     >
@@ -139,15 +150,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
         }}
       />
 
-      {/* Modal card centrata */}
+      {/* Modal */}
       <div
         ref={scrollRef}
         style={{
           position: 'relative',
           width: '100%',
           maxWidth: 460,
-          // Scorre internamente se il contenuto supera l'altezza disponibile
-          // (es. tastiera aperta su iPhone che riduce il viewport)
           maxHeight: '88dvh',
           overflowY: 'auto',
           WebkitOverflowScrolling: 'touch',
@@ -300,12 +309,10 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                   pointerEvents: 'none',
                 }}>€</span>
                 <input
-                  type="number"
+                  type="text"
                   inputMode="decimal"
-                  step="0.01"
-                  min="0"
-                  value={formData.amount || ''}
-                  onChange={e => updateField('amount', parseFloat(e.target.value) || 0)}
+                  value={amountDisplay}
+                  onChange={handleAmountChange}
                   placeholder="0.00"
                   style={{
                     ...inputStyle,

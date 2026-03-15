@@ -1,35 +1,41 @@
 import { getHolding } from "@/adapters";
-import { AssetEditSheet } from "./asset-edit-sheet";
 import { ActionPalette, type ActionPaletteGroup } from "@/components/action-palette";
 import { TickerAvatar } from "@/components/ticker-avatar";
-import { ValueHistoryDataGrid } from "./alternative-assets";
-import { Button } from "@wealthfolio/ui/components/ui/button";
-import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { Badge } from "@wealthfolio/ui/components/ui/badge";
-import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
-import { Tabs, TabsContent } from "@wealthfolio/ui/components/ui/tabs";
 import { useHapticFeedback } from "@/hooks";
-import { useAssetProfile } from "./hooks/use-asset-profile";
+import { useAlternativeAssetHolding, useAlternativeHoldings } from "@/hooks/use-alternative-assets";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { useQuoteHistory } from "@/hooks/use-quote-history";
 import { useSyncMarketDataMutation } from "@/hooks/use-sync-market-data";
 import { useAssetTaxonomyAssignments, useTaxonomy } from "@/hooks/use-taxonomies";
-import { useAlternativeAssetHolding, useAlternativeHoldings } from "@/hooks/use-alternative-assets";
-import { useAssetProfileMutations } from "./hooks/use-asset-profile-mutations";
 import { PORTFOLIO_ACCOUNT_ID } from "@/lib/constants";
 import { QueryKeys } from "@/lib/query-keys";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { AssetKind, Holding, Quote } from "@/lib/types";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatedToggleGroup, Page, PageContent, PageHeader, SwipableView } from "@wealthfolio/ui";
+import { Badge } from "@wealthfolio/ui/components/ui/badge";
+import { Button } from "@wealthfolio/ui/components/ui/button";
+import { Icons } from "@wealthfolio/ui/components/ui/icons";
+import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
+import { Tabs, TabsContent } from "@wealthfolio/ui/components/ui/tabs";
 import { useCallback, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { AlternativeAssetContent, useAlternativeAssetActions } from "./alternative-asset-content";
+import { ValueHistoryDataGrid } from "./alternative-assets";
 import AssetDetailCard from "./asset-detail-card";
+import { AssetEditSheet } from "./asset-edit-sheet";
 import AssetHistoryCard from "./asset-history-card";
+import {
+  AssetAccountHoldings,
+  AssetSnapshotHistory,
+  useHasManualSnapshots,
+} from "./asset-account-holdings";
 import AssetLotsTable from "./asset-lots-table";
+import { useAssetProfile } from "./hooks/use-asset-profile";
+import { useAssetProfileMutations } from "./hooks/use-asset-profile-mutations";
+import { RefreshQuotesConfirmDialog } from "./refresh-quotes-confirm-dialog";
 import { useQuoteMutations } from "./hooks/use-quote-mutations";
 import { QuoteHistoryDataGrid } from "./quote-history-data-grid";
-import { AlternativeAssetContent, useAlternativeAssetActions } from "./alternative-asset-content";
 
 // Alternative asset kinds that should use ValueHistoryDataGrid
 const ALTERNATIVE_ASSET_KINDS: AssetKind[] = [
@@ -70,6 +76,7 @@ interface AssetDetailData {
   totalReturn: number;
   totalReturnPercent: number;
   currency: string;
+  quoteCurrency: string | null;
   quote: {
     open: number;
     high: number;
@@ -96,12 +103,25 @@ export const AssetProfilePage = () => {
       ? tabParam
       : "overview";
   const [activeTab, setActiveTab] = useState<AssetTab>(defaultTab);
+  type OverviewSubTab = "about" | "holdings" | "snapshots";
+  const [overviewSubTab, setOverviewSubTab] = useState<OverviewSubTab>("about");
+  const hasManualSnapshots = useHasManualSnapshots(assetId);
+  const overviewSubTabs = useMemo(() => {
+    const items: { value: OverviewSubTab; label: string }[] = [
+      { value: "about", label: "About" },
+      { value: "holdings", label: "Holdings" },
+    ];
+    if (hasManualSnapshots) {
+      items.push({ value: "snapshots", label: "Snapshots" });
+    }
+    return items;
+  }, [hasManualSnapshots]);
   const [actionPaletteOpen, setActionPaletteOpen] = useState(false);
   const [editSheetOpen, setEditSheetOpen] = useState(false);
   const [editSheetDefaultTab, setEditSheetDefaultTab] = useState<
     "general" | "classification" | "market-data"
   >("general");
-  const triggerHaptic = useHapticFeedback();
+  const { triggerHaptic } = useHapticFeedback();
   const isMobile = useIsMobileViewport();
 
   const {
@@ -267,7 +287,7 @@ export const AssetProfilePage = () => {
   }, [quoteHistory]);
 
   const { saveQuoteMutation, deleteQuoteMutation } = useQuoteMutations(assetId);
-  const syncMarketDataMutation = useSyncMarketDataMutation();
+  const syncMarketDataMutation = useSyncMarketDataMutation(true);
 
   // Determine if manual tracking based on asset's quoteMode
   const isManualPricingMode = assetProfile?.quoteMode === "MANUAL";
@@ -321,7 +341,7 @@ export const AssetProfilePage = () => {
       currency: instrument?.currency ?? asset?.quoteCcy ?? baseCurrency,
       sectors: JSON.stringify(parseJsonField(legacy?.sectors) ?? []),
       url: null,
-      marketPrice: quote?.close ?? 0,
+      marketPrice: holding?.price ?? quote?.close ?? 0,
       totalGainAmount,
       totalGainPercent,
       calculatedAt,
@@ -338,8 +358,6 @@ export const AssetProfilePage = () => {
 
     const quoteData = quote
       ? {
-          todaysReturn: quote.close - quote.open,
-          todaysReturnPercent: Number((quote.close - quote.open) / quote.open),
           quote: {
             open: quote.open,
             high: quote.high,
@@ -348,8 +366,12 @@ export const AssetProfilePage = () => {
             close: quote.close,
             adjclose: quote.adjclose,
           },
+          quoteCurrency: quote.currency ?? null,
         }
       : null;
+
+    const todaysReturn = holding.dayChange?.local;
+    const todaysReturnPercent = holding.dayChangePct;
 
     return {
       numShares: Number(holding.quantity),
@@ -357,11 +379,12 @@ export const AssetProfilePage = () => {
       costBasis: Number(holding.costBasis?.local ?? 0),
       averagePrice: Number(averageCostPrice),
       portfolioPercent: Number(holding.weight ?? 0),
-      todaysReturn: quoteData?.todaysReturn ?? null,
-      todaysReturnPercent: quoteData?.todaysReturnPercent ?? null,
+      todaysReturn: todaysReturn != null ? Number(todaysReturn) : null,
+      todaysReturnPercent: todaysReturnPercent != null ? Number(todaysReturnPercent) : null,
       totalReturn: Number(holding.totalGain?.local ?? 0),
       totalReturnPercent: Number(holding.totalGainPct ?? 0),
       currency: holding.localCurrency ?? holding.instrument?.currency ?? baseCurrency,
+      quoteCurrency: quoteData?.quoteCurrency ?? null,
       quote: quoteData?.quote ?? null,
     };
   }, [holding, quote]);
@@ -403,8 +426,8 @@ export const AssetProfilePage = () => {
             <div className="grid grid-cols-1 gap-4 pt-0 md:grid-cols-3">
               <AssetHistoryCard
                 assetId={profile.id ?? ""}
-                currency={profile.currency ?? baseCurrency}
-                marketPrice={profile.marketPrice}
+                currency={quote?.currency ?? profile.currency ?? baseCurrency}
+                marketPrice={quote?.close ?? profile.marketPrice}
                 totalGainAmount={profile.totalGainAmount}
                 totalGainPercent={profile.totalGainPercent}
                 quoteHistory={quoteHistory ?? []}
@@ -415,68 +438,83 @@ export const AssetProfilePage = () => {
               )}
             </div>
 
-            <div className="space-y-4">
-              <h3 className="text-lg font-bold">About</h3>
+            <AnimatedToggleGroup
+              items={overviewSubTabs}
+              value={overviewSubTab}
+              onValueChange={(v: OverviewSubTab) => setOverviewSubTab(v)}
+              className="text-sm"
+            />
 
-              {/* Category badges */}
-              <div className="flex flex-wrap items-center gap-2">
-                {isClassificationsLoading ? (
-                  <>
-                    <Skeleton className="h-6 w-16 rounded-full" />
-                    <Skeleton className="h-6 w-20 rounded-full" />
-                  </>
-                ) : categoryBadges.length > 0 ? (
-                  <>
-                    {categoryBadges.map((badge) => (
-                      <Badge
-                        key={badge.id}
-                        variant="secondary"
-                        className="gap-1.5"
-                        style={{
-                          backgroundColor: `${badge.categoryColor}20`,
-                          color: badge.categoryColor,
-                          borderColor: badge.categoryColor,
+            {overviewSubTab === "about" && (
+              <div className="space-y-4">
+                {/* Category badges */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {isClassificationsLoading ? (
+                    <>
+                      <Skeleton className="h-6 w-16 rounded-full" />
+                      <Skeleton className="h-6 w-20 rounded-full" />
+                    </>
+                  ) : categoryBadges.length > 0 ? (
+                    <>
+                      {categoryBadges.map((badge) => (
+                        <Badge
+                          key={badge.id}
+                          variant="secondary"
+                          className="gap-1.5"
+                          style={{
+                            backgroundColor: `${badge.categoryColor}20`,
+                            color: badge.categoryColor,
+                            borderColor: badge.categoryColor,
+                          }}
+                        >
+                          <span
+                            className="h-2 w-2 rounded-full"
+                            style={{ backgroundColor: badge.categoryColor }}
+                          />
+                          {badge.categoryName}
+                        </Badge>
+                      ))}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs"
+                        onClick={() => {
+                          setEditSheetDefaultTab("classification");
+                          setEditSheetOpen(true);
                         }}
                       >
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: badge.categoryColor }}
-                        />
-                        {badge.categoryName}
-                      </Badge>
-                    ))}
+                        More
+                      </Button>
+                    </>
+                  ) : (
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 text-xs"
+                      className="text-muted-foreground h-6 text-xs"
                       onClick={() => {
                         setEditSheetDefaultTab("classification");
                         setEditSheetOpen(true);
                       }}
                     >
-                      More
+                      + Add classifications
                     </Button>
-                  </>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground h-6 text-xs"
-                    onClick={() => {
-                      setEditSheetDefaultTab("classification");
-                      setEditSheetOpen(true);
-                    }}
-                  >
-                    + Add classifications
-                  </Button>
-                )}
-              </div>
+                  )}
+                </div>
 
-              {/* Notes section */}
-              <p className="text-muted-foreground text-sm">
-                {assetProfile?.notes || holding?.instrument?.notes || "No notes added."}
-              </p>
-            </div>
+                {/* Notes section */}
+                <p className="text-muted-foreground text-sm">
+                  {assetProfile?.notes || holding?.instrument?.notes || "No notes added."}
+                </p>
+              </div>
+            )}
+
+            {overviewSubTab === "holdings" && (
+              <AssetAccountHoldings assetId={assetId} baseCurrency={baseCurrency} />
+            )}
+
+            {overviewSubTab === "snapshots" && (
+              <AssetSnapshotHistory assetId={assetId} baseCurrency={baseCurrency} />
+            )}
           </div>
         ),
       });
@@ -488,8 +526,8 @@ export const AssetProfilePage = () => {
         content: (
           <AssetLotsTable
             lots={holding.lots}
-            currency={profile.currency ?? baseCurrency}
-            marketPrice={profile.marketPrice}
+            currency={symbolHolding?.currency ?? profile.currency ?? baseCurrency}
+            marketPrice={Number(holding.price ?? profile.marketPrice)}
           />
         ),
       });
@@ -512,7 +550,7 @@ export const AssetProfilePage = () => {
         <QuoteHistoryDataGrid
           data={quoteHistory ?? []}
           assetId={assetId}
-          currency={profile?.currency ?? baseCurrency}
+          currency={quote?.currency ?? profile?.currency ?? baseCurrency}
           assetKind={assetProfile?.kind}
           isManualDataSource={isManualPricingMode}
           onSaveQuote={(quote: Quote) => saveQuoteMutation.mutate(quote)}
@@ -544,9 +582,12 @@ export const AssetProfilePage = () => {
     categoryBadges,
     isClassificationsLoading,
     assetProfile,
+    overviewSubTab,
+    overviewSubTabs,
   ]);
 
   const isLoading = isHoldingLoading || isQuotesLoading || isAssetProfileLoading;
+  const [refreshConfirmOpen, setRefreshConfirmOpen] = useState(false);
 
   const handleRefreshQuotes = useCallback(() => {
     if (!profile?.id) {
@@ -555,6 +596,10 @@ export const AssetProfilePage = () => {
     triggerHaptic();
     syncMarketDataMutation.mutate([profile.id]);
   }, [profile?.id, syncMarketDataMutation, triggerHaptic]);
+
+  const handleRefreshQuotesWithConfirm = useCallback(() => {
+    setRefreshConfirmOpen(true);
+  }, []);
 
   const handleBack = useCallback(() => {
     navigate(-1);
@@ -589,7 +634,7 @@ export const AssetProfilePage = () => {
             <Button
               variant="outline"
               size="icon"
-              onClick={handleRefreshQuotes}
+              onClick={handleRefreshQuotesWithConfirm}
               disabled={syncMarketDataMutation.isPending}
               title="Refresh Quote"
             >
@@ -753,7 +798,7 @@ export const AssetProfilePage = () => {
                           {
                             icon: Icons.Refresh,
                             label: "Refresh Price",
-                            onClick: handleRefreshQuotes,
+                            onClick: handleRefreshQuotesWithConfirm,
                           },
                           {
                             icon: Icons.Pencil,
@@ -795,10 +840,20 @@ export const AssetProfilePage = () => {
             <h1 className="truncate text-base font-semibold leading-tight md:text-lg">
               {assetProfile?.name ?? holding?.instrument?.name ?? assetId ?? "-"}
             </h1>
-            <p className="text-muted-foreground text-xs leading-tight md:text-sm">
-              {isAltAsset && altHolding
-                ? getAlternativeAssetKindLabel(altHolding.kind)
-                : (assetProfile?.displayCode ?? holding?.instrument?.symbol ?? assetId)}
+            <p className="text-muted-foreground flex items-center gap-1.5 text-xs leading-tight md:text-sm">
+              {isAltAsset && altHolding ? (
+                getAlternativeAssetKindLabel(altHolding.kind)
+              ) : (
+                <>
+                  {assetProfile?.displayCode ?? holding?.instrument?.symbol ?? assetId}
+                  {(assetProfile?.quoteCcy ?? profile?.currency) && (
+                    <>
+                      <span className="bg-muted-foreground/40 h-3 w-px rounded-full" />
+                      {assetProfile?.quoteCcy ?? profile?.currency}
+                    </>
+                  )}
+                </>
+              )}
             </p>
           </div>
         </div>
@@ -892,8 +947,8 @@ export const AssetProfilePage = () => {
                 <div className="grid grid-cols-1 gap-4 pt-0 md:grid-cols-3">
                   <AssetHistoryCard
                     assetId={profile.id ?? ""}
-                    currency={profile.currency ?? baseCurrency}
-                    marketPrice={profile.marketPrice}
+                    currency={quote?.currency ?? profile.currency ?? baseCurrency}
+                    marketPrice={quote?.close ?? profile.marketPrice}
                     totalGainAmount={profile.totalGainAmount}
                     totalGainPercent={profile.totalGainPercent}
                     quoteHistory={quoteHistory ?? []}
@@ -907,68 +962,83 @@ export const AssetProfilePage = () => {
                   )}
                 </div>
 
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold">About</h3>
+                <AnimatedToggleGroup
+                  items={overviewSubTabs}
+                  value={overviewSubTab}
+                  onValueChange={(v: OverviewSubTab) => setOverviewSubTab(v)}
+                  className="text-sm"
+                />
 
-                  {/* Category badges */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {isClassificationsLoading ? (
-                      <>
-                        <Skeleton className="h-6 w-16 rounded-full" />
-                        <Skeleton className="h-6 w-20 rounded-full" />
-                      </>
-                    ) : categoryBadges.length > 0 ? (
-                      <>
-                        {categoryBadges.map((badge) => (
-                          <Badge
-                            key={badge.id}
-                            variant="secondary"
-                            className="gap-1.5"
-                            style={{
-                              backgroundColor: `${badge.categoryColor}20`,
-                              color: badge.categoryColor,
-                              borderColor: badge.categoryColor,
+                {overviewSubTab === "about" && (
+                  <div className="space-y-4">
+                    {/* Category badges */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isClassificationsLoading ? (
+                        <>
+                          <Skeleton className="h-6 w-16 rounded-full" />
+                          <Skeleton className="h-6 w-20 rounded-full" />
+                        </>
+                      ) : categoryBadges.length > 0 ? (
+                        <>
+                          {categoryBadges.map((badge) => (
+                            <Badge
+                              key={badge.id}
+                              variant="secondary"
+                              className="gap-1.5"
+                              style={{
+                                backgroundColor: `${badge.categoryColor}20`,
+                                color: badge.categoryColor,
+                                borderColor: badge.categoryColor,
+                              }}
+                            >
+                              <span
+                                className="h-2 w-2 rounded-full"
+                                style={{ backgroundColor: badge.categoryColor }}
+                              />
+                              {badge.categoryName}
+                            </Badge>
+                          ))}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-xs"
+                            onClick={() => {
+                              setEditSheetDefaultTab("classification");
+                              setEditSheetOpen(true);
                             }}
                           >
-                            <span
-                              className="h-2 w-2 rounded-full"
-                              style={{ backgroundColor: badge.categoryColor }}
-                            />
-                            {badge.categoryName}
-                          </Badge>
-                        ))}
+                            More
+                          </Button>
+                        </>
+                      ) : (
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-6 text-xs"
+                          className="text-muted-foreground h-6 text-xs"
                           onClick={() => {
                             setEditSheetDefaultTab("classification");
                             setEditSheetOpen(true);
                           }}
                         >
-                          More
+                          + Add classifications
                         </Button>
-                      </>
-                    ) : (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-muted-foreground h-6 text-xs"
-                        onClick={() => {
-                          setEditSheetDefaultTab("classification");
-                          setEditSheetOpen(true);
-                        }}
-                      >
-                        + Add classifications
-                      </Button>
-                    )}
-                  </div>
+                      )}
+                    </div>
 
-                  {/* Notes section */}
-                  <p className="text-muted-foreground text-sm">
-                    {assetProfile?.notes || holding?.instrument?.notes || "No notes added."}
-                  </p>
-                </div>
+                    {/* Notes section */}
+                    <p className="text-muted-foreground text-sm">
+                      {assetProfile?.notes || holding?.instrument?.notes || "No notes added."}
+                    </p>
+                  </div>
+                )}
+
+                {overviewSubTab === "holdings" && (
+                  <AssetAccountHoldings assetId={assetId} baseCurrency={baseCurrency} />
+                )}
+
+                {overviewSubTab === "snapshots" && (
+                  <AssetSnapshotHistory assetId={assetId} baseCurrency={baseCurrency} />
+                )}
               </TabsContent>
             )}
 
@@ -977,8 +1047,8 @@ export const AssetProfilePage = () => {
               <TabsContent value="lots" className="pt-6">
                 <AssetLotsTable
                   lots={holding.lots}
-                  currency={profile.currency ?? baseCurrency}
-                  marketPrice={profile.marketPrice}
+                  currency={symbolHolding?.currency ?? profile.currency ?? baseCurrency}
+                  marketPrice={Number(holding.price ?? profile.marketPrice)}
                 />
               </TabsContent>
             )}
@@ -999,7 +1069,7 @@ export const AssetProfilePage = () => {
                 <QuoteHistoryDataGrid
                   data={quoteHistory ?? []}
                   assetId={assetId}
-                  currency={profile?.currency ?? baseCurrency}
+                  currency={quote?.currency ?? profile?.currency ?? baseCurrency}
                   assetKind={assetProfile?.kind}
                   isManualDataSource={isManualPricingMode}
                   onSaveQuote={(quote: Quote) => saveQuoteMutation.mutate(quote)}
@@ -1018,6 +1088,12 @@ export const AssetProfilePage = () => {
           </Tabs>
         )}
       </PageContent>
+
+      <RefreshQuotesConfirmDialog
+        open={refreshConfirmOpen}
+        onOpenChange={setRefreshConfirmOpen}
+        onConfirm={handleRefreshQuotes}
+      />
 
       {/* Edit Sheet (for regular assets) */}
       <AssetEditSheet

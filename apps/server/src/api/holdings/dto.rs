@@ -17,6 +17,12 @@ pub struct HoldingItemQuery {
 }
 
 #[derive(Deserialize)]
+pub struct AssetHoldingsQuery {
+    #[serde(rename = "assetId")]
+    pub asset_id: String,
+}
+
+#[derive(Deserialize)]
 pub struct HistoryQuery {
     #[serde(rename = "accountId")]
     pub account_id: String,
@@ -84,6 +90,12 @@ pub struct HoldingInput {
     pub average_cost: Option<String>,
     /// Exchange MIC code for new holdings (e.g., "XNAS", "XTSE"). Used when asset_id is not provided.
     pub exchange_mic: Option<String>,
+    /// Asset name for new custom assets
+    pub name: Option<String>,
+    /// Data source (e.g., "MANUAL" for custom assets) — sets quote mode to manual
+    pub data_source: Option<String>,
+    /// Asset kind (e.g., "INVESTMENT", "OTHER")
+    pub asset_kind: Option<String>,
 }
 
 /// Request body for saving manual holdings
@@ -104,10 +116,12 @@ pub struct HoldingsPositionInput {
     pub symbol: String,
     /// Quantity held
     pub quantity: String,
-    /// Optional price per unit at snapshot date
-    pub price: Option<String>,
+    /// Optional average cost per unit
+    pub avg_cost: Option<String>,
     /// Currency for this position
     pub currency: String,
+    /// Exchange MIC code (e.g., "XNAS", "XTSE") resolved during check step
+    pub exchange_mic: Option<String>,
 }
 
 /// A single snapshot from CSV import (one date's worth of holdings)
@@ -140,4 +154,31 @@ pub struct ImportHoldingsCsvResult {
 pub struct ImportHoldingsCsvRequest {
     pub account_id: String,
     pub snapshots: Vec<HoldingsSnapshotInput>,
+}
+
+/// Request body for checking holdings import
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckHoldingsImportRequest {
+    pub account_id: String,
+    pub snapshots: Vec<HoldingsSnapshotInput>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolCheckResult {
+    pub symbol: String,
+    pub found: bool,
+    pub asset_name: Option<String>,
+    pub asset_id: Option<String>,
+    pub currency: Option<String>,
+    pub exchange_mic: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CheckHoldingsImportResult {
+    pub existing_dates: Vec<String>,
+    pub symbols: Vec<SymbolCheckResult>,
+    pub validation_errors: Vec<String>,
 }

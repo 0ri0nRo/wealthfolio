@@ -9,12 +9,16 @@ import type { ActivityImport, SymbolSearchResult } from "@/lib/types";
 import { tryParseDate } from "@/lib/utils";
 import { parse, parseISO, isValid } from "date-fns";
 import { getDateFnsPattern } from "../utils/date-format-options";
+import { findMappedActivityType } from "../utils/activity-type-mapping";
 import { Badge } from "@wealthfolio/ui/components/ui/badge";
 import { ProgressIndicator } from "@wealthfolio/ui/components/ui/progress-indicator";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ImportAlert } from "../components/import-alert";
 import { ImportReviewGrid, type ImportReviewFilter } from "../components/import-review-grid";
-import { SymbolResolutionPanel } from "../components/symbol-resolution-panel";
+import {
+  SymbolResolutionPanel,
+  type UnresolvedSymbol,
+} from "../components/symbol-resolution-panel";
 import {
   bulkSetAccount,
   bulkSetCurrency,
@@ -206,29 +210,15 @@ function parseDateValue(value: string | undefined, dateFormat: string): string {
 }
 
 /**
- * Map a CSV activity type value to a Wealthfolio activity type
+ * Map a CSV activity type value to a Wealthfolio activity type.
+ * Uses findMappedActivityType which checks explicit mappings + smart defaults.
  */
 function mapActivityType(
   csvValue: string | undefined,
   activityMappings: Record<string, string[]>,
 ): string | undefined {
   if (!csvValue) return undefined;
-
-  const normalized = csvValue.trim().toUpperCase();
-
-  for (const [activityType, csvValues] of Object.entries(activityMappings)) {
-    if (
-      csvValues?.some(
-        (v) =>
-          normalized === v.trim().toUpperCase() || normalized.startsWith(v.trim().toUpperCase()),
-      )
-    ) {
-      return activityType;
-    }
-  }
-
-  // Return the original value if no mapping found
-  return csvValue.trim();
+  return findMappedActivityType(csvValue, activityMappings) ?? csvValue.trim();
 }
 
 /**
@@ -239,7 +229,13 @@ function mapSymbol(
   symbolMappings: Record<string, string>,
   symbolMappingMeta?: Record<
     string,
-    { exchangeMic?: string; symbolName?: string; quoteCcy?: string; instrumentType?: string }
+    {
+      exchangeMic?: string;
+      symbolName?: string;
+      quoteCcy?: string;
+      instrumentType?: string;
+      quoteMode?: string;
+    }
   >,
 ): {
   symbol: string | undefined;
@@ -247,6 +243,7 @@ function mapSymbol(
   symbolName?: string;
   quoteCcy?: string;
   instrumentType?: string;
+  quoteMode?: string;
 } {
   if (!csvSymbol) return { symbol: undefined };
 
@@ -259,6 +256,7 @@ function mapSymbol(
     symbolName: meta?.symbolName,
     quoteCcy: meta?.quoteCcy,
     instrumentType: meta?.instrumentType,
+    quoteMode: meta?.quoteMode,
   };
 }
 
@@ -505,6 +503,7 @@ function createDraftActivities(
       symbolName: mappedSymbolName,
       quoteCcy: mappedQuoteCcy,
       instrumentType: mappedInstrumentType,
+      quoteMode: mappedQuoteMode,
     } = mapSymbol(rawSymbol, symbolMappings, symbolMappingMeta);
     const quantity = parseNumericValue(rawQuantity, decimalSeparator, thousandsSeparator);
     const unitPrice = parseNumericValue(rawUnitPrice, decimalSeparator, thousandsSeparator);
@@ -538,6 +537,7 @@ function createDraftActivities(
       symbolName: mappedSymbolName,
       quoteCcy: mappedQuoteCcy,
       instrumentType: mappedInstrumentType,
+      quoteMode: mappedQuoteMode,
       quantity,
       unitPrice,
       amount,
@@ -653,6 +653,7 @@ export function ReviewStep() {
                 exchangeMic: draft.exchangeMic,
                 quoteCcy: draft.quoteCcy,
                 instrumentType: draft.instrumentType,
+                quoteMode: draft.quoteMode,
                 quantity: draft.quantity,
                 unitPrice: draft.unitPrice,
                 amount: draft.amount,
@@ -902,6 +903,7 @@ export function ReviewStep() {
           symbolName: result.longName,
           quoteCcy: result.currency,
           instrumentType: result.quoteType,
+          quoteMode: result.dataSource === "MANUAL" ? "MANUAL" : undefined,
         };
         const { symbol: _removed, ...otherErrors } = draft.errors;
         const merged = { ...draft, ...symbolUpdates };
@@ -941,6 +943,7 @@ export function ReviewStep() {
             symbolName: result.longName,
             quoteCcy: result.currency,
             instrumentType: result.quoteType,
+            quoteMode: result.dataSource === "MANUAL" ? "MANUAL" : undefined,
           };
         }
 
@@ -962,6 +965,20 @@ export function ReviewStep() {
     },
     [draftActivities, dispatch, mapping, accountId, validateDraftsWithBackend],
   );
+
+  const unresolvedSymbols = useMemo<UnresolvedSymbol[]>(() => {
+    const symbolMap = new Map<string, number>();
+    for (const draft of draftActivities) {
+      if (draft.errors.symbol && draft.symbol) {
+        symbolMap.set(draft.symbol, (symbolMap.get(draft.symbol) || 0) + 1);
+      }
+    }
+    return Array.from(symbolMap.entries())
+      .map(([csvSymbol, count]) => ({ csvSymbol, affectedCount: count }))
+      .sort((a, b) => (b.affectedCount ?? 0) - (a.affectedCount ?? 0));
+  }, [draftActivities]);
+
+  // --- All hooks above this line ---
 
   // Show loading state while drafts are being created or validated
   if ((draftActivities.length === 0 && parsedRows.length > 0) || isValidating) {
@@ -1020,7 +1037,10 @@ export function ReviewStep() {
       )}
 
       {/* Symbol resolution for unrecognized symbols */}
-      <SymbolResolutionPanel drafts={draftActivities} onApplyMappings={handleSymbolResolution} />
+      <SymbolResolutionPanel
+        unresolvedSymbols={unresolvedSymbols}
+        onApplyMappings={handleSymbolResolution}
+      />
 
       {/* Stats and filter */}
       <div className="flex flex-col gap-3">

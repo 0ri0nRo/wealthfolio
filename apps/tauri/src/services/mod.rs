@@ -2,4 +2,4 @@
 
 mod connect_service;
 
-pub use connect_service::ConnectService;
+pub use connect_service::{cloud_api_base_url, ConnectService};

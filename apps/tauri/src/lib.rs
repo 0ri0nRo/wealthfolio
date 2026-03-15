@@ -19,6 +19,8 @@ use std::sync::Arc;
 
 use dotenvy::dotenv;
 use log::error;
+#[cfg(feature = "device-sync")]
+use log::warn;
 use tauri::{AppHandle, Emitter, Manager};
 
 use events::emit_app_ready;
@@ -96,6 +98,21 @@ mod desktop {
             scheduler::run_startup_sync(&startup_handle, &startup_context).await;
         });
 
+        // Start background device sync engine (self-skips when device is not READY).
+        #[cfg(feature = "device-sync")]
+        {
+            let device_sync_context = Arc::clone(&context);
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = crate::commands::device_sync::ensure_background_engine_started(
+                    device_sync_context,
+                )
+                .await
+                {
+                    log::warn!("Failed to start background device sync engine: {}", err);
+                }
+            });
+        }
+
         Ok(())
     }
 }
@@ -117,6 +134,7 @@ mod mobile {
         #[cfg(target_os = "ios")]
         {
             let _ = handle.plugin(tauri_plugin_web_auth::init());
+            let _ = handle.plugin(tauri_plugin_mobile_share::init());
         }
     }
 
@@ -273,6 +291,7 @@ pub fn run() {
             // Portfolio commands
             commands::portfolio::get_holdings,
             commands::portfolio::get_holding,
+            commands::portfolio::get_asset_holdings,
             commands::portfolio::get_portfolio_allocations,
             commands::portfolio::get_holdings_by_allocation,
             commands::portfolio::get_income_summary,
@@ -285,6 +304,7 @@ pub fn run() {
             commands::portfolio::calculate_performance_history,
             commands::portfolio::save_manual_holdings,
             commands::portfolio::import_holdings_csv,
+            commands::portfolio::check_holdings_import,
             commands::portfolio::get_snapshots,
             commands::portfolio::get_snapshot_by_date,
             commands::portfolio::delete_snapshot,
@@ -319,6 +339,7 @@ pub fn run() {
             commands::alternative_assets::get_alternative_holdings,
             // Market data commands
             commands::market_data::search_symbol,
+            commands::market_data::resolve_symbol_quote,
             commands::market_data::sync_market_data,
             commands::market_data::update_quote,
             commands::market_data::delete_quote,
@@ -390,57 +411,127 @@ pub fn run() {
             commands::addon::clear_addon_staging,
             commands::addon::submit_addon_rating,
             // Sync commands
+            #[cfg(any(feature = "connect-sync", feature = "device-sync"))]
             commands::wealthfolio_connect::store_sync_session,
+            #[cfg(any(feature = "connect-sync", feature = "device-sync"))]
             commands::wealthfolio_connect::clear_sync_session,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::sync_broker_data,
+            #[cfg(feature = "connect-sync")]
+            commands::brokers_sync::broker_ingest_run,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::get_synced_accounts,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::get_platforms,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::list_broker_connections,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::list_broker_accounts,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::get_subscription_plans,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::get_subscription_plans_public,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::get_user_info,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::get_broker_sync_states,
+            #[cfg(feature = "connect-sync")]
+            commands::brokers_sync::get_broker_ingest_states,
+            #[cfg(feature = "connect-sync")]
             commands::brokers_sync::get_import_runs,
+            #[cfg(feature = "connect-sync")]
+            commands::brokers_sync::get_data_import_runs,
             // Device sync commands
+            #[cfg(feature = "device-sync")]
             commands::device_sync::enroll_device,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::get_device,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::list_devices,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::update_device,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::delete_device,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::revoke_device,
             // Team keys (E2EE)
+            #[cfg(feature = "device-sync")]
             commands::device_sync::initialize_team_keys,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::commit_initialize_team_keys,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::rotate_team_keys,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::commit_rotate_team_keys,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::reset_team_sync,
+            #[cfg(feature = "device-sync")]
+            commands::device_sync::device_sync_bootstrap_snapshot_if_needed,
+            #[cfg(feature = "device-sync")]
+            commands::device_sync::device_sync_engine_status,
+            #[cfg(feature = "device-sync")]
+            commands::device_sync::device_sync_bootstrap_overwrite_check,
+            #[cfg(feature = "device-sync")]
+            commands::device_sync::device_sync_reconcile_ready_state,
+            #[cfg(feature = "device-sync")]
+            commands::device_sync::device_sync_trigger_cycle,
+            #[cfg(feature = "device-sync")]
+            commands::device_sync::device_sync_start_background_engine,
+            #[cfg(feature = "device-sync")]
+            commands::device_sync::device_sync_stop_background_engine,
+            #[cfg(feature = "device-sync")]
+            commands::device_sync::device_sync_generate_snapshot_now,
+            #[cfg(feature = "device-sync")]
+            commands::device_sync::device_sync_cancel_snapshot_upload,
             // Pairing (Issuer - Trusted Device)
+            #[cfg(feature = "device-sync")]
             commands::device_sync::create_pairing,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::get_pairing,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::approve_pairing,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::complete_pairing,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::cancel_pairing,
             // Pairing (Claimer - New Device)
+            #[cfg(feature = "device-sync")]
             commands::device_sync::claim_pairing,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::get_pairing_messages,
+            #[cfg(feature = "device-sync")]
             commands::device_sync::confirm_pairing,
             // Device enroll service (high-level commands)
+            #[cfg(feature = "device-sync")]
             commands::device_enroll_service::get_device_sync_state,
+            #[cfg(feature = "device-sync")]
             commands::device_enroll_service::enable_device_sync,
+            #[cfg(feature = "device-sync")]
             commands::device_enroll_service::clear_device_sync_data,
+            #[cfg(feature = "device-sync")]
             commands::device_enroll_service::reinitialize_device_sync,
             // Sync crypto commands
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_generate_root_key,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_derive_dek,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_generate_keypair,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_compute_shared_secret,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_derive_session_key,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_encrypt,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_decrypt,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_generate_pairing_code,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_hash_pairing_code,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_compute_sas,
+            #[cfg(feature = "device-sync")]
             commands::sync_crypto::sync_generate_device_id,
             // Health commands
             commands::health::get_health_status,
@@ -454,5 +545,24 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("Failed to build Wealthfolio application")
-        .run(|_handle, _event| {});
+        .run(|_handle, event| {
+            #[cfg(desktop)]
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                #[cfg(feature = "device-sync")]
+                if let Some(context) = _handle.try_state::<Arc<context::ServiceContext>>() {
+                    let context = Arc::clone(context.inner());
+                    tauri::async_runtime::block_on(async move {
+                        if let Err(err) =
+                            crate::commands::device_sync::ensure_background_engine_stopped(context)
+                                .await
+                        {
+                            warn!("Failed to stop background device sync engine: {}", err);
+                        }
+                    });
+                }
+            }
+        });
 }

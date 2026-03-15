@@ -1002,7 +1002,7 @@ impl SnapshotService {
     // create_initial_snapshot creates a snapshot with default values
     fn create_initial_snapshot(account: &Account, date: NaiveDate) -> AccountStateSnapshot {
         AccountStateSnapshot {
-            id: format!("{}_{}", account.id, date.format("%Y-%m-%d")),
+            id: AccountStateSnapshot::stable_id(&account.id, date),
             account_id: account.id.clone(),
             snapshot_date: date,
             currency: account.currency.clone(),
@@ -1069,6 +1069,9 @@ impl SnapshotService {
         }
         for splits in split_factors.values_mut() {
             splits.sort_by_key(|k| k.0);
+            // Splits are stored per-account but are asset-level events; deduplicate by date
+            // so that assets held in multiple accounts don't over-apply the same split.
+            splits.dedup_by_key(|k| k.0);
         }
         split_factors
     }
@@ -1559,19 +1562,17 @@ impl SnapshotServiceTrait for SnapshotService {
         // Note: snapshot.source is preserved from the caller (ManualEntry or CsvImport)
 
         // Generate the snapshot ID based on account_id and date
-        snapshot.id = format!(
-            "{}_{}",
-            account_id,
-            snapshot.snapshot_date.format("%Y-%m-%d")
-        );
+        snapshot.id = AccountStateSnapshot::stable_id(account_id, snapshot.snapshot_date);
 
-        // Check if content is unchanged from latest snapshot (skip if identical)
-        let latest = self.snapshot_repository.get_latest_snapshot_before_date(
+        // Check if content is unchanged from existing snapshot on the same date (skip if identical)
+        // Only compare against the same date to avoid false matches with SYNTHETIC backfill snapshots
+        let same_date_snapshots = self.snapshot_repository.get_snapshots_by_account(
             account_id,
-            snapshot.snapshot_date + chrono::Days::new(1),
+            Some(snapshot.snapshot_date),
+            Some(snapshot.snapshot_date),
         )?;
 
-        if let Some(existing) = latest {
+        if let Some(existing) = same_date_snapshots.into_iter().next() {
             if existing.is_content_equal(&snapshot) {
                 debug!(
                     "Snapshot content unchanged for account {} on {}, skipping save",
@@ -1679,7 +1680,7 @@ impl SnapshotServiceTrait for SnapshotService {
 
         // Clone the earliest snapshot with new date and source
         let synthetic = AccountStateSnapshot {
-            id: format!("{}_{}", account_id, synthetic_date.format("%Y-%m-%d")),
+            id: AccountStateSnapshot::stable_id(account_id, synthetic_date),
             account_id: account_id.to_string(),
             snapshot_date: synthetic_date,
             source: SnapshotSource::Synthetic,

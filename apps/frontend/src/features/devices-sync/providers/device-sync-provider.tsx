@@ -3,29 +3,30 @@
 // Uses state machine model: FRESH → REGISTERED → READY (+ STALE, RECOVERY)
 // ===========================================================================
 
+import { useWealthfolioConnect } from "@/features/wealthfolio-connect";
 import {
   createContext,
-  useContext,
-  useReducer,
-  useEffect,
   useCallback,
+  useContext,
+  useEffect,
+  useReducer,
   useRef,
   type ReactNode,
 } from "react";
-import { useWealthfolioConnect } from "@/features/wealthfolio-connect";
-import { syncService, type EnableSyncResult } from "../services/sync-service";
 import * as crypto from "../crypto";
+import { syncService, type EnableSyncResult } from "../services/sync-service";
 import type {
-  SyncState,
-  PairingSession,
+  BootstrapAction,
   ClaimerSession,
   Device,
-  TrustedDeviceSummary,
   DeviceSyncState,
-  SyncIdentity,
   KeyBundlePayload,
+  PairingSession,
+  SyncIdentity,
+  SyncState,
+  TrustedDeviceSummary,
 } from "../types";
-import { SyncError, SyncErrorCodes, INITIAL_SYNC_STATE } from "../types";
+import { INITIAL_SYNC_STATE, SyncError, SyncErrorCodes, SyncStates } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // State Management
@@ -43,6 +44,20 @@ type SyncAction =
       trustedDevices: TrustedDeviceSummary[];
     }
   | { type: "DETECT_ERROR"; error: SyncError }
+  | { type: "BOOTSTRAP_START" }
+  | { type: "BOOTSTRAP_ACTION"; bootstrapAction: BootstrapAction }
+  | { type: "BOOTSTRAP_SUCCESS"; message: string; snapshotId: string | null }
+  | { type: "BOOTSTRAP_ERROR"; error: SyncError }
+  | {
+      type: "BOOTSTRAP_OVERWRITE_REQUIRED";
+      localRows: number;
+      nonEmptyTables: { table: string; rows: number }[];
+    }
+  | { type: "BOOTSTRAP_OVERWRITE_CLEARED" }
+  | {
+      type: "ENGINE_STATUS";
+      status: SyncState["engineStatus"];
+    }
 
   // Operations
   | { type: "OPERATION_START" }
@@ -63,6 +78,7 @@ type SyncAction =
   // Pairing - Claimer
   | { type: "CLAIMER_SESSION_STARTED"; session: ClaimerSession }
   | { type: "CLAIMER_KEY_RECEIVED"; keyBundle: KeyBundlePayload }
+  | { type: "REMOTE_SEED_STATUS"; remoteSeedPresent: boolean | null }
 
   // Common
   | { type: "CLEAR_ERROR" }
@@ -79,6 +95,13 @@ function syncReducer(state: SyncState, action: SyncAction): SyncState {
         ...state,
         isDetecting: false,
         syncState: action.syncState,
+        bootstrapStatus: action.syncState === "READY" ? state.bootstrapStatus : "idle",
+        bootstrapMessage: action.syncState === "READY" ? state.bootstrapMessage : null,
+        bootstrapSnapshotId: action.syncState === "READY" ? state.bootstrapSnapshotId : null,
+        engineStatus: action.syncState === "READY" ? state.engineStatus : null,
+        bootstrapOverwriteRisk: action.syncState === "READY" ? state.bootstrapOverwriteRisk : null,
+        bootstrapAction: action.syncState === "READY" ? state.bootstrapAction : null,
+        remoteSeedPresent: action.syncState === "READY" ? state.remoteSeedPresent : null,
         identity: action.identity,
         device: action.device,
         serverKeyVersion: action.serverKeyVersion,
@@ -87,6 +110,59 @@ function syncReducer(state: SyncState, action: SyncAction): SyncState {
 
     case "DETECT_ERROR":
       return { ...state, isDetecting: false, error: action.error };
+
+    case "BOOTSTRAP_START":
+      return {
+        ...state,
+        bootstrapStatus: "running",
+        bootstrapMessage: null,
+        bootstrapOverwriteRisk: null,
+      };
+
+    case "BOOTSTRAP_ACTION":
+      return {
+        ...state,
+        bootstrapAction: action.bootstrapAction,
+      };
+
+    case "BOOTSTRAP_SUCCESS":
+      return {
+        ...state,
+        bootstrapStatus: "success",
+        bootstrapMessage: action.message,
+        bootstrapSnapshotId: action.snapshotId,
+        bootstrapOverwriteRisk: null,
+      };
+
+    case "BOOTSTRAP_ERROR":
+      return {
+        ...state,
+        bootstrapStatus: "error",
+        bootstrapMessage: action.error.message,
+      };
+
+    case "BOOTSTRAP_OVERWRITE_REQUIRED":
+      return {
+        ...state,
+        bootstrapStatus: "idle",
+        bootstrapMessage: null,
+        bootstrapOverwriteRisk: {
+          localRows: action.localRows,
+          nonEmptyTables: action.nonEmptyTables,
+        },
+      };
+
+    case "BOOTSTRAP_OVERWRITE_CLEARED":
+      return {
+        ...state,
+        bootstrapOverwriteRisk: null,
+      };
+
+    case "ENGINE_STATUS":
+      return {
+        ...state,
+        engineStatus: action.status,
+      };
 
     case "OPERATION_START":
       return { ...state, isLoading: true, error: null };
@@ -151,6 +227,12 @@ function syncReducer(state: SyncState, action: SyncAction): SyncState {
           : null,
       };
 
+    case "REMOTE_SEED_STATUS":
+      return {
+        ...state,
+        remoteSeedPresent: action.remoteSeedPresent,
+      };
+
     case "CLEAR_PAIRING_STATE":
       return {
         ...state,
@@ -179,12 +261,10 @@ interface SyncContextValue {
   actions: {
     // State management
     refreshState: () => Promise<void>;
+    continueBootstrapWithOverwrite: () => Promise<void>;
 
     // Enable sync (FRESH state)
     enableSync: () => Promise<EnableSyncResult>;
-
-    // E2EE key initialization (BOOTSTRAP mode)
-    initializeKeys: () => Promise<{ keyVersion: number }>;
 
     // Pairing - Issuer (trusted device)
     startPairing: () => Promise<PairingSession>;
@@ -210,6 +290,8 @@ interface SyncContextValue {
     // Sync reset
     resetSync: () => Promise<void>;
     reinitializeSync: () => Promise<void>;
+    startBackgroundSync: () => Promise<void>;
+    stopBackgroundSync: () => Promise<void>;
 
     // Utils
     computeSAS: () => Promise<string | null>;
@@ -227,6 +309,15 @@ const DeviceSyncContext = createContext<SyncContextValue | null>(null);
 export function DeviceSyncProvider({ children }: { children: ReactNode }) {
   const { isConnected, isEnabled, userInfo } = useWealthfolioConnect();
   const [state, dispatch] = useReducer(syncReducer, INITIAL_SYNC_STATE);
+  const bootstrapDeviceRef = useRef<string | null>(null);
+  const backgroundPausedRef = useRef(false);
+  const refreshEngineStatus = useCallback(async () => {
+    const engineStatus = await syncService.getEngineStatus().catch(() => null);
+    if (engineStatus) {
+      dispatch({ type: "ENGINE_STATUS", status: engineStatus });
+    }
+    return engineStatus;
+  }, []);
 
   // Check if user has a subscription (team)
   const hasSubscription = !!userInfo?.team?.plan;
@@ -278,6 +369,110 @@ export function DeviceSyncProvider({ children }: { children: ReactNode }) {
     };
   }, [isConnected, isEnabled, hasSubscription]);
 
+  const runReconcileReadyState = useCallback(
+    async ({
+      bypassOverwriteGuard = false,
+      isCancelled,
+    }: {
+      bypassOverwriteGuard?: boolean;
+      isCancelled?: () => boolean;
+    } = {}) => {
+      const cancelled = () => isCancelled?.() ?? false;
+
+      try {
+        const result = await syncService.reconcileReadyState();
+        if (cancelled()) return;
+
+        const bootstrapAction = syncService.resolveBootstrapAction(result);
+        dispatch({ type: "BOOTSTRAP_ACTION", bootstrapAction });
+
+        if (!bypassOverwriteGuard && bootstrapAction === "PULL_REMOTE_OVERWRITE") {
+          const overwriteCheck = await syncService.getBootstrapOverwriteCheck();
+          if (cancelled()) return;
+          if (overwriteCheck.hasLocalData) {
+            dispatch({
+              type: "BOOTSTRAP_OVERWRITE_REQUIRED",
+              localRows: overwriteCheck.localRows,
+              nonEmptyTables: overwriteCheck.nonEmptyTables,
+            });
+            return;
+          }
+        }
+
+        dispatch({ type: "BOOTSTRAP_OVERWRITE_CLEARED" });
+
+        dispatch({ type: "BOOTSTRAP_START" });
+
+        if (result.status === "error") {
+          dispatch({
+            type: "BOOTSTRAP_ERROR",
+            error: new SyncError(SyncErrorCodes.INIT_FAILED, result.message),
+          });
+          return;
+        }
+        if (result.status === "skipped_not_ready") {
+          bootstrapDeviceRef.current = null;
+          try {
+            const refreshed = await syncService.detectState();
+            if (cancelled()) return;
+            dispatch({
+              type: "DETECT_SUCCESS",
+              syncState: refreshed.state,
+              identity: refreshed.identity,
+              device: refreshed.device,
+              serverKeyVersion: refreshed.serverKeyVersion,
+              trustedDevices: refreshed.trustedDevices,
+            });
+          } catch (refreshErr) {
+            if (cancelled()) return;
+            dispatch({
+              type: "DETECT_ERROR",
+              error: SyncError.from(refreshErr),
+            });
+          }
+          return;
+        }
+
+        dispatch({
+          type: "BOOTSTRAP_SUCCESS",
+          message: result.bootstrapMessage ?? result.message,
+          snapshotId: result.bootstrapSnapshotId ?? null,
+        });
+        await refreshEngineStatus();
+      } catch (err) {
+        if (cancelled()) return;
+        dispatch({
+          type: "BOOTSTRAP_ERROR",
+          error: SyncError.from(err, SyncErrorCodes.INIT_FAILED),
+        });
+      }
+    },
+    [refreshEngineStatus],
+  );
+
+  useEffect(() => {
+    if (state.syncState !== SyncStates.READY) {
+      bootstrapDeviceRef.current = null;
+      backgroundPausedRef.current = false;
+      return;
+    }
+
+    const deviceId = state.identity?.deviceId ?? state.device?.id ?? null;
+    if (!deviceId) return;
+    if (bootstrapDeviceRef.current === deviceId) return;
+
+    bootstrapDeviceRef.current = deviceId;
+    let cancelled = false;
+    void runReconcileReadyState({
+      bypassOverwriteGuard: false,
+      isCancelled: () => cancelled,
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.syncState, state.identity?.deviceId, state.device?.id, runReconcileReadyState]);
+
   // Actions
   const refreshState = useCallback(async () => {
     dispatch({ type: "DETECT_START" });
@@ -299,29 +494,23 @@ export function DeviceSyncProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const continueBootstrapWithOverwrite = useCallback(async () => {
+    await runReconcileReadyState({ bypassOverwriteGuard: true });
+  }, [runReconcileReadyState]);
+
   const enableSync = useCallback(async (): Promise<EnableSyncResult> => {
     dispatch({ type: "OPERATION_START" });
     try {
       const result = await syncService.enableSync();
+
+      backgroundPausedRef.current = false;
       // Refresh state from backend to get authoritative state
       await refreshState();
       return result;
     } catch (err) {
-      dispatch({ type: "OPERATION_END" });
       throw SyncError.from(err);
-    }
-  }, [refreshState]);
-
-  const initializeKeys = useCallback(async (): Promise<{ keyVersion: number }> => {
-    dispatch({ type: "OPERATION_START" });
-    try {
-      // This is now handled by enableSync() in the backend.
-      const result = await syncService.initializeKeys();
-      await refreshState();
-      return result;
-    } catch (err) {
+    } finally {
       dispatch({ type: "OPERATION_END" });
-      throw SyncError.from(err);
     }
   }, [refreshState]);
 
@@ -372,7 +561,8 @@ export function DeviceSyncProvider({ children }: { children: ReactNode }) {
     if (!state.pairingSession) {
       throw new SyncError(SyncErrorCodes.NO_SESSION, "No active pairing session");
     }
-    await syncService.completePairing(state.pairingSession);
+    const result = await syncService.completePairing(state.pairingSession);
+    dispatch({ type: "REMOTE_SEED_STATUS", remoteSeedPresent: result.remoteSeedPresent });
     dispatch({ type: "CLEAR_PAIRING_STATE" });
     // NOTE: Don't call refreshState() here - it sets isDetecting=true which
     // causes DeviceSyncSection to render loading skeleton, unmounting the
@@ -412,7 +602,8 @@ export function DeviceSyncProvider({ children }: { children: ReactNode }) {
       if (!session) {
         throw new SyncError(SyncErrorCodes.NO_SESSION, "No active claimer session");
       }
-      await syncService.confirmPairingAsClaimer(session, keyBundle);
+      const result = await syncService.confirmPairingAsClaimer(session, keyBundle);
+      dispatch({ type: "REMOTE_SEED_STATUS", remoteSeedPresent: result.remoteSeedPresent });
       dispatch({ type: "CLEAR_PAIRING_STATE" });
       // NOTE: Don't call refreshState() here - same issue as completePairing
     },
@@ -420,15 +611,19 @@ export function DeviceSyncProvider({ children }: { children: ReactNode }) {
   );
 
   const handleRecovery = useCallback(async () => {
+    if (state.syncState !== SyncStates.RECOVERY) {
+      return;
+    }
     dispatch({ type: "OPERATION_START" });
     try {
       await syncService.handleRecovery();
       await refreshState();
     } catch (err) {
-      dispatch({ type: "OPERATION_END" });
       throw SyncError.from(err);
+    } finally {
+      dispatch({ type: "OPERATION_END" });
     }
-  }, [refreshState]);
+  }, [refreshState, state.syncState]);
 
   const renameDevice = useCallback(async (deviceId: string, name: string) => {
     await syncService.renameDevice(deviceId, name);
@@ -445,8 +640,9 @@ export function DeviceSyncProvider({ children }: { children: ReactNode }) {
       await syncService.clearSyncData();
       dispatch({ type: "RESET" });
     } catch (err) {
-      dispatch({ type: "OPERATION_END" });
       throw SyncError.from(err);
+    } finally {
+      dispatch({ type: "OPERATION_END" });
     }
   }, []);
 
@@ -454,12 +650,38 @@ export function DeviceSyncProvider({ children }: { children: ReactNode }) {
     dispatch({ type: "OPERATION_START" });
     try {
       await syncService.reinitializeSync();
+      backgroundPausedRef.current = false;
       await refreshState();
     } catch (err) {
-      dispatch({ type: "OPERATION_END" });
       throw SyncError.from(err);
+    } finally {
+      dispatch({ type: "OPERATION_END" });
     }
   }, [refreshState]);
+
+  const startBackgroundSync = useCallback(async () => {
+    const previousPaused = backgroundPausedRef.current;
+    backgroundPausedRef.current = false;
+    try {
+      await syncService.startBackgroundEngine();
+    } catch (err) {
+      backgroundPausedRef.current = previousPaused;
+      throw err;
+    }
+    await refreshEngineStatus();
+  }, [refreshEngineStatus]);
+
+  const stopBackgroundSync = useCallback(async () => {
+    const previousPaused = backgroundPausedRef.current;
+    try {
+      await syncService.stopBackgroundEngine();
+      backgroundPausedRef.current = true;
+    } catch (err) {
+      backgroundPausedRef.current = previousPaused;
+      throw err;
+    }
+    await refreshEngineStatus();
+  }, [refreshEngineStatus]);
 
   const computeSAS = useCallback(async () => {
     const sessionKey = state.pairingSession?.sessionKey || state.claimerSession?.sessionKey;
@@ -480,8 +702,8 @@ export function DeviceSyncProvider({ children }: { children: ReactNode }) {
     state,
     actions: {
       refreshState,
+      continueBootstrapWithOverwrite,
       enableSync,
-      initializeKeys,
       startPairing,
       pollForClaimerConnection,
       approvePairing,
@@ -495,6 +717,8 @@ export function DeviceSyncProvider({ children }: { children: ReactNode }) {
       revokeDevice,
       resetSync,
       reinitializeSync,
+      startBackgroundSync,
+      stopBackgroundSync,
       computeSAS,
       clearError,
       clearSyncData,

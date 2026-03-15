@@ -515,14 +515,12 @@ impl AlphaVantageProvider {
             })
     }
 
+    /// Get the currency: prefer exchange metadata, fall back to asset's quote_ccy.
     fn resolve_currency(&self, context: &QuoteContext) -> String {
-        context
-            .currency_hint
-            .clone()
-            .or_else(|| {
-                let chain = ResolverChain::new();
-                chain.get_currency(&PROVIDER_ID.into(), context)
-            })
+        let chain = ResolverChain::new();
+        chain
+            .get_currency(&PROVIDER_ID.into(), context)
+            .or_else(|| context.currency_hint.clone())
             .map(|c| c.to_string())
             .unwrap_or_else(|| "USD".to_string())
     }
@@ -935,9 +933,9 @@ impl MarketDataProvider for AlphaVantageProvider {
 
     fn rate_limit(&self) -> RateLimit {
         RateLimit {
-            requests_per_minute: 5,             // Free tier is very limited
-            max_concurrency: 1,                 // Sequential requests only
-            min_delay: Duration::from_secs(12), // ~5 requests per minute
+            requests_per_minute: 25,           // Free tier: 25 requests/day
+            max_concurrency: 1,                // Sequential requests only
+            min_delay: Duration::from_secs(3), // ~25 requests per minute
         }
     }
 
@@ -1172,16 +1170,17 @@ mod tests {
     fn test_rate_limit() {
         let provider = AlphaVantageProvider::new("test_key".to_string());
         let limit = provider.rate_limit();
-        assert_eq!(limit.requests_per_minute, 5);
+        assert_eq!(limit.requests_per_minute, 25);
         assert_eq!(limit.max_concurrency, 1);
-        assert_eq!(limit.min_delay, Duration::from_secs(12));
+        assert_eq!(limit.min_delay, Duration::from_secs(3));
     }
 
     #[test]
-    fn test_resolve_currency_prefers_hint_over_resolver() {
+    fn test_resolve_currency_prefers_resolver_over_hint() {
         let provider = AlphaVantageProvider::new("test_key".to_string());
+        // FX resolver returns the quote currency ("CAD"), which takes priority over hint
         let context = create_test_fx_context(Some("TWD"), "CAD");
-        assert_eq!(provider.resolve_currency(&context), "TWD");
+        assert_eq!(provider.resolve_currency(&context), "CAD");
     }
 
     #[test]

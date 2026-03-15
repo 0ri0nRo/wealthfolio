@@ -423,14 +423,19 @@ impl FxRepository {
     pub async fn delete_exchange_rate(&self, rate_id: &str) -> Result<()> {
         let rate_id_owned = rate_id.to_string();
         self.writer
-            .exec(move |conn| {
+            .exec_tx(move |tx| {
                 diesel::delete(quotes::table.filter(quotes::asset_id.eq(&rate_id_owned)))
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
 
-                diesel::delete(assets::table.filter(assets::id.eq(&rate_id_owned)))
-                    .execute(conn)
-                    .map_err(StorageError::from)?;
+                let assets_deleted =
+                    diesel::delete(assets::table.filter(assets::id.eq(&rate_id_owned)))
+                        .execute(tx.conn())
+                        .map_err(StorageError::from)?;
+
+                if assets_deleted > 0 {
+                    tx.delete::<AssetDB>(rate_id_owned.clone());
+                }
 
                 Ok(())
             })
@@ -445,20 +450,15 @@ impl FxRepository {
         let source_owned = source.to_string();
 
         self.writer
-            .exec(move |conn| {
+            .exec_tx(move |tx| {
                 let expected_key = format!("FX:{}/{}", &from_owned, &to_owned);
                 let existing: Option<AssetDB> = assets::table
                     .filter(assets::instrument_key.eq(&expected_key))
-                    .first(conn)
+                    .first(tx.conn())
                     .optional()
                     .map_err(StorageError::from)?;
 
                 if let Some(existing_asset) = existing {
-                    diesel::update(assets::table.filter(assets::id.eq(&existing_asset.id)))
-                        .set(assets::updated_at.eq(chrono::Utc::now().to_rfc3339()))
-                        .execute(conn)
-                        .map_err(StorageError::from)?;
-
                     Ok(existing_asset.id)
                 } else {
                     let new_asset = NewAsset::new_fx_asset(&from_owned, &to_owned, &source_owned);
@@ -466,14 +466,16 @@ impl FxRepository {
 
                     diesel::insert_into(assets::table)
                         .values(&asset_db)
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
 
                     // Read back to get the DB-generated UUID
                     let inserted: AssetDB = assets::table
                         .filter(assets::instrument_key.eq(&expected_key))
-                        .first(conn)
+                        .first(tx.conn())
                         .map_err(StorageError::from)?;
+
+                    tx.insert(&inserted)?;
 
                     Ok(inserted.id)
                 }

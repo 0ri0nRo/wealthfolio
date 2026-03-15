@@ -59,25 +59,21 @@ impl ChatRepositoryTrait for AiChatRepository {
         let thread_id = thread_db.id.clone();
 
         self.writer
-            .exec(
-                move |conn: &mut SqliteConnection| -> CoreResult<ChatThread> {
-                    diesel::insert_into(ai_threads::table)
-                        .values(&thread_db)
-                        .execute(conn)
-                        .map_err(|e| {
-                            CoreError::Database(DatabaseError::QueryFailed(e.to_string()))
-                        })?;
+            .exec_tx(move |tx| -> CoreResult<ChatThread> {
+                diesel::insert_into(ai_threads::table)
+                    .values(&thread_db)
+                    .execute(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
 
-                    let db = ai_threads::table
-                        .find(&thread_id)
-                        .first::<AiThreadDB>(conn)
-                        .map_err(|e| {
-                            CoreError::Database(DatabaseError::QueryFailed(e.to_string()))
-                        })?;
+                let db = ai_threads::table
+                    .find(&thread_id)
+                    .first::<AiThreadDB>(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
 
-                    Ok(db_to_thread(&db))
-                },
-            )
+                tx.insert(&db)?;
+
+                Ok(db_to_thread(&db))
+            })
             .await
             .map_err(core_to_ai_error)
     }
@@ -233,30 +229,26 @@ impl ChatRepositoryTrait for AiChatRepository {
         let updated_at = Utc::now().to_rfc3339();
 
         self.writer
-            .exec(
-                move |conn: &mut SqliteConnection| -> CoreResult<ChatThread> {
-                    diesel::update(ai_threads::table.find(&thread_id))
-                        .set((
-                            ai_threads::title.eq(&title),
-                            ai_threads::is_pinned.eq(&is_pinned),
-                            ai_threads::config_snapshot.eq(&config_snapshot),
-                            ai_threads::updated_at.eq(&updated_at),
-                        ))
-                        .execute(conn)
-                        .map_err(|e| {
-                            CoreError::Database(DatabaseError::QueryFailed(e.to_string()))
-                        })?;
+            .exec_tx(move |tx| -> CoreResult<ChatThread> {
+                diesel::update(ai_threads::table.find(&thread_id))
+                    .set((
+                        ai_threads::title.eq(&title),
+                        ai_threads::is_pinned.eq(&is_pinned),
+                        ai_threads::config_snapshot.eq(&config_snapshot),
+                        ai_threads::updated_at.eq(&updated_at),
+                    ))
+                    .execute(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
 
-                    let db = ai_threads::table
-                        .find(&thread_id)
-                        .first::<AiThreadDB>(conn)
-                        .map_err(|e| {
-                            CoreError::Database(DatabaseError::QueryFailed(e.to_string()))
-                        })?;
+                let db = ai_threads::table
+                    .find(&thread_id)
+                    .first::<AiThreadDB>(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
 
-                    Ok(db_to_thread(&db))
-                },
-            )
+                tx.update(&db)?;
+
+                Ok(db_to_thread(&db))
+            })
             .await
             .map_err(core_to_ai_error)
     }
@@ -264,11 +256,14 @@ impl ChatRepositoryTrait for AiChatRepository {
     async fn delete_thread(&self, thread_id: &str) -> ChatRepositoryResult<()> {
         let thread_id = thread_id.to_string();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> CoreResult<()> {
+            .exec_tx(move |tx| -> CoreResult<()> {
                 // CASCADE will delete messages and tags automatically
-                diesel::delete(ai_threads::table.find(&thread_id))
-                    .execute(conn)
+                let affected = diesel::delete(ai_threads::table.find(&thread_id))
+                    .execute(tx.conn())
                     .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
+                if affected > 0 {
+                    tx.delete::<AiThreadDB>(thread_id.clone());
+                }
                 Ok(())
             })
             .await
@@ -285,39 +280,39 @@ impl ChatRepositoryTrait for AiChatRepository {
         let thread_id = message_db.thread_id.clone();
 
         self.writer
-            .exec(
-                move |conn: &mut SqliteConnection| -> CoreResult<ChatMessage> {
-                    // Insert message
-                    diesel::insert_into(ai_messages::table)
-                        .values(&message_db)
-                        .execute(conn)
-                        .map_err(|e| {
-                            CoreError::Database(DatabaseError::QueryFailed(e.to_string()))
-                        })?;
+            .exec_tx(move |tx| -> CoreResult<ChatMessage> {
+                // Insert message
+                diesel::insert_into(ai_messages::table)
+                    .values(&message_db)
+                    .execute(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
 
-                    // Update thread's updated_at
-                    diesel::update(ai_threads::table.find(&thread_id))
-                        .set(ai_threads::updated_at.eq(chrono::Utc::now().to_rfc3339()))
-                        .execute(conn)
-                        .map_err(|e| {
-                            CoreError::Database(DatabaseError::QueryFailed(e.to_string()))
-                        })?;
+                // Update thread's updated_at
+                diesel::update(ai_threads::table.find(&thread_id))
+                    .set(ai_threads::updated_at.eq(chrono::Utc::now().to_rfc3339()))
+                    .execute(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
 
-                    let db = ai_messages::table
-                        .find(&message_id)
-                        .first::<AiMessageDB>(conn)
-                        .map_err(|e| {
-                            CoreError::Database(DatabaseError::QueryFailed(e.to_string()))
-                        })?;
+                let thread_db = ai_threads::table
+                    .find(&thread_id)
+                    .first::<AiThreadDB>(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
 
-                    db_to_message(&db).map_err(|e| match e {
-                        AiError::InvalidInput(msg) => {
-                            CoreError::Validation(ValidationError::InvalidInput(msg))
-                        }
-                        _ => CoreError::Database(DatabaseError::QueryFailed(e.to_string())),
-                    })
-                },
-            )
+                let db = ai_messages::table
+                    .find(&message_id)
+                    .first::<AiMessageDB>(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
+
+                tx.insert(&db)?;
+                tx.update(&thread_db)?;
+
+                db_to_message(&db).map_err(|e| match e {
+                    AiError::InvalidInput(msg) => {
+                        CoreError::Validation(ValidationError::InvalidInput(msg))
+                    }
+                    _ => CoreError::Database(DatabaseError::QueryFailed(e.to_string())),
+                })
+            })
             .await
             .map_err(core_to_ai_error)
     }
@@ -365,30 +360,26 @@ impl ChatRepositoryTrait for AiChatRepository {
         let content_json = convert_content_to_json(&message.content)?;
 
         self.writer
-            .exec(
-                move |conn: &mut SqliteConnection| -> CoreResult<ChatMessage> {
-                    diesel::update(ai_messages::table.find(&message_id))
-                        .set(ai_messages::content_json.eq(&content_json))
-                        .execute(conn)
-                        .map_err(|e| {
-                            CoreError::Database(DatabaseError::QueryFailed(e.to_string()))
-                        })?;
+            .exec_tx(move |tx| -> CoreResult<ChatMessage> {
+                diesel::update(ai_messages::table.find(&message_id))
+                    .set(ai_messages::content_json.eq(&content_json))
+                    .execute(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
 
-                    let db = ai_messages::table
-                        .find(&message_id)
-                        .first::<AiMessageDB>(conn)
-                        .map_err(|e| {
-                            CoreError::Database(DatabaseError::QueryFailed(e.to_string()))
-                        })?;
+                let db = ai_messages::table
+                    .find(&message_id)
+                    .first::<AiMessageDB>(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
 
-                    db_to_message(&db).map_err(|e| match e {
-                        AiError::InvalidInput(msg) => {
-                            CoreError::Validation(ValidationError::InvalidInput(msg))
-                        }
-                        _ => CoreError::Database(DatabaseError::QueryFailed(e.to_string())),
-                    })
-                },
-            )
+                tx.update(&db)?;
+
+                db_to_message(&db).map_err(|e| match e {
+                    AiError::InvalidInput(msg) => {
+                        CoreError::Validation(ValidationError::InvalidInput(msg))
+                    }
+                    _ => CoreError::Database(DatabaseError::QueryFailed(e.to_string())),
+                })
+            })
             .await
             .map_err(core_to_ai_error)
     }
@@ -405,13 +396,16 @@ impl ChatRepositoryTrait for AiChatRepository {
         );
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> CoreResult<()> {
-                diesel::insert_into(ai_thread_tags::table)
+            .exec_tx(move |tx| -> CoreResult<()> {
+                let inserted = diesel::insert_into(ai_thread_tags::table)
                     .values(&tag_db)
                     .on_conflict((ai_thread_tags::thread_id, ai_thread_tags::tag))
                     .do_nothing()
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
+                if inserted > 0 {
+                    tx.insert(&tag_db)?;
+                }
                 Ok(())
             })
             .await
@@ -423,14 +417,25 @@ impl ChatRepositoryTrait for AiChatRepository {
         let tag = tag.to_string();
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> CoreResult<()> {
+            .exec_tx(move |tx| -> CoreResult<()> {
+                let existing_ids = ai_thread_tags::table
+                    .filter(ai_thread_tags::thread_id.eq(&thread_id))
+                    .filter(ai_thread_tags::tag.eq(&tag))
+                    .select(ai_thread_tags::id)
+                    .load::<String>(tx.conn())
+                    .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
+
                 diesel::delete(
                     ai_thread_tags::table
                         .filter(ai_thread_tags::thread_id.eq(&thread_id))
                         .filter(ai_thread_tags::tag.eq(&tag)),
                 )
-                .execute(conn)
+                .execute(tx.conn())
                 .map_err(|e| CoreError::Database(DatabaseError::QueryFailed(e.to_string())))?;
+
+                for id in existing_ids {
+                    tx.delete::<AiThreadTagDB>(id.clone());
+                }
                 Ok(())
             })
             .await

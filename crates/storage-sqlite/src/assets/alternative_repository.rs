@@ -53,14 +53,14 @@ impl AlternativeAssetRepositoryTrait for AlternativeAssetRepository {
         let asset_id_owned = asset_id.to_string();
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<()> {
+            .exec_tx(move |tx| -> Result<()> {
                 // Step 1: Find and unlink any liabilities that reference this asset
                 let linked_pattern = format!("%\"linked_asset_id\":\"{}\"%", asset_id_owned);
 
                 let linked_liabilities: Vec<(String, Option<String>)> = assets::table
                     .filter(assets::metadata.like(&linked_pattern))
                     .select((assets::id, assets::metadata))
-                    .load(conn)
+                    .load(tx.conn())
                     .map_err(StorageError::from)?;
 
                 for (liability_id, metadata_opt) in linked_liabilities {
@@ -76,8 +76,15 @@ impl AlternativeAssetRepositoryTrait for AlternativeAssetRepository {
 
                             diesel::update(assets::table.filter(assets::id.eq(&liability_id)))
                                 .set(assets::metadata.eq(updated_metadata))
-                                .execute(conn)
+                                .execute(tx.conn())
                                 .map_err(StorageError::from)?;
+
+                            let liability_row = assets::table
+                                .filter(assets::id.eq(&liability_id))
+                                .first::<crate::assets::AssetDB>(tx.conn())
+                                .map_err(StorageError::from)?;
+
+                            tx.update(&liability_row)?;
                         }
                     }
                 }
@@ -88,13 +95,13 @@ impl AlternativeAssetRepositoryTrait for AlternativeAssetRepository {
                         .filter(quotes::asset_id.eq(&asset_id_owned))
                         .filter(quotes::source.eq("MANUAL")),
                 )
-                .execute(conn)
+                .execute(tx.conn())
                 .map_err(StorageError::from)?;
 
                 // Step 3: Delete the asset record
                 let assets_deleted =
                     diesel::delete(assets::table.filter(assets::id.eq(&asset_id_owned)))
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
 
                 if assets_deleted == 0 {
@@ -103,6 +110,8 @@ impl AlternativeAssetRepositoryTrait for AlternativeAssetRepository {
                         asset_id_owned
                     ))));
                 }
+
+                tx.delete::<crate::assets::AssetDB>(asset_id_owned);
 
                 Ok(())
             })
@@ -158,7 +167,7 @@ impl AlternativeAssetRepositoryTrait for AlternativeAssetRepository {
         let notes_owned = notes.map(|n| n.to_string());
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<()> {
+            .exec_tx(move |tx| -> Result<()> {
                 // Build dynamic update based on which fields are provided
                 let has_updates = name_owned.is_some()
                     || display_code_owned.is_some()
@@ -179,7 +188,7 @@ impl AlternativeAssetRepositoryTrait for AlternativeAssetRepository {
                         metadata_str.as_ref().map(|m| assets::metadata.eq(Some(m))),
                         notes_owned.as_ref().map(|n| assets::notes.eq(Some(n))),
                     ))
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
 
                 if updated == 0 {
@@ -188,6 +197,12 @@ impl AlternativeAssetRepositoryTrait for AlternativeAssetRepository {
                         asset_id_owned
                     ))));
                 }
+
+                let updated_row = assets::table
+                    .filter(assets::id.eq(&asset_id_owned))
+                    .first::<crate::assets::AssetDB>(tx.conn())
+                    .map_err(StorageError::from)?;
+                tx.update(&updated_row)?;
 
                 Ok(())
             })

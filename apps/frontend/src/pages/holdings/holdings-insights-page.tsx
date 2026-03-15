@@ -3,40 +3,33 @@ import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { useCallback, useMemo, useState } from "react";
 
-import { AccountSelector } from "@/components/account-selector";
 import { useHoldings } from "@/hooks/use-holdings";
 import { usePortfolioAllocations } from "@/hooks/use-portfolio-allocations";
 import { PORTFOLIO_ACCOUNT_ID, isAlternativeAssetKind, type AssetKind } from "@/lib/constants";
 import { useSettingsContext } from "@/lib/settings-provider";
-import type { Account, TaxonomyAllocation } from "@/lib/types";
+import type { TaxonomyAllocation } from "@/lib/types";
 import { useNavigate } from "react-router-dom";
 import { AllocationDetailSheet } from "./components/allocation-detail-sheet";
 import { CashHoldingsWidget } from "./components/cash-holdings-widget";
 import { CompactAllocationStrip } from "./components/compact-allocation-strip";
 import { PortfolioComposition } from "./components/composition-chart";
+import { CountryAllocationChart } from "./components/country-allocation-chart";
 import { HoldingCurrencyChart } from "./components/currency-chart";
 import { DrillableAccountChart } from "./components/drillable-account-chart";
 import { DrillableDonutChart } from "./components/drillable-donut-chart";
 import { SectorsChart } from "./components/sectors-chart";
 import { SegmentedAllocationBar } from "./components/segmented-allocation-bar";
 
-export const HoldingsInsightsPage = () => {
+interface HoldingsInsightsPageProps {
+  accountId?: string;
+}
+
+export const HoldingsInsightsPage = ({ accountId: accountIdProp }: HoldingsInsightsPageProps) => {
   const navigate = useNavigate();
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
-  const [selectedAccount, setSelectedAccount] = useState<Account | null>({
-    id: PORTFOLIO_ACCOUNT_ID,
-    name: "All Portfolio",
-    accountType: "PORTFOLIO" as unknown as Account["accountType"],
-    balance: 0,
-    currency: baseCurrency,
-    isDefault: false,
-    isActive: true,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  } as Account);
 
-  const accountId = selectedAccount?.id ?? PORTFOLIO_ACCOUNT_ID;
+  const accountId = accountIdProp ?? PORTFOLIO_ACCOUNT_ID;
   const { holdings, isLoading: holdingsLoading } = useHoldings(accountId);
   const { allocations, isLoading: allocationsLoading } = usePortfolioAllocations(accountId);
 
@@ -64,7 +57,6 @@ export const HoldingsInsightsPage = () => {
         case "securityType":
           return allocations?.securityTypes;
         default:
-          // Check custom groups
           if (type === "custom" && allocations?.customGroups?.length) {
             return allocations.customGroups[0];
           }
@@ -91,14 +83,10 @@ export const HoldingsInsightsPage = () => {
   const openAllocationSheet = useCallback((allocation: TaxonomyAllocation | undefined) => {
     if (allocation) {
       setSelectedAllocation(allocation);
-      setInitialCategoryId(null); // Will default to first category
+      setInitialCategoryId(null);
       setIsSheetOpen(true);
     }
   }, []);
-
-  const handleAccountSelect = (account: Account) => {
-    setSelectedAccount(account);
-  };
 
   const { cashHoldings, nonCashHoldings } = useMemo(() => {
     const cash = holdings?.filter((holding) => holding.holdingType?.toLowerCase() === "cash") ?? [];
@@ -204,7 +192,21 @@ export const HoldingsInsightsPage = () => {
           />
         </div>
 
-        {/* Row 3: Composition (col-span-3) + Right column (Security Type, Risk Profile, Sectors) */}
+        {/* Row 3: Country Allocation (full width, individual countries) */}
+        <CountryAllocationChart
+          allocation={allocations?.regions}
+          isLoading={isLoading}
+          onCountryClick={(countryName) =>
+            handleChartSectionClick(
+              "country",
+              countryName,
+              `Holdings in ${countryName}`,
+              countryName,
+            )
+          }
+        />
+
+        {/* Row 4: Composition (col-span-3) + Right column (Security Type, Risk Profile, Sectors) */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
           <div className="col-span-1 lg:col-span-3">
             <PortfolioComposition holdings={nonCashHoldings ?? []} isLoading={isLoading} />
@@ -261,7 +263,7 @@ export const HoldingsInsightsPage = () => {
           </div>
         </div>
 
-        {/* Row 4: Custom Groups (under composition, col-span-3) */}
+        {/* Row 5: Custom Groups */}
         {hasCustomGroups && (
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-4">
             <div className="col-span-1 space-y-4 lg:col-span-3">
@@ -298,27 +300,6 @@ export const HoldingsInsightsPage = () => {
 
   return (
     <>
-      {/* Account selector - fixed position in header area */}
-      <div className="pointer-events-auto fixed right-2 top-4 z-20 hidden md:block lg:right-4">
-        <AccountSelector
-          selectedAccount={selectedAccount}
-          setSelectedAccount={handleAccountSelect}
-          variant="dropdown"
-          includePortfolio={true}
-          className="h-9"
-        />
-      </div>
-
-      <div className="mb-4 flex justify-end md:hidden">
-        <AccountSelector
-          selectedAccount={selectedAccount}
-          setSelectedAccount={handleAccountSelect}
-          variant="dropdown"
-          includePortfolio={true}
-          className="h-9"
-        />
-      </div>
-
       {renderAnalyticsView()}
 
       {/* Allocation Detail Sheet */}

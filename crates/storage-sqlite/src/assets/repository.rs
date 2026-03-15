@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use diesel::prelude::*;
 use diesel::r2d2::{self, Pool};
 use diesel::sqlite::SqliteConnection;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use wealthfolio_core::assets::{Asset, AssetRepositoryTrait, NewAsset, UpdateAssetProfile};
@@ -112,12 +113,15 @@ impl AssetRepositoryTrait for AssetRepository {
         let asset_db: InsertableAssetDB = new_asset.into();
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<Asset> {
+            .exec_tx(move |tx| -> Result<Asset> {
                 let result_db = diesel::insert_into(assets::table)
                     .values(&asset_db)
-                    .get_result::<AssetDB>(conn)
+                    .get_result::<AssetDB>(tx.conn())
                     .map_err(StorageError::from)?;
-                Ok(result_db.into())
+                let payload_db = result_db.clone();
+                let asset: Asset = result_db.into();
+                tx.insert(&payload_db)?;
+                Ok(asset)
             })
             .await
     }
@@ -130,25 +134,38 @@ impl AssetRepositoryTrait for AssetRepository {
             asset.validate()?;
         }
         let assets_db: Vec<InsertableAssetDB> = new_assets.into_iter().map(|a| a.into()).collect();
+        let ids: Vec<String> = assets_db.iter().filter_map(|a| a.id.clone()).collect();
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<Vec<Asset>> {
+            .exec_tx(move |tx| -> Result<Vec<Asset>> {
+                let existing_ids: HashSet<String> = assets::table
+                    .filter(assets::id.eq_any(&ids))
+                    .select(assets::id)
+                    .load::<String>(tx.conn())
+                    .map_err(StorageError::from)?
+                    .into_iter()
+                    .collect();
+
                 // INSERT OR IGNORE: skip assets that already exist
                 for asset_db in &assets_db {
                     diesel::insert_into(assets::table)
                         .values(asset_db)
                         .on_conflict(assets::id)
                         .do_nothing()
-                        .execute(conn)
+                        .execute(tx.conn())
                         .map_err(StorageError::from)?;
                 }
 
                 // Re-read all to return the full set
-                let ids: Vec<String> = assets_db.into_iter().filter_map(|a| a.id).collect();
                 let results = assets::table
                     .filter(assets::id.eq_any(&ids))
-                    .load::<AssetDB>(conn)
+                    .load::<AssetDB>(tx.conn())
                     .map_err(StorageError::from)?;
+                for result in &results {
+                    if !existing_ids.contains(&result.id) {
+                        tx.insert(result)?;
+                    }
+                }
                 Ok(results.into_iter().map(|r| r.into()).collect())
             })
             .await
@@ -161,11 +178,11 @@ impl AssetRepositoryTrait for AssetRepository {
         let payload_owned = payload.clone();
 
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<Asset> {
+            .exec_tx(move |tx| -> Result<Asset> {
                 // First, get the existing asset to preserve fields if not provided
                 let existing: AssetDB = assets::table
                     .filter(assets::id.eq(&asset_id_owned))
-                    .first(conn)
+                    .first(tx.conn())
                     .map_err(StorageError::from)?;
 
                 // Use payload metadata if provided, otherwise preserve existing
@@ -236,7 +253,7 @@ impl AssetRepositoryTrait for AssetRepository {
                             assets::instrument_exchange_mic.eq(&instrument_exchange_mic_value),
                             assets::provider_config.eq(&provider_config_str),
                         ))
-                        .get_result::<AssetDB>(conn)
+                        .get_result::<AssetDB>(tx.conn())
                         .map_err(StorageError::from)?
                 } else {
                     diesel::update(assets::table.filter(assets::id.eq(&asset_id_owned)))
@@ -253,10 +270,13 @@ impl AssetRepositoryTrait for AssetRepository {
                             assets::instrument_exchange_mic.eq(&instrument_exchange_mic_value),
                             assets::provider_config.eq(&provider_config_str),
                         ))
-                        .get_result::<AssetDB>(conn)
+                        .get_result::<AssetDB>(tx.conn())
                         .map_err(StorageError::from)?
                 };
-                Ok(result_db.into())
+                let payload_db = result_db.clone();
+                let asset: Asset = result_db.into();
+                tx.update(&payload_db)?;
+                Ok(asset)
             })
             .await
     }
@@ -266,11 +286,13 @@ impl AssetRepositoryTrait for AssetRepository {
         let asset_id_owned = asset_id.to_string();
         let quote_mode_owned = quote_mode.to_string();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<Asset> {
+            .exec_tx(move |tx| -> Result<Asset> {
                 let result_db = diesel::update(assets::table.filter(assets::id.eq(asset_id_owned)))
                     .set(assets::quote_mode.eq(quote_mode_owned))
-                    .get_result::<AssetDB>(conn)
+                    .get_result::<AssetDB>(tx.conn())
                     .map_err(StorageError::from)?;
+                let payload_db = result_db.clone();
+                tx.update(&payload_db)?;
                 Ok(result_db.into())
             })
             .await
@@ -293,13 +315,14 @@ impl AssetRepositoryTrait for AssetRepository {
 
     async fn delete(&self, asset_id: &str) -> Result<()> {
         let asset_id_owned = asset_id.to_string();
+        let asset_id_for_event = asset_id_owned.clone();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<()> {
+            .exec_tx(move |tx| -> Result<()> {
                 // Check for activities constraint
                 let activity_count: i64 = activities::table
                     .filter(activities::asset_id.eq(&asset_id_owned))
                     .count()
-                    .get_result(conn)
+                    .get_result(tx.conn())
                     .map_err(StorageError::from)?;
 
                 if activity_count > 0 {
@@ -310,13 +333,15 @@ impl AssetRepositoryTrait for AssetRepository {
 
                 // Delete all quotes for this asset (by asset_id)
                 diesel::delete(quotes::table.filter(quotes::asset_id.eq(&asset_id_owned)))
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
 
                 // Delete the asset
                 diesel::delete(assets::table.filter(assets::id.eq(&asset_id_owned)))
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
+
+                tx.delete::<AssetDB>(asset_id_for_event.clone());
 
                 Ok(())
             })
@@ -344,11 +369,11 @@ impl AssetRepositoryTrait for AssetRepository {
     async fn cleanup_legacy_metadata(&self, asset_id: &str) -> Result<()> {
         let asset_id_owned = asset_id.to_string();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<()> {
+            .exec_tx(move |tx| -> Result<()> {
                 // Get current metadata
                 let existing: AssetDB = assets::table
                     .filter(assets::id.eq(&asset_id_owned))
-                    .first(conn)
+                    .first(tx.conn())
                     .map_err(StorageError::from)?;
 
                 // Parse current metadata and remove $.legacy, keep $.identifiers
@@ -365,8 +390,13 @@ impl AssetRepositoryTrait for AssetRepository {
                 // Update the asset
                 diesel::update(assets::table.filter(assets::id.eq(&asset_id_owned)))
                     .set(assets::metadata.eq(new_metadata))
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
+                let updated = assets::table
+                    .filter(assets::id.eq(&asset_id_owned))
+                    .first::<AssetDB>(tx.conn())
+                    .map_err(StorageError::from)?;
+                tx.update(&updated)?;
 
                 Ok(())
             })
@@ -376,11 +406,12 @@ impl AssetRepositoryTrait for AssetRepository {
     async fn deactivate(&self, asset_id: &str) -> Result<()> {
         let asset_id_owned = asset_id.to_string();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<()> {
-                diesel::update(assets::table.filter(assets::id.eq(&asset_id_owned)))
+            .exec_tx(move |tx| -> Result<()> {
+                let updated = diesel::update(assets::table.filter(assets::id.eq(&asset_id_owned)))
                     .set(assets::is_active.eq(0))
-                    .execute(conn)
+                    .get_result::<AssetDB>(tx.conn())
                     .map_err(StorageError::from)?;
+                tx.update(&updated)?;
                 Ok(())
             })
             .await
@@ -389,11 +420,12 @@ impl AssetRepositoryTrait for AssetRepository {
     async fn reactivate(&self, asset_id: &str) -> Result<()> {
         let asset_id_owned = asset_id.to_string();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<()> {
-                diesel::update(assets::table.filter(assets::id.eq(&asset_id_owned)))
+            .exec_tx(move |tx| -> Result<()> {
+                let updated = diesel::update(assets::table.filter(assets::id.eq(&asset_id_owned)))
                     .set(assets::is_active.eq(1))
-                    .execute(conn)
+                    .get_result::<AssetDB>(tx.conn())
                     .map_err(StorageError::from)?;
+                tx.update(&updated)?;
                 Ok(())
             })
             .await
@@ -403,21 +435,23 @@ impl AssetRepositoryTrait for AssetRepository {
         let source_id_owned = source_id.to_string();
         let target_id_owned = target_id.to_string();
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<()> {
+            .exec_tx(move |tx| -> Result<()> {
                 // Get source asset
                 let source: AssetDB = assets::table
                     .filter(assets::id.eq(&source_id_owned))
-                    .first(conn)
+                    .first(tx.conn())
                     .map_err(StorageError::from)?;
 
                 // Only copy notes (user-editable field) if source has content
                 // Don't overwrite target's notes if source is empty
                 if let Some(ref notes) = source.notes {
                     if !notes.trim().is_empty() {
-                        diesel::update(assets::table.filter(assets::id.eq(&target_id_owned)))
-                            .set(assets::notes.eq(notes))
-                            .execute(conn)
-                            .map_err(StorageError::from)?;
+                        let updated =
+                            diesel::update(assets::table.filter(assets::id.eq(&target_id_owned)))
+                                .set(assets::notes.eq(notes))
+                                .get_result::<AssetDB>(tx.conn())
+                                .map_err(StorageError::from)?;
+                        tx.update(&updated)?;
                     }
                 }
 
@@ -428,7 +462,7 @@ impl AssetRepositoryTrait for AssetRepository {
 
     async fn deactivate_orphaned_investments(&self) -> Result<Vec<String>> {
         self.writer
-            .exec(move |conn: &mut SqliteConnection| -> Result<Vec<String>> {
+            .exec_tx(move |tx| -> Result<Vec<String>> {
                 // Find active INVESTMENT assets with zero activities
                 let orphan_ids: Vec<String> = assets::table
                     .select(assets::id)
@@ -437,7 +471,7 @@ impl AssetRepositoryTrait for AssetRepository {
                     .filter(diesel::dsl::sql::<diesel::sql_types::Bool>(
                         "id NOT IN (SELECT DISTINCT asset_id FROM activities WHERE asset_id IS NOT NULL)",
                     ))
-                    .load::<String>(conn)
+                    .load::<String>(tx.conn())
                     .map_err(StorageError::from)?;
 
                 if !orphan_ids.is_empty() {
@@ -445,8 +479,17 @@ impl AssetRepositoryTrait for AssetRepository {
                         assets::table.filter(assets::id.eq_any(&orphan_ids)),
                     )
                     .set(assets::is_active.eq(0))
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
+
+                    let updated_rows = assets::table
+                        .filter(assets::id.eq_any(&orphan_ids))
+                        .select(AssetDB::as_select())
+                        .load::<AssetDB>(tx.conn())
+                        .map_err(StorageError::from)?;
+                    for updated in updated_rows {
+                        tx.update(&updated)?;
+                    }
                 }
 
                 Ok(orphan_ids)

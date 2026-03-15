@@ -1,6 +1,6 @@
 import { LiquidGlass } from "@/components/liquid-glass";
-import { useAggregatedSyncStatus } from "@/features/wealthfolio-connect/hooks";
 import { SyncStatusIcon } from "@/features/wealthfolio-connect/components/sync-status-icon";
+import { useAggregatedSyncStatus } from "@/features/wealthfolio-connect/hooks";
 import { useHapticFeedback } from "@/hooks/use-haptic-feedback";
 import { cn } from "@/lib/utils";
 import {
@@ -14,7 +14,7 @@ import {
   SheetTitle,
 } from "@wealthfolio/ui";
 import { motion } from "motion/react";
-import React, { useCallback, useId, useMemo, useState } from "react";
+import React, { useCallback, useId, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { type NavigationProps, isPathActive } from "./app-navigation";
 
@@ -27,12 +27,11 @@ export function MobileNavBar({ navigation }: MobileNavBarProps) {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [addonsSheetOpen, setAddonsSheetOpen] = useState(false);
-  const hapticFeedback = useHapticFeedback();
+  const { triggerHaptic } = useHapticFeedback();
   const uniqueId = useId();
-  const triggerHaptic = useMemo(() => hapticFeedback, [hapticFeedback]);
   const { status: syncStatus } = useAggregatedSyncStatus();
 
-  const containerClassName = "pointer-events-none fixed inset-x-0 bottom-0 z-50 md:hidden";
+  const containerClassName = "pointer-events-none fixed inset-x-0 bottom-0 z-50";
 
   const handleNavigation = useCallback(
     (href: string, isActive: boolean) => {
@@ -80,9 +79,11 @@ export function MobileNavBar({ navigation }: MobileNavBarProps) {
 
   return (
     <div className={containerClassName}>
+      {/* Solid bg fill for iOS home indicator — prevents content bleeding through glass */}
+      <div className="fixed bottom-0 inset-x-0 h-[env(safe-area-inset-bottom,0px)] bg-background" />
       {/* Lift off bottom by the design gap while respecting safe area */}
       <div className="flex justify-center px-4 pb-[max(var(--mobile-nav-gap),env(safe-area-inset-bottom))]">
-        <LiquidGlass
+            <LiquidGlass
           variant="floating"
           intensity="subtle"
           className={cn("pointer-events-auto w-full px-1 py-1", "h-[var(--mobile-nav-ui-height)]")}

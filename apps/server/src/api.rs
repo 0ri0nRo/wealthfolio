@@ -25,8 +25,12 @@ mod alternative_assets;
 mod assets;
 mod budget;
 mod fire;
+#[cfg(any(feature = "connect-sync", feature = "device-sync"))]
 pub mod connect;
+#[cfg(feature = "device-sync")]
 mod device_sync;
+#[cfg(feature = "device-sync")]
+pub(crate) mod device_sync_engine;
 mod exchange_rates;
 mod goals;
 mod health;
@@ -39,6 +43,7 @@ mod portfolio;
 mod secrets;
 mod settings;
 pub mod shared;
+#[cfg(feature = "device-sync")]
 mod sync_crypto;
 mod taxonomies;
 
@@ -76,8 +81,8 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
     let openapi = ApiDoc::openapi();
     let requires_auth = state.auth.is_some();
 
-    // Compose all protected routes from individual modules
-    let protected_api = Router::new()
+    #[allow(unused_mut)]
+    let mut protected_api = Router::new()
         .merge(accounts::router())
         .merge(settings::router())
         .merge(portfolio::router())
@@ -91,17 +96,26 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
         .merge(secrets::router())
         .merge(limits::router())
         .merge(addons::router())
-        .merge(device_sync::router())
-        .merge(connect::router())
         .merge(taxonomies::router())
         .merge(net_worth::router())
         .merge(alternative_assets::router())
         .merge(ai_providers::router())
         .merge(ai_chat::router())
         .merge(fire::router())
-        .merge(sync_crypto::router())
         .merge(health::router())
         .merge(budget::router());
+
+    #[cfg(feature = "device-sync")]
+    {
+        protected_api = protected_api
+            .merge(device_sync::router())
+            .merge(sync_crypto::router());
+    }
+
+    #[cfg(any(feature = "connect-sync", feature = "device-sync"))]
+    {
+        protected_api = protected_api.merge(connect::router());
+    }
 
     let protected_api = if requires_auth {
         protected_api.layer(middleware::from_fn_with_state(

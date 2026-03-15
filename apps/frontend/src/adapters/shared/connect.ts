@@ -1,24 +1,36 @@
 // Broker / Connect Commands
-import type { Account, Platform } from "@/lib/types";
 import type {
-  BrokerConnection,
+  ClaimPairingResponse,
+  CompletePairingResponse,
+  ConfirmPairingResponse,
+  CreatePairingResponse,
+  Device,
+  GetPairingResponse,
+  PairingMessagesResponse,
+  ResetTeamSyncResponse,
+  SuccessResponse,
+} from "@/features/devices-sync/types";
+import type {
   BrokerAccount,
-  PlansResponse,
-  UserInfo,
+  BrokerConnection,
   BrokerSyncState,
   ImportRun,
+  PlansResponse,
+  UserInfo,
 } from "@/features/wealthfolio-connect/types";
+import type { Account, Platform } from "@/lib/types";
 import type {
-  Device,
-  CreatePairingResponse,
-  GetPairingResponse,
-  ClaimPairingResponse,
-  PairingMessagesResponse,
-  ConfirmPairingResponse,
-  SuccessResponse,
-  ResetTeamSyncResponse,
-} from "@/features/devices-sync/types";
-import type { ImportRunsRequest, BackendSyncStateResult, BackendEnableSyncResult } from "../types";
+  BackendEnableSyncResult,
+  BackendSyncBackgroundEngineResult,
+  BackendSyncBootstrapOverwriteCheckResult,
+  BackendSyncBootstrapResult,
+  BackendSyncCycleResult,
+  BackendSyncEngineStatusResult,
+  BackendSyncReconcileReadyResult,
+  BackendSyncSnapshotUploadResult,
+  BackendSyncStateResult,
+  ImportRunsRequest,
+} from "../types";
 
 import { invoke } from "./platform";
 
@@ -27,7 +39,7 @@ import { invoke } from "./platform";
 // ============================================================================
 
 export async function syncBrokerData(): Promise<void> {
-  return invoke<void>("sync_broker_data");
+  return invoke<void>("broker_ingest_run");
 }
 
 export async function getSyncedAccounts(): Promise<Account[]> {
@@ -59,11 +71,11 @@ export async function getUserInfo(): Promise<UserInfo> {
 }
 
 export async function getBrokerSyncStates(): Promise<BrokerSyncState[]> {
-  return invoke<BrokerSyncState[]>("get_broker_sync_states");
+  return invoke<BrokerSyncState[]>("get_broker_ingest_states");
 }
 
 export async function getImportRuns(request?: ImportRunsRequest): Promise<ImportRun[]> {
-  return invoke<ImportRun[]>("get_import_runs", {
+  return invoke<ImportRun[]>("get_data_import_runs", {
     runType: request?.runType,
     limit: request?.limit,
     offset: request?.offset,
@@ -89,6 +101,48 @@ export const clearDeviceSyncData = async (): Promise<void> => {
 export const reinitializeDeviceSync = async (): Promise<BackendEnableSyncResult> => {
   return invoke<BackendEnableSyncResult>("reinitialize_device_sync");
 };
+
+export const getSyncEngineStatus = async (): Promise<BackendSyncEngineStatusResult> => {
+  return invoke<BackendSyncEngineStatusResult>("device_sync_engine_status");
+};
+
+export const deviceSyncBootstrapOverwriteCheck =
+  async (): Promise<BackendSyncBootstrapOverwriteCheckResult> => {
+    return invoke<BackendSyncBootstrapOverwriteCheckResult>(
+      "device_sync_bootstrap_overwrite_check",
+    );
+  };
+
+export const deviceSyncReconcileReadyState = async (): Promise<BackendSyncReconcileReadyResult> => {
+  return invoke<BackendSyncReconcileReadyResult>("device_sync_reconcile_ready_state");
+};
+
+export const syncBootstrapSnapshotIfNeeded = async (): Promise<BackendSyncBootstrapResult> => {
+  return invoke<BackendSyncBootstrapResult>("device_sync_bootstrap_snapshot_if_needed");
+};
+
+export const syncTriggerCycle = async (): Promise<BackendSyncCycleResult> => {
+  return invoke<BackendSyncCycleResult>("device_sync_trigger_cycle");
+};
+
+export const deviceSyncStartBackgroundEngine =
+  async (): Promise<BackendSyncBackgroundEngineResult> => {
+    return invoke<BackendSyncBackgroundEngineResult>("device_sync_start_background_engine");
+  };
+
+export const deviceSyncStopBackgroundEngine =
+  async (): Promise<BackendSyncBackgroundEngineResult> => {
+    return invoke<BackendSyncBackgroundEngineResult>("device_sync_stop_background_engine");
+  };
+
+export const deviceSyncGenerateSnapshotNow = async (): Promise<BackendSyncSnapshotUploadResult> => {
+  return invoke<BackendSyncSnapshotUploadResult>("device_sync_generate_snapshot_now");
+};
+
+export const deviceSyncCancelSnapshotUpload =
+  async (): Promise<BackendSyncBackgroundEngineResult> => {
+    return invoke<BackendSyncBackgroundEngineResult>("device_sync_cancel_snapshot_upload");
+  };
 
 // Device Management Commands
 export const getDevice = async (deviceId?: string): Promise<Device> => {
@@ -139,8 +193,8 @@ export const completePairing = async (
   encryptedKeyBundle: string,
   sasProof: string | Record<string, unknown>,
   signature: string,
-): Promise<SuccessResponse> => {
-  return invoke<SuccessResponse>("complete_pairing", {
+): Promise<CompletePairingResponse> => {
+  return invoke<CompletePairingResponse>("complete_pairing", {
     pairingId,
     encryptedKeyBundle,
     sasProof,

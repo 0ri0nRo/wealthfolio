@@ -9,8 +9,10 @@ use wealthfolio_core::{
     events::DomainEventSink,
     fx, goals, health, limits, portfolio, quotes, settings, taxonomies,
 };
-use wealthfolio_device_sync::DeviceEnrollService;
-use wealthfolio_storage_sqlite::portfolio::snapshot::SnapshotRepository;
+use wealthfolio_device_sync::{engine::DeviceSyncRuntimeState, DeviceEnrollService};
+use wealthfolio_storage_sqlite::{
+    portfolio::snapshot::SnapshotRepository, sync::AppSyncRepository,
+};
 
 use super::TauriAiEnvironment;
 use crate::services::ConnectService;
@@ -43,6 +45,7 @@ pub struct ServiceContext {
     pub income_service: Arc<dyn portfolio::income::IncomeServiceTrait>,
     pub snapshot_service: Arc<dyn portfolio::snapshot::SnapshotServiceTrait>,
     pub snapshot_repository: Arc<SnapshotRepository>,
+    pub app_sync_repository: Arc<AppSyncRepository>,
     pub holdings_service: Arc<dyn portfolio::holdings::HoldingsServiceTrait>,
     pub allocation_service: Arc<dyn portfolio::allocation::AllocationServiceTrait>,
     pub valuation_service: Arc<dyn portfolio::valuation::ValuationServiceTrait>,
@@ -54,6 +57,7 @@ pub struct ServiceContext {
     pub ai_provider_service: Arc<dyn AiProviderServiceTrait>,
     pub ai_chat_service: Arc<ChatService<TauriAiEnvironment>>,
     pub device_enroll_service: Arc<DeviceEnrollService>,
+    pub device_sync_runtime: Arc<DeviceSyncRuntimeState>,
     pub health_service: Arc<health::HealthService>,
 }
 
@@ -123,6 +127,10 @@ impl ServiceContext {
         Arc::clone(&self.holdings_service)
     }
 
+    pub fn app_sync_repository(&self) -> Arc<AppSyncRepository> {
+        Arc::clone(&self.app_sync_repository)
+    }
+
     pub fn allocation_service(&self) -> Arc<dyn portfolio::allocation::AllocationServiceTrait> {
         Arc::clone(&self.allocation_service)
     }
@@ -161,6 +169,10 @@ impl ServiceContext {
 
     pub fn device_enroll_service(&self) -> Arc<DeviceEnrollService> {
         Arc::clone(&self.device_enroll_service)
+    }
+
+    pub fn device_sync_runtime(&self) -> Arc<DeviceSyncRuntimeState> {
+        Arc::clone(&self.device_sync_runtime)
     }
 
     pub fn health_service(&self) -> Arc<health::HealthService> {

@@ -278,15 +278,12 @@ impl FinnhubProvider {
         }
     }
 
-    /// Get the currency: prefer asset's quote_ccy, fall back to exchange metadata.
+    /// Get the currency: prefer exchange metadata, fall back to asset's quote_ccy.
     fn get_currency(&self, context: &QuoteContext) -> String {
-        context
-            .currency_hint
-            .clone()
-            .or_else(|| {
-                let chain = ResolverChain::new();
-                chain.get_currency(&PROVIDER_ID.into(), context)
-            })
+        let chain = ResolverChain::new();
+        chain
+            .get_currency(&PROVIDER_ID.into(), context)
+            .or_else(|| context.currency_hint.clone())
             .map(|c| c.to_string())
             .unwrap_or_else(|| "USD".to_string())
     }
@@ -551,7 +548,7 @@ impl MarketDataProvider for FinnhubProvider {
             coverage: Coverage::global_best_effort(),
             supports_latest: true,
             // Historical candles require premium subscription
-            supports_historical: false,
+            supports_historical: true,
             supports_search: true,
             supports_profile: true,
         }
@@ -682,7 +679,7 @@ mod tests {
         let caps = provider.capabilities();
         assert!(caps.instrument_kinds.contains(&InstrumentKind::Equity));
         assert!(caps.supports_latest);
-        assert!(!caps.supports_historical); // Historical candles require premium subscription
+        assert!(caps.supports_historical);
         assert!(caps.supports_search);
         assert!(caps.supports_profile);
     }
@@ -697,10 +694,11 @@ mod tests {
     }
 
     #[test]
-    fn test_get_currency_prefers_hint_over_resolver() {
+    fn test_get_currency_prefers_resolver_over_hint() {
         let provider = FinnhubProvider::new("test_key".to_string());
+        // FX resolver returns the quote currency ("CAD"), which takes priority over hint
         let context = create_test_fx_context(Some("TWD"), "CAD");
-        assert_eq!(provider.get_currency(&context), "TWD");
+        assert_eq!(provider.get_currency(&context), "CAD");
     }
 
     #[test]

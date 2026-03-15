@@ -283,19 +283,32 @@ impl SnapshotRepository {
             .collect();
 
         self.writer
-            .exec(move |conn| {
+            .exec_tx(move |tx| {
                 debug!(
                     "Deleting snapshots for account {} on dates: {:?} via SnapshotRepository",
                     account_id_owned,
                     date_strings // Use the moved date_strings
                 );
+
+                // Capture existing rows before delete; writer-side outbox model policy decides emission.
+                let existing_rows: Vec<AccountStateSnapshotDB> = holdings_snapshots
+                    .filter(account_id.eq(&account_id_owned))
+                    .filter(snapshot_date.eq_any(&date_strings))
+                    .load::<AccountStateSnapshotDB>(tx.conn())
+                    .map_err(StorageError::from)?;
+
                 diesel::delete(
                     holdings_snapshots
-                        .filter(account_id.eq(account_id_owned))
-                        .filter(snapshot_date.eq_any(date_strings)),
+                        .filter(account_id.eq(&account_id_owned))
+                        .filter(snapshot_date.eq_any(&date_strings)),
                 )
-                .execute(conn)
+                .execute(tx.conn())
                 .map_err(StorageError::from)?;
+
+                for row in &existing_rows {
+                    tx.delete_model(row);
+                }
+
                 Ok(())
             })
             .await
@@ -695,11 +708,14 @@ impl SnapshotRepository {
         );
 
         self.writer
-            .exec(move |conn| {
+            .exec_tx(move |tx| {
                 diesel::replace_into(holdings_snapshots)
                     .values(&db_model)
-                    .execute(conn)
+                    .execute(tx.conn())
                     .map_err(StorageError::from)?;
+
+                tx.insert(&db_model)?;
+
                 Ok(())
             })
             .await
@@ -888,7 +904,9 @@ impl SnapshotRepositoryTrait for SnapshotRepository {
 mod tests {
     use super::*;
     use crate::db::{create_pool, get_connection, run_migrations, write_actor::spawn_writer};
+    use crate::schema::sync_outbox;
     use chrono::NaiveDate;
+    use diesel::dsl::count_star;
     use diesel::RunQueryDsl;
     use rust_decimal::Decimal;
     use std::collections::HashMap;
@@ -902,6 +920,8 @@ mod tests {
         Arc<Pool<ConnectionManager<SqliteConnection>>>,
         tempfile::TempDir,
     ) {
+        std::env::set_var("CONNECT_API_URL", "http://test.local");
+
         let temp_dir = tempdir().expect("Failed to create temp directory");
         let db_path = temp_dir.path().join("test.db");
         let db_path_str = db_path.to_string_lossy().to_string();
@@ -917,6 +937,14 @@ mod tests {
 
         let repo = SnapshotRepository::new(Arc::clone(&pool), writer);
         (repo, pool, temp_dir)
+    }
+
+    fn count_pending_outbox(pool: &Arc<Pool<ConnectionManager<SqliteConnection>>>) -> i64 {
+        let mut conn = get_connection(pool).expect("Failed to get connection");
+        sync_outbox::table
+            .select(count_star())
+            .first::<i64>(&mut conn)
+            .expect("Failed to count outbox rows")
     }
 
     /// Creates a test account in the database to satisfy foreign key constraints
@@ -941,7 +969,7 @@ mod tests {
         source: SnapshotSource,
     ) -> AccountStateSnapshot {
         AccountStateSnapshot {
-            id: format!("{}_{}", account_id, date.format("%Y-%m-%d")),
+            id: AccountStateSnapshot::stable_id(account_id, date),
             account_id: account_id.to_string(),
             snapshot_date: date,
             currency: "USD".to_string(),
@@ -1405,5 +1433,52 @@ mod tests {
             "Should return the earliest non-calculated snapshot"
         );
         assert_eq!(earliest.source, SnapshotSource::ManualEntry);
+    }
+
+    #[tokio::test]
+    async fn test_outbox_emits_only_for_user_managed_snapshot_sources() {
+        let (repo, pool, _temp_dir) = create_test_repository().await;
+        let account_id = "test-account-outbox-1";
+        create_test_account(&pool, account_id);
+
+        let manual = create_test_snapshot(
+            account_id,
+            NaiveDate::from_ymd_opt(2024, 4, 1).unwrap(),
+            SnapshotSource::ManualEntry,
+        );
+        let broker = create_test_snapshot(
+            account_id,
+            NaiveDate::from_ymd_opt(2024, 4, 2).unwrap(),
+            SnapshotSource::BrokerImported,
+        );
+        let csv = create_test_snapshot(
+            account_id,
+            NaiveDate::from_ymd_opt(2024, 4, 3).unwrap(),
+            SnapshotSource::CsvImport,
+        );
+        let synthetic = create_test_snapshot(
+            account_id,
+            NaiveDate::from_ymd_opt(2024, 4, 4).unwrap(),
+            SnapshotSource::Synthetic,
+        );
+
+        repo.save_or_update_snapshot(&manual)
+            .await
+            .expect("save manual snapshot");
+        repo.save_or_update_snapshot(&broker)
+            .await
+            .expect("save broker snapshot");
+        repo.save_or_update_snapshot(&csv)
+            .await
+            .expect("save csv snapshot");
+        repo.save_or_update_snapshot(&synthetic)
+            .await
+            .expect("save synthetic snapshot");
+
+        assert_eq!(
+            count_pending_outbox(&pool),
+            3,
+            "Only manual/csv/synthetic snapshots should be enqueued"
+        );
     }
 }

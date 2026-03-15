@@ -11,7 +11,7 @@ import AuthCallbackPage from "@/features/wealthfolio-connect/pages/auth-callback
 import ConnectPage from "@/features/wealthfolio-connect/pages/connect-page";
 import ActivityManagerPage from "@/pages/activity/activity-manager-page";
 import ActivityPage from "@/pages/activity/activity-page";
-import ActivityImportPage from "@/pages/activity/import/activity-import-page-v2";
+import ActivityImportPage from "@/pages/activity/import/activity-import-page";
 import AssetsPage from "@/pages/asset/assets-page";
 import { BudgetPage } from "@/pages/budget";
 import PortfolioPage from "@/pages/dashboard/portfolio-page";

@@ -41,7 +41,7 @@ use wealthfolio_market_data::{
     AlphaVantageProvider, AssetProfile as MarketAssetProfile, FinnhubProvider,
     MarketDataAppProvider, MetalPriceApiProvider, ProviderId, ProviderRegistry,
     Quote as MarketQuote, QuoteContext, ResolverChain, SearchResult as MarketSearchResult,
-    YahooProvider,
+    SplitEvent, YahooProvider,
 };
 
 /// Market data error types.
@@ -364,6 +364,22 @@ impl MarketDataClient {
         self.registry.providers().len()
     }
 
+    /// Fetch split history for an asset over the given date range.
+    ///
+    /// Returns empty vec if no provider supports splits for this asset.
+    pub async fn fetch_splits(
+        &self,
+        asset: &Asset,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Vec<SplitEvent> {
+        let context = match self.build_quote_context(asset) {
+            Ok(ctx) => ctx,
+            Err(_) => return vec![],
+        };
+        self.registry.fetch_splits(&context, start, end).await
+    }
+
     /// Fetch historical quotes for multiple assets.
     ///
     /// Fetches quotes for each asset sequentially. For high-volume scenarios,
@@ -467,7 +483,7 @@ impl MarketDataClient {
     /// 1. Try mapping from Yahoo's exchange code (e.g., "NMS" -> "XNAS")
     /// 2. Try extracting MIC from symbol suffix (e.g., "SHOP.TO" -> "XTSE")
     /// 3. Look up friendly exchange name from MIC
-    /// 4. Infer currency from MIC if not provided
+    /// 4. Preserve provider-reported currency only (do NOT infer from MIC)
     fn convert_search_result(result: MarketSearchResult) -> SymbolSearchResult {
         // Try to determine MIC from Yahoo's exchange code first
         let mut exchange_mic = yahoo_exchange_to_mic(&result.exchange).map(|mic| mic.to_string());
@@ -486,13 +502,21 @@ impl MarketDataClient {
             .and_then(|mic| mic_to_exchange_name(mic))
             .map(String::from);
 
-        // Infer currency from MIC if not provided
-        let currency = result.currency.or_else(|| {
-            exchange_mic
+        // Determine currency and its provenance
+        let (currency, currency_source) = if result.currency.is_some() {
+            (result.currency, Some("provider".to_string()))
+        } else {
+            let inferred = exchange_mic
                 .as_ref()
                 .and_then(|mic| mic_to_currency(mic))
-                .map(String::from)
-        });
+                .map(String::from);
+            let source = if inferred.is_some() {
+                Some("exchange_inferred".to_string())
+            } else {
+                None
+            };
+            (inferred, source)
+        };
 
         SymbolSearchResult {
             symbol: result.symbol,
@@ -504,6 +528,7 @@ impl MarketDataClient {
             quote_type: result.asset_type,
             type_display: String::new(),
             currency,
+            currency_source,
             data_source: result.data_source.or_else(|| Some("YAHOO".to_string())),
             is_existing: false,
             existing_asset_id: None,
@@ -714,6 +739,36 @@ mod tests {
         let core_quote = MarketDataClient::convert_quote(market_quote, "BTC-USD");
         assert_eq!(core_quote.asset_id, "BTC-USD");
         assert_eq!(core_quote.id, "BTC-USD_2024-01-01_YAHOO");
+    }
+
+    #[test]
+    fn test_convert_search_result_preserves_provider_currency() {
+        let provider_result = MarketSearchResult::new(
+            "VFEG.L",
+            "Vanguard FTSE Emerging Markets UCITS ETF USD Accumulation",
+            "LSE",
+            "ETF",
+        )
+        .with_currency("GBP")
+        .with_score(20001.0);
+
+        let result = MarketDataClient::convert_search_result(provider_result);
+        assert_eq!(result.symbol, "VFEG.L");
+        assert_eq!(result.exchange_mic.as_deref(), Some("XLON"));
+        assert_eq!(result.currency.as_deref(), Some("GBP"));
+        assert_eq!(result.currency_source.as_deref(), Some("provider"));
+    }
+
+    #[test]
+    fn test_convert_search_result_infers_currency_from_mic() {
+        let provider_result =
+            MarketSearchResult::new("VFEG.L", "Vanguard ETF", "LSE", "ETF").with_score(20001.0);
+
+        let result = MarketDataClient::convert_search_result(provider_result);
+        assert_eq!(result.symbol, "VFEG.L");
+        assert_eq!(result.exchange_mic.as_deref(), Some("XLON"));
+        assert_eq!(result.currency.as_deref(), Some("GBp"));
+        assert_eq!(result.currency_source.as_deref(), Some("exchange_inferred"));
     }
 
     // =========================================================================
