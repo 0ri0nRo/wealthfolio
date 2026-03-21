@@ -143,22 +143,6 @@ export const BudgetPage: React.FC = () => {
     },
   ];
 
-  if (activeTab === 'yearly') {
-    return (
-      <>
-        <YearlyStats allTransactions={allTransactions || []} onBack={() => setActiveTab('overview')} />
-        {showAddModal && (
-          <AddTransactionModal
-            categories={categories || []}
-            onClose={() => { setShowAddModal(false); setEditingTransaction(null); }}
-            onSave={handleAddTransaction}
-            initialData={editingTransaction || undefined}
-          />
-        )}
-      </>
-    );
-  }
-
   const TABS: [ActiveTab, string][] = [
     ['overview',     'Overview'],
     ['transactions', isMobile ? 'Trans.' : 'Transactions'],
@@ -216,7 +200,8 @@ export const BudgetPage: React.FC = () => {
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            {!isMobile && (
+            {/* Month selector — hidden on yearly tab since it's not relevant */}
+            {activeTab !== 'yearly' && !isMobile && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                 <button onClick={goToPrevMonth} style={{ width: 28, height: 28, border: 'none', borderRadius: '8px', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)' }}>
                   <ChevronLeft size={15} />
@@ -265,88 +250,86 @@ export const BudgetPage: React.FC = () => {
         </div>
       </div>
 
-      {/* HERO CHART — full bleed, no wrapper */}
+      {/* HERO CHART — full bleed, overview only */}
       {activeTab === 'overview' && (
         <BudgetChart transactions={allTransactions || []} showLast12Months={true} bpBalance={bpBalance} isBalanceHidden={isBalanceHidden} />
       )}
 
-      {/* CONTENT */}
-      <div style={{ padding: isMobile ? `1rem 0 calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '1.75rem 1.5rem' }}>
+      {/* ── OVERVIEW ──────────────────────────────────────────────────────────── */}
+      {activeTab === 'overview' && (
+        <div style={{ padding: isMobile ? `1rem 0 calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '1.75rem 1.5rem' }}>
+          {isMobile && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '0 1rem 1rem' }}>
+              <button onClick={goToPrevMonth} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'var(--muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', WebkitTapHighlightColor: 'transparent' }}><ChevronLeft size={16} /></button>
+              <button onClick={() => setSelectedMonth(new Date())} style={{ border: 'none', background: 'transparent', cursor: 'pointer', WebkitTapHighlightColor: 'transparent', padding: 0 }}>
+                <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.03em', color: isCurrentMonth ? 'var(--foreground)' : 'var(--color-orange-400)' }}>{selectedMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
+                {!isCurrentMonth && <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-blue-600)', marginLeft: '8px' }}>→ today</span>}
+              </button>
+              <button onClick={goToNextMonth} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'var(--muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', WebkitTapHighlightColor: 'transparent' }}><ChevronRight size={16} /></button>
+            </div>
+          )}
 
-        {activeTab === 'overview' && (
-          <>
-            {isMobile && (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '0 1rem 1rem' }}>
-                <button onClick={goToPrevMonth} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'var(--muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', WebkitTapHighlightColor: 'transparent' }}><ChevronLeft size={16} /></button>
-                <button onClick={() => setSelectedMonth(new Date())} style={{ border: 'none', background: 'transparent', cursor: 'pointer', WebkitTapHighlightColor: 'transparent', padding: 0 }}>
-                  <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.03em', color: isCurrentMonth ? 'var(--foreground)' : 'var(--color-orange-400)' }}>{selectedMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</span>
-                  {!isCurrentMonth && <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-blue-600)', marginLeft: '8px' }}>→ today</span>}
-                </button>
-                <button onClick={goToNextMonth} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'var(--muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', WebkitTapHighlightColor: 'transparent' }}><ChevronRight size={16} /></button>
-              </div>
-            )}
-
-            {/* Desktop 2-column layout — like Investments */}
-            {!isMobile && (
-              <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                  <StatCards cards={statCards} fmtEur={fmtEur} isBalanceHidden={isBalanceHidden} />
-                  <BudgetChart transactions={transactions || []} isBalanceHidden={isBalanceHidden} />
-                  <BudgetInsights transactions={transactions || []} allTransactions={allTransactions || []} totalIncome={totalIncome} totalExpenses={expensesTotal} savings={investments} isBalanceHidden={isBalanceHidden} />
-                </div>
-                <div style={{ width: 360, flexShrink: 0, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
-                  <div style={{ padding: '0.85rem 1.1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <h2 style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--foreground)', margin: 0 }}>Transactions</h2>
-                    <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500 }}>View all →</span>
-                  </div>
-                  <div style={{ maxHeight: 640, overflowY: 'auto' }}>
-                    <TransactionList transactions={(transactions || []).slice(0, 10)} onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }} onDelete={handleDeleteTransaction} isBalanceHidden={isBalanceHidden} />
-                  </div>
-                  <div onClick={() => setActiveTab('yearly')} style={{ margin: '1rem', padding: '0.85rem 1rem', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--muted)')} onMouseLeave={e => (e.currentTarget.style.background = 'var(--accent)')}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-                      <div style={{ width: 32, height: 32, borderRadius: 9, background: 'color-mix(in srgb, var(--color-blue-600) 12%, var(--background))', color: 'var(--color-blue-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><BarChart2 size={14} /></div>
-                      <div>
-                        <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground)', margin: 0 }}>Annual Report</p>
-                        <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>Year-over-year trends &amp; insights</p>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: '1rem', color: 'var(--muted-foreground)' }}>→</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Mobile */}
-            {isMobile && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0 1rem' }}>
-                <StatCardsMobile cards={statCards} fmtEur={fmtEur} isBalanceHidden={isBalanceHidden} />
+          {!isMobile && (
+            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                <StatCards cards={statCards} fmtEur={fmtEur} isBalanceHidden={isBalanceHidden} />
                 <BudgetChart transactions={transactions || []} isBalanceHidden={isBalanceHidden} />
-                <BalanceSplitCard cashBalance={cashBalance} bpBalance={bpBalance} fmtEur={fmtEur} isBalanceHidden={isBalanceHidden} />
-                <MobileSavingsCard income={totalIncome} expenses={expensesTotal} savings={investments} fmtEur={fmtEur} isBalanceHidden={isBalanceHidden} />
-                <div onClick={() => setActiveTab('yearly')} style={{ padding: '0.9rem 1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+                <BudgetInsights transactions={transactions || []} allTransactions={allTransactions || []} totalIncome={totalIncome} totalExpenses={expensesTotal} savings={investments} isBalanceHidden={isBalanceHidden} />
+              </div>
+              <div style={{ width: 360, flexShrink: 0, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
+                <div style={{ padding: '0.85rem 1.1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <h2 style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--foreground)', margin: 0 }}>Transactions</h2>
+                  <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500 }}>View all →</span>
+                </div>
+                <div style={{ maxHeight: 640, overflowY: 'auto' }}>
+                  <TransactionList transactions={(transactions || []).slice(0, 10)} onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }} onDelete={handleDeleteTransaction} isBalanceHidden={isBalanceHidden} />
+                </div>
+                <div onClick={() => setActiveTab('yearly')} style={{ margin: '1rem', padding: '0.85rem 1rem', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--muted)')} onMouseLeave={e => (e.currentTarget.style.background = 'var(--accent)')}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                     <div style={{ width: 32, height: 32, borderRadius: 9, background: 'color-mix(in srgb, var(--color-blue-600) 12%, var(--background))', color: 'var(--color-blue-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><BarChart2 size={14} /></div>
                     <div>
-                      <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Annual Report</p>
-                      <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>Detailed yearly statistics</p>
+                      <p style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground)', margin: 0 }}>Annual Report</p>
+                      <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>Year-over-year trends &amp; insights</p>
                     </div>
                   </div>
                   <span style={{ fontSize: '1rem', color: 'var(--muted-foreground)' }}>→</span>
                 </div>
-                <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
-                  <div style={{ padding: '0.8rem 1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <h2 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Recent Transactions</h2>
-                    <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}>View all →</span>
-                  </div>
-                  <TransactionList transactions={(transactions || []).slice(0, 5)} onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }} onDelete={handleDeleteTransaction} isBalanceHidden={isBalanceHidden} />
-                </div>
-                <BudgetInsights transactions={transactions || []} allTransactions={allTransactions || []} totalIncome={totalIncome} totalExpenses={expensesTotal} savings={investments} isBalanceHidden={isBalanceHidden} />
               </div>
-            )}
-          </>
-        )}
+            </div>
+          )}
 
-        {activeTab === 'transactions' && (
+          {isMobile && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0 1rem' }}>
+              <StatCardsMobile cards={statCards} fmtEur={fmtEur} isBalanceHidden={isBalanceHidden} />
+              <BudgetChart transactions={transactions || []} isBalanceHidden={isBalanceHidden} />
+              <BalanceSplitCard cashBalance={cashBalance} bpBalance={bpBalance} fmtEur={fmtEur} isBalanceHidden={isBalanceHidden} />
+              <MobileSavingsCard income={totalIncome} expenses={expensesTotal} savings={investments} fmtEur={fmtEur} isBalanceHidden={isBalanceHidden} />
+              <div onClick={() => setActiveTab('yearly')} style={{ padding: '0.9rem 1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 9, background: 'color-mix(in srgb, var(--color-blue-600) 12%, var(--background))', color: 'var(--color-blue-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><BarChart2 size={14} /></div>
+                  <div>
+                    <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Annual Report</p>
+                    <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>Detailed yearly statistics</p>
+                  </div>
+                </div>
+                <span style={{ fontSize: '1rem', color: 'var(--muted-foreground)' }}>→</span>
+              </div>
+              <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
+                <div style={{ padding: '0.8rem 1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <h2 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Recent Transactions</h2>
+                  <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}>View all →</span>
+                </div>
+                <TransactionList transactions={(transactions || []).slice(0, 5)} onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }} onDelete={handleDeleteTransaction} isBalanceHidden={isBalanceHidden} />
+              </div>
+              <BudgetInsights transactions={transactions || []} allTransactions={allTransactions || []} totalIncome={totalIncome} totalExpenses={expensesTotal} savings={investments} isBalanceHidden={isBalanceHidden} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── TRANSACTIONS ──────────────────────────────────────────────────────── */}
+      {activeTab === 'transactions' && (
+        <div style={{ padding: isMobile ? `1rem 0 calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '1.75rem 1.5rem' }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden', margin: isMobile ? '0 1rem' : 0 }}>
             <div style={{ padding: isMobile ? '0.75rem 1rem' : '1rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <h2 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>All Transactions</h2>
@@ -357,8 +340,18 @@ export const BudgetPage: React.FC = () => {
             </div>
             <TransactionList transactions={transactions || []} onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }} onDelete={handleDeleteTransaction} isBalanceHidden={isBalanceHidden} />
           </div>
-        )}
-      </div>
+        </div>
+      )}
+
+      {/* ── ANNUAL ────────────────────────────────────────────────────────────── */}
+      {activeTab === 'yearly' && (
+        <div style={{ paddingBottom: isMobile ? `calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)))` : 0 }}>
+          <YearlyStats
+            allTransactions={allTransactions || []}
+            hideNav
+          />
+        </div>
+      )}
 
       {showExportModal && <ExportModal transactions={allTransactions || []} onClose={() => setShowExportModal(false)} />}
       {showAddModal && <AddTransactionModal categories={categories || []} onClose={() => { setShowAddModal(false); setEditingTransaction(null); }} onSave={handleAddTransaction} initialData={editingTransaction || undefined} />}
@@ -374,37 +367,63 @@ export const BudgetPage: React.FC = () => {
   );
 };
 
-// Stat Cards — desktop: vertical list like Investments Accounts section
+// ── Stat Cards — desktop: single-row pills / mobile: 2-col grid ──────────────
 interface StatCard { label: string; value: number; icon: React.ReactNode; iconColor: string; iconBg: string; }
 
 const StatCards: React.FC<{ cards: StatCard[]; fmtEur: (n: number) => string; isBalanceHidden: boolean }> = ({ cards, fmtEur, isBalanceHidden }) => (
-  <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
-    {cards.map(({ label, value, icon, iconColor, iconBg }, idx) => (
-      <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 1.25rem', borderBottom: idx < cards.length - 1 ? '1px solid var(--border)' : 'none', transition: 'background 0.15s' }} onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')} onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{ width: 36, height: 36, borderRadius: '10px', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
-          <p style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--foreground)', margin: 0 }}>{label}</p>
+  <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', WebkitOverflowScrolling: 'touch' as any }}>
+    {cards.map(({ label, value, icon, iconColor, iconBg }) => (
+      <div
+        key={label}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '7px 14px 7px 8px',
+          borderRadius: 999,
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          flexShrink: 0,
+          transition: 'background 0.15s, border-color 0.15s',
+          cursor: 'default',
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; (e.currentTarget as HTMLDivElement).style.borderColor = 'color-mix(in srgb, var(--border) 60%, transparent)'; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--card)';   (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'; }}
+      >
+        <div style={{ width: 24, height: 24, borderRadius: '50%', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {icon}
         </div>
-        <p style={{ fontSize: '0.875rem', fontWeight: 600, margin: 0, color: (label === 'Cash' || label === 'Meal Vouchers') ? iconColor : 'var(--foreground)' }}>
+        <span style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>{label}</span>
+        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: (label === 'Cash' || label === 'Meal Vouchers') ? iconColor : 'var(--foreground)', whiteSpace: 'nowrap', letterSpacing: isBalanceHidden ? '0.02em' : '-0.01em' }}>
           {isBalanceHidden ? '€••••••' : fmtEur(value)}
-        </p>
+        </span>
       </div>
     ))}
   </div>
 );
 
-// Stat Cards — mobile: compact 2-col grid
+// ── Stat Cards — mobile: pill chips in 2-col grid ────────────────────────────
 const StatCardsMobile: React.FC<{ cards: StatCard[]; fmtEur: (n: number) => string; isBalanceHidden: boolean }> = ({ cards, fmtEur, isBalanceHidden }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1px', background: 'var(--border)', borderRadius: '14px', overflow: 'hidden' }}>
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
     {cards.map(({ label, value, icon, iconColor, iconBg }, idx) => (
-      <div key={label} style={{ background: 'var(--card)', padding: '0.85rem 0.9rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', ...(idx === 4 ? { gridColumn: 'span 2' } : {}) }}>
+      <div
+        key={label}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8,
+          padding: '8px 12px 8px 8px',
+          borderRadius: 999,
+          background: 'var(--card)',
+          border: '1px solid var(--border)',
+          ...(idx === 4 ? { gridColumn: 'span 2', justifySelf: 'start' } : {}),
+        }}
+      >
+        <div style={{ width: 26, height: 26, borderRadius: '50%', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          {icon}
+        </div>
         <div style={{ minWidth: 0 }}>
-          <p style={{ fontSize: '0.68rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px' }}>{label}</p>
-          <p style={{ fontSize: '0.95rem', fontWeight: 700, margin: 0, letterSpacing: isBalanceHidden ? '0.04em' : '-0.02em', color: (label === 'Cash' || label === 'Meal Vouchers') ? iconColor : 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <p style={{ fontSize: '0.65rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</p>
+          <p style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0, letterSpacing: isBalanceHidden ? '0.02em' : '-0.01em', color: (label === 'Cash' || label === 'Meal Vouchers') ? iconColor : 'var(--foreground)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {isBalanceHidden ? '€••••••' : fmtEur(value)}
           </p>
         </div>
-        <div style={{ width: 28, height: 28, borderRadius: '8px', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginLeft: '0.5rem' }}>{icon}</div>
       </div>
     ))}
   </div>
