@@ -7,7 +7,7 @@ import {
   Home, Play, Settings, Shield, Target, TrendingUp, Wallet, X, Zap
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function useIsMobile(bp = 768) {
@@ -847,6 +847,20 @@ export const FirePage: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
   const [activeTab, setActiveTab]       = useState<Tab>('overview');
   const tabLayoutId = useId();
+
+  // ── swipe between tabs on mobile ─────────────────────────────────────────
+  const TAB_ORDER: Tab[] = ['overview', 'simulation', 'scenarios', 'mortgage'];
+  const swipeX = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => { swipeX.current = e.touches[0].clientX; };
+  const onTouchEnd   = (e: React.TouchEvent) => {
+    if (swipeX.current === null) return;
+    const dx = e.changedTouches[0].clientX - swipeX.current;
+    swipeX.current = null;
+    if (Math.abs(dx) < 50) return; // ignore taps
+    const idx = TAB_ORDER.indexOf(activeTab);
+    if (dx < 0 && idx < TAB_ORDER.length - 1) setActiveTab(TAB_ORDER[idx + 1]); // swipe left → next
+    if (dx > 0 && idx > 0)                    setActiveTab(TAB_ORDER[idx - 1]); // swipe right → prev
+  };
   const isMobile = useIsMobile();
 
   if (loading) return (
@@ -898,12 +912,8 @@ export const FirePage: React.FC = () => {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           gap: '1rem', padding: isMobile ? '0.75rem' : '0.75rem 1rem',
         }}>
-          {/* Left: logo + tabs */}
+          {/* Left: tabs only */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-              <Flame size={14} color="#f97316" />
-              <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>FIRE</span>
-            </div>
 
             {/* Animated pill tabs — identical to Budget */}
             <nav style={{
@@ -1031,7 +1041,11 @@ export const FirePage: React.FC = () => {
       </div>
 
       {/* ── CONTENT ──────────────────────────────────────────────────────────── */}
-      <div style={{ padding: isMobile ? `1.5rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '1.75rem 1.5rem 3rem' }}>
+      <div
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        style={{ padding: isMobile ? `1.5rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '1.75rem 1.5rem 3rem' }}
+      >
 
         {/* ── OVERVIEW ── */}
         {activeTab === 'overview' && (
