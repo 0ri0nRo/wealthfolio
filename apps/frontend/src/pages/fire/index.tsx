@@ -2,10 +2,12 @@
 import { useBalancePrivacy } from '@/hooks/use-balance-privacy';
 import { FireSettings, useFire } from '@/hooks/useFire';
 import {
-  Activity, ArrowRight, BarChart2, Eye, EyeOff, Flame,
-  Home, Play, Settings, Shield, Target, TrendingUp, X, Zap,
+  Activity, ArrowRight,
+  Eye, EyeOff, Flame,
+  Home, Play, Settings, Shield, Target, TrendingUp, Wallet, X, Zap
 } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import { motion } from 'motion/react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function useIsMobile(bp = 768) {
@@ -101,7 +103,7 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
   return (
     <div>
       {/* Amount row */}
-      <div style={{ padding: isMobile ? '1rem 1rem 0' : '1.25rem 2rem 0' }}>
+      <div style={{ padding: isMobile ? '1rem 1rem 0' : '1.25rem 1.5rem 0' }}>
         <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: '0 0 0.3rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Net Worth</p>
         <p style={{ fontSize: isMobile ? '2.4rem' : '3rem', fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1, margin: '0 0 0.4rem', color: 'var(--foreground)' }}>
           {hidden ? '€••••••' : (() => {
@@ -212,71 +214,156 @@ const FireProgress: React.FC<{ netWorth: number; fireNumber: number; hidden: boo
   );
 };
 
-// ─── Depletion chart ──────────────────────────────────────────────────────────
-const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualReturn: number; hidden: boolean }> = ({ netWorth, monthlyExpenses, annualReturn }) => {
-  const pts = useMemo(() => {
+// ─── Depletion chart — horizontal timeline strip ──────────────────────────────
+const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annualReturn: number; hidden: boolean }> = ({ netWorth, monthlyExpenses, annualReturn, hidden }) => {
+  const [hoverPct, setHoverPct] = useState<number | null>(null);
+
+  const { mCap, mRet, dCap, dRet } = useMemo(() => {
     const r = annualReturn / 12;
-    const res: { m: number; d: Date; cap: number; ret: number }[] = [];
-    let cap = netWorth, ret = netWorth;
-    for (let m = 0; m <= 480; m++) {
-      res.push({ m, d: addMonths(new Date(), m), cap: Math.max(cap, 0), ret: Math.max(ret, 0) });
-      if (cap <= 0 && ret <= 0) break;
+    let cap = netWorth, ret = netWorth, mCap = 0, mRet = 0;
+    for (let m = 1; m <= 9999; m++) {
       cap -= monthlyExpenses;
       ret  = ret * (1 + r) - monthlyExpenses;
+      if (cap <= 0 && mCap === 0) mCap = m;
+      if (ret <= 0 && mRet === 0) mRet = m;
+      if (mCap > 0 && mRet > 0) break;
     }
-    return res;
+    // if never depletes (returns cover expenses), cap at 9999
+    if (mCap === 0) mCap = 9999;
+    if (mRet === 0) mRet = 9999;
+    return {
+      mCap, mRet,
+      dCap: addMonths(new Date(), mCap),
+      dRet: addMonths(new Date(), mRet),
+    };
   }, [netWorth, monthlyExpenses, annualReturn]);
 
-  const zeroCap = pts.find(p => p.cap <= 0);
-  const zeroRet = pts.find(p => p.ret <= 0);
-  const maxM = pts[pts.length - 1].m;
-  const W = 1000, H = 240, PL = 0, PR = 0, PT = 10, PB = 28;
-  const sx = (m: number) => PL + (m / maxM) * (W - PL - PR);
-  const sy = (v: number) => PT + (1 - Math.min(v, netWorth) / netWorth) * (H - PT - PB);
+  const maxM = Math.min(Math.max(mCap, mRet) + Math.round(Math.max(mCap, mRet) * 0.12), 9999);
+  const isInfinite = (m: number) => m >= 9999;
 
-  const buildLine = (key: 'cap' | 'ret') => {
-    const active = pts.filter((p, i) => p[key] > 0 || i === 0);
-    const last   = active[active.length - 1];
-    const nxt    = pts[pts.indexOf(last) + 1];
-    const tail   = nxt ? ` L ${sx(nxt.m)} ${sy(0)}` : '';
-    return active.map((p, i) => `${i === 0 ? 'M' : 'L'} ${sx(p.m)} ${sy(p[key])}`).join(' ') + tail;
-  };
-  const buildArea = (key: 'cap' | 'ret') => {
-    const line = buildLine(key);
-    const endX = key === 'cap' ? (zeroCap ? sx(zeroCap.m) : sx(maxM)) : (zeroRet ? sx(zeroRet.m) : sx(maxM));
-    return `${line} L ${endX} ${sy(0)} L ${PL} ${sy(0)} Z`;
-  };
-  const tickEvery = maxM <= 36 ? 6 : maxM <= 120 ? 12 : 24;
+  // which month is the cursor hovering over
+  const hoverMonth = hoverPct != null ? Math.round((hoverPct / 100) * maxM) : null;
+  const hoverDate  = hoverMonth != null ? addMonths(new Date(), hoverMonth) : null;
+
+  const dateFmt = (d: Date) => d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+  const fmtMo = (m: number) => m >= 9999 ? '∞' : m >= 24 ? `${(m / 12).toFixed(1)} yrs` : `${m} mo`;
+
+  // tick marks — every N months
+  const tickStep = maxM <= 24 ? 3 : maxM <= 60 ? 6 : maxM <= 120 ? 12 : 24;
+  const ticks = Array.from({ length: Math.floor(maxM / tickStep) }, (_, i) => (i + 1) * tickStep).filter(t => t < maxM);
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: '1.25rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+      {/* KPI strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1px', background: 'var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: '1.5rem' }}>
         {[
-          { color: '#e5484d', label: `Capital only → ${zeroCap ? mmyy(zeroCap.d) : '∞'}` },
-          { color: '#30a46c', label: `With returns → ${zeroRet ? mmyy(zeroRet.d) : '∞'}` },
-        ].map(({ color, label }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <div style={{ width: 18, height: 3, borderRadius: 2, background: color }} />
-            <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)' }}>{label}</span>
+          { label: 'Capital only',     value: isInfinite(mCap) ? '∞' : fmtMo(mCap), sub: isInfinite(mCap) ? 'self-sustaining' : `depletes ${dateFmt(dCap)}`, color: '#e5484d', bg: 'color-mix(in srgb, #e5484d 8%, var(--background))' },
+          { label: 'With returns',     value: isInfinite(mRet) ? '∞' : fmtMo(mRet), sub: isInfinite(mRet) ? 'self-sustaining' : `depletes ${dateFmt(dRet)}`, color: '#30a46c', bg: 'color-mix(in srgb, #30a46c 8%, var(--background))' },
+          { label: 'Monthly expenses', value: hidden ? '€••••••' : fmtEurCompact(monthlyExpenses), sub: 'avg spending', color: 'var(--foreground)', bg: 'var(--card)' },
+        ].map(({ label, value, sub, color, bg }) => (
+          <div key={label} style={{ background: bg, padding: '0.9rem 1rem' }}>
+            <p style={{ fontSize: '0.62rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+            <p style={{ fontSize: '1.25rem', fontWeight: 800, color, margin: '0 0 2px', letterSpacing: '-0.035em', lineHeight: 1 }}>{value}</p>
+            <p style={{ fontSize: '0.63rem', color: 'var(--muted-foreground)', margin: 0 }}>{sub}</p>
           </div>
         ))}
       </div>
-      <div style={{ width: '100%', height: 'clamp(200px, 24vw, 280px)' }}>
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%' }}>
-          <defs>
-            <linearGradient id="dr" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#e5484d" stopOpacity=".12"/><stop offset="100%" stopColor="#e5484d" stopOpacity="0"/></linearGradient>
-            <linearGradient id="dg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#30a46c" stopOpacity=".12"/><stop offset="100%" stopColor="#30a46c" stopOpacity="0"/></linearGradient>
-          </defs>
-          <path d={buildArea('cap')} fill="url(#dr)" />
-          <path d={buildArea('ret')} fill="url(#dg)" />
-          <path d={buildLine('cap')} fill="none" stroke="#e5484d" strokeWidth="2" strokeLinecap="round" />
-          <path d={buildLine('ret')} fill="none" stroke="#30a46c" strokeWidth="2" strokeLinecap="round" />
-          {zeroCap && <circle cx={sx(zeroCap.m)} cy={sy(0)} r={4} fill="#e5484d" />}
-          {zeroRet && <circle cx={sx(zeroRet.m)} cy={sy(0)} r={4} fill="#30a46c" />}
-          {pts.filter(p => p.m % tickEvery === 0).map(p => (
-            <text key={p.m} x={sx(p.m)} y={H - 6} textAnchor="middle" fontSize="9" fill="var(--muted-foreground)" fontFamily="var(--font-sans)">{mmyy(p.d)}</text>
-          ))}
-        </svg>
+
+      {/* Timeline strip */}
+      <div
+        style={{ position: 'relative', userSelect: 'none' }}
+        onMouseLeave={() => setHoverPct(null)}
+        onMouseMove={e => {
+          const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
+          setHoverPct(((e.clientX - rect.left) / rect.width) * 100);
+        }}
+      >
+        {/* Rows */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 28 }}>
+          {[
+            { label: 'Capital only', months: mCap, color: '#e5484d', endDate: dCap },
+            { label: 'With returns', months: mRet, color: '#30a46c', endDate: dRet },
+          ].map(({ label, months, color, endDate }) => {
+            const inf  = isInfinite(months);
+            const pct  = inf ? 100 : Math.min((months / maxM) * 100, 100);
+            const endPct = pct;
+            return (
+              <div key={label}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--muted-foreground)' }}>{label}</span>
+                  </div>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 700, color }}>{inf ? '∞ — self-sustaining' : dateFmt(endDate)}</span>
+                </div>
+                {/* Track */}
+                <div style={{ position: 'relative', height: 10, background: 'var(--muted)', borderRadius: 999, overflow: 'visible' }}>
+                  {/* Fill */}
+                  <div style={{
+                    position: 'absolute', left: 0, top: 0, height: '100%',
+                    width: `${pct}%`,
+                    background: color,
+                    borderRadius: 999,
+                    opacity: 0.85,
+                  }} />
+                  {/* End marker dot */}
+                  {!inf && (
+                    <div style={{
+                      position: 'absolute', top: '50%', left: `${endPct}%`,
+                      transform: 'translate(-50%, -50%)',
+                      width: 14, height: 14, borderRadius: '50%',
+                      background: color, border: '2.5px solid var(--background)',
+                      boxShadow: `0 0 0 1.5px ${color}`,
+                      zIndex: 2,
+                    }} />
+                  )}
+                  {/* Hover cursor line */}
+                  {hoverPct != null && (
+                    <div style={{
+                      position: 'absolute', top: -4, left: `${hoverPct}%`,
+                      transform: 'translateX(-50%)',
+                      width: 1.5, height: 18,
+                      background: 'var(--muted-foreground)',
+                      opacity: 0.4,
+                      pointerEvents: 'none',
+                    }} />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* X-axis ticks */}
+        <div style={{ position: 'absolute', bottom: 4, left: 0, right: 0, display: 'flex', pointerEvents: 'none' }}>
+          <div style={{ position: 'relative', width: '100%', height: 18 }}>
+            <span style={{ position: 'absolute', left: 0, fontSize: '0.65rem', color: 'var(--muted-foreground)', transform: 'translateX(0)' }}>now</span>
+            {ticks.map(t => (
+              <span key={t} style={{ position: 'absolute', left: `${(t / maxM) * 100}%`, fontSize: '0.65rem', color: 'var(--muted-foreground)', transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}>
+                {t >= 12 && t % 12 === 0 ? `${t / 12}y` : `${t}mo`}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Hover tooltip */}
+        {hoverPct != null && hoverDate != null && (
+          <div style={{
+            position: 'absolute', bottom: 'calc(100% - 10px)',
+            left: `clamp(0px, calc(${hoverPct}% - 60px), calc(100% - 130px))`,
+            background: 'var(--card)', border: '1px solid var(--border)',
+            borderRadius: 8, padding: '5px 10px', pointerEvents: 'none',
+            boxShadow: '0 4px 12px rgba(0,0,0,.1)', fontSize: '0.7rem', whiteSpace: 'nowrap',
+            zIndex: 10,
+          }}>
+            <span style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>
+              {dateFmt(hoverDate)}
+            </span>
+            <span style={{ marginLeft: 6, color: 'var(--muted-foreground)' }}>
+              · month {hoverMonth}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -760,6 +847,7 @@ export const FirePage: React.FC = () => {
   const { isBalanceHidden, toggleBalanceVisibility } = useBalancePrivacy();
   const [showSettings, setShowSettings] = useState(false);
   const [activeTab, setActiveTab]       = useState<Tab>('overview');
+  const tabLayoutId = useId();
   const isMobile = useIsMobile();
 
   if (loading) return (
@@ -781,19 +869,19 @@ export const FirePage: React.FC = () => {
   const coverageRatio  = data.avg_monthly_expenses > 0 ? (passiveMonthly / data.avg_monthly_expenses) * 100 : 0;
   const timeToFire     = data.fire_scenarios[1];
 
-  const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: 'overview',   label: 'Overview',   icon: <BarChart2 size={12} /> },
-    { key: 'simulation', label: 'Simulator',  icon: <Play size={12} /> },
-    { key: 'scenarios',  label: 'Scenarios',  icon: <Target size={12} /> },
-    { key: 'mortgage',   label: 'Mortgage',   icon: <Home size={12} /> },
+  const TABS: [Tab, string][] = [
+    ['overview',   'Overview'],
+    ['simulation', isMobile ? 'Sim.' : 'Simulator'],
+    ['scenarios',  isMobile ? 'FIRE' : 'Scenarios'],
+    ['mortgage',   isMobile ? 'Mort.' : 'Mortgage'],
   ];
 
   const statBar = [
-    { label: 'Net Worth',        value: fmtOrHide(data.net_worth,           isBalanceHidden, true), color: 'var(--foreground)' },
-    { label: 'Monthly Savings',  value: fmtOrHide(data.avg_monthly_savings, isBalanceHidden, true), color: data.avg_monthly_savings >= 0 ? '#30a46c' : '#e5484d' },
-    { label: 'Savings Rate',     value: isBalanceHidden ? '••.•%' : `${data.savings_rate.toFixed(1)}%`, color: data.savings_rate >= 20 ? '#30a46c' : 'var(--color-orange-400)' },
-    { label: 'FIRE Progress',    value: isBalanceHidden ? '••%' : `${firePct.toFixed(1)}%`, color: firePct >= 100 ? '#30a46c' : firePct >= 50 ? 'var(--color-orange-400)' : 'var(--foreground)' },
-    { label: 'Time to FIRE',     value: timeToFire?.years_to_fire != null ? `${timeToFire.years_to_fire.toFixed(1)} yrs` : '—', color: 'var(--foreground)' },
+    { label: 'Net Worth',       value: fmtOrHide(data.net_worth,           isBalanceHidden, true), color: 'var(--foreground)',                                                    icon: <Wallet size={12} />,    iconBg: 'var(--muted)' },
+    { label: 'Monthly Savings', value: fmtOrHide(data.avg_monthly_savings, isBalanceHidden, true), color: data.avg_monthly_savings >= 0 ? '#30a46c' : '#e5484d',                 icon: <TrendingUp size={12} />, iconBg: data.avg_monthly_savings >= 0 ? 'color-mix(in srgb, #30a46c 12%, var(--background))' : 'color-mix(in srgb, #e5484d 12%, var(--background))' },
+    { label: 'Savings Rate',    value: isBalanceHidden ? '••.•%' : `${data.savings_rate.toFixed(1)}%`,                                                                           color: data.savings_rate >= 20 ? '#30a46c' : 'var(--color-orange-400)',         icon: <Activity size={12} />,  iconBg: data.savings_rate >= 20 ? 'color-mix(in srgb, #30a46c 12%, var(--background))' : 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))' },
+    { label: 'FIRE Progress',   value: isBalanceHidden ? '••%' : `${firePct.toFixed(1)}%`,                                                                                       color: firePct >= 100 ? '#30a46c' : firePct >= 50 ? 'var(--color-orange-400)' : 'var(--foreground)', icon: <Target size={12} />, iconBg: 'color-mix(in srgb, #f97316 12%, var(--background))' },
+    { label: 'Time to FIRE',    value: timeToFire?.years_to_fire != null ? `${timeToFire.years_to_fire.toFixed(1)} yrs` : '—',                                                   color: 'var(--foreground)',                                                    icon: <Flame size={12} />,    iconBg: 'color-mix(in srgb, #f97316 12%, var(--background))' },
   ];
 
   return (
@@ -802,94 +890,149 @@ export const FirePage: React.FC = () => {
       {/* ── NAVBAR ──────────────────────────────────────────────────────────── */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 20,
-        background: 'color-mix(in srgb, var(--background) 90%, transparent)',
-        backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+        background: 'color-mix(in srgb, var(--background) 92%, transparent)',
+        backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
         borderBottom: '1px solid var(--border)',
-        paddingTop: 'env(safe-area-inset-top)',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
       }}>
-        <div style={{ padding: `0 ${isMobile ? '1rem' : '2rem'}`, height: 52, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
-            <Flame size={14} color="#f97316" />
-            <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>FIRE</span>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: '1rem', padding: isMobile ? '0.75rem' : '0.75rem 1rem',
+        }}>
+          {/* Left: logo + tabs */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0 }}>
+              <Flame size={14} color="#f97316" />
+              <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>FIRE</span>
+            </div>
+
+            {/* Animated pill tabs — identical to Budget */}
+            <nav style={{
+              display: 'inline-flex', alignItems: 'center',
+              background: 'color-mix(in srgb, var(--muted) 60%, transparent)',
+              borderRadius: 999, padding: 3, gap: 2,
+            }}>
+              {TABS.map(([key, label]) => {
+                const isActive = activeTab === key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setActiveTab(key)}
+                    style={{
+                      position: 'relative',
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      padding: isMobile ? '4px 8px' : '5px 14px',
+                      borderRadius: 999,
+                      border: 'none', background: 'transparent',
+                      fontSize: '0.875rem', fontWeight: 500, whiteSpace: 'nowrap',
+                      cursor: 'pointer',
+                      color: isActive ? 'var(--foreground)' : 'var(--muted-foreground)',
+                      WebkitTapHighlightColor: 'transparent',
+                      userSelect: 'none',
+                      transition: 'color 0.2s',
+                    }}
+                  >
+                    {isActive && (
+                      <motion.div
+                        layoutId={`fire-tab-${tabLayoutId}`}
+                        style={{
+                          position: 'absolute', inset: 0, borderRadius: 999,
+                          background: 'var(--background)',
+                          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                        }}
+                        initial={false}
+                        transition={{ type: 'spring', stiffness: 500, damping: 35 }}
+                      />
+                    )}
+                    <span style={{ position: 'relative', zIndex: 10 }}>{label}</span>
+                  </button>
+                );
+              })}
+            </nav>
           </div>
 
-          {/* Tab nav — same spring style as Budget page */}
-          <nav style={{ display: 'inline-flex', alignItems: 'center', background: 'color-mix(in srgb, var(--muted) 60%, transparent)', borderRadius: 999, padding: 3, gap: 2, marginLeft: 6 }}>
-            {TABS.map(({ key, label, icon }) => {
-              const isActive = activeTab === key;
-              return (
-                <button key={key} onClick={() => setActiveTab(key)} style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 5,
-                  padding: isMobile ? '4px 9px' : '5px 13px',
-                  borderRadius: 999, border: 'none', background: isActive ? 'var(--background)' : 'transparent',
-                  color: isActive ? 'var(--foreground)' : 'var(--muted-foreground)',
-                  fontSize: '0.8rem', fontWeight: isActive ? 700 : 500, cursor: 'pointer',
-                  boxShadow: isActive ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-                  transition: 'all .15s', whiteSpace: 'nowrap',
-                  WebkitTapHighlightColor: 'transparent',
-                }}>
-                  {!isMobile && icon}
-                  {isMobile ? label.slice(0, 4) : label}
-                </button>
-              );
-            })}
-          </nav>
-
-          <div style={{ flex: 1 }} />
-
-          <button onClick={toggleBalanceVisibility} style={{ width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isBalanceHidden ? 'var(--foreground)' : 'var(--muted)', color: isBalanceHidden ? 'var(--background)' : 'var(--muted-foreground)', border: 'none', borderRadius: 9, cursor: 'pointer', flexShrink: 0, transition: 'all .15s' }}>
-            {isBalanceHidden ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
-          <button onClick={() => setShowSettings(true)} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '0 12px', height: 34, background: 'var(--muted)', color: 'var(--muted-foreground)', border: 'none', borderRadius: 9, cursor: 'pointer', flexShrink: 0, fontSize: '0.78rem', fontWeight: 600 }}>
-            <Settings size={13} />
-            {!isMobile && 'Settings'}
-          </button>
+          {/* Right: actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              onClick={toggleBalanceVisibility}
+              style={{
+                width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: isBalanceHidden ? 'var(--foreground)' : 'var(--muted)',
+                color: isBalanceHidden ? 'var(--background)' : 'var(--muted-foreground)',
+                border: 'none', borderRadius: 10, cursor: 'pointer', flexShrink: 0,
+                transition: 'all 0.15s', WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              {isBalanceHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+            <button
+              onClick={() => setShowSettings(true)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                padding: isMobile ? '7px 10px' : '7px 14px',
+                background: 'var(--muted)', color: 'var(--muted-foreground)',
+                border: 'none', borderRadius: 10, cursor: 'pointer', flexShrink: 0,
+                fontSize: '0.78rem', fontWeight: 600, transition: 'all 0.15s',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <Settings size={14} />
+              {!isMobile && 'Settings'}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* ── HERO ─────────────────────────────────────────────────────────────── */}
+      {/* ── HERO — always visible, stable height across all tabs ──────────────── */}
       <div style={{
         background: `linear-gradient(180deg, color-mix(in srgb, #30a46c 6%, var(--background)) 0%, var(--background) 80%)`,
         borderBottom: '1px solid var(--border)',
       }}>
-        {/* Progress bar top right on desktop */}
-        {!isMobile && activeTab === 'overview' && (
-          <div style={{ padding: '1.25rem 2rem 0', display: 'flex', justifyContent: 'flex-end' }}>
-            <div style={{ width: 320 }}>
-              <FireProgress netWorth={data.net_worth} fireNumber={fireNum} hidden={isBalanceHidden} />
-            </div>
-          </div>
-        )}
-
         <HeroChart history={data.net_worth_history} hidden={isBalanceHidden} />
 
-        {isMobile && (
-          <div style={{ padding: '0 1rem 0.75rem' }}>
-            <FireProgress netWorth={data.net_worth} fireNumber={fireNum} hidden={isBalanceHidden} />
-          </div>
-        )}
+        {/* FIRE progress — always shown, stable position */}
+        <div style={{ padding: isMobile ? '0 1rem 0.75rem' : '0 1.5rem 0.75rem' }}>
+          <FireProgress netWorth={data.net_worth} fireNumber={fireNum} hidden={isBalanceHidden} />
+        </div>
 
-        {/* Stat bar */}
+        {/* Stat pills — same style as Budget desktop */}
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr 1fr' : `repeat(${statBar.length}, 1fr)`,
+          display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto',
+          padding: isMobile ? '0.75rem 1rem' : '0.75rem 1.5rem',
           borderTop: '1px solid var(--border)',
+          WebkitOverflowScrolling: 'touch' as any,
         }}>
-          {statBar.map(({ label, value, color }, idx) => (
-            <div key={label} style={{
-              padding: isMobile ? '0.85rem 1rem' : '1rem 1.5rem',
-              borderRight: idx < statBar.length - 1 ? '1px solid var(--border)' : 'none',
-              ...(isMobile && idx === 4 ? { gridColumn: 'span 2', borderRight: 'none' } : {}),
-            }}>
-              <p style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 5px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
-              <p style={{ fontSize: '1.05rem', fontWeight: 800, margin: 0, color, letterSpacing: '-0.02em' }}>{value}</p>
+          {statBar.map(({ label, value, color, icon, iconBg }) => (
+            <div
+              key={label}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '7px 14px 7px 8px',
+                borderRadius: 999,
+                background: 'var(--card)',
+                border: '1px solid var(--border)',
+                flexShrink: 0,
+                cursor: 'default',
+                transition: 'background 0.15s, border-color 0.15s',
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--card)'; }}
+            >
+              <div style={{
+                width: 24, height: 24, borderRadius: '50%',
+                background: iconBg, color, flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>{icon}</div>
+              <span style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>{label}</span>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color, whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>{value}</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* ── CONTENT ──────────────────────────────────────────────────────────── */}
-      <div style={{ padding: isMobile ? `1.5rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '2rem 2rem 3rem' }}>
+      <div style={{ padding: isMobile ? `1.5rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '1.75rem 1.5rem 3rem' }}>
 
         {/* ── OVERVIEW ── */}
         {activeTab === 'overview' && (
@@ -1090,6 +1233,13 @@ export const FirePage: React.FC = () => {
         <SettingsModal initial={data.settings} onSave={saveSettings} onClose={() => setShowSettings(false)}
           saving={saving} isBalanceHidden={isBalanceHidden} onToggleBalanceHidden={toggleBalanceVisibility} />
       )}
+
+      <style>{`
+        @keyframes dropIn {
+          from { opacity: 0; transform: scale(0.92) translateY(-6px); }
+          to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+      `}</style>
     </div>
   );
 };
