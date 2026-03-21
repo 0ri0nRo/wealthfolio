@@ -410,6 +410,10 @@ pub fn run() {
             commands::addon::install_addon_from_staging,
             commands::addon::clear_addon_staging,
             commands::addon::submit_addon_rating,
+            // Fire commands
+            commands::fire::get_fire_data,
+            commands::fire::get_fire_settings,
+            commands::fire::save_fire_settings,
             // Sync commands
             #[cfg(any(feature = "connect-sync", feature = "device-sync"))]
             commands::wealthfolio_connect::store_sync_session,
