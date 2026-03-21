@@ -36,7 +36,6 @@ const fmtYears = (months: number) =>
   months >= 9990 ? '∞' : months >= 24 ? `${(months / 12).toFixed(1)} yrs` : `${Math.round(months)} mo`;
 
 function addMonths(d: Date, n: number) { const r = new Date(d); r.setMonth(r.getMonth() + n); return r; }
-function mmyy(d: Date) { return `${d.getMonth() + 1}/${String(d.getFullYear()).slice(-2)}`; }
 
 // ─── Chart sparkline — investments-page style ─────────────────────────────────
 type Period = '1M' | '3M' | '6M' | 'YTD' | '1Y' | 'ALL';
