@@ -48,6 +48,20 @@ export const BudgetPage: React.FC = () => {
   const isMobile = useIsMobile();
   const tabLayoutId = useId();
 
+  // ── swipe between tabs on mobile ──────────────────────────────────────────
+  const TAB_ORDER: ActiveTab[] = ['overview', 'transactions', 'yearly'];
+  const swipeX = useRef<number | null>(null);
+  const onTouchStart = (e: React.TouchEvent) => { swipeX.current = e.touches[0].clientX; };
+  const onTouchEnd   = (e: React.TouchEvent) => {
+    if (swipeX.current === null) return;
+    const dx = e.changedTouches[0].clientX - swipeX.current;
+    swipeX.current = null;
+    if (Math.abs(dx) < 50) return;
+    const idx = TAB_ORDER.indexOf(activeTab);
+    if (dx < 0 && idx < TAB_ORDER.length - 1) setActiveTab(TAB_ORDER[idx + 1]);
+    if (dx > 0 && idx > 0)                    setActiveTab(TAB_ORDER[idx - 1]);
+  };
+
   const { isBalanceHidden, toggleBalanceVisibility } = useBalancePrivacy();
 
   const {
@@ -150,7 +164,11 @@ export const BudgetPage: React.FC = () => {
   ];
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
+    <div
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+      style={{ minHeight: '100vh', background: 'var(--background)' }}
+    >
 
       {/* NAVBAR */}
       <div style={{

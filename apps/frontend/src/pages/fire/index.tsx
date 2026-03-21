@@ -446,16 +446,16 @@ const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRat
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       {/* KPI row */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden' }}>
         {[
           { label: 'Final Wealth',      value: fmtOrHide(result.finalWealth,        hidden, true), sub: `in ${years} years`,  color: '#30a46c' },
           { label: 'Investment Gains',  value: fmtOrHide(result.totalGains,         hidden, true), sub: 'from returns',        color: 'var(--foreground)' },
           { label: 'Total Contributed', value: fmtOrHide(result.totalContributions, hidden, true), sub: 'your savings',        color: 'var(--muted-foreground)' },
-        ].map(({ label, value, sub, color }) => (
-          <div key={label} style={{ background: 'var(--card)', padding: '1.1rem 1.25rem' }}>
+        ].map(({ label, value, sub, color }, idx) => (
+          <div key={label} style={{ background: 'var(--card)', padding: isMobile ? '0.9rem 1rem' : '1.1rem 1.25rem', ...(isMobile && idx === 2 ? { gridColumn: 'span 2' } : {}) }}>
             <p style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 900, color, margin: '0 0 2px', letterSpacing: '-0.04em', lineHeight: 1 }}>{value}</p>
-            <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: 0 }}>{sub}</p>
+            <p style={{ fontSize: isMobile ? '1.2rem' : '1.5rem', fontWeight: 900, color, margin: '0 0 2px', letterSpacing: '-0.04em', lineHeight: 1 }}>{value}</p>
+            <p style={{ fontSize: '0.63rem', color: 'var(--muted-foreground)', margin: 0 }}>{sub}</p>
           </div>
         ))}
       </div>
@@ -601,15 +601,15 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
       {/* KPI strip */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden' }}>
         {[
-          { label: 'Monthly payment',   value: fmtH(result.monthlyPayment),  color: 'var(--foreground)',          sub: `${years} year mortgage` },
-          { label: 'Total interest',    value: fmtHc(result.totalInterest),   color: '#e5484d',                    sub: `${result.principal > 0 ? ((result.totalInterest / result.principal) * 100).toFixed(0) : 0}% of loan` },
-          { label: 'Total house cost',  value: fmtHc(result.totalCosts),      color: 'var(--foreground)',          sub: 'incl. down + extras' },
-          { label: '730 tax recovery',  value: fmtHc(result.recovery730),     color: '#30a46c',                    sub: 'est. over loan life' },
+          { label: 'Monthly payment',   value: fmtH(result.monthlyPayment),  color: 'var(--foreground)',  sub: `${years} year mortgage` },
+          { label: 'Total interest',    value: fmtHc(result.totalInterest),   color: '#e5484d',            sub: `${result.principal > 0 ? ((result.totalInterest / result.principal) * 100).toFixed(0) : 0}% of loan` },
+          { label: 'Total house cost',  value: fmtHc(result.totalCosts),      color: 'var(--foreground)',  sub: 'incl. down + extras' },
+          { label: '730 tax recovery',  value: fmtHc(result.recovery730),     color: '#30a46c',            sub: 'est. over loan life' },
         ].map(({ label, value, color, sub }) => (
-          <div key={label} style={{ background: 'var(--card)', padding: '1.1rem 1.25rem' }}>
-            <p style={{ fontSize: '0.62rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</p>
-            <p style={{ fontSize: '1.25rem', fontWeight: 900, color, margin: '0 0 2px', letterSpacing: '-0.035em', lineHeight: 1 }}>{value}</p>
-            <p style={{ fontSize: '0.63rem', color: 'var(--muted-foreground)', margin: 0 }}>{sub}</p>
+          <div key={label} style={{ background: 'var(--card)', padding: isMobile ? '0.85rem 0.9rem' : '1.1rem 1.25rem' }}>
+            <p style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+            <p style={{ fontSize: isMobile ? '1rem' : '1.25rem', fontWeight: 900, color, margin: '0 0 2px', letterSpacing: '-0.03em', lineHeight: 1 }}>{value}</p>
+            <p style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)', margin: 0 }}>{sub}</p>
           </div>
         ))}
       </div>
@@ -648,11 +648,13 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
 
           <div style={{ height: 1, background: 'var(--border)' }} />
           <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Extra costs</p>
-          <NumInput label="Agency fee"        val={agencyFee}   onChange={setAgencyFee}   step={500} />
-          <NumInput label="Notary"             val={notaryFee}   onChange={setNotaryFee}   step={500} />
-          <NumInput label="Bank fees"          val={bankFee}     onChange={setBankFee}     step={50} />
-          <NumInput label="Taxes (IMU / IVA)"  val={taxes}       onChange={setTaxes}       step={100} />
-          <NumInput label="Other (repairs…)"   val={otherCosts}  onChange={setOtherCosts}  step={1000} />
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : '1fr', gap: isMobile ? 8 : '1.1rem' }}>
+            <NumInput label="Agency fee"        val={agencyFee}   onChange={setAgencyFee}   step={500} />
+            <NumInput label="Notary"             val={notaryFee}   onChange={setNotaryFee}   step={500} />
+            <NumInput label="Bank fees"          val={bankFee}     onChange={setBankFee}     step={50} />
+            <NumInput label="Taxes (IMU / IVA)"  val={taxes}       onChange={setTaxes}       step={100} />
+            <NumInput label="Other (repairs…)"   val={otherCosts}  onChange={setOtherCosts}  step={1000} />
+          </div>
 
           <div style={{ padding: '0.6rem 0.75rem', background: 'var(--accent)', borderRadius: 9, display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem' }}>
             <span style={{ color: 'var(--muted-foreground)' }}>Total extra costs</span>
@@ -1005,46 +1007,76 @@ export const FirePage: React.FC = () => {
           <FireProgress netWorth={data.net_worth} fireNumber={fireNum} hidden={isBalanceHidden} />
         </div>
 
-        {/* Stat pills — same style as Budget desktop */}
-        <div style={{
-          display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto',
-          padding: isMobile ? '0.75rem 1rem' : '0.75rem 1.5rem',
-          borderTop: '1px solid var(--border)',
-          WebkitOverflowScrolling: 'touch' as any,
-        }}>
-          {statBar.map(({ label, value, color, icon, iconBg }) => (
-            <div
-              key={label}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                padding: '7px 14px 7px 8px',
-                borderRadius: 999,
-                background: 'var(--card)',
-                border: '1px solid var(--border)',
-                flexShrink: 0,
-                cursor: 'default',
-                transition: 'background 0.15s, border-color 0.15s',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--card)'; }}
-            >
-              <div style={{
-                width: 24, height: 24, borderRadius: '50%',
-                background: iconBg, color, flexShrink: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>{icon}</div>
-              <span style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>{label}</span>
-              <span style={{ fontSize: '0.82rem', fontWeight: 700, color, whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>{value}</span>
-            </div>
-          ))}
-        </div>
+        {/* Stat pills — flex row desktop, 2-col grid mobile */}
+        {isMobile ? (
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
+            padding: '0.75rem 1rem',
+            borderTop: '1px solid var(--border)',
+          }}>
+            {statBar.map(({ label, value, color, icon, iconBg }, idx) => (
+              <div
+                key={label}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 12px 8px 8px',
+                  borderRadius: 999,
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                  ...(idx === 4 ? { gridColumn: 'span 2', justifySelf: 'start' as const } : {}),
+                }}
+              >
+                <div style={{ width: 26, height: 26, borderRadius: '50%', background: iconBg, color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
+                <div style={{ minWidth: 0 }}>
+                  <p style={{ fontSize: '0.63rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</p>
+                  <p style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0, color, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', letterSpacing: '-0.01em' }}>{value}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{
+            display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto',
+            padding: '0.75rem 1.5rem',
+            borderTop: '1px solid var(--border)',
+            WebkitOverflowScrolling: 'touch' as any,
+          }}>
+            {statBar.map(({ label, value, color, icon, iconBg }) => (
+              <div
+                key={label}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '7px 14px 7px 8px',
+                  borderRadius: 999,
+                  background: 'var(--card)',
+                  border: '1px solid var(--border)',
+                  flexShrink: 0,
+                  cursor: 'default',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--card)'; }}
+              >
+                <div style={{ width: 24, height: 24, borderRadius: '50%', background: iconBg, color, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
+                <span style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--muted-foreground)', whiteSpace: 'nowrap' }}>{label}</span>
+                <span style={{ fontSize: '0.82rem', fontWeight: 700, color, whiteSpace: 'nowrap', letterSpacing: '-0.01em' }}>{value}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── CONTENT ──────────────────────────────────────────────────────────── */}
       <div
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
-        style={{ padding: isMobile ? `1.5rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '1.75rem 1.5rem 3rem' }}
+        style={{
+          padding: isMobile
+            ? `1.25rem 1rem calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)`
+            : '1.75rem 1.5rem 3rem',
+          boxSizing: 'border-box',
+          overflowX: 'hidden',
+        }}
       >
 
         {/* ── OVERVIEW ── */}
@@ -1178,51 +1210,87 @@ export const FirePage: React.FC = () => {
 
         {/* ── SCENARIOS ── */}
         {activeTab === 'scenarios' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 16, overflow: 'hidden' }}>
-              {data.fire_scenarios.map((sc, i) => {
-                const colors = ['var(--color-blue-600)', 'var(--color-orange-400)', '#30a46c'];
-                const icons  = [<Zap size={14} />, <Flame size={14} />, <Shield size={14} />];
-                const c = colors[i]; const isTarget = i === 1;
-                return (
-                  <div key={sc.label} style={{ background: 'var(--card)', padding: '1.5rem 1.75rem', borderLeft: isTarget ? `3px solid ${c}` : undefined }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.25rem' }}>
-                      <div style={{ width: 30, height: 30, borderRadius: 9, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icons[i]}</div>
-                      <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>{sc.label}</span>
-                      {isTarget && <span style={{ marginLeft: 'auto', fontSize: '0.62rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c }}>Target</span>}
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-                      {[
-                        { label: 'Monthly spending', value: fmtOrHide(sc.monthly_target, isBalanceHidden) },
-                        { label: 'FIRE number',       value: fmtOrHide(sc.fire_number,    isBalanceHidden), color: c },
-                        { label: 'Time to FIRE',      value: sc.months_to_fire === 0 ? '🎉 Achieved!' : sc.years_to_fire != null ? `${sc.years_to_fire.toFixed(1)} years` : '—', large: true },
-                      ].map(({ label, value, color, large }: any) => (
-                        <div key={label}>
-                          <p style={{ fontSize: '0.6rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
-                          <p style={{ fontSize: large ? '1.6rem' : '0.95rem', fontWeight: large ? 900 : 700, margin: 0, color: color ?? 'var(--foreground)', letterSpacing: large ? '-0.04em' : '-0.02em', lineHeight: 1 }}>{value}</p>
-                          {sc.months_to_fire !== null && sc.months_to_fire > 0 && large && (
-                            <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '3px 0 0' }}>{Math.round(sc.months_to_fire)} months</p>
-                          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+
+            {/* Mobile: compact list rows; desktop: 3-col cards */}
+            {isMobile ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: 'var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+                {data.fire_scenarios.map((sc, i) => {
+                  const colors = ['var(--color-blue-600)', 'var(--color-orange-400)', '#30a46c'];
+                  const icons  = [<Zap size={13} />, <Flame size={13} />, <Shield size={13} />];
+                  const c = colors[i];
+                  return (
+                    <div key={sc.label} style={{ background: 'var(--card)', padding: '1rem', borderLeft: i === 1 ? `3px solid ${c}` : undefined }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 26, height: 26, borderRadius: 8, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icons[i]}</div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>{sc.label}</span>
+                          {i === 1 && <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c }}>Target</span>}
                         </div>
-                      ))}
+                        <p style={{ fontSize: '1.1rem', fontWeight: 900, margin: 0, color: sc.months_to_fire === 0 ? '#30a46c' : 'var(--foreground)', letterSpacing: '-0.03em' }}>
+                          {sc.months_to_fire === 0 ? '🎉' : sc.years_to_fire != null ? `${sc.years_to_fire.toFixed(1)} yrs` : '—'}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', gap: '1.5rem' }}>
+                        <div>
+                          <p style={{ fontSize: '0.58rem', color: 'var(--muted-foreground)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Monthly</p>
+                          <p style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0 }}>{fmtOrHide(sc.monthly_target, isBalanceHidden, true)}</p>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '0.58rem', color: 'var(--muted-foreground)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>FIRE number</p>
+                          <p style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0, color: c }}>{fmtOrHide(sc.fire_number, isBalanceHidden, true)}</p>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 16, overflow: 'hidden' }}>
+                {data.fire_scenarios.map((sc, i) => {
+                  const colors = ['var(--color-blue-600)', 'var(--color-orange-400)', '#30a46c'];
+                  const icons  = [<Zap size={14} />, <Flame size={14} />, <Shield size={14} />];
+                  const c = colors[i]; const isTarget = i === 1;
+                  return (
+                    <div key={sc.label} style={{ background: 'var(--card)', padding: '1.5rem 1.75rem', borderLeft: isTarget ? `3px solid ${c}` : undefined }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.25rem' }}>
+                        <div style={{ width: 30, height: 30, borderRadius: 9, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icons[i]}</div>
+                        <span style={{ fontSize: '0.88rem', fontWeight: 700 }}>{sc.label}</span>
+                        {isTarget && <span style={{ marginLeft: 'auto', fontSize: '0.62rem', fontWeight: 700, padding: '2px 8px', borderRadius: 999, background: `color-mix(in srgb, ${c} 12%, var(--background))`, color: c }}>Target</span>}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                        {[
+                          { label: 'Monthly spending', value: fmtOrHide(sc.monthly_target, isBalanceHidden) },
+                          { label: 'FIRE number',       value: fmtOrHide(sc.fire_number,    isBalanceHidden), color: c },
+                          { label: 'Time to FIRE',      value: sc.months_to_fire === 0 ? '🎉 Achieved!' : sc.years_to_fire != null ? `${sc.years_to_fire.toFixed(1)} years` : '—', large: true },
+                        ].map(({ label, value, color, large }: any) => (
+                          <div key={label}>
+                            <p style={{ fontSize: '0.6rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+                            <p style={{ fontSize: large ? '1.6rem' : '0.95rem', fontWeight: large ? 900 : 700, margin: 0, color: color ?? 'var(--foreground)', letterSpacing: large ? '-0.04em' : '-0.02em', lineHeight: 1 }}>{value}</p>
+                            {sc.months_to_fire !== null && sc.months_to_fire > 0 && large && (
+                              <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '3px 0 0' }}>{Math.round(sc.months_to_fire)} months</p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
             <div>
               <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: '0 0 0.75rem' }}>Data sources</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden' }}>
                 {[
-                  { label: '12-mo avg income',  value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true) },
-                  { label: '12-mo avg expenses', value: fmtOrHide(data.avg_monthly_expenses, isBalanceHidden, true) },
-                  { label: 'Avg net savings',    value: fmtOrHide(data.avg_monthly_savings,  isBalanceHidden, true) },
+                  { label: '12-mo avg income',   value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true) },
+                  { label: '12-mo avg expenses',  value: fmtOrHide(data.avg_monthly_expenses, isBalanceHidden, true) },
+                  { label: 'Avg net savings',     value: fmtOrHide(data.avg_monthly_savings,  isBalanceHidden, true) },
                 ].map(({ label, value }) => (
-                  <div key={label} style={{ background: 'var(--card)', padding: '1.1rem 1.25rem' }}>
-                    <p style={{ fontSize: '0.63rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
-                    <p style={{ fontSize: '1.25rem', fontWeight: 800, margin: 0, letterSpacing: '-0.03em' }}>{value}</p>
-                    <p style={{ fontSize: '0.63rem', color: 'var(--muted-foreground)', margin: '3px 0 0' }}>per month</p>
+                  <div key={label} style={{ background: 'var(--card)', padding: isMobile ? '0.75rem 0.85rem' : '1.1rem 1.25rem' }}>
+                    <p style={{ fontSize: '0.6rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+                    <p style={{ fontSize: isMobile ? '0.9rem' : '1.25rem', fontWeight: 800, margin: 0, letterSpacing: '-0.03em' }}>{value}</p>
+                    <p style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)', margin: '2px 0 0' }}>per month</p>
                   </div>
                 ))}
               </div>
