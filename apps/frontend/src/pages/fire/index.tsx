@@ -94,13 +94,11 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
     setHover({ x: pts[c].x / W * 100, val: pts[c].val, date: sorted[c].date });
   };
 
-  // x-axis ticks
   const tickCount = isMobile ? 3 : 5;
   const tickIdxs = Array.from({ length: tickCount }, (_, i) => Math.round((i / (tickCount - 1)) * (sorted.length - 1)));
 
   return (
     <div>
-      {/* Amount row */}
       <div style={{ padding: isMobile ? '1rem 1rem 0' : '1.25rem 1.5rem 0' }}>
         <p style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: '0 0 0.3rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>Net Worth</p>
         <p style={{ fontSize: isMobile ? '2.4rem' : '3rem', fontWeight: 800, letterSpacing: '-0.04em', lineHeight: 1, margin: '0 0 0.4rem', color: 'var(--foreground)' }}>
@@ -121,7 +119,6 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
         </div>
       </div>
 
-      {/* Chart */}
       <div style={{ position: 'relative', width: '100%', height: chartH, marginTop: '0.75rem' }}>
         <svg
           viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
@@ -160,7 +157,6 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
         )}
       </div>
 
-      {/* X-axis ticks */}
       <div style={{ display: 'flex', justifyContent: 'space-between', padding: `2px ${isMobile ? '0' : '0'} 0` }}>
         {tickIdxs.map(i => (
           <span key={i} style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>
@@ -169,7 +165,6 @@ const HeroChart: React.FC<{ history: { date: string; total_value: number }[]; hi
         ))}
       </div>
 
-      {/* Period selector */}
       <div style={{
         display: 'flex', justifyContent: 'flex-end', gap: 2,
         padding: isMobile ? '0.5rem 0' : '0.5rem 0',
@@ -226,7 +221,6 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
       if (ret <= 0 && mRet === 0) mRet = m;
       if (mCap > 0 && mRet > 0) break;
     }
-    // if never depletes (returns cover expenses), cap at 9999
     if (mCap === 0) mCap = 9999;
     if (mRet === 0) mRet = 9999;
     return {
@@ -239,20 +233,17 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
   const maxM = Math.min(Math.max(mCap, mRet) + Math.round(Math.max(mCap, mRet) * 0.12), 9999);
   const isInfinite = (m: number) => m >= 9999;
 
-  // which month is the cursor hovering over
   const hoverMonth = hoverPct != null ? Math.round((hoverPct / 100) * maxM) : null;
   const hoverDate  = hoverMonth != null ? addMonths(new Date(), hoverMonth) : null;
 
   const dateFmt = (d: Date) => d.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
   const fmtMo = (m: number) => m >= 9999 ? '∞' : m >= 24 ? `${(m / 12).toFixed(1)} yrs` : `${m} mo`;
 
-  // tick marks — every N months
   const tickStep = maxM <= 24 ? 3 : maxM <= 60 ? 6 : maxM <= 120 ? 12 : 24;
   const ticks = Array.from({ length: Math.floor(maxM / tickStep) }, (_, i) => (i + 1) * tickStep).filter(t => t < maxM);
 
   return (
     <div>
-      {/* KPI strip */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1px', background: 'var(--border)', borderRadius: 12, overflow: 'hidden', marginBottom: '1.5rem' }}>
         {[
           { label: 'Capital only',     value: isInfinite(mCap) ? '∞' : fmtMo(mCap), sub: isInfinite(mCap) ? 'self-sustaining' : `depletes ${dateFmt(dCap)}`, color: '#e5484d', bg: 'color-mix(in srgb, #e5484d 8%, var(--background))' },
@@ -267,7 +258,6 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
         ))}
       </div>
 
-      {/* Timeline strip */}
       <div
         style={{ position: 'relative', userSelect: 'none' }}
         onMouseLeave={() => setHoverPct(null)}
@@ -276,7 +266,6 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
           setHoverPct(((e.clientX - rect.left) / rect.width) * 100);
         }}
       >
-        {/* Rows */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, paddingBottom: 28 }}>
           {[
             { label: 'Capital only', months: mCap, color: '#e5484d', endDate: dCap },
@@ -294,9 +283,7 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
                   </div>
                   <span style={{ fontSize: '0.72rem', fontWeight: 700, color }}>{inf ? '∞ — self-sustaining' : dateFmt(endDate)}</span>
                 </div>
-                {/* Track */}
                 <div style={{ position: 'relative', height: 10, background: 'var(--muted)', borderRadius: 999, overflow: 'visible' }}>
-                  {/* Fill */}
                   <div style={{
                     position: 'absolute', left: 0, top: 0, height: '100%',
                     width: `${pct}%`,
@@ -304,7 +291,6 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
                     borderRadius: 999,
                     opacity: 0.85,
                   }} />
-                  {/* End marker dot */}
                   {!inf && (
                     <div style={{
                       position: 'absolute', top: '50%', left: `${endPct}%`,
@@ -315,7 +301,6 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
                       zIndex: 2,
                     }} />
                   )}
-                  {/* Hover cursor line */}
                   {hoverPct != null && (
                     <div style={{
                       position: 'absolute', top: -4, left: `${hoverPct}%`,
@@ -332,7 +317,6 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
           })}
         </div>
 
-        {/* X-axis ticks */}
         <div style={{ position: 'absolute', bottom: 4, left: 0, right: 0, display: 'flex', pointerEvents: 'none' }}>
           <div style={{ position: 'relative', width: '100%', height: 18 }}>
             <span style={{ position: 'absolute', left: 0, fontSize: '0.65rem', color: 'var(--muted-foreground)', transform: 'translateX(0)' }}>now</span>
@@ -344,7 +328,6 @@ const DepletionChart: React.FC<{ netWorth: number; monthlyExpenses: number; annu
           </div>
         </div>
 
-        {/* Hover tooltip */}
         {hoverPct != null && hoverDate != null && (
           <div style={{
             position: 'absolute', bottom: 'calc(100% - 10px)',
@@ -444,7 +427,6 @@ const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRat
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      {/* KPI row */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden' }}>
         {[
           { label: 'Final Wealth',      value: fmtOrHide(result.finalWealth,        hidden, true), sub: `in ${years} years`,  color: '#30a46c' },
@@ -459,7 +441,6 @@ const Simulator: React.FC<{ netWorth: number; defaultContrib: number; defaultRat
         ))}
       </div>
 
-      {/* Controls + chart */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '260px 1fr', gap: isMobile ? '1.5rem' : '2rem', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', padding: '1.25rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14 }}>
           <SliderField label="Monthly savings" val={monthly} min={0} max={5000} step={50} fmt={v => `€${v.toLocaleString()}`} onChange={setMonthly} />
@@ -535,7 +516,6 @@ function calcMortgage(housePrice: number, downPayment: number, annualRate: numbe
   const totalPaid = monthlyPayment * n;
   const totalInterest = totalPaid - principal;
   const totalCosts = downPayment + extraCosts + totalPaid;
-  // 730: 19% of interests paid up to €4000/year → max €760/year, for the loan life
   const annualInterestAvg = totalInterest / years;
   const deductiblePerYear = Math.min(annualInterestAvg, 4000);
   const recovery730 = deductiblePerYear * 0.19 * Math.min(years, 20);
@@ -551,6 +531,55 @@ function calcMortgage(housePrice: number, downPayment: number, annualRate: numbe
   return { principal, monthlyPayment, totalPaid, totalInterest, totalCosts, recovery730, amortization };
 }
 
+// ─── NUOVO: Simulazione rimborso anticipato ───────────────────────────────────
+interface PrepayResult {
+  months: number;
+  totalInterest: number;
+  monthsSaved: number;
+  interestSaved: number;
+  totalExtraPaid: number;
+  amortization: { m: number; balance: number; extra: number }[];
+}
+
+function calcPrepayment(
+  principal: number,
+  annualRate: number,
+  baseYears: number,
+  basePayment: number,
+  extraMonthly: number,
+  annualLump: number,
+): PrepayResult {
+  const r = annualRate / 100 / 12;
+  const n = baseYears * 12;
+  const baseTotalInterest = Math.max(basePayment * n - principal, 0);
+
+  let balance = principal, totalInterest = 0, totalExtra = 0, months = 0;
+  const amortization: PrepayResult['amortization'] = [];
+
+  while (balance > 0.01 && months < n) {
+    months++;
+    const interest       = balance * r;
+    const regularCapital = Math.min(basePayment - interest, balance);
+    let extra            = extraMonthly;
+    if (annualLump > 0 && months % 12 === 0) extra += annualLump;
+    extra = Math.min(extra, Math.max(balance - regularCapital, 0));
+    balance -= regularCapital + extra;
+    totalInterest += interest;
+    totalExtra    += extra;
+    amortization.push({ m: months, balance: Math.max(balance, 0), extra });
+    if (balance <= 0.01) break;
+  }
+
+  return {
+    months,
+    totalInterest,
+    monthsSaved:    n - months,
+    interestSaved:  Math.max(baseTotalInterest - totalInterest, 0),
+    totalExtraPaid: totalExtra,
+    amortization,
+  };
+}
+
 const MORTGAGE_YEARS = [10, 15, 20, 25, 30];
 
 const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ hidden, isMobile }) => {
@@ -564,8 +593,21 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
   const [taxes,        setTaxes]        = useState(4500);
   const [otherCosts,   setOtherCosts]   = useState(10000);
 
+  // ── NUOVO: rimborso anticipato ──
+  const [extraMonthly, setExtraMonthly] = useState(0);
+  const [annualLump,   setAnnualLump]   = useState(0);
+  const [showPrepay,   setShowPrepay]   = useState(false);
+
   const extraCosts = agencyFee + notaryFee + bankFee + taxes + otherCosts;
   const result     = useMemo(() => calcMortgage(housePrice, downPayment, annualRate, years, extraCosts), [housePrice, downPayment, annualRate, years, extraCosts]);
+
+  const prepay = useMemo<PrepayResult | null>(() => {
+    if (!showPrepay || (extraMonthly === 0 && annualLump === 0)) return null;
+    return calcPrepayment(
+      result.principal, annualRate, years,
+      result.monthlyPayment, extraMonthly, annualLump,
+    );
+  }, [showPrepay, extraMonthly, annualLump, result.principal, result.monthlyPayment, annualRate, years]);
 
   // amortization chart
   const amData = result.amortization.filter((_, i) => i % 6 === 0 || i === result.amortization.length - 1);
@@ -578,6 +620,14 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
   const balArea  = `${balPath} L ${W} ${sy(0)} L 0 ${sy(0)} Z`;
   const downPct  = housePrice > 0 ? (downPayment / housePrice * 100) : 0;
 
+  // Prepay chart path
+  const prepayPath = prepay
+    ? prepay.amortization.map((p, i) => {
+        const xRatio = p.m / (years * 12);
+        return `${i === 0 ? 'M' : 'L'} ${xRatio * W} ${sy(p.balance)}`;
+      }).join(' ')
+    : null;
+
   const NumInput: React.FC<{ label: string; val: number; onChange: (v: number) => void; prefix?: string; step?: number }> = ({ label, val, onChange, prefix = '€', step = 1000 }) => (
     <div style={{ minWidth: 0, width: '100%' }}>
       <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, color: 'var(--muted-foreground)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</label>
@@ -585,19 +635,19 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
         <span style={{ position: 'absolute', left: '0.7rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)', fontSize: '0.8rem', fontWeight: 600, pointerEvents: 'none' }}>{prefix}</span>
         <input type="number" value={val} step={step}
           onChange={e => onChange(parseFloat(e.target.value) || 0)}
-          style={{ width: '100%', padding: `0.55rem 0.7rem 0.55rem ${prefix ? '1.6rem' : '0.7rem'}`, background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 9, fontSize: '0.85rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' }}
+          style={{ width: '100%', padding: `0.55rem 0.7rem 0.55rem ${prefix ? '1.6rem' : '0.7rem'}`, background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 9, fontSize: '0.85rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' as const }}
         />
       </div>
     </div>
   );
 
-  const fmtH = (n: number) => hidden ? '€••••••' : fmtEurFull(n);
+  const fmtH  = (n: number) => hidden ? '€••••••' : fmtEurFull(n);
   const fmtHc = (n: number) => hidden ? '€••••••' : fmtEurCompact(n);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0, width: '100%' }}>
 
-      {/* KPI strip */}
+      {/* ── KPI strip base ── */}
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden', minWidth: 0 }}>
         {[
           { label: 'Monthly payment',   value: fmtH(result.monthlyPayment),  color: 'var(--foreground)',  sub: `${years} year mortgage` },
@@ -612,6 +662,51 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
           </div>
         ))}
       </div>
+
+      {/* ── NUOVO: KPI strip risparmio (solo se prepay attivo) ── */}
+      {prepay && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)',
+          gap: '1px', background: 'color-mix(in srgb, #30a46c 30%, var(--border))',
+          borderRadius: 14, overflow: 'hidden',
+          boxShadow: '0 0 0 1.5px color-mix(in srgb, #30a46c 35%, transparent)',
+        }}>
+          {[
+            {
+              label: 'Mesi risparmiati',
+              value: prepay.monthsSaved >= 12
+                ? `${(prepay.monthsSaved / 12).toFixed(1)} anni`
+                : `${prepay.monthsSaved} mesi`,
+              sub: `estingui ${addMonths(new Date(), prepay.months).toLocaleDateString('it-IT', { month: 'short', year: 'numeric' })}`,
+              color: '#30a46c',
+            },
+            {
+              label: 'Interessi risparmiati',
+              value: fmtHc(prepay.interestSaved),
+              sub: 'rispetto al piano base',
+              color: '#30a46c',
+            },
+            {
+              label: 'Rata effettiva mensile',
+              value: fmtH(result.monthlyPayment + extraMonthly),
+              sub: `+${fmtHc(extraMonthly)}/mo extra capitale`,
+              color: 'var(--foreground)',
+            },
+            {
+              label: 'Extra versati totali',
+              value: fmtHc(prepay.totalExtraPaid),
+              sub: annualLump > 0 ? `incl. ${fmtHc(annualLump)}/anno` : 'solo rate extra',
+              color: 'var(--muted-foreground)',
+            },
+          ].map(({ label, value, color, sub }) => (
+            <div key={label} style={{ background: 'color-mix(in srgb, #30a46c 5%, var(--card))', padding: isMobile ? '0.85rem 0.9rem' : '1.1rem 1.25rem', minWidth: 0 }}>
+              <p style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
+              <p style={{ fontSize: isMobile ? '1rem' : '1.25rem', fontWeight: 900, color, margin: '0 0 2px', letterSpacing: '-0.03em', lineHeight: 1 }}>{value}</p>
+              <p style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)', margin: 0 }}>{sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '320px 1fr', gap: '1.25rem', alignItems: 'start', minWidth: 0 }}>
 
@@ -659,19 +754,101 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
             <span style={{ color: 'var(--muted-foreground)' }}>Total extra costs</span>
             <strong style={{ color: 'var(--foreground)' }}>{hidden ? '€••••••' : fmtEurCompact(extraCosts)}</strong>
           </div>
+
+          <div style={{ height: 1, background: 'var(--border)' }} />
+
+          {/* ── NUOVO: Sezione rimborso anticipato ── */}
+          <div>
+            <div
+              onClick={() => setShowPrepay(v => !v)}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', marginBottom: showPrepay ? '0.9rem' : 0 }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Prepayment
+                </span>
+                {prepay && (
+                  <span style={{ fontSize: '0.58rem', fontWeight: 700, padding: '2px 7px', borderRadius: 999, background: 'color-mix(in srgb, #30a46c 12%, var(--background))', color: '#30a46c' }}>
+                    -{prepay.monthsSaved >= 12 ? `${(prepay.monthsSaved / 12).toFixed(1)}y` : `${prepay.monthsSaved}mo`}
+                  </span>
+                )}
+              </div>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ transform: showPrepay ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: 'var(--muted-foreground)' }}>
+                <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </div>
+
+            {showPrepay && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1rem', background: 'color-mix(in srgb, #30a46c 5%, var(--accent))', borderRadius: 11, border: '1px solid color-mix(in srgb, #30a46c 20%, transparent)' }}>
+
+                {/* Slider extra mensile */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 700, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Extra monthly payment
+                    </span>
+                    <span style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.02em' }}>
+                      {extraMonthly === 0 ? '—' : `€${extraMonthly.toLocaleString()}`}
+                    </span>
+                  </div>
+                  <div style={{ position: 'relative', height: 20 }}>
+                    <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', transform: 'translateY(-50%)', height: 5, borderRadius: 999, background: 'var(--muted)' }} />
+                    <div style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', height: 5, borderRadius: 999, width: `${(extraMonthly / 1000) * 100}%`, background: 'linear-gradient(90deg, #30a46c, #2ecc71)' }} />
+                    <input type="range" min={0} max={1000} step={50} value={extraMonthly}
+                      onChange={e => setExtraMonthly(+e.target.value)}
+                      style={{ position: 'absolute', inset: 0, width: '100%', opacity: 0, cursor: 'pointer', height: 20, margin: 0 }}
+                    />
+                    <div style={{
+                      position: 'absolute', top: '50%', transform: 'translate(-50%, -50%)',
+                      left: `${(extraMonthly / 1000) * 100}%`,
+                      width: 18, height: 18, borderRadius: '50%',
+                      background: 'var(--foreground)', border: '2px solid var(--background)',
+                      boxShadow: '0 0 0 1.5px var(--border), 0 2px 8px rgba(0,0,0,.2)',
+                      pointerEvents: 'none',
+                    }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                    <span style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)' }}>€0</span>
+                    <span style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)' }}>€1.000/mo</span>
+                  </div>
+                </div>
+
+                {/* Anticipo annuale */}
+                <NumInput label="Annual lump sum (e.g. bonus)" val={annualLump} onChange={setAnnualLump} step={500} />
+
+                {/* Rata effettiva */}
+                {(extraMonthly > 0 || annualLump > 0) && (
+                  <div style={{ padding: '0.55rem 0.75rem', background: 'var(--background)', borderRadius: 8, display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', border: '1px solid var(--border)' }}>
+                    <span style={{ color: 'var(--muted-foreground)' }}>Effective monthly commitment</span>
+                    <strong style={{ color: 'var(--foreground)' }}>
+                      {hidden ? '€••••••' : `€${(result.monthlyPayment + extraMonthly).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+                    </strong>
+                  </div>
+                )}
+
+                <p style={{ fontSize: '0.63rem', color: 'var(--muted-foreground)', margin: 0, lineHeight: 1.5 }}>
+                  Extra payments go entirely to principal. The base schedule (payment amount + duration) stays fixed — savings accumulate as early repayment.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right: chart + amortization summary */}
+        {/* Right: chart + breakdown + table */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0, width: '100%' }}>
 
           {/* Balance chart */}
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '1.25rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.75rem', flexWrap: 'wrap', gap: 6 }}>
               <h3 style={{ fontSize: '0.83rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Loan balance over time</h3>
-              <div style={{ display: 'flex', gap: '1rem' }}>
-                {[{ color: '#92bfdb', label: 'Balance' }, { color: '#f9ae77', label: 'Monthly interest' }].map(({ color, label }) => (
+              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                {[
+                  { color: '#92bfdb', label: 'Balance' },
+                  { color: '#f9ae77', label: 'Monthly interest', dash: true },
+                  ...(prepay ? [{ color: '#30a46c', label: 'With prepayments', dash: false }] : []),
+                ].map(({ color, label, dash }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <div style={{ width: 10, height: 3, borderRadius: 2, background: color }} />
+                    <div style={{ width: 10, height: dash ? 0 : 3, borderRadius: 2, background: dash ? 'transparent' : color, borderBottom: dash ? `2px dashed ${color}` : 'none' }} />
                     <span style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)' }}>{label}</span>
                   </div>
                 ))}
@@ -683,15 +860,41 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
                   <linearGradient id="balGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#92bfdb" stopOpacity=".2" /><stop offset="100%" stopColor="#92bfdb" stopOpacity="0" />
                   </linearGradient>
+                  <linearGradient id="prepayGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#30a46c" stopOpacity=".15" />
+                    <stop offset="100%" stopColor="#30a46c" stopOpacity="0" />
+                  </linearGradient>
                 </defs>
                 <path d={balArea} fill="url(#balGrad)" />
                 <path d={balPath} fill="none" stroke="#92bfdb" strokeWidth="2.5" strokeLinecap="round" />
                 <path d={intPath} fill="none" stroke="#f9ae77" strokeWidth="2" strokeLinecap="round" strokeDasharray="6,4" />
+
+                {/* Curva prepayment */}
+                {prepay && prepayPath && (
+                  <>
+                    <path
+                      d={`${prepayPath} L ${(prepay.months / (years * 12)) * W} ${sy(0)} L 0 ${sy(0)} Z`}
+                      fill="url(#prepayGrad)"
+                    />
+                    <path d={prepayPath} fill="none" stroke="#30a46c" strokeWidth="2.5" strokeLinecap="round" />
+                    <circle
+                      cx={(prepay.months / (years * 12)) * W}
+                      cy={sy(0)}
+                      r={5}
+                      fill="#30a46c"
+                      stroke="var(--background)"
+                      strokeWidth="2"
+                    />
+                  </>
+                )}
+
                 {amData.map((p, i) => (
-                  <text key={i} x={sx(p.m - 1)} y={H - 5} textAnchor="middle" fontSize="8.5" fill="var(--muted-foreground)" fontFamily="var(--font-sans)">
-                    {addMonths(new Date(), p.m).getFullYear()}
-                  </text>
-                )).filter((_, i) => i % 2 === 0)}
+                  i % 2 === 0
+                    ? <text key={i} x={sx(p.m - 1)} y={H - 5} textAnchor="middle" fontSize="8.5" fill="var(--muted-foreground)" fontFamily="var(--font-sans)">
+                        {addMonths(new Date(), p.m).getFullYear()}
+                      </text>
+                    : null
+                ))}
               </svg>
             </div>
           </div>
@@ -711,7 +914,7 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
                 <div style={{ width: 80, height: 5, background: 'var(--muted)', borderRadius: 999, overflow: 'hidden' }}>
                   <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 999 }} />
                 </div>
-                <span style={{ fontSize: '0.77rem', fontWeight: 700, color: 'var(--foreground)', width: 70, textAlign: 'right', flexShrink: 0 }}>{fmtH(value)}</span>
+                <span style={{ fontSize: '0.77rem', fontWeight: 700, color: 'var(--foreground)', width: 70, textAlign: 'right' as const, flexShrink: 0 }}>{fmtH(value)}</span>
               </div>
             ))}
             <div style={{ height: 1, background: 'var(--border)', margin: '0.75rem 0' }} />
@@ -727,36 +930,63 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
               <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>Net total (after 730)</span>
               <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)' }}>{fmtH(result.totalCosts - result.recovery730)}</span>
             </div>
+            {/* NUOVO: risparmio prepayment */}
+            {prepay && (
+              <>
+                <div style={{ height: 1, background: 'var(--border)', margin: '0.75rem 0' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                  <span style={{ fontSize: '0.72rem', color: '#30a46c' }}>↓ Interest saved (prepayments)</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#30a46c' }}>-{fmtH(prepay.interestSaved)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 4 }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>Net total (prepay + 730)</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)' }}>{fmtH(result.totalCosts - result.recovery730 - prepay.interestSaved)}</span>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* First 12 months amortization mini-table */}
+          {/* Amortization table — year 1 */}
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, overflow: 'hidden' }}>
             <div style={{ padding: '0.9rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
-              <h3 style={{ fontSize: '0.83rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Amortization schedule — year 1</h3>
+              <h3 style={{ fontSize: '0.83rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>
+                Amortization schedule — year 1{prepay ? ' (with prepayments)' : ''}
+              </h3>
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--accent)' }}>
-                    {['Month', 'Payment', 'Interest', 'Capital', 'Balance'].map((h, i) => (
+                    {['Month', 'Payment', 'Interest', 'Capital', ...(prepay ? ['Extra'] : []), 'Balance'].map((h, i) => (
                       <th key={h} style={{ padding: '6px 12px', textAlign: i === 0 ? 'left' : 'right', color: 'var(--muted-foreground)', fontWeight: 600, fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {result.amortization.slice(0, 12).map((row, i) => (
-                    <tr key={row.m} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'var(--accent)' }}>
-                      <td style={{ padding: '7px 12px', fontWeight: 600, color: 'var(--muted-foreground)' }}>{addMonths(new Date(), row.m).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</td>
-                      <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--foreground)' }}>{hidden ? '€••' : `€${row.payment.toFixed(2)}`}</td>
-                      <td style={{ padding: '7px 12px', textAlign: 'right', color: '#f97316', fontWeight: 600 }}>{hidden ? '€••' : `€${row.interest.toFixed(2)}`}</td>
-                      <td style={{ padding: '7px 12px', textAlign: 'right', color: '#30a46c', fontWeight: 600 }}>{hidden ? '€••' : `€${row.capital.toFixed(2)}`}</td>
-                      <td style={{ padding: '7px 12px', textAlign: 'right', color: 'var(--foreground)', fontWeight: 500 }}>{hidden ? '€••••••' : fmtEurFull(row.balance)}</td>
-                    </tr>
-                  ))}
+                  {result.amortization.slice(0, 12).map((row, i) => {
+                    const extraRow = prepay?.amortization[i];
+                    return (
+                      <tr key={row.m} style={{ borderTop: '1px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'var(--accent)' }}>
+                        <td style={{ padding: '7px 12px', fontWeight: 600, color: 'var(--muted-foreground)' }}>{addMonths(new Date(), row.m).toLocaleDateString('en-GB', { month: 'short', year: 'numeric' })}</td>
+                        <td style={{ padding: '7px 12px', textAlign: 'right', fontWeight: 600, color: 'var(--foreground)' }}>{hidden ? '€••' : `€${row.payment.toFixed(2)}`}</td>
+                        <td style={{ padding: '7px 12px', textAlign: 'right', color: '#f97316', fontWeight: 600 }}>{hidden ? '€••' : `€${row.interest.toFixed(2)}`}</td>
+                        <td style={{ padding: '7px 12px', textAlign: 'right', color: '#30a46c', fontWeight: 600 }}>{hidden ? '€••' : `€${row.capital.toFixed(2)}`}</td>
+                        {prepay && (
+                          <td style={{ padding: '7px 12px', textAlign: 'right', color: extraRow && extraRow.extra > 0 ? '#30a46c' : 'var(--muted-foreground)', fontWeight: 600 }}>
+                            {hidden ? '€••' : extraRow && extraRow.extra > 0 ? `+€${extraRow.extra.toFixed(2)}` : '—'}
+                          </td>
+                        )}
+                        <td style={{ padding: '7px 12px', textAlign: 'right', color: 'var(--foreground)', fontWeight: 500 }}>
+                          {hidden ? '€••••••' : prepay && extraRow ? fmtEurFull(extraRow.balance) : fmtEurFull(row.balance)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -849,7 +1079,6 @@ export const FirePage: React.FC = () => {
   const [activeTab, setActiveTab]       = useState<Tab>('overview');
   const tabLayoutId = useId();
 
-  // ── swipe between tabs on mobile ─────────────────────────────────────────
   const TAB_ORDER: Tab[] = ['overview', 'simulation', 'scenarios', 'mortgage'];
   const swipeX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => { swipeX.current = e.touches[0].clientX; };
@@ -857,10 +1086,10 @@ export const FirePage: React.FC = () => {
     if (swipeX.current === null) return;
     const dx = e.changedTouches[0].clientX - swipeX.current;
     swipeX.current = null;
-    if (Math.abs(dx) < 50) return; // ignore taps
+    if (Math.abs(dx) < 50) return;
     const idx = TAB_ORDER.indexOf(activeTab);
-    if (dx < 0 && idx < TAB_ORDER.length - 1) setActiveTab(TAB_ORDER[idx + 1]); // swipe left → next
-    if (dx > 0 && idx > 0)                    setActiveTab(TAB_ORDER[idx - 1]); // swipe right → prev
+    if (dx < 0 && idx < TAB_ORDER.length - 1) setActiveTab(TAB_ORDER[idx + 1]);
+    if (dx > 0 && idx > 0)                    setActiveTab(TAB_ORDER[idx - 1]);
   };
   const isMobile = useIsMobile();
 
@@ -901,7 +1130,7 @@ export const FirePage: React.FC = () => {
   return (
     <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
 
-      {/* ── NAVBAR ──────────────────────────────────────────────────────────── */}
+      {/* ── NAVBAR ── */}
       <div style={{
         position: 'sticky', top: 0, zIndex: 20,
         background: 'color-mix(in srgb, var(--background) 92%, transparent)',
@@ -913,10 +1142,7 @@ export const FirePage: React.FC = () => {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           gap: '1rem', padding: isMobile ? '0.75rem' : '0.75rem 1rem',
         }}>
-          {/* Left: tabs only */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-
-            {/* Animated pill tabs — identical to Budget */}
             <nav style={{
               display: 'inline-flex', alignItems: 'center',
               background: 'color-mix(in srgb, var(--muted) 60%, transparent)',
@@ -962,7 +1188,6 @@ export const FirePage: React.FC = () => {
             </nav>
           </div>
 
-          {/* Right: actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <button
               onClick={toggleBalanceVisibility}
@@ -994,19 +1219,17 @@ export const FirePage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── HERO — always visible, stable height across all tabs ──────────────── */}
+      {/* ── HERO ── */}
       <div style={{
         background: `linear-gradient(180deg, color-mix(in srgb, #30a46c 6%, var(--background)) 0%, var(--background) 80%)`,
         borderBottom: '1px solid var(--border)',
       }}>
         <HeroChart history={data.net_worth_history} hidden={isBalanceHidden} />
 
-        {/* FIRE progress — always shown, stable position */}
         <div style={{ padding: isMobile ? '0 1rem 0.75rem' : '0 1.5rem 0.75rem' }}>
           <FireProgress netWorth={data.net_worth} fireNumber={fireNum} hidden={isBalanceHidden} />
         </div>
 
-        {/* Stat pills — flex row desktop, 2-col grid mobile */}
         {isMobile ? (
           <div style={{
             display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8,
@@ -1065,7 +1288,7 @@ export const FirePage: React.FC = () => {
         )}
       </div>
 
-      {/* ── CONTENT ──────────────────────────────────────────────────────────── */}
+      {/* ── CONTENT ── */}
       <div
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
@@ -1083,7 +1306,6 @@ export const FirePage: React.FC = () => {
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 360px', gap: '1.75rem', alignItems: 'start' }}>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              {/* Capital depletion */}
               <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '1rem' }}>
                   <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0, letterSpacing: '-0.01em' }}>Capital Depletion</h2>
@@ -1092,7 +1314,6 @@ export const FirePage: React.FC = () => {
                 <DepletionChart netWorth={data.net_worth} monthlyExpenses={data.avg_monthly_expenses} annualReturn={s.annual_return_rate} hidden={isBalanceHidden} />
               </div>
 
-              {/* Mini stats grid */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden' }}>
                 {[
                   { label: 'Avg income / mo',   value: fmtOrHide(data.avg_monthly_income,   isBalanceHidden, true), color: '#30a46c',                    icon: <TrendingUp size={13} /> },
@@ -1110,7 +1331,6 @@ export const FirePage: React.FC = () => {
                 ))}
               </div>
 
-              {/* CTA simulator */}
               <div onClick={() => setActiveTab('simulation')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, cursor: 'pointer', transition: 'background .15s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'var(--card)')}>
@@ -1124,7 +1344,6 @@ export const FirePage: React.FC = () => {
                 <ArrowRight size={15} color="var(--muted-foreground)" />
               </div>
 
-              {/* Mortgage CTA */}
               <div onClick={() => setActiveTab('mortgage')} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, cursor: 'pointer', transition: 'background .15s' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'var(--card)')}>
@@ -1141,7 +1360,6 @@ export const FirePage: React.FC = () => {
 
             {/* Right column */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-              {/* Runway */}
               <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '1.25rem' }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                   <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0 }}>Runway</h2>
@@ -1164,7 +1382,6 @@ export const FirePage: React.FC = () => {
                 })()}
               </div>
 
-              {/* FIRE Scenarios */}
               <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, overflow: 'hidden' }}>
                 <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
                   <h2 style={{ fontSize: '0.88rem', fontWeight: 700, margin: 0 }}>FIRE Scenarios</h2>
@@ -1211,7 +1428,6 @@ export const FirePage: React.FC = () => {
         {activeTab === 'scenarios' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
-            {/* Mobile: compact list rows; desktop: 3-col cards */}
             {isMobile ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', background: 'var(--border)', borderRadius: 16, overflow: 'hidden' }}>
                 {data.fire_scenarios.map((sc, i) => {
