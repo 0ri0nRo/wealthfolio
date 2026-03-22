@@ -2,9 +2,8 @@
 import { useBalancePrivacy } from '@/hooks/use-balance-privacy';
 import { FireSettings, useFire } from '@/hooks/useFire';
 import {
-  Activity, ArrowRight,
-  Eye, EyeOff, Flame,
-  Home, Play, Settings, Shield, Target, TrendingUp, Wallet, X, Zap
+  Activity, ArrowRight, Eye, EyeOff, Flame,
+  Home, Play, Settings, Shield, Target, TrendingUp, Wallet, X, Zap,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -580,13 +579,13 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
   const downPct  = housePrice > 0 ? (downPayment / housePrice * 100) : 0;
 
   const NumInput: React.FC<{ label: string; val: number; onChange: (v: number) => void; prefix?: string; step?: number }> = ({ label, val, onChange, prefix = '€', step = 1000 }) => (
-    <div>
+    <div style={{ minWidth: 0, width: '100%' }}>
       <label style={{ display: 'block', fontSize: '0.65rem', fontWeight: 700, color: 'var(--muted-foreground)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</label>
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', width: '100%' }}>
         <span style={{ position: 'absolute', left: '0.7rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)', fontSize: '0.8rem', fontWeight: 600, pointerEvents: 'none' }}>{prefix}</span>
         <input type="number" value={val} step={step}
           onChange={e => onChange(parseFloat(e.target.value) || 0)}
-          style={{ width: '100%', padding: `0.5rem 0.7rem 0.5rem ${prefix ? '1.6rem' : '0.7rem'}`, background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 9, fontSize: '0.85rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' }}
+          style={{ width: '100%', padding: `0.55rem 0.7rem 0.55rem ${prefix ? '1.6rem' : '0.7rem'}`, background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 9, fontSize: '0.85rem', fontWeight: 600, color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' }}
         />
       </div>
     </div>
@@ -596,17 +595,17 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
   const fmtHc = (n: number) => hidden ? '€••••••' : fmtEurCompact(n);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0, width: '100%' }}>
 
       {/* KPI strip */}
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', gap: '1px', background: 'var(--border)', borderRadius: 14, overflow: 'hidden', minWidth: 0 }}>
         {[
           { label: 'Monthly payment',   value: fmtH(result.monthlyPayment),  color: 'var(--foreground)',  sub: `${years} year mortgage` },
           { label: 'Total interest',    value: fmtHc(result.totalInterest),   color: '#e5484d',            sub: `${result.principal > 0 ? ((result.totalInterest / result.principal) * 100).toFixed(0) : 0}% of loan` },
           { label: 'Total house cost',  value: fmtHc(result.totalCosts),      color: 'var(--foreground)',  sub: 'incl. down + extras' },
           { label: '730 tax recovery',  value: fmtHc(result.recovery730),     color: '#30a46c',            sub: 'est. over loan life' },
         ].map(({ label, value, color, sub }) => (
-          <div key={label} style={{ background: 'var(--card)', padding: isMobile ? '0.85rem 0.9rem' : '1.1rem 1.25rem' }}>
+          <div key={label} style={{ background: 'var(--card)', padding: isMobile ? '0.85rem 0.9rem' : '1.1rem 1.25rem', minWidth: 0 }}>
             <p style={{ fontSize: '0.6rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
             <p style={{ fontSize: isMobile ? '1rem' : '1.25rem', fontWeight: 900, color, margin: '0 0 2px', letterSpacing: '-0.03em', lineHeight: 1 }}>{value}</p>
             <p style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)', margin: 0 }}>{sub}</p>
@@ -614,10 +613,10 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '320px 1fr', gap: '1.5rem', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '320px 1fr', gap: '1.25rem', alignItems: 'start', minWidth: 0 }}>
 
         {/* Inputs */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '1.25rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '1rem', boxSizing: 'border-box', minWidth: 0, width: '100%' }}>
           <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Property</p>
           <NumInput label="House price"   val={housePrice}  onChange={setHousePrice} />
           <NumInput label="Down payment"  val={downPayment} onChange={setDownPayment} />
@@ -663,7 +662,7 @@ const MortgageCalculator: React.FC<{ hidden: boolean; isMobile: boolean }> = ({ 
         </div>
 
         {/* Right: chart + amortization summary */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', minWidth: 0, width: '100%' }}>
 
           {/* Balance chart */}
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '1.25rem' }}>
@@ -1300,8 +1299,8 @@ export const FirePage: React.FC = () => {
 
         {/* ── MORTGAGE ── */}
         {activeTab === 'mortgage' && (
-          <div>
-            <div style={{ marginBottom: '1.5rem' }}>
+          <div style={{ minWidth: 0, width: '100%' }}>
+            <div style={{ marginBottom: '1.25rem' }}>
               <h2 style={{ fontSize: '1.05rem', fontWeight: 800, margin: '0 0 3px', letterSpacing: '-0.02em' }}>Mortgage Calculator</h2>
               <p style={{ fontSize: '0.77rem', color: 'var(--muted-foreground)', margin: 0 }}>Enter your property details to calculate monthly payments, total cost and 730 deduction estimate</p>
             </div>
