@@ -139,7 +139,6 @@ export const BudgetPage: React.FC = () => {
   const investments     = txList.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
   const totalIncome     = summary?.totalIncome ?? 0;
   const expensesTotal   = txList.filter(t => t.type === 'expense' && !isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
-  const cashBalance     = (totalIncome - bpIncomeMonth) - (expensesTotal - bpExpensesMonth) - investments;
 
   // ── prev month deltas ─────────────────────────────────────────────────────
   const prevMonth = useMemo(() => {
@@ -159,6 +158,35 @@ export const BudgetPage: React.FC = () => {
   const prevIncome   = prevMonthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
   const prevExpenses = prevMonthTx.filter(t => t.type === 'expense' && !isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
   const prevSavings  = prevMonthTx.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
+
+  // ── cumulative cash carry-over from Jan 2026 ──────────────────────────────
+  // Sums all cash flow (income minus expenses, excluding meal vouchers and
+  // investments) for every month from Jan 2026 up to — but not including —
+  // the currently selected month. This makes the cash balance behave like a
+  // running bank account balance rather than resetting to zero each month.
+  const cumulativePreviousCash = useMemo(() => {
+    const startDate  = new Date(2026, 0, 1); // Jan 1 2026
+    const monthStart = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
+
+    const pastTx = allTxList.filter(t => {
+      const d = new Date(t.date);
+      return d >= startDate && d < monthStart;
+    });
+
+    const pastBpIncome   = pastTx.filter(t => t.type === 'income'  && isBuoniPasto(t)).reduce((s, t) => s + t.amount, 0);
+    const pastBpExpenses = pastTx.filter(t => t.type === 'expense' && isBuoniPasto(t)).reduce((s, t) => s + t.amount, 0);
+    const pastInvestments = pastTx.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
+    const pastIncome     = pastTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const pastExpenses   = pastTx.filter(t => t.type === 'expense' && !isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
+
+    return (pastIncome - pastBpIncome) - (pastExpenses - pastBpExpenses) - pastInvestments;
+  }, [allTxList, selectedMonth]);
+
+  // Cash balance = carry-over from previous months + current month cash flow
+  const cashBalance = cumulativePreviousCash
+    + (totalIncome - bpIncomeMonth)
+    - (expensesTotal - bpExpensesMonth)
+    - investments;
 
   // ── filtered transactions ─────────────────────────────────────────────────
   const filteredTx = useMemo(() => {
