@@ -2,7 +2,7 @@
 import { useBalancePrivacy } from '@/hooks/use-balance-privacy';
 import { useBudget } from '@/hooks/useBudget';
 import { BudgetTransaction } from '@/lib/types/budget';
-import { RecurringExpense } from '@/lib/types/recurring';
+import { RecurringEntryAsTx, RecurringExpense, isRecurringActiveInMonth } from '@/lib/types/recurring';
 import {
   BarChart2, ChevronLeft, ChevronRight, Copy, Edit2, Plus,
   RefreshCw, Search, Settings, SlidersHorizontal, Tag,
@@ -18,7 +18,6 @@ import { ManageCategoriesModal } from "./components/ManageCategoriesModal";
 import { RecurringExpenseCard } from "./components/recurring-expense-card";
 import { RecurringExpenseModal } from "./components/recurring-expense-modal";
 import { RecurringExpensesTable } from "./components/recurring-expenses-table";
-import { TransactionList } from "./components/transaction-list";
 import { YearlyStats } from "./components/YearlyStats";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -34,8 +33,10 @@ function useIsMobile(breakpoint = 768) {
   return isMobile;
 }
 
-const isMealVoucher = (t: BudgetTransaction) =>
-  t.category?.name?.toLowerCase().includes('buoni pasto') ?? false;
+const isMealVoucher = (t: BudgetTransaction | RecurringEntryAsTx) => {
+  if ('category' in t) return (t as BudgetTransaction).category?.name?.toLowerCase().includes('buoni pasto') ?? false;
+  return false;
+};
 
 const isInvestmentTx = (t: BudgetTransaction) => {
   if (!t.category) return false;
@@ -52,36 +53,8 @@ const fmtCompact = (n: number) => {
   return n < 0 ? `-${s}` : s;
 };
 
-// ── Calculate monthly cost of a recurring expense ─────────────────────────────
-function recurringMonthlyAmount(e: RecurringExpense): number {
-  const freq = e.frequency;
-  if (freq === 'monthly')    return e.amount;
-  if (freq === 'bimonthly')  return e.amount / 2;
-  if (freq === 'quarterly')  return e.amount / 3;
-  if (freq === 'semiannual') return e.amount / 6;
-  if (freq === 'annual')     return e.amount / 12;
-  if (freq === 'custom' && e.customDays && e.customDays > 0)
-    return (e.amount / e.customDays) * 30;
-  return 0;
-}
-
-// ── Check if a recurring expense is active during a given month ───────────────
-function isRecurringActiveInMonth(e: RecurringExpense, month: Date): boolean {
-  if (!e.isActive) return false;
-  const monthStart = new Date(month.getFullYear(), month.getMonth(), 1);
-  const monthEnd   = new Date(month.getFullYear(), month.getMonth() + 1, 0);
-  const start = new Date(e.startDate);
-  if (start > monthEnd) return false;
-  if (e.endDate) {
-    const end = new Date(e.endDate);
-    if (end < monthStart) return false;
-  }
-  return true;
-}
-
 type ActiveTab = 'overview' | 'transactions' | 'yearly' | 'recurring';
 
-// ── Recurring IDs — persisted in localStorage ─────────────────────────────────
 const RECURRING_KEY = 'budget_recurring_ids';
 function loadRecurring(): Set<string> {
   try { return new Set(JSON.parse(localStorage.getItem(RECURRING_KEY) ?? '[]')); }
@@ -106,7 +79,6 @@ export const BudgetPage: React.FC = () => {
   const isMobile    = useIsMobile();
   const tabLayoutId = useId();
 
-  // ── Search & filters ──────────────────────────────────────────────────────
   const [search,       setSearch]       = useState('');
   const [filterType,   setFilterType]   = useState<'all' | 'income' | 'expense'>('all');
   const [filterCatId,  setFilterCatId]  = useState<number | null>(null);
@@ -114,7 +86,6 @@ export const BudgetPage: React.FC = () => {
   const [filterAmtMax, setFilterAmtMax] = useState('');
   const [showFilters,  setShowFilters]  = useState(false);
 
-  // ── Recurring IDs (localStorage — for "mark as fixed" on transactions) ────
   const [recurringIds, setRecurringIds] = useState<Set<string>>(loadRecurring);
   const toggleRecurring = (id: string) => {
     setRecurringIds(prev => {
@@ -125,7 +96,6 @@ export const BudgetPage: React.FC = () => {
     });
   };
 
-  // ── Tab swipe ─────────────────────────────────────────────────────────────
   const TAB_ORDER: ActiveTab[] = ['overview', 'transactions', 'yearly', 'recurring'];
   const swipeX = useRef<number | null>(null);
   const onTouchStart = (e: React.TouchEvent) => { swipeX.current = e.touches[0].clientX; };
@@ -142,61 +112,47 @@ export const BudgetPage: React.FC = () => {
   const { isBalanceHidden, toggleBalanceVisibility } = useBalancePrivacy();
 
   const {
-    transactions, allTransactions, categories,
-    summary, loading, error,
+    transactions, allTransactions, categories, summary, loading, error,
     createTransaction, deleteTransaction, updateTransaction, refresh,
     createCategory, updateCategory, deleteCategory,
-    recurringExpenses,
-    createRecurringExpense,
-    updateRecurringExpense,
-    deleteRecurringExpense,
+    recurringExpenses, createRecurringExpense, updateRecurringExpense, deleteRecurringExpense,
+    recurringEntryTxns, deleteRecurringEntry,
   } = useBudget(selectedMonth);
 
   useEffect(() => {
     if (!showGearMenu) return;
     const h = (e: MouseEvent) => {
-      if (gearRef.current && !gearRef.current.contains(e.target as Node))
-        setShowGearMenu(false);
+      if (gearRef.current && !gearRef.current.contains(e.target as Node)) setShowGearMenu(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [showGearMenu]);
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const txList    = transactions    || [];
-  const allTxList = allTransactions || [];
-  const recurringList = recurringExpenses || [];
+  const txList         = transactions    || [];
+  const allTxList      = allTransactions || [];
+  const recurringList  = recurringExpenses || [];
+  const entryTxns      = recurringEntryTxns || [];  // virtual txns for this month
 
-  // Meal vouchers
+  // Meal vouchers (from regular transactions only)
   const bpIncomeMonth   = txList.filter(t => t.type === 'income'  && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
   const bpExpensesMonth = txList.filter(t => t.type === 'expense' && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
   const bpIncomeAll     = allTxList.filter(t => t.type === 'income'  && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
   const bpExpensesAll   = allTxList.filter(t => t.type === 'expense' && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
   const bpBalance       = bpIncomeAll - bpExpensesAll;
 
-  // Investments (from transactions)
-  const investments = txList
-    .filter(t => t.type === 'expense' && isInvestmentTx(t))
-    .reduce((s, t) => s + t.amount, 0);
+  const investments  = txList.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
+  const totalIncome  = summary?.totalIncome ?? 0;
 
-  const totalIncome = summary?.totalIncome ?? 0;
-
-  // Regular expenses from transactions (no investments, no meal vouchers)
+  // Regular expenses from manual transactions (no investments)
   const txExpensesTotal = txList
     .filter(t => t.type === 'expense' && !isInvestmentTx(t))
     .reduce((s, t) => s + t.amount, 0);
 
-  // ── Recurring expenses active this month ───────────────────────────────────
-  // Sum the estimated monthly cost of each active recurring expense.
-  // This is added to expensesTotal so the Expenses stat card reflects reality.
-  const recurringMonthlyTotal = useMemo(() =>
-    recurringList
-      .filter(e => isRecurringActiveInMonth(e, selectedMonth))
-      .reduce((s, e) => s + recurringMonthlyAmount(e), 0),
-    [recurringList, selectedMonth]
-  );
+  // Recurring expenses for this month = sum of entry amounts
+  const recurringMonthlyTotal = entryTxns.reduce((s, e) => s + e.amount, 0);
 
-  // Total expenses = manual transactions + recurring monthly estimate
+  // Total expenses = manual + recurring entries
   const expensesTotal = txExpensesTotal + recurringMonthlyTotal;
 
   // ── Prev month deltas ─────────────────────────────────────────────────────
@@ -209,23 +165,24 @@ export const BudgetPage: React.FC = () => {
   const prevMonthTx = useMemo(() =>
     allTxList.filter(t => {
       const d = new Date(t.date);
-      return d.getMonth() === prevMonth.getMonth() &&
-             d.getFullYear() === prevMonth.getFullYear();
+      return d.getMonth() === prevMonth.getMonth() && d.getFullYear() === prevMonth.getFullYear();
     }),
     [allTxList, prevMonth]
   );
 
-  const prevIncome   = prevMonthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const prevTxExpenses = prevMonthTx
-    .filter(t => t.type === 'expense' && !isInvestmentTx(t))
-    .reduce((s, t) => s + t.amount, 0);
-  const prevRecurringTotal = recurringList
-    .filter(e => isRecurringActiveInMonth(e, prevMonth))
-    .reduce((s, e) => s + recurringMonthlyAmount(e), 0);
-  const prevExpenses = prevTxExpenses + prevRecurringTotal;
-  const prevSavings  = prevMonthTx.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
+  const prevIncome     = prevMonthTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+  const prevTxExpenses = prevMonthTx.filter(t => t.type === 'expense' && !isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
+  const prevSavings    = prevMonthTx.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
 
-  // ── Cumulative cash carry-over from Jan 2026 ──────────────────────────────
+  const prevRecurringTotal = useMemo(() => {
+    return recurringList
+      .filter(e => isRecurringActiveInMonth(e, prevMonth.getFullYear(), prevMonth.getMonth() + 1))
+      .reduce((s, e) => s + e.amount, 0);
+  }, [recurringList, prevMonth]);
+
+  const prevExpenses = prevTxExpenses + prevRecurringTotal;
+
+  // ── Cumulative cash ───────────────────────────────────────────────────────
   const cumulativePreviousCash = useMemo(() => {
     const startDate  = new Date(2026, 0, 1);
     const monthStart = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
@@ -241,13 +198,14 @@ export const BudgetPage: React.FC = () => {
     const pastIncome      = pastTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
     const pastTxExpenses  = pastTx.filter(t => t.type === 'expense' && !isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
 
-    // Also include recurring costs for past months
     let pastRecurring = 0;
     const cursor = new Date(startDate);
     while (cursor < monthStart) {
+      const y = cursor.getFullYear();
+      const m = cursor.getMonth() + 1;
       pastRecurring += recurringList
-        .filter(e => isRecurringActiveInMonth(e, cursor))
-        .reduce((s, e) => s + recurringMonthlyAmount(e), 0);
+        .filter(e => isRecurringActiveInMonth(e, y, m))
+        .reduce((s, e) => s + e.amount, 0);
       cursor.setMonth(cursor.getMonth() + 1);
     }
 
@@ -260,19 +218,40 @@ export const BudgetPage: React.FC = () => {
     - recurringMonthlyTotal
     - investments;
 
-  // ── Filtered transactions ─────────────────────────────────────────────────
+  // ── Combined transaction list (manual + recurring entries) ─────────────────
+  const combinedTxList = useMemo(() => {
+    const entryAsAny = entryTxns.map(e => ({
+      ...e,
+      categoryId: e.categoryId,
+      category:   categories.find(c => Number(c.id) === e.categoryId),
+    }));
+    return [...txList, ...entryAsAny as any[]].sort((a, b) => b.date.localeCompare(a.date));
+  }, [txList, entryTxns, categories]);
+
+  // ── Recurring entries shaped as BudgetTransaction for charts/insights ──────
+  // Adds the `category` object so BudgetChart and BudgetInsights can group by category
+  const entryTxnsAsTx = useMemo(() =>
+    entryTxns.map(e => ({
+      ...e,
+      type: 'expense' as const,
+      category: categories.find(c => Number(c.id) === e.categoryId),
+    })),
+    [entryTxns, categories]
+  );
+
+  // ── Filtered combined transactions ────────────────────────────────────────
   const filteredTx = useMemo(() => {
-    let r = txList;
-    if (search) r = r.filter(t =>
+    let r = combinedTxList;
+    if (search) r = r.filter((t: any) =>
       [t.description, t.notes, t.category?.name]
-        .some(s => s?.toLowerCase().includes(search.toLowerCase()))
+        .some((s: any) => s?.toLowerCase().includes(search.toLowerCase()))
     );
-    if (filterType !== 'all') r = r.filter(t => t.type === filterType);
-    if (filterCatId)          r = r.filter(t => t.category?.id === filterCatId);
-    const mn = parseFloat(filterAmtMin); if (!isNaN(mn)) r = r.filter(t => t.amount >= mn);
-    const mx = parseFloat(filterAmtMax); if (!isNaN(mx)) r = r.filter(t => t.amount <= mx);
+    if (filterType !== 'all') r = r.filter((t: any) => t.type === filterType);
+    if (filterCatId)          r = r.filter((t: any) => Number(t.category?.id ?? t.categoryId) === filterCatId);
+    const mn = parseFloat(filterAmtMin); if (!isNaN(mn)) r = r.filter((t: any) => t.amount >= mn);
+    const mx = parseFloat(filterAmtMax); if (!isNaN(mx)) r = r.filter((t: any) => t.amount <= mx);
     return r;
-  }, [txList, search, filterType, filterCatId, filterAmtMin, filterAmtMax]);
+  }, [combinedTxList, search, filterType, filterCatId, filterAmtMin, filterAmtMax]);
 
   const hasActiveFilter = !!(search || filterType !== 'all' || filterCatId || filterAmtMin || filterAmtMax);
   const clearFilters = () => {
@@ -280,11 +259,10 @@ export const BudgetPage: React.FC = () => {
     setFilterAmtMin(''); setFilterAmtMax('');
   };
 
-  // ── Recurring summary (for "fixed vs discretionary" card) ─────────────────
-  const recurringTx    = txList.filter(t => recurringIds.has(String(t.id)));
-  const recurringFixed = recurringTx.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0)
-    + recurringMonthlyTotal;
-  const discretionary  = expensesTotal - recurringFixed;
+  // ── Fixed vs discretionary (unified) ─────────────────────────────────────
+  const manualRecurringFixed = txList.filter(t => recurringIds.has(String(t.id)) && t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  const totalRecurringFixed  = manualRecurringFixed + recurringMonthlyTotal;
+  const discretionary        = expensesTotal - totalRecurringFixed;
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
@@ -301,8 +279,7 @@ export const BudgetPage: React.FC = () => {
           notes:       transaction.notes,
         });
       }
-      setShowAddModal(false);
-      setEditingTransaction(null);
+      setShowAddModal(false); setEditingTransaction(null);
     } catch (err) {
       alert('Error saving transaction: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
@@ -312,45 +289,34 @@ export const BudgetPage: React.FC = () => {
     try {
       await createTransaction({
         categoryId:  t.categoryId ?? (t.category?.id as number),
-        amount:      t.amount,
-        type:        t.type,
-        description: `${t.description} (copy)`,
-        date:        t.date,
-        notes:       t.notes,
+        amount:      t.amount, type: t.type,
+        description: `${t.description} (copy)`, date: t.date, notes: t.notes,
       });
     } catch {}
   };
 
   const handleDeleteTransaction = async (id: string | number) => {
-    try { await deleteTransaction(id); } catch {}
+    if (typeof id === 'string' && id.startsWith('rec-')) {
+      const entryId = id.replace('rec-', '');
+      try { await deleteRecurringEntry(entryId); } catch {}
+    } else {
+      try { await deleteTransaction(id); } catch {}
+    }
   };
 
   const handleAddRecurringExpense = async (expense: Partial<RecurringExpense>) => {
     try {
       const categoryId = typeof expense.categoryId === 'string'
-        ? parseInt(expense.categoryId, 10)
-        : (expense.categoryId || 0);
-
+        ? parseInt(expense.categoryId, 10) : (expense.categoryId || 0);
       const payload: Partial<RecurringExpense> = {
-        categoryId,
-        amount:      expense.amount,
-        description: expense.description,
-        frequency:   expense.frequency,
-        customDays:  expense.customDays,
-        startDate:   expense.startDate,
-        endDate:     expense.endDate || null,
-        notes:       expense.notes,
-        isActive:    true,
+        categoryId, amount: expense.amount, description: expense.description,
+        frequency: expense.frequency, customDays: expense.customDays,
+        startDate: expense.startDate, endDate: expense.endDate || null,
+        notes: expense.notes, isActive: true,
       };
-
-      if (editingRecurring) {
-        await updateRecurringExpense(Number(editingRecurring.id), payload);
-      } else {
-        await createRecurringExpense(payload);
-      }
-
-      setShowRecurringModal(false);
-      setEditingRecurring(null);
+      if (editingRecurring) await updateRecurringExpense(Number(editingRecurring.id), payload);
+      else await createRecurringExpense(payload);
+      setShowRecurringModal(false); setEditingRecurring(null);
     } catch (err) {
       alert('Error saving recurring expense: ' + (err instanceof Error ? err.message : 'Unknown error'));
     }
@@ -365,15 +331,10 @@ export const BudgetPage: React.FC = () => {
   const handleDuplicateRecurringExpense = async (expense: RecurringExpense) => {
     try {
       await createRecurringExpense({
-        categoryId:  expense.categoryId,
-        amount:      expense.amount,
-        description: `${expense.description} (copy)`,
-        frequency:   expense.frequency,
-        customDays:  expense.customDays,
-        startDate:   new Date().toISOString().split('T')[0],
-        endDate:     null,
-        notes:       expense.notes,
-        isActive:    true,
+        categoryId: expense.categoryId, amount: expense.amount,
+        description: `${expense.description} (copy)`, frequency: expense.frequency,
+        customDays: expense.customDays, startDate: new Date().toISOString().split('T')[0],
+        endDate: null, notes: expense.notes, isActive: true,
       });
     } catch (err) { console.error('Error duplicating recurring expense:', err); }
   };
@@ -403,43 +364,11 @@ export const BudgetPage: React.FC = () => {
   interface StatCard { label: string; value: number; delta?: number; icon: React.ReactNode; iconColor: string; iconBg: string; }
 
   const statCards: StatCard[] = [
-    {
-      label: 'Income', value: totalIncome,
-      delta: prevIncome > 0 ? totalIncome - prevIncome : undefined,
-      icon: <TrendingUp size={16} />,
-      iconColor: 'var(--success)',
-      iconBg: 'color-mix(in srgb, var(--success) 12%, var(--background))',
-    },
-    {
-      label: 'Expenses', value: expensesTotal,
-      delta: prevExpenses > 0 ? expensesTotal - prevExpenses : undefined,
-      icon: <TrendingDown size={16} />,
-      iconColor: 'var(--destructive)',
-      iconBg: 'color-mix(in srgb, var(--destructive) 12%, var(--background))',
-    },
-    {
-      label: 'Savings', value: investments,
-      delta: prevSavings > 0 ? investments - prevSavings : undefined,
-      icon: <TrendingUp size={16} />,
-      iconColor: 'var(--color-purple-600)',
-      iconBg: 'color-mix(in srgb, var(--color-purple-600) 12%, var(--background))',
-    },
-    {
-      label: 'Cash', value: cashBalance,
-      icon: <Wallet size={16} />,
-      iconColor: cashBalance >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)',
-      iconBg: cashBalance >= 0
-        ? 'color-mix(in srgb, var(--color-blue-600) 12%, var(--background))'
-        : 'color-mix(in srgb, var(--destructive) 12%, var(--background))',
-    },
-    {
-      label: 'Meal Vouchers', value: bpBalance,
-      icon: <UtensilsCrossed size={16} />,
-      iconColor: bpBalance >= 0 ? 'var(--color-orange-400)' : 'var(--destructive)',
-      iconBg: bpBalance >= 0
-        ? 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))'
-        : 'color-mix(in srgb, var(--destructive) 12%, var(--background))',
-    },
+    { label: 'Income',        value: totalIncome,   delta: prevIncome   > 0 ? totalIncome   - prevIncome   : undefined, icon: <TrendingUp size={16} />,    iconColor: 'var(--success)',          iconBg: 'color-mix(in srgb, var(--success) 12%, var(--background))' },
+    { label: 'Expenses',      value: expensesTotal, delta: prevExpenses > 0 ? expensesTotal - prevExpenses : undefined, icon: <TrendingDown size={16} />,  iconColor: 'var(--destructive)',      iconBg: 'color-mix(in srgb, var(--destructive) 12%, var(--background))' },
+    { label: 'Savings',       value: investments,   delta: prevSavings  > 0 ? investments   - prevSavings  : undefined, icon: <TrendingUp size={16} />,    iconColor: 'var(--color-purple-600)', iconBg: 'color-mix(in srgb, var(--color-purple-600) 12%, var(--background))' },
+    { label: 'Cash',          value: cashBalance,   icon: <Wallet size={16} />,          iconColor: cashBalance >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)',    iconBg: cashBalance >= 0 ? 'color-mix(in srgb, var(--color-blue-600) 12%, var(--background))' : 'color-mix(in srgb, var(--destructive) 12%, var(--background))' },
+    { label: 'Meal Vouchers', value: bpBalance,     icon: <UtensilsCrossed size={16} />, iconColor: bpBalance >= 0 ? 'var(--color-orange-400)' : 'var(--destructive)', iconBg: bpBalance >= 0 ? 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))' : 'color-mix(in srgb, var(--destructive) 12%, var(--background))' },
   ];
 
   const TABS: [ActiveTab, string][] = [
@@ -455,31 +384,28 @@ export const BudgetPage: React.FC = () => {
       {/* ── NAVBAR ─────────────────────────────────────────────────────────── */}
       <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', padding: isMobile ? '0.75rem' : '0.75rem 1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <nav style={{ display: 'inline-flex', alignItems: 'center', background: 'color-mix(in srgb, var(--muted) 60%, transparent)', borderRadius: '999px', padding: '3px', gap: '2px' }}>
-              {TABS.map(([key, label]) => {
-                const isActive = activeTab === key;
-                return (
-                  <button key={key} type="button" onClick={() => setActiveTab(key)}
-                    style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: isMobile ? '4px 8px' : '5px 14px', borderRadius: '999px', border: 'none', background: 'transparent', fontSize: '0.875rem', fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', color: isActive ? 'var(--foreground)' : 'var(--muted-foreground)', WebkitTapHighlightColor: 'transparent', userSelect: 'none', transition: 'color 0.2s' }}>
-                    {isActive && (
-                      <motion.div layoutId={`budget-tab-${tabLayoutId}`}
-                        style={{ position: 'absolute', inset: 0, borderRadius: '999px', background: 'var(--background)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}
-                        initial={false} transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
-                    )}
-                    <span style={{ position: 'relative', zIndex: 10 }}>{label}</span>
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
+          <nav style={{ display: 'inline-flex', alignItems: 'center', background: 'color-mix(in srgb, var(--muted) 60%, transparent)', borderRadius: '999px', padding: '3px', gap: '2px' }}>
+            {TABS.map(([key, label]) => {
+              const isActive = activeTab === key;
+              return (
+                <button key={key} type="button" onClick={() => setActiveTab(key)}
+                  style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: '4px', padding: isMobile ? '4px 8px' : '5px 14px', borderRadius: '999px', border: 'none', background: 'transparent', fontSize: '0.875rem', fontWeight: 500, whiteSpace: 'nowrap', cursor: 'pointer', color: isActive ? 'var(--foreground)' : 'var(--muted-foreground)', WebkitTapHighlightColor: 'transparent', userSelect: 'none', transition: 'color 0.2s' }}>
+                  {isActive && (
+                    <motion.div layoutId={`budget-tab-${tabLayoutId}`}
+                      style={{ position: 'absolute', inset: 0, borderRadius: '999px', background: 'var(--background)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}
+                      initial={false} transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
+                  )}
+                  <span style={{ position: 'relative', zIndex: 10 }}>{label}</span>
+                </button>
+              );
+            })}
+          </nav>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             {activeTab !== 'yearly' && activeTab !== 'recurring' && !isMobile && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                 <button onClick={goToPrevMonth} style={{ width: 28, height: 28, border: 'none', borderRadius: '8px', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)' }}><ChevronLeft size={15} /></button>
-                <button onClick={() => setSelectedMonth(new Date())}
-                  style={{ padding: '4px 10px', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap', letterSpacing: '-0.01em', WebkitTapHighlightColor: 'transparent', background: isCurrentMonth ? 'var(--muted)' : 'color-mix(in srgb, var(--color-orange-400) 15%, var(--background))', color: isCurrentMonth ? 'var(--foreground)' : 'var(--color-orange-400)' }}>
+                <button onClick={() => setSelectedMonth(new Date())} style={{ padding: '4px 10px', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap', letterSpacing: '-0.01em', WebkitTapHighlightColor: 'transparent', background: isCurrentMonth ? 'var(--muted)' : 'color-mix(in srgb, var(--color-orange-400) 15%, var(--background))', color: isCurrentMonth ? 'var(--foreground)' : 'var(--color-orange-400)' }}>
                   {selectedMonth.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}
                 </button>
                 <button onClick={goToNextMonth} style={{ width: 28, height: 28, border: 'none', borderRadius: '8px', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)' }}><ChevronRight size={15} /></button>
@@ -523,7 +449,7 @@ export const BudgetPage: React.FC = () => {
             <button
               onClick={() => {
                 if (activeTab === 'recurring') { setEditingRecurring(null); setShowRecurringModal(true); }
-                else { setShowAddModal(true); }
+                else setShowAddModal(true);
               }}
               style={{ display: 'inline-flex', alignItems: 'center', gap: isMobile ? 0 : '0.35rem', padding: isMobile ? '7px 10px' : '7px 14px', background: 'var(--foreground)', color: 'var(--background)', border: 'none', borderRadius: '10px', fontSize: '0.78rem', fontWeight: 600, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
             >
@@ -552,34 +478,38 @@ export const BudgetPage: React.FC = () => {
               </div>
             )}
 
-            {/* Desktop layout */}
             {!isMobile && (
               <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                   <StatCards cards={statCards} isBalanceHidden={isBalanceHidden} />
-                  {recurringMonthlyTotal > 0 && (
-                    <RecurringSummary
-                      recurringFixed={recurringFixed}
+
+                  {(totalRecurringFixed > 0) && (
+                    <FixedVsDiscretionaryCard
+                      recurringFixed={totalRecurringFixed}
                       discretionary={discretionary}
                       totalExpenses={expensesTotal}
-                      isBalanceHidden={isBalanceHidden}
-                      recurringTx={recurringTx}
                       recurringMonthlyTotal={recurringMonthlyTotal}
-                    />
-                  )}
-                  {recurringList.filter(e => e.isActive).length > 0 && (
-                    <RecurringExpenseCard
-                      recurringExpenses={recurringList}
+                      entryTxns={entryTxns}
                       isBalanceHidden={isBalanceHidden}
-                      onViewAll={() => setActiveTab('recurring')}
                     />
                   )}
-                  <BudgetChart transactions={transactions || []} isBalanceHidden={isBalanceHidden} />
-                  <BudgetInsights transactions={transactions || []} allTransactions={allTransactions || []} totalIncome={totalIncome} totalExpenses={expensesTotal} savings={investments} isBalanceHidden={isBalanceHidden} />
+
+                  {/* FIX: include recurring entries so the pie chart shows them */}
+                  <BudgetChart transactions={[...txList, ...entryTxnsAsTx] as any[]} isBalanceHidden={isBalanceHidden} />
+                  <BudgetInsights
+                    transactions={[...txList, ...entryTxnsAsTx] as any[]}
+                    allTransactions={allTransactions || []}
+                    totalIncome={totalIncome}
+                    totalExpenses={expensesTotal}
+                    savings={investments}
+                    isBalanceHidden={isBalanceHidden}
+                  />
                 </div>
+
                 <div style={{ width: 360, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                   <RecurringMiniTable
                     recurringExpenses={recurringList}
+                    entryTxns={entryTxns}
                     isBalanceHidden={isBalanceHidden}
                     onViewAll={() => setActiveTab('recurring')}
                     onAdd={() => { setEditingRecurring(null); setShowRecurringModal(true); }}
@@ -590,9 +520,22 @@ export const BudgetPage: React.FC = () => {
                       <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500 }}>View all →</span>
                     </div>
                     <div style={{ maxHeight: 480, overflowY: 'auto' }}>
-                      {txList.length === 0
+                      {combinedTxList.length === 0
                         ? <EmptyState onAdd={() => setShowAddModal(true)} message="No transactions yet this month" />
-                        : <TransactionList transactions={txList.slice(0, 10)} onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }} onDelete={handleDeleteTransaction} isBalanceHidden={isBalanceHidden} />
+                        : combinedTxList.slice(0, 10).map((t: any) => (
+                          <SwipeableRow
+                            key={t.id}
+                            transaction={t}
+                            isRecurring={recurringIds.has(String(t.id))}
+                            isRecurringEntry={!!t.isRecurringEntry}
+                            isBalanceHidden={isBalanceHidden}
+                            isMobile={isMobile}
+                            onEdit={() => { if (!t.isRecurringEntry) { setEditingTransaction(t); setShowAddModal(true); } }}
+                            onDelete={() => handleDeleteTransaction(t.id)}
+                            onDuplicate={() => { if (!t.isRecurringEntry) handleDuplicate(t); }}
+                            onToggleRecurring={() => { if (!t.isRecurringEntry) toggleRecurring(String(t.id)); }}
+                          />
+                        ))
                       }
                     </div>
                     <div onClick={() => setActiveTab('yearly')}
@@ -613,21 +556,21 @@ export const BudgetPage: React.FC = () => {
               </div>
             )}
 
-            {/* Mobile layout */}
             {isMobile && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0 1rem' }}>
                 <StatCardsMobile cards={statCards} isBalanceHidden={isBalanceHidden} />
-                {recurringMonthlyTotal > 0 && (
-                  <RecurringSummary
-                    recurringFixed={recurringFixed}
+                {totalRecurringFixed > 0 && (
+                  <FixedVsDiscretionaryCard
+                    recurringFixed={totalRecurringFixed}
                     discretionary={discretionary}
                     totalExpenses={expensesTotal}
-                    isBalanceHidden={isBalanceHidden}
-                    recurringTx={recurringTx}
                     recurringMonthlyTotal={recurringMonthlyTotal}
+                    entryTxns={entryTxns}
+                    isBalanceHidden={isBalanceHidden}
                   />
                 )}
-                <BudgetChart transactions={transactions || []} isBalanceHidden={isBalanceHidden} />
+                {/* FIX: include recurring entries so the pie chart shows them */}
+                <BudgetChart transactions={[...txList, ...entryTxnsAsTx] as any[]} isBalanceHidden={isBalanceHidden} />
                 <RecurringExpenseCard
                   recurringExpenses={recurringList}
                   isBalanceHidden={isBalanceHidden}
@@ -651,12 +594,31 @@ export const BudgetPage: React.FC = () => {
                     <h2 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Recent Transactions</h2>
                     <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}>View all →</span>
                   </div>
-                  {txList.length === 0
+                  {combinedTxList.length === 0
                     ? <EmptyState onAdd={() => setShowAddModal(true)} message="No transactions this month" compact />
-                    : <TransactionList transactions={txList.slice(0, 5)} onEdit={t => { setEditingTransaction(t); setShowAddModal(true); }} onDelete={handleDeleteTransaction} isBalanceHidden={isBalanceHidden} />
+                    : combinedTxList.slice(0, 5).map((t: any) => (
+                      <SwipeableRow
+                        key={t.id}
+                        transaction={t}
+                        isRecurring={recurringIds.has(String(t.id))}
+                        isRecurringEntry={!!t.isRecurringEntry}
+                        isBalanceHidden={isBalanceHidden}
+                        isMobile={isMobile}
+                        onEdit={() => { if (!t.isRecurringEntry) { setEditingTransaction(t); setShowAddModal(true); } }}
+                        onDelete={() => handleDeleteTransaction(t.id)}
+                        onDuplicate={() => { if (!t.isRecurringEntry) handleDuplicate(t); }}
+                        onToggleRecurring={() => { if (!t.isRecurringEntry) toggleRecurring(String(t.id)); }}
+                      />
+                    ))
                   }
                 </div>
-                <BudgetInsights transactions={transactions || []} allTransactions={allTransactions || []} totalIncome={totalIncome} totalExpenses={expensesTotal} savings={investments} isBalanceHidden={isBalanceHidden} />
+                {/* FIX: include recurring entries so Top Categories includes them */}
+                <BudgetInsights
+                  transactions={[...txList, ...entryTxnsAsTx] as any[]}
+                  allTransactions={allTransactions || []}
+                  totalIncome={totalIncome} totalExpenses={expensesTotal}
+                  savings={investments} isBalanceHidden={isBalanceHidden}
+                />
               </div>
             )}
           </div>
@@ -672,8 +634,13 @@ export const BudgetPage: React.FC = () => {
                 <h2 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>
                   All Transactions
                   <span style={{ fontSize: '0.72rem', fontWeight: 500, marginLeft: 8, color: hasActiveFilter ? 'var(--color-orange-400)' : 'var(--muted-foreground)' }}>
-                    {hasActiveFilter ? `${filteredTx.length} of ${txList.length}` : txList.length}
+                    {hasActiveFilter ? `${filteredTx.length} of ${combinedTxList.length}` : combinedTxList.length}
                   </span>
+                  {entryTxns.length > 0 && (
+                    <span style={{ fontSize: '0.65rem', fontWeight: 600, marginLeft: 6, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)' }}>
+                      +{entryTxns.length} recurring
+                    </span>
+                  )}
                 </h2>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <button onClick={() => setShowFilters(v => !v)}
@@ -690,11 +657,7 @@ export const BudgetPage: React.FC = () => {
                   placeholder="Search description, notes, category…"
                   style={{ width: '100%', padding: '7px 32px 7px 30px', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 10, fontSize: '0.8rem', color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' }}
                 />
-                {search && (
-                  <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--muted-foreground)', padding: 2, display: 'flex' }}>
-                    <X size={12} />
-                  </button>
-                )}
+                {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--muted-foreground)', padding: 2, display: 'flex' }}><X size={12} /></button>}
               </div>
               {showFilters && (
                 <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
@@ -708,11 +671,10 @@ export const BudgetPage: React.FC = () => {
                   </div>
                   {(categories || []).length > 0 && (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button onClick={() => setFilterCatId(null)}
-                        style={{ padding: '3px 10px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer', border: '1px solid', WebkitTapHighlightColor: 'transparent', borderColor: filterCatId === null ? 'var(--foreground)' : 'var(--border)', background: filterCatId === null ? 'var(--foreground)' : 'transparent', color: filterCatId === null ? 'var(--background)' : 'var(--muted-foreground)' }}>All</button>
+                      <button onClick={() => setFilterCatId(null)} style={{ padding: '3px 10px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer', border: '1px solid', WebkitTapHighlightColor: 'transparent', borderColor: filterCatId === null ? 'var(--foreground)' : 'var(--border)', background: filterCatId === null ? 'var(--foreground)' : 'transparent', color: filterCatId === null ? 'var(--background)' : 'var(--muted-foreground)' }}>All</button>
                       {(categories || []).map(c => (
                         <button key={c.id} onClick={() => setFilterCatId(filterCatId === Number(c.id) ? null : Number(c.id))}
-                          style={{ padding: '3px 10px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer', border: '1px solid', WebkitTapHighlightColor: 'transparent', borderColor: filterCatId === c.id ? 'var(--foreground)' : 'var(--border)', background: filterCatId === c.id ? 'var(--foreground)' : 'transparent', color: filterCatId === c.id ? 'var(--background)' : 'var(--muted-foreground)' }}>{c.name}</button>
+                          style={{ padding: '3px 10px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer', border: '1px solid', WebkitTapHighlightColor: 'transparent', borderColor: filterCatId === Number(c.id) ? 'var(--foreground)' : 'var(--border)', background: filterCatId === Number(c.id) ? 'var(--foreground)' : 'transparent', color: filterCatId === Number(c.id) ? 'var(--background)' : 'var(--muted-foreground)' }}>{c.name}</button>
                       ))}
                     </div>
                   )}
@@ -720,26 +682,26 @@ export const BudgetPage: React.FC = () => {
                     <input type="number" placeholder="Min €" value={filterAmtMin} onChange={e => setFilterAmtMin(e.target.value)} style={{ flex: 1, padding: '5px 8px', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.75rem', color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none' }} />
                     <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)' }}>–</span>
                     <input type="number" placeholder="Max €" value={filterAmtMax} onChange={e => setFilterAmtMax(e.target.value)} style={{ flex: 1, padding: '5px 8px', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.75rem', color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none' }} />
-                    {hasActiveFilter && (
-                      <button onClick={clearFilters} style={{ padding: '4px 10px', borderRadius: 8, fontSize: '0.68rem', fontWeight: 600, border: 'none', background: 'var(--destructive)', color: 'var(--background)', cursor: 'pointer', whiteSpace: 'nowrap', WebkitTapHighlightColor: 'transparent' }}>Clear all</button>
-                    )}
+                    {hasActiveFilter && <button onClick={clearFilters} style={{ padding: '4px 10px', borderRadius: 8, fontSize: '0.68rem', fontWeight: 600, border: 'none', background: 'var(--destructive)', color: 'var(--background)', cursor: 'pointer', whiteSpace: 'nowrap', WebkitTapHighlightColor: 'transparent' }}>Clear all</button>}
                   </div>
                 </div>
               )}
             </div>
+
             {filteredTx.length === 0
               ? <EmptyState onAdd={() => setShowAddModal(true)} message={hasActiveFilter ? 'No transactions match your filters' : 'No transactions this month'} />
-              : filteredTx.map(t => (
+              : filteredTx.map((t: any) => (
                 <SwipeableRow
                   key={t.id}
                   transaction={t}
                   isRecurring={recurringIds.has(String(t.id))}
+                  isRecurringEntry={!!t.isRecurringEntry}
                   isBalanceHidden={isBalanceHidden}
                   isMobile={isMobile}
-                  onEdit={() => { setEditingTransaction(t); setShowAddModal(true); }}
+                  onEdit={() => { if (!t.isRecurringEntry) { setEditingTransaction(t); setShowAddModal(true); } }}
                   onDelete={() => handleDeleteTransaction(t.id)}
-                  onDuplicate={() => handleDuplicate(t)}
-                  onToggleRecurring={() => toggleRecurring(String(t.id))}
+                  onDuplicate={() => { if (!t.isRecurringEntry) handleDuplicate(t); }}
+                  onToggleRecurring={() => { if (!t.isRecurringEntry) toggleRecurring(String(t.id)); }}
                 />
               ))
             }
@@ -750,16 +712,17 @@ export const BudgetPage: React.FC = () => {
       {/* ── ANNUAL ─────────────────────────────────────────────────────────── */}
       {activeTab === 'yearly' && (
         <div style={{ paddingBottom: isMobile ? `calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)))` : 0 }}>
-          <YearlyStats allTransactions={allTransactions || []} hideNav />
+          <YearlyStats
+            allTransactions={allTransactions || []}
+            allRecurringEntries={(recurringExpenses || []).map(r => ({ recurringExpense: r, entries: [] }))}
+            hideNav
+          />
         </div>
       )}
 
       {/* ── RECURRING ──────────────────────────────────────────────────────── */}
       {activeTab === 'recurring' && (
-        <div style={{
-          paddingTop: isMobile ? '1rem' : 0,
-          paddingBottom: isMobile ? `calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : 0,
-        }}>
+        <div style={{ paddingTop: isMobile ? '1rem' : 0, paddingBottom: isMobile ? `calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : 0 }}>
           <div style={{ padding: isMobile ? 0 : '1.75rem 1.5rem' }}>
             <RecurringExpensesTable
               recurringExpenses={recurringList}
@@ -808,22 +771,31 @@ const EmptyState: React.FC<{ onAdd: () => void; message: string; compact?: boole
   </div>
 );
 
-// ── Recurring summary card ────────────────────────────────────────────────────
-const RecurringSummary: React.FC<{
+// ── Unified Fixed vs Discretionary card ───────────────────────────────────────
+const FixedVsDiscretionaryCard: React.FC<{
   recurringFixed: number;
   discretionary: number;
   totalExpenses: number;
-  isBalanceHidden: boolean;
-  recurringTx: BudgetTransaction[];
   recurringMonthlyTotal: number;
-}> = ({ recurringFixed, discretionary, totalExpenses, isBalanceHidden, recurringTx, recurringMonthlyTotal }) => {
+  entryTxns: RecurringEntryAsTx[];
+  isBalanceHidden: boolean;
+}> = ({ recurringFixed, discretionary, totalExpenses, entryTxns, isBalanceHidden }) => {
+  const fmtEur = (n: number) => `€${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
   const fixedPct = totalExpenses > 0 ? Math.round((recurringFixed / totalExpenses) * 100) : 0;
+  const topEntries = entryTxns.slice(0, 4);
+
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '1rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '0.85rem' }}>
-        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RefreshCw size={13} /></div>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <RefreshCw size={13} />
+        </div>
         <h3 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Fixed vs Discretionary</h3>
+        <span style={{ fontSize: '0.65rem', fontWeight: 600, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)' }}>
+          {entryTxns.length} recurring
+        </span>
       </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: '0.85rem' }}>
         <div style={{ background: 'color-mix(in srgb, var(--destructive) 7%, var(--background))', borderRadius: 10, padding: '0.7rem' }}>
           <p style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Fixed costs</p>
@@ -836,49 +808,43 @@ const RecurringSummary: React.FC<{
           <p style={{ fontSize: '0.62rem', color: 'var(--muted-foreground)', margin: '2px 0 0' }}>{100 - fixedPct}% of expenses</p>
         </div>
       </div>
+
       <div style={{ height: 6, background: 'var(--muted)', borderRadius: 999, overflow: 'hidden', marginBottom: '0.75rem' }}>
         <div style={{ height: '100%', width: `${fixedPct}%`, background: 'var(--destructive)', borderRadius: 999, transition: 'width 0.5s ease' }} />
       </div>
-      {/* Recurring expenses from DB */}
-      {recurringMonthlyTotal > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: 3 }}>
+
+      {topEntries.map(e => (
+        <div key={e.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <RefreshCw size={10} color="var(--color-orange-400)" />
-            <span style={{ color: 'var(--muted-foreground)' }}>Recurring expenses (est.)</span>
+            <span style={{ color: 'var(--muted-foreground)' }}>{e.description}</span>
           </div>
-          <span style={{ fontWeight: 700, color: 'var(--destructive)' }}>{isBalanceHidden ? '€••' : fmtEur(recurringMonthlyTotal)}</span>
-        </div>
-      )}
-      {/* Manual "fixed" transactions */}
-      {recurringTx.slice(0, 3).map(t => (
-        <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: 3 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <RefreshCw size={10} color="var(--muted-foreground)" />
-            <span style={{ color: 'var(--muted-foreground)' }}>{t.description || t.category?.name}</span>
-          </div>
-          <span style={{ fontWeight: 700, color: 'var(--foreground)' }}>{isBalanceHidden ? '€••' : fmtEur(t.amount)}</span>
+          <span style={{ fontWeight: 700, color: 'var(--destructive)' }}>{isBalanceHidden ? '€••' : fmtEur(e.amount)}</span>
         </div>
       ))}
-      {recurringTx.length > 3 && <p style={{ fontSize: '0.63rem', color: 'var(--muted-foreground)', margin: '4px 0 0' }}>+{recurringTx.length - 3} more fixed</p>}
+      {entryTxns.length > 4 && (
+        <p style={{ fontSize: '0.63rem', color: 'var(--muted-foreground)', margin: '4px 0 0' }}>+{entryTxns.length - 4} more recurring</p>
+      )}
     </div>
   );
 };
 
-// ── Swipeable transaction row ─────────────────────────────────────────────────
+// ── Swipeable row — supports both regular tx and recurring entry tx ────────────
 const SwipeableRow: React.FC<{
-  transaction: BudgetTransaction;
+  transaction: any;
   isRecurring: boolean;
+  isRecurringEntry: boolean;
   isBalanceHidden: boolean;
   isMobile: boolean;
   onEdit: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onToggleRecurring: () => void;
-}> = ({ transaction: t, isRecurring, isBalanceHidden, isMobile, onEdit, onDelete, onDuplicate, onToggleRecurring }) => {
+}> = ({ transaction: t, isRecurring, isRecurringEntry, isBalanceHidden, isMobile, onEdit, onDelete, onDuplicate, onToggleRecurring }) => {
   const [offsetX, setOffsetX] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const startX  = useRef<number | null>(null);
-  const ACTIONS_W = 156;
+  const ACTIONS_W = isRecurringEntry ? 104 : 156;
 
   const handleTouchStart = (e: React.TouchEvent) => { startX.current = e.touches[0].clientX; };
   const handleTouchMove  = (e: React.TouchEvent) => {
@@ -894,62 +860,76 @@ const SwipeableRow: React.FC<{
   };
   const close = () => { setOffsetX(0); setRevealed(false); };
 
-  const isIncome = t.type === 'income';
-  const amtColor = isIncome ? 'var(--success)' : 'var(--destructive)';
-  const catName  = t.category?.name ?? '—';
-  const dateStr  = new Date(t.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  const isIncome  = t.type === 'income';
+  const amtColor  = isIncome ? 'var(--success)' : 'var(--destructive)';
+  const catName   = t.category?.name ?? '—';
+  const dateStr   = new Date(t.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 
   return (
     <div style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid var(--border)' }}>
       {isMobile && (
         <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, display: 'flex', width: ACTIONS_W }}>
-          <button onClick={() => { close(); onToggleRecurring(); }} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, border: 'none', cursor: 'pointer', background: isRecurring ? 'var(--color-orange-400)' : '#c97a1a', color: 'white', fontSize: '0.6rem', fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
-            <RefreshCw size={14} />
-            <span style={{ lineHeight: 1.2, textAlign: 'center' }}>{isRecurring ? 'Fixed ✓' : 'Mark\nFixed'}</span>
-          </button>
-          <button onClick={() => { close(); onDuplicate(); }} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, border: 'none', cursor: 'pointer', background: '#1d6fb5', color: 'white', fontSize: '0.6rem', fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
-            <Copy size={14} />Copy
-          </button>
-          <button onClick={() => { close(); onDelete(); }} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, border: 'none', cursor: 'pointer', background: 'var(--destructive)', color: 'white', fontSize: '0.6rem', fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
+          {!isRecurringEntry && (
+            <button onClick={() => { close(); onToggleRecurring(); }}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, border: 'none', cursor: 'pointer', background: isRecurring ? 'var(--color-orange-400)' : '#c97a1a', color: 'white', fontSize: '0.6rem', fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
+              <RefreshCw size={14} />
+              <span style={{ lineHeight: 1.2, textAlign: 'center' }}>{isRecurring ? 'Fixed ✓' : 'Mark\nFixed'}</span>
+            </button>
+          )}
+          {!isRecurringEntry && (
+            <button onClick={() => { close(); onDuplicate(); }}
+              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, border: 'none', cursor: 'pointer', background: '#1d6fb5', color: 'white', fontSize: '0.6rem', fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
+              <Copy size={14} />Copy
+            </button>
+          )}
+          <button onClick={() => { close(); onDelete(); }}
+            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, border: 'none', cursor: 'pointer', background: 'var(--destructive)', color: 'white', fontSize: '0.6rem', fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
             <Trash2 size={14} />Delete
           </button>
         </div>
       )}
       <div
-        onClick={() => { if (isMobile && revealed) { close(); return; } onEdit(); }}
+        onClick={() => { if (isMobile && revealed) { close(); return; } if (!isRecurringEntry) onEdit(); }}
         onTouchStart={isMobile ? handleTouchStart : undefined}
         onTouchMove={isMobile ? handleTouchMove : undefined}
         onTouchEnd={isMobile ? handleTouchEnd : undefined}
-        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0.75rem 1rem', background: 'var(--card)', transform: `translateX(${offsetX}px)`, transition: startX.current === null ? 'transform 0.2s ease' : 'none', cursor: 'pointer', WebkitTapHighlightColor: 'transparent', userSelect: 'none' }}
-        onMouseEnter={e => { if (!isMobile) (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; }}
-        onMouseLeave={e => { if (!isMobile) (e.currentTarget as HTMLDivElement).style.background = 'var(--card)'; }}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0.75rem 1rem', background: isRecurringEntry ? 'color-mix(in srgb, var(--color-orange-400) 3%, var(--card))' : 'var(--card)', transform: `translateX(${offsetX}px)`, transition: startX.current === null ? 'transform 0.2s ease' : 'none', cursor: isRecurringEntry ? 'default' : 'pointer', WebkitTapHighlightColor: 'transparent', userSelect: 'none' }}
+        onMouseEnter={e => { if (!isMobile && !isRecurringEntry) (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; }}
+        onMouseLeave={e => { if (!isMobile) (e.currentTarget as HTMLDivElement).style.background = isRecurringEntry ? 'color-mix(in srgb, var(--color-orange-400) 3%, var(--card))' : 'var(--card)'; }}
       >
-        <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: isIncome ? 'color-mix(in srgb, var(--success) 12%, var(--background))' : 'color-mix(in srgb, var(--destructive) 12%, var(--background))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {isIncome ? <TrendingUp size={14} color="var(--success)" /> : <TrendingDown size={14} color="var(--destructive)" />}
+        <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: isRecurringEntry ? 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))' : isIncome ? 'color-mix(in srgb, var(--success) 12%, var(--background))' : 'color-mix(in srgb, var(--destructive) 12%, var(--background))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {isRecurringEntry ? <RefreshCw size={14} color="var(--color-orange-400)" /> : isIncome ? <TrendingUp size={14} color="var(--success)" /> : <TrendingDown size={14} color="var(--destructive)" />}
         </div>
+
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
             <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {t.description || catName}
             </span>
-            {isRecurring && (
+            {isRecurringEntry && (
+              <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', fontSize: '0.6rem', fontWeight: 700 }}>
+                <RefreshCw size={8} />Recurring
+              </span>
+            )}
+            {!isRecurringEntry && isRecurring && (
               <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', fontSize: '0.6rem', fontWeight: 700 }}>
                 <RefreshCw size={8} />Fixed
               </span>
             )}
           </div>
           <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)' }}>{catName} · {dateStr}</span>
-          {t.notes && (
+          {t.notes && !t.notes.startsWith('recurring:') && (
             <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
               💬 {t.notes}
             </p>
           )}
         </div>
+
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <span style={{ fontSize: '0.88rem', fontWeight: 700, color: amtColor, letterSpacing: '-0.01em' }}>
-            {isBalanceHidden ? '€••••••' : `${isIncome ? '+' : '-'}${fmtEur(t.amount)}`}
+          <span style={{ fontSize: '0.88rem', fontWeight: 700, color: isRecurringEntry ? 'var(--color-orange-400)' : amtColor, letterSpacing: '-0.01em' }}>
+            {isBalanceHidden ? '€••••••' : `${isIncome ? '+' : '-'}${t.amount.toLocaleString('en-US', { minimumFractionDigits: 2, style: 'currency', currency: 'EUR' }).replace('€', '€')}`}
           </span>
-          {!isMobile && (
+          {!isMobile && !isRecurringEntry && (
             <div style={{ display: 'flex', gap: 3 }}>
               {([
                 { icon: <RefreshCw size={11} />, fn: onToggleRecurring, title: isRecurring ? 'Unmark fixed' : 'Mark fixed', active: isRecurring, danger: false },
@@ -965,6 +945,13 @@ const SwipeableRow: React.FC<{
               ))}
             </div>
           )}
+          {!isMobile && isRecurringEntry && (
+            <button onClick={e => { e.stopPropagation(); onDelete(); }} title="Remove entry"
+              style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 7, cursor: 'pointer', background: 'var(--muted)', color: 'var(--muted-foreground)' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, var(--destructive) 12%, var(--background))'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--destructive)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)'; }}
+            ><Trash2 size={11} /></button>
+          )}
         </div>
       </div>
     </div>
@@ -978,9 +965,7 @@ const DeltaBadge: React.FC<{ delta: number; label: string; small?: boolean }> = 
   const isPositive = delta > 0;
   const isGood  = isExpense ? !isPositive : isPositive;
   const color = isGood ? 'var(--success)' : 'var(--destructive)';
-  const bg    = isGood
-    ? 'color-mix(in srgb, var(--success) 10%, var(--background))'
-    : 'color-mix(in srgb, var(--destructive) 10%, var(--background))';
+  const bg    = isGood ? 'color-mix(in srgb, var(--success) 10%, var(--background))' : 'color-mix(in srgb, var(--destructive) 10%, var(--background))';
   return (
     <span style={{ flexShrink: 0, fontSize: small ? '0.55rem' : '0.6rem', fontWeight: 700, padding: small ? '1px 4px' : '1px 5px', borderRadius: 999, background: bg, color, whiteSpace: 'nowrap' }}>
       {isPositive ? '+' : ''}{fmtCompact(delta)}
@@ -988,15 +973,12 @@ const DeltaBadge: React.FC<{ delta: number; label: string; small?: boolean }> = 
   );
 };
 
-// ── Stat card types ───────────────────────────────────────────────────────────
 interface StatCard { label: string; value: number; delta?: number; icon: React.ReactNode; iconColor: string; iconBg: string; }
 
-// ── Stat Cards — desktop ──────────────────────────────────────────────────────
 const StatCards: React.FC<{ cards: StatCard[]; isBalanceHidden: boolean }> = ({ cards, isBalanceHidden }) => (
   <div style={{ display: 'flex', gap: 8, flexWrap: 'nowrap', overflowX: 'auto', WebkitOverflowScrolling: 'touch' as any }}>
     {cards.map(({ label, value, delta, icon, iconColor, iconBg }) => (
-      <div key={label}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px 7px 8px', borderRadius: 999, background: 'var(--card)', border: '1px solid var(--border)', flexShrink: 0, transition: 'background 0.15s', cursor: 'default' }}
+      <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px 7px 8px', borderRadius: 999, background: 'var(--card)', border: '1px solid var(--border)', flexShrink: 0, transition: 'background 0.15s', cursor: 'default' }}
         onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; }}
         onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = 'var(--card)'; }}>
         <div style={{ width: 24, height: 24, borderRadius: '50%', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
@@ -1010,7 +992,6 @@ const StatCards: React.FC<{ cards: StatCard[]; isBalanceHidden: boolean }> = ({ 
   </div>
 );
 
-// ── Stat Cards — mobile ───────────────────────────────────────────────────────
 const StatCardsMobile: React.FC<{ cards: StatCard[]; isBalanceHidden: boolean }> = ({ cards, isBalanceHidden }) => (
   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
     {cards.map(({ label, value, delta, icon, iconColor, iconBg }, idx) => (
@@ -1030,7 +1011,6 @@ const StatCardsMobile: React.FC<{ cards: StatCard[]; isBalanceHidden: boolean }>
   </div>
 );
 
-// ── Balance split card (mobile) ───────────────────────────────────────────────
 const BalanceSplitCard: React.FC<{ cashBalance: number; bpBalance: number; isBalanceHidden: boolean }> = ({ cashBalance, bpBalance, isBalanceHidden }) => (
   <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '1rem' }}>
     <h3 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', margin: '0 0 0.75rem' }}>Balance Breakdown</h3>
@@ -1049,7 +1029,6 @@ const BalanceSplitCard: React.FC<{ cashBalance: number; bpBalance: number; isBal
   </div>
 );
 
-// ── Recurring mini table (desktop right column) ───────────────────────────────
 const FREQ_LABEL: Record<string, string> = {
   daily: 'Daily', weekly: 'Weekly', biweekly: 'Every 2w',
   monthly: 'Monthly', bimonthly: 'Every 2m', quarterly: 'Quarterly',
@@ -1058,29 +1037,24 @@ const FREQ_LABEL: Record<string, string> = {
 
 const RecurringMiniTable: React.FC<{
   recurringExpenses: RecurringExpense[];
+  entryTxns: RecurringEntryAsTx[];
   isBalanceHidden: boolean;
   onViewAll: () => void;
   onAdd: () => void;
-}> = ({ recurringExpenses, isBalanceHidden, onViewAll, onAdd }) => {
+}> = ({ recurringExpenses, entryTxns, isBalanceHidden, onViewAll, onAdd }) => {
   const active = recurringExpenses.filter(e => e.isActive);
-  const monthlyTotal = active.reduce((s, e) => s + recurringMonthlyAmount(e), 0);
+  const monthlyTotal = entryTxns.reduce((s, e) => s + e.amount, 0);
 
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
       <div style={{ padding: '0.85rem 1.1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <div style={{ width: 22, height: 22, borderRadius: 6, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <RefreshCw size={11} />
-          </div>
+          <div style={{ width: 22, height: 22, borderRadius: 6, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RefreshCw size={11} /></div>
           <h2 style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--foreground)', margin: 0 }}>Recurring</h2>
-          {active.length > 0 && (
-            <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{active.length}</span>
-          )}
+          {active.length > 0 && <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{active.length}</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {active.length > 0 && (
-            <span onClick={onViewAll} style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500 }}>Manage →</span>
-          )}
+          {active.length > 0 && <span onClick={onViewAll} style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500 }}>Manage →</span>}
           <button onClick={onAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 9px', background: 'var(--foreground)', color: 'var(--background)', border: 'none', borderRadius: 7, fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>
             <Plus size={10} />Add
           </button>
@@ -1102,37 +1076,30 @@ const RecurringMiniTable: React.FC<{
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.5rem', padding: '0.45rem 1.1rem', borderBottom: '1px solid var(--border)', background: 'var(--accent)' }}>
             <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Expense</span>
             <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'center' }}>Freq.</span>
-            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</span>
+            <span style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--muted-foreground)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>This month</span>
           </div>
-          {active.slice(0, 6).map(e => (
-            <div key={e.id}
-              style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.5rem', alignItems: 'center', padding: '0.6rem 1.1rem', borderBottom: '1px solid var(--border)', transition: 'background 0.12s' }}
+          {entryTxns.slice(0, 6).map(e => (
+            <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '0.5rem', alignItems: 'center', padding: '0.6rem 1.1rem', borderBottom: '1px solid var(--border)', transition: 'background 0.12s' }}
               onMouseEnter={ev => (ev.currentTarget.style.background = 'var(--accent)')}
-              onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}
-            >
-              <div style={{ minWidth: 0 }}>
-                <p style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--foreground)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.description || '—'}</p>
-                {e.notes && <p style={{ fontSize: '0.62rem', color: 'var(--muted-foreground)', margin: '1px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>{e.notes}</p>}
-              </div>
+              onMouseLeave={ev => (ev.currentTarget.style.background = 'transparent')}>
+              <p style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--foreground)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.description || '—'}</p>
               <span style={{ fontSize: '0.62rem', fontWeight: 600, padding: '2px 7px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 10%, var(--background))', color: 'var(--color-orange-400)', whiteSpace: 'nowrap', textAlign: 'center' }}>
-                {FREQ_LABEL[e.frequency] ?? e.frequency}
+                {FREQ_LABEL[recurringExpenses.find(r => String(r.id) === String(e.recurringExpenseId))?.frequency ?? ''] ?? '—'}
               </span>
               <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--destructive)', whiteSpace: 'nowrap', textAlign: 'right', letterSpacing: '-0.01em' }}>
                 {isBalanceHidden ? '€••••' : `-${fmtEur(e.amount)}`}
               </span>
             </div>
           ))}
-          {active.length > 6 && (
-            <div onClick={onViewAll}
-              style={{ padding: '0.6rem 1.1rem', fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500, textAlign: 'center', transition: 'background 0.12s' }}
+          {entryTxns.length > 6 && (
+            <div onClick={onViewAll} style={{ padding: '0.6rem 1.1rem', fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500, textAlign: 'center', transition: 'background 0.12s' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              +{active.length - 6} more — view all →
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+              +{entryTxns.length - 6} more — view all →
             </div>
           )}
           <div style={{ padding: '0.65rem 1.1rem', background: 'var(--accent)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>Est. monthly cost</span>
+            <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>Total this month</span>
             <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'var(--destructive)', letterSpacing: '-0.02em' }}>
               {isBalanceHidden ? '€••••••' : `-${fmtEur(monthlyTotal)}`}
             </span>
@@ -1143,7 +1110,6 @@ const RecurringMiniTable: React.FC<{
   );
 };
 
-// ── Mobile savings card ───────────────────────────────────────────────────────
 const MobileSavingsCard: React.FC<{ income: number; expenses: number; savings: number; isBalanceHidden: boolean }> = ({ income, expenses, savings, isBalanceHidden }) => {
   const savingsRate = income > 0 ? Math.round(((income - expenses) / income) * 100) : 0;
   const isPositive  = savingsRate >= 0;
@@ -1161,11 +1127,7 @@ const MobileSavingsCard: React.FC<{ income: number; expenses: number; savings: n
         <div style={{ height: '100%', borderRadius: '999px', width: `${spentPct}%`, background: spentPct > 80 ? 'linear-gradient(90deg, var(--color-red-100), var(--destructive))' : 'linear-gradient(90deg, var(--color-green-100), var(--success))', transition: 'width 0.5s ease' }} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
-        {[
-          { label: 'Income',   value: income,   color: 'var(--success)' },
-          { label: 'Spent',    value: expenses, color: 'var(--destructive)' },
-          { label: 'Invested', value: savings,  color: 'var(--color-purple-600)' },
-        ].map(({ label, value, color }) => (
+        {[{ label: 'Income', value: income, color: 'var(--success)' }, { label: 'Spent', value: expenses, color: 'var(--destructive)' }, { label: 'Invested', value: savings, color: 'var(--color-purple-600)' }].map(({ label, value, color }) => (
           <div key={label} style={{ textAlign: 'center' }}>
             <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', fontWeight: 500, margin: '0 0 2px' }}>{label}</p>
             <p style={{ fontSize: '0.78rem', fontWeight: 700, color, margin: 0 }}>{fmt(value)}</p>

@@ -1,5 +1,6 @@
 // src/pages/budget/components/YearlyStats.tsx
 import { BudgetTransaction } from '@/lib/types/budget';
+import { RecurringExpense, RecurringExpenseEntry, isRecurringActiveInMonth } from '@/lib/types/recurring';
 import {
   ArrowLeft, ArrowUpRight, BarChart2, CalendarDays,
   Flame, GitCompare, Sparkles, TrendingDown, TrendingUp, Wallet,
@@ -38,6 +39,50 @@ function useIsMobile(bp = 768) {
   return is;
 }
 
+// ─── Props ────────────────────────────────────────────────────────────────────
+interface RecurringWithEntries {
+  recurringExpense: RecurringExpense;
+  entries: RecurringExpenseEntry[];
+}
+
+interface YearlyStatsProps {
+  allTransactions: BudgetTransaction[];
+  /** All recurring expenses with their historical entries, for accurate yearly stats */
+  allRecurringEntries?: RecurringWithEntries[];
+  onBack?: () => void;
+  hideNav?: boolean;
+}
+
+// ─── Recurring helpers ────────────────────────────────────────────────────────
+
+/**
+ * Get the actual amount paid for a recurring expense in a given month.
+ * Uses the entry amount if it exists, otherwise falls back to the default amount
+ * if the recurring expense was active in that month.
+ */
+function getRecurringAmountForMonth(
+  rwe: RecurringWithEntries,
+  year: number,
+  month: number  // 1-12
+): number {
+  const entry = rwe.entries.find(e => e.year === year && e.month === month);
+  if (entry) return entry.amount;
+  // Fallback: if active but no entry yet, use default amount
+  if (isRecurringActiveInMonth(rwe.recurringExpense, year, month)) {
+    return rwe.recurringExpense.amount;
+  }
+  return 0;
+}
+
+/** Sum all recurring expense amounts for a given month across all recurring expenses */
+function getTotalRecurringForMonth(
+  allRec: RecurringWithEntries[],
+  year: number,
+  month: number  // 1-12
+): number {
+  return allRec.reduce((s, rwe) => s + getRecurringAmountForMonth(rwe, year, month), 0);
+}
+
 // ─── Tooltip ─────────────────────────────────────────────────────────────────
 const GlassTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
@@ -47,21 +92,16 @@ const GlassTooltip = ({ active, payload, label }: any) => {
       {payload.map((p: any, i: number) => (
         <p key={i} style={{ color: p.color ?? p.fill ?? 'var(--foreground)', margin: '2px 0', fontWeight: 700 }}>
           {p.name}: {typeof p.value === 'number'
-            ? `€${p.value.toLocaleString('en-US', { minimumFractionDigits: 0 })}`
-            : p.value}
+            ? `€${p.value.toLocaleString('en-US', { minimumFractionDigits: 0 })}` : p.value}
         </p>
       ))}
     </div>
   );
 };
 
-// ─── Section header ───────────────────────────────────────────────────────────
 const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle?: string }> = ({ icon, title, subtitle }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '1rem' }}>
-    <div style={{
-      width: 32, height: 32, borderRadius: 9, background: 'var(--muted)',
-      color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    }}>{icon}</div>
+    <div style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--muted)', color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
     <div>
       <h2 style={{ fontSize: '0.88rem', fontWeight: 800, color: 'var(--foreground)', margin: 0, letterSpacing: '-0.015em' }}>{title}</h2>
       {subtitle && <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '1px 0 0', fontWeight: 500 }}>{subtitle}</p>}
@@ -69,27 +109,11 @@ const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle?:
   </div>
 );
 
-// ─── Card ─────────────────────────────────────────────────────────────────────
-const Card: React.FC<{
-  title: string; subtitle?: string; children: React.ReactNode;
-  icon?: React.ReactNode; action?: React.ReactNode; style?: React.CSSProperties;
-}> = ({ title, subtitle, children, icon, action, style }) => (
-  <div style={{
-    background: 'var(--card)', border: '1px solid var(--border)',
-    borderRadius: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-    overflow: 'hidden', ...style,
-  }}>
-    <div style={{
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      padding: '0.9rem 1.25rem', borderBottom: '1px solid var(--border)',
-    }}>
+const Card: React.FC<{ title: string; subtitle?: string; children: React.ReactNode; icon?: React.ReactNode; action?: React.ReactNode; style?: React.CSSProperties }> = ({ title, subtitle, children, icon, action, style }) => (
+  <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, boxShadow: '0 1px 4px rgba(0,0,0,0.04)', overflow: 'hidden', ...style }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.9rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        {icon && (
-          <div style={{
-            width: 26, height: 26, borderRadius: 7, background: 'var(--muted)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)',
-          }}>{icon}</div>
-        )}
+        {icon && <div style={{ width: 26, height: 26, borderRadius: 7, background: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)' }}>{icon}</div>}
         <div>
           <h3 style={{ fontSize: '0.83rem', fontWeight: 700, color: 'var(--foreground)', margin: 0, letterSpacing: '-0.01em' }}>{title}</h3>
           {subtitle && <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '1px 0 0', fontWeight: 500 }}>{subtitle}</p>}
@@ -101,7 +125,6 @@ const Card: React.FC<{
   </div>
 );
 
-// ─── Month chips ──────────────────────────────────────────────────────────────
 const MonthChips: React.FC<{ selected: number[]; onChange: (v: number[]) => void }> = ({ selected, onChange }) => {
   const toggle = (m: number) => {
     if (selected.includes(m)) { if (selected.length === 1) return; onChange(selected.filter(x => x !== m)); }
@@ -110,25 +133,15 @@ const MonthChips: React.FC<{ selected: number[]; onChange: (v: number[]) => void
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
       {MONTH_LABELS.map((label, i) => (
-        <button key={i} onClick={() => toggle(i)} style={{
-          padding: '3px 10px', fontSize: '0.72rem', fontWeight: 600,
-          borderRadius: 999, border: '1.5px solid', cursor: 'pointer', transition: 'all 0.12s',
-          borderColor: selected.includes(i) ? 'var(--foreground)' : 'var(--border)',
-          background:  selected.includes(i) ? 'var(--foreground)' : 'transparent',
-          color:       selected.includes(i) ? 'var(--background)' : 'var(--muted-foreground)',
-        }}>{label}</button>
+        <button key={i} onClick={() => toggle(i)} style={{ padding: '3px 10px', fontSize: '0.72rem', fontWeight: 600, borderRadius: 999, border: '1.5px solid', cursor: 'pointer', transition: 'all 0.12s', borderColor: selected.includes(i) ? 'var(--foreground)' : 'var(--border)', background: selected.includes(i) ? 'var(--foreground)' : 'transparent', color: selected.includes(i) ? 'var(--background)' : 'var(--muted-foreground)' }}>{label}</button>
       ))}
       {selected.length < 12 && (
-        <button onClick={() => onChange(MONTH_LABELS.map((_, i) => i))} style={{
-          padding: '3px 10px', fontSize: '0.72rem', fontWeight: 600, borderRadius: 999,
-          border: '1.5px dashed var(--border)', cursor: 'pointer', background: 'transparent', color: 'var(--muted-foreground)',
-        }}>All</button>
+        <button onClick={() => onChange(MONTH_LABELS.map((_, i) => i))} style={{ padding: '3px 10px', fontSize: '0.72rem', fontWeight: 600, borderRadius: 999, border: '1.5px dashed var(--border)', cursor: 'pointer', background: 'transparent', color: 'var(--muted-foreground)' }}>All</button>
       )}
     </div>
   );
 };
 
-// ─── Year chips ───────────────────────────────────────────────────────────────
 const YearChips: React.FC<{ years: number[]; selected: number[]; onChange: (v: number[]) => void; max?: number }> = ({ years, selected, onChange, max = 5 }) => {
   const toggle = (y: number) => {
     if (selected.includes(y)) { if (selected.length === 1) return; onChange(selected.filter(x => x !== y)); }
@@ -140,58 +153,33 @@ const YearChips: React.FC<{ years: number[]; selected: number[]; onChange: (v: n
         const color = YEAR_COLORS[i % YEAR_COLORS.length];
         const sel = selected.includes(y);
         return (
-          <button key={y} onClick={() => toggle(y)} style={{
-            padding: '4px 14px', fontSize: '0.78rem', fontWeight: 700, borderRadius: 999,
-            border: '1.5px solid', cursor: 'pointer', transition: 'all 0.12s',
-            borderColor: sel ? color : 'var(--border)',
-            background:  sel ? `color-mix(in srgb, ${color} 12%, var(--background))` : 'transparent',
-            color:       sel ? color : 'var(--muted-foreground)',
-          }}>{y}</button>
+          <button key={y} onClick={() => toggle(y)} style={{ padding: '4px 14px', fontSize: '0.78rem', fontWeight: 700, borderRadius: 999, border: '1.5px solid', cursor: 'pointer', transition: 'all 0.12s', borderColor: sel ? color : 'var(--border)', background: sel ? `color-mix(in srgb, ${color} 12%, var(--background))` : 'transparent', color: sel ? color : 'var(--muted-foreground)' }}>{y}</button>
         );
       })}
     </div>
   );
 };
 
-// ─── YoY badge ────────────────────────────────────────────────────────────────
 const YoyBadge: React.FC<{ label: string; value: number; positiveIsGood: boolean }> = ({ label, value, positiveIsGood }) => {
   const isGood = positiveIsGood ? value > 0 : value < 0;
   const color  = isGood ? '#16a34a' : '#dc2626';
   return (
-    <span style={{
-      fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 999,
-      background: `color-mix(in srgb, ${color} 10%, var(--background))`,
-      color, border: `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
-    }}>
+    <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: `color-mix(in srgb, ${color} 10%, var(--background))`, color, border: `1px solid color-mix(in srgb, ${color} 25%, transparent)` }}>
       {label} {value > 0 ? '▲' : '▼'} {Math.abs(value).toFixed(1)}%
     </span>
   );
 };
 
-// ─── Year picker (spring-animated pill) ──────────────────────────────────────
 const YearPicker: React.FC<{ years: number[]; selected: number; onChange: (y: number) => void; layoutId: string; small?: boolean }> = ({ years, selected, onChange, layoutId, small }) => (
   <div style={{ display: 'flex', gap: 2, background: 'color-mix(in srgb, var(--muted) 60%, transparent)', borderRadius: 999, padding: 3 }}>
     {years.map(y => {
       const isActive = selected === y;
       return (
-        <button key={y} onClick={() => onChange(y)} style={{
-          position: 'relative',
-          padding: small ? '3px 10px' : '4px 12px',
-          fontSize: small ? '0.75rem' : '0.78rem',
-          fontWeight: isActive ? 700 : 500,
-          borderRadius: 999, border: 'none', cursor: 'pointer',
-          background: 'transparent',
-          color: isActive ? 'var(--foreground)' : 'var(--muted-foreground)',
-          WebkitTapHighlightColor: 'transparent',
-          transition: 'color 0.2s',
-        }}>
+        <button key={y} onClick={() => onChange(y)} style={{ position: 'relative', padding: small ? '3px 10px' : '4px 12px', fontSize: small ? '0.75rem' : '0.78rem', fontWeight: isActive ? 700 : 500, borderRadius: 999, border: 'none', cursor: 'pointer', background: 'transparent', color: isActive ? 'var(--foreground)' : 'var(--muted-foreground)', WebkitTapHighlightColor: 'transparent', transition: 'color 0.2s' }}>
           {isActive && (
-            <motion.div
-              layoutId={`year-pill-${layoutId}`}
+            <motion.div layoutId={`year-pill-${layoutId}`}
               style={{ position: 'absolute', inset: 0, borderRadius: 999, background: 'var(--background)', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}
-              initial={false}
-              transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-            />
+              initial={false} transition={{ type: 'spring', stiffness: 500, damping: 35 }} />
           )}
           <span style={{ position: 'relative', zIndex: 10 }}>{y}</span>
         </button>
@@ -200,7 +188,6 @@ const YearPicker: React.FC<{ years: number[]; selected: number; onChange: (y: nu
   </div>
 );
 
-// ─── Period presets ───────────────────────────────────────────────────────────
 type PeriodPreset = 'full' | 'h1' | 'h2' | 'q1' | 'q2' | 'q3' | 'q4' | 'custom';
 const PERIOD_PRESETS: { value: PeriodPreset; label: string; months: number[] }[] = [
   { value: 'full',   label: 'Full year', months: [0,1,2,3,4,5,6,7,8,9,10,11] },
@@ -215,27 +202,30 @@ const PERIOD_PRESETS: { value: PeriodPreset; label: string; months: number[] }[]
 
 type CompareMetric = 'expenses' | 'income' | 'net';
 
-// ─── Props ────────────────────────────────────────────────────────────────────
-interface YearlyStatsProps {
-  allTransactions: BudgetTransaction[];
-  onBack?: () => void;
-  /** When true, hides the internal sticky nav (use when rendered inside a parent tab layout) */
-  hideNav?: boolean;
-}
-
 // ─── Main ─────────────────────────────────────────────────────────────────────
-export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBack, hideNav = false }) => {
+export const YearlyStats: React.FC<YearlyStatsProps> = ({
+  allTransactions,
+  allRecurringEntries = [],
+  onBack,
+  hideNav = false,
+}) => {
   const isMobile  = useIsMobile();
   const yearNavId = useId();
 
   const availableYears = useMemo(() => {
     const s = new Set(allTransactions.map(t => new Date(t.date).getFullYear()));
+    // Also include years from recurring entries
+    allRecurringEntries.forEach(rwe => {
+      rwe.entries.forEach(e => s.add(e.year));
+      // Include the start year of each recurring expense
+      const startYear = new Date(rwe.recurringExpense.startDate).getFullYear();
+      s.add(startYear);
+    });
     return Array.from(s).sort((a, b) => b - a);
-  }, [allTransactions]);
+  }, [allTransactions, allRecurringEntries]);
 
   const currentYear = new Date().getFullYear();
 
-  // ── state ──────────────────────────────────────────────────────────────────
   const [selectedYear,      setSelectedYear]      = useState(availableYears.includes(currentYear) ? currentYear : (availableYears[0] ?? currentYear));
   const [periodPreset,      setPeriodPreset]      = useState<PeriodPreset>('full');
   const [customMonths,      setCustomMonths]      = useState<number[]>([0,1,2,3,4,5,6,7,8,9,10,11]);
@@ -249,46 +239,72 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
     return PERIOD_PRESETS.find(p => p.value === periodPreset)?.months ?? [0,1,2,3,4,5,6,7,8,9,10,11];
   }, [periodPreset, customMonths]);
 
-  // ── filtered tx ────────────────────────────────────────────────────────────
+  // ── filtered tx + recurring ───────────────────────────────────────────────
   const yearTx = useMemo(() =>
-    allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && activeMonths.includes(d.getMonth()); }),
+    allTransactions.filter(t => {
+      const d = new Date(t.date);
+      return d.getFullYear() === selectedYear && activeMonths.includes(d.getMonth());
+    }),
     [allTransactions, selectedYear, activeMonths]);
 
   const prevYearTx = useMemo(() =>
-    allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear - 1 && activeMonths.includes(d.getMonth()); }),
+    allTransactions.filter(t => {
+      const d = new Date(t.date);
+      return d.getFullYear() === selectedYear - 1 && activeMonths.includes(d.getMonth());
+    }),
     [allTransactions, selectedYear, activeMonths]);
 
-  // ── KPIs ───────────────────────────────────────────────────────────────────
-  const kpis = useMemo(() => {
-    const income   = yearTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-    const expenses = yearTx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-    const invested = yearTx.filter(t => isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-    const balance  = income - expenses;
-    const savRate  = income > 0 ? ((income - expenses) / income) * 100 : 0;
-    const prevInc  = prevYearTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-    const prevExp  = prevYearTx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-    const yoyInc   = prevInc > 0 ? ((income   - prevInc)  / prevInc)  * 100 : null;
-    const yoyExp   = prevExp > 0 ? ((expenses - prevExp)  / prevExp)  * 100 : null;
-    return { income, expenses, invested, balance, savRate, yoyInc, yoyExp };
-  }, [yearTx, prevYearTx]);
+  // Recurring totals for selected year/period
+  const yearRecurringTotal = useMemo(() =>
+    activeMonths.reduce((s, m) =>
+      s + getTotalRecurringForMonth(allRecurringEntries, selectedYear, m + 1), 0),
+    [allRecurringEntries, selectedYear, activeMonths]);
 
-  // ── monthly ────────────────────────────────────────────────────────────────
+  const prevYearRecurringTotal = useMemo(() =>
+    activeMonths.reduce((s, m) =>
+      s + getTotalRecurringForMonth(allRecurringEntries, selectedYear - 1, m + 1), 0),
+    [allRecurringEntries, selectedYear, activeMonths]);
+
+  // ── KPIs ─────────────────────────────────────────────────────────────────
+  const kpis = useMemo(() => {
+    const income       = yearTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const txExpenses   = yearTx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+    const expenses     = txExpenses + yearRecurringTotal;
+    const invested     = yearTx.filter(t => isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+    const balance      = income - expenses;
+    const savRate      = income > 0 ? ((income - expenses) / income) * 100 : 0;
+    const prevInc      = prevYearTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const prevTxExp    = prevYearTx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+    const prevExp      = prevTxExp + prevYearRecurringTotal;
+    const yoyInc       = prevInc  > 0 ? ((income   - prevInc)  / prevInc)  * 100 : null;
+    const yoyExp       = prevExp  > 0 ? ((expenses - prevExp)  / prevExp)  * 100 : null;
+    return { income, expenses, invested, balance, savRate, yoyInc, yoyExp };
+  }, [yearTx, prevYearTx, yearRecurringTotal, prevYearRecurringTotal]);
+
+  // ── monthly data (tx + recurring entries) ─────────────────────────────────
   const monthly = useMemo(() =>
     MONTH_LABELS.map((label, m) => {
       if (!activeMonths.includes(m)) return null;
-      const mx = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && d.getMonth() === m; });
+      const mx       = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && d.getMonth() === m; });
       const income   = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-      const expenses = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+      const txExp    = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+      const recExp   = getTotalRecurringForMonth(allRecurringEntries, selectedYear, m + 1);
+      const expenses = txExp + recExp;
       const invested = mx.filter(t => isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-      return { label, income, expenses, invested, net: income - expenses };
-    }).filter(Boolean) as { label: string; income: number; expenses: number; invested: number; net: number }[],
-    [allTransactions, selectedYear, activeMonths]);
+      return { label, income, expenses, invested, net: income - expenses, recurring: recExp };
+    }).filter(Boolean) as { label: string; income: number; expenses: number; invested: number; net: number; recurring: number }[],
+    [allTransactions, allRecurringEntries, selectedYear, activeMonths]);
 
-  const cumulative = useMemo(() => { let r = 0; return monthly.map(m => { r += m.net; return { label: m.label, cumulative: r }; }); }, [monthly]);
+  const cumulative = useMemo(() => {
+    let r = 0;
+    return monthly.map(m => { r += m.net; return { label: m.label, cumulative: r }; });
+  }, [monthly]);
 
-  // ── categories ─────────────────────────────────────────────────────────────
+  // ── categories (tx + recurring entries lumped as "Recurring" category) ─────
   const catBreakdown = useMemo(() => {
     const map = new Map<string, { name: string; icon: string; amount: number; count: number }>();
+
+    // Manual transactions
     yearTx.filter(t => t.type === 'expense' && !isInvestment(t)).forEach(t => {
       if (!t.category) return;
       const k = String(t.category.id);
@@ -296,21 +312,37 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
       if (ex) { ex.amount += t.amount; ex.count++; }
       else map.set(k, { name: t.category.name, icon: t.category.icon ?? '📦', amount: t.amount, count: 1 });
     });
+
+    // Recurring entries — group by their category via the recurring expense definition
+    allRecurringEntries.forEach(rwe => {
+      const amount = activeMonths.reduce((s, m) =>
+        s + getRecurringAmountForMonth(rwe, selectedYear, m + 1), 0);
+      if (amount <= 0) return;
+      // Use recurring expense id as key to keep them separate per recurring expense
+      const k = `rec-${rwe.recurringExpense.id}`;
+      const ex = map.get(k);
+      if (ex) { ex.amount += amount; ex.count++; }
+      else map.set(k, { name: rwe.recurringExpense.description, icon: '🔁', amount, count: 1 });
+    });
+
     const total = [...map.values()].reduce((s, c) => s + c.amount, 0);
     return [...map.values()].sort((a, b) => b.amount - a.amount).slice(0, 8)
       .map((c, i) => ({ ...c, pct: total > 0 ? (c.amount / total) * 100 : 0, color: CAT_COLORS[i % CAT_COLORS.length] }));
-  }, [yearTx]);
+  }, [yearTx, allRecurringEntries, selectedYear, activeMonths]);
 
-  // ── streak ─────────────────────────────────────────────────────────────────
+  // ── streak ────────────────────────────────────────────────────────────────
   const streak = useMemo(() => {
     const nets = MONTH_LABELS.map((_, m) => {
       const mx = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && d.getMonth() === m; });
-      return mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-           - mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+      const income = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+      const txExp  = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+      const recExp = getTotalRecurringForMonth(allRecurringEntries, selectedYear, m + 1);
+      return income - txExp - recExp;
     });
-    let s = 0; for (let i = nets.length - 1; i >= 0; i--) { if (nets[i] > 0) s++; else break; }
+    let s = 0;
+    for (let i = nets.length - 1; i >= 0; i--) { if (nets[i] > 0) s++; else break; }
     return s;
-  }, [allTransactions, selectedYear]);
+  }, [allTransactions, allRecurringEntries, selectedYear]);
 
   const bestMonth  = monthly.length ? monthly.reduce((a, b) => b.net > a.net ? b : a) : null;
   const worstMonth = monthly.length ? monthly.reduce((a, b) => b.net < a.net ? b : a) : null;
@@ -318,30 +350,34 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
   const negMonths  = monthly.filter(m => m.net < 0).length;
   const avgMonthly = monthly.length ? monthly.reduce((s, m) => s + m.net, 0) / monthly.length : 0;
 
-  // ── compare data ───────────────────────────────────────────────────────────
+  // ── compare data (with recurring) ─────────────────────────────────────────
   const compareData = useMemo(() =>
     MONTH_LABELS.map((label, m) => {
       const row: Record<string, any> = { label };
       compareYears.forEach(y => {
-        const mx  = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
-        const inc = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-        const exp = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+        const mx    = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
+        const inc   = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+        const txExp = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+        const recExp = getTotalRecurringForMonth(allRecurringEntries, y, m + 1);
+        const exp   = txExp + recExp;
         row[String(y)] = Math.round(compareMetric === 'income' ? inc : compareMetric === 'net' ? inc - exp : exp);
       });
       return row;
     }),
-    [allTransactions, compareYears, compareMetric]);
+    [allTransactions, allRecurringEntries, compareYears, compareMetric]);
 
   const monthCompareData = useMemo(() =>
     compareMonthYears.map(y => {
       const row: Record<string, any> = { label: String(y) };
       compareMonths.forEach(m => {
-        const mx = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m && t.type === 'expense' && !isInvestment(t); });
-        row[MONTH_LABELS[m]] = Math.round(mx.reduce((s, t) => s + t.amount, 0));
+        const mx    = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m && t.type === 'expense' && !isInvestment(t); });
+        const txAmt = mx.reduce((s, t) => s + t.amount, 0);
+        const recAmt = getTotalRecurringForMonth(allRecurringEntries, y, m + 1);
+        row[MONTH_LABELS[m]] = Math.round(txAmt + recAmt);
       });
       return row;
     }),
-    [allTransactions, compareMonths, compareMonthYears]);
+    [allTransactions, allRecurringEntries, compareMonths, compareMonthYears]);
 
   const cumCompareData = useMemo(() =>
     MONTH_LABELS.map((label, m) => {
@@ -349,17 +385,18 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
       compareYears.forEach(y => {
         const running = MONTH_LABELS.slice(0, m + 1).reduce((acc, _, mm) => {
           const mx = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === mm; });
-          return acc
-            + mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0)
-            - mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+          const inc    = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+          const txExp  = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+          const recExp = getTotalRecurringForMonth(allRecurringEntries, y, mm + 1);
+          return acc + inc - txExp - recExp;
         }, 0);
         row[String(y)] = Math.round(running);
       });
       return row;
     }),
-    [allTransactions, compareYears]);
+    [allTransactions, allRecurringEntries, compareYears]);
 
-  // ── chart helpers ──────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   const axisTick = { fontSize: 10, fill: 'var(--muted-foreground)' } as any;
   const tickFmt  = (v: number) => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`;
 
@@ -367,17 +404,12 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
     ? activeMonths.length === 12 ? 'Full year' : `${MONTH_LABELS[activeMonths[0]]}–${MONTH_LABELS[activeMonths[activeMonths.length - 1]]}`
     : PERIOD_PRESETS.find(p => p.value === periodPreset)?.label ?? '';
 
-  // ── metric toggle ─────────────────────────────────────────────────────────
   const MetricToggle = () => (
     <div style={{ display: 'inline-flex', background: 'var(--muted)', borderRadius: 999, padding: 3, gap: 2 }}>
       {(['expenses','income','net'] as CompareMetric[]).map(m => (
-        <button key={m} onClick={() => setCompareMetric(m)} style={{
-          padding: '3px 10px', fontSize: '0.72rem', fontWeight: 600, borderRadius: 999,
-          border: 'none', cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap',
-          background: compareMetric === m ? 'var(--background)' : 'transparent',
-          color:      compareMetric === m ? 'var(--foreground)'  : 'var(--muted-foreground)',
-          boxShadow:  compareMetric === m ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-        }}>{m.charAt(0).toUpperCase() + m.slice(1)}</button>
+        <button key={m} onClick={() => setCompareMetric(m)} style={{ padding: '3px 10px', fontSize: '0.72rem', fontWeight: 600, borderRadius: 999, border: 'none', cursor: 'pointer', transition: 'all 0.15s', whiteSpace: 'nowrap', background: compareMetric === m ? 'var(--background)' : 'transparent', color: compareMetric === m ? 'var(--foreground)' : 'var(--muted-foreground)', boxShadow: compareMetric === m ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}>
+          {m.charAt(0).toUpperCase() + m.slice(1)}
+        </button>
       ))}
     </div>
   );
@@ -386,73 +418,32 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
   return (
     <div style={{ minHeight: hideNav ? undefined : '100vh', background: 'var(--background)', fontFamily: 'var(--font-sans)' }}>
 
-      {/* ── Standalone nav ────────────────────────────────────────────────── */}
       {!hideNav && (
-        <div style={{
-          position: 'sticky', top: 0, zIndex: 20,
-          background: 'color-mix(in srgb, var(--background) 90%, transparent)',
-          backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-          borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)',
-        }}>
-          <div style={{
-            maxWidth: 1280, margin: '0 auto',
-            padding: isMobile ? '0 1rem' : '0 1.5rem',
-            height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem',
-          }}>
+        <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 90%, transparent)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+          <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '0 1rem' : '0 1.5rem', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: 0 }}>
-              {onBack && (
-                <button onClick={onBack} style={{
-                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  width: 32, height: 32, borderRadius: 8, border: 'none',
-                  background: 'var(--muted)', color: 'var(--foreground)', cursor: 'pointer', flexShrink: 0,
-                }}><ArrowLeft size={14} /></button>
-              )}
-              <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.025em' }}>
-                Annual Report
-              </span>
+              {onBack && <button onClick={onBack} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 32, height: 32, borderRadius: 8, border: 'none', background: 'var(--muted)', color: 'var(--foreground)', cursor: 'pointer', flexShrink: 0 }}><ArrowLeft size={14} /></button>}
+              <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '-0.025em' }}>Annual Report</span>
             </div>
             <YearPicker years={availableYears} selected={selectedYear} onChange={setSelectedYear} layoutId={yearNavId} />
           </div>
         </div>
       )}
 
-      {/* ── Embedded sub-nav: year picker only ────────────────────────────── */}
       {hideNav && (
-        <div style={{
-          position: 'sticky', top: 52, zIndex: 19,
-          background: 'color-mix(in srgb, var(--background) 92%, transparent)',
-          backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-          borderBottom: '1px solid var(--border)',
-        }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: isMobile ? '0.5rem 1rem' : '0.5rem 1.5rem', height: 44, gap: '0.75rem',
-          }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', letterSpacing: '-0.01em' }}>
-              Annual Report
-            </span>
+        <div style={{ position: 'sticky', top: 52, zIndex: 19, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '0.5rem 1rem' : '0.5rem 1.5rem', height: 44, gap: '0.75rem' }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', letterSpacing: '-0.01em' }}>Annual Report</span>
             <YearPicker years={availableYears} selected={selectedYear} onChange={setSelectedYear} layoutId={yearNavId} small />
           </div>
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          HERO
-      ══════════════════════════════════════════════════════════════════════ */}
-      <div style={{
-        background: `linear-gradient(180deg, color-mix(in srgb, ${kpis.balance >= 0 ? '#16a34a' : '#dc2626'} 6%, var(--background)) 0%, var(--background) 100%)`,
-        borderBottom: '1px solid var(--border)',
-      }}>
-        {/* Period selector */}
+      {/* HERO */}
+      <div style={{ background: `linear-gradient(180deg, color-mix(in srgb, ${kpis.balance >= 0 ? '#16a34a' : '#dc2626'} 6%, var(--background)) 0%, var(--background) 100%)`, borderBottom: '1px solid var(--border)' }}>
         <div style={{ padding: isMobile ? '1rem 1rem 0' : '1.25rem 1.75rem 0', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {PERIOD_PRESETS.map(p => (
-            <button key={p.value} onClick={() => { setPeriodPreset(p.value); if (p.value === 'custom') setCustomMonths(activeMonths); }} style={{
-              padding: '4px 12px', fontSize: '0.72rem', fontWeight: 600, borderRadius: 999,
-              border: '1.5px solid', cursor: 'pointer', transition: 'all 0.12s',
-              borderColor: periodPreset === p.value ? 'var(--foreground)' : 'var(--border)',
-              background:  periodPreset === p.value ? 'var(--foreground)' : 'transparent',
-              color:       periodPreset === p.value ? 'var(--background)' : 'var(--muted-foreground)',
-            }}>{p.label}</button>
+            <button key={p.value} onClick={() => { setPeriodPreset(p.value); if (p.value === 'custom') setCustomMonths(activeMonths); }} style={{ padding: '4px 12px', fontSize: '0.72rem', fontWeight: 600, borderRadius: 999, border: '1.5px solid', cursor: 'pointer', transition: 'all 0.12s', borderColor: periodPreset === p.value ? 'var(--foreground)' : 'var(--border)', background: periodPreset === p.value ? 'var(--foreground)' : 'transparent', color: periodPreset === p.value ? 'var(--background)' : 'var(--muted-foreground)' }}>{p.label}</button>
           ))}
         </div>
         {periodPreset === 'custom' && (
@@ -461,10 +452,10 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
           </div>
         )}
 
-        {/* Big number */}
         <div style={{ padding: isMobile ? '1rem 1rem 0' : '1.25rem 1.75rem 0' }}>
           <p style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--muted-foreground)', margin: '0 0 0.3rem', textTransform: 'uppercase', letterSpacing: '0.07em' }}>
             {selectedYear} · {periodLabel} — Income
+            {yearRecurringTotal > 0 && <span style={{ marginLeft: 8, color: 'var(--color-orange-400)' }}>· includes {fmtEur(yearRecurringTotal)} recurring</span>}
           </p>
           <p style={{ fontSize: isMobile ? '2rem' : '2.5rem', fontWeight: 800, letterSpacing: '-0.04em', color: 'var(--foreground)', margin: '0 0 0.4rem', lineHeight: 1 }}>
             {fmtEur(kpis.income, 2)}
@@ -482,12 +473,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
         </div>
 
         {/* KPI strip */}
-        <div style={{
-          display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)',
-          gap: '1px', background: 'var(--border)',
-          margin: isMobile ? '0 1rem 1.25rem' : '0 1.75rem 1.5rem',
-          borderRadius: 14, overflow: 'hidden',
-        }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '1px', background: 'var(--border)', margin: isMobile ? '0 1rem 1.25rem' : '0 1.75rem 1.5rem', borderRadius: 14, overflow: 'hidden' }}>
           {[
             { label: 'Expenses',        value: fmtEur(kpis.expenses), sub: kpis.yoyExp !== null ? `${kpis.yoyExp > 0 ? '+' : ''}${kpis.yoyExp.toFixed(1)}% YoY` : undefined, subPos: kpis.yoyExp !== null ? kpis.yoyExp < 0 : undefined, icon: <TrendingDown size={13} />, color: '#dc2626', bg: 'color-mix(in srgb, #dc2626 10%, var(--background))' },
             { label: 'Invested',        value: fmtEur(kpis.invested), sub: kpis.invested > 0 ? `${((kpis.invested / kpis.income) * 100).toFixed(1)}% of income` : undefined, icon: <TrendingUp size={13} />, color: '#7c3aed', bg: 'color-mix(in srgb, #7c3aed 10%, var(--background))' },
@@ -495,11 +481,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
             { label: 'Positive months', value: `${posMonths} / ${monthly.length}`, sub: negMonths > 0 ? `${negMonths} negative` : 'All positive 🎉', subPos: negMonths === 0, icon: <CalendarDays size={13} />, color: posMonths >= monthly.length * 0.7 ? '#16a34a' : '#dc2626', bg: posMonths >= monthly.length * 0.7 ? 'color-mix(in srgb, #16a34a 10%, var(--background))' : 'color-mix(in srgb, #dc2626 10%, var(--background))' },
             { label: 'Saving streak 🔥', value: `${streak} months`, sub: streak > 0 ? 'consecutive positive' : 'No current streak', subPos: streak > 0, icon: <Flame size={13} />, color: streak > 0 ? '#f97316' : 'var(--muted-foreground)', bg: streak > 0 ? 'color-mix(in srgb, #f97316 10%, var(--background))' : 'var(--muted)' },
           ].map(({ label, value, sub, subPos, icon, color, bg }, idx) => (
-            <div key={label} style={{
-              background: 'var(--card)', padding: isMobile ? '0.85rem 1rem' : '1rem 1.25rem',
-              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-              ...(isMobile && idx === 4 ? { gridColumn: 'span 2' } : {}),
-            }}>
+            <div key={label} style={{ background: 'var(--card)', padding: isMobile ? '0.85rem 1rem' : '1rem 1.25rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, ...(isMobile && idx === 4 ? { gridColumn: 'span 2' } : {}) }}>
               <div style={{ minWidth: 0 }}>
                 <p style={{ fontSize: '0.63rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
                 <p style={{ fontSize: isMobile ? '0.9rem' : '1rem', fontWeight: 800, color, margin: 0, letterSpacing: '-0.02em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</p>
@@ -511,17 +493,14 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          CONTENT — single scrollable flow
-      ══════════════════════════════════════════════════════════════════════ */}
+      {/* CONTENT */}
       <div style={{ maxWidth: 1280, margin: '0 auto', padding: isMobile ? '1.25rem 1rem' : '1.75rem 1.5rem', display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
 
-        {/* ── § Cash Flow ───────────────────────────────────────────────────── */}
+        {/* Cash Flow */}
         <section>
-          <SectionHeader icon={<BarChart2 size={14} />} title="Cash Flow" subtitle="Monthly income, expenses and running balance" />
+          <SectionHeader icon={<BarChart2 size={14} />} title="Cash Flow" subtitle="Monthly income, expenses (incl. recurring) and running balance" />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '1.25rem' }}>
-
-            <Card title="Monthly Income vs Expenses" subtitle="Area chart" icon={<TrendingUp size={13} />}>
+            <Card title="Monthly Income vs Expenses" subtitle="Recurring included" icon={<TrendingUp size={13} />}>
               <ResponsiveContainer width="100%" height={210}>
                 <AreaChart data={monthly} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
                   <defs>
@@ -540,7 +519,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
                   <Area type="monotone" dataKey="expenses" name="Expenses" stroke="#ef4444" strokeWidth={2} fill="url(#gExp)" dot={false} activeDot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} />
                 </AreaChart>
               </ResponsiveContainer>
-              <LegendRow items={[{ color: '#16a34a', label: 'Income', value: kpis.income }, { color: '#ef4444', label: 'Expenses', value: kpis.expenses }]} />
+              <LegendRow items={[{ color: '#16a34a', label: 'Income', value: kpis.income }, { color: '#ef4444', label: 'Expenses (all)', value: kpis.expenses }]} />
             </Card>
 
             <Card title="Cumulative Net Balance" subtitle="Running total" icon={<TrendingUp size={13} />}>
@@ -561,12 +540,11 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
           </div>
         </section>
 
-        {/* ── § Spending Breakdown ──────────────────────────────────────────── */}
+        {/* Spending Breakdown */}
         <section>
-          <SectionHeader icon={<BarChart2 size={14} />} title="Spending Breakdown" subtitle="Categories and stacked monthly totals" />
+          <SectionHeader icon={<BarChart2 size={14} />} title="Spending Breakdown" subtitle="Categories including recurring expenses" />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '300px 1fr', gap: '1.25rem' }}>
-
-            <Card title="Expenses by Category" subtitle="Period breakdown" icon={<BarChart2 size={13} />}>
+            <Card title="Expenses by Category" subtitle="Including recurring" icon={<BarChart2 size={13} />}>
               {catBreakdown.length > 0 ? (
                 <>
                   <div style={{ width: '100%', height: 180 }}>
@@ -612,20 +590,20 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
                   <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
                   <YAxis tick={axisTick} axisLine={false} tickLine={false} width={46} tickFormatter={tickFmt} />
                   <Tooltip content={<GlassTooltip />} />
-                  <Bar dataKey="expenses" name="Expenses" stackId="a" fill="#fca5a5" />
-                  <Bar dataKey="invested"  name="Invested"  stackId="a" fill="#c4b9e0" radius={[5, 5, 0, 0]} />
+                  <Bar dataKey="expenses"  name="Expenses (all)" stackId="a" fill="#fca5a5" />
+                  <Bar dataKey="recurring" name="of which recurring" stackId="b" fill="#f9ae77" radius={[0,0,0,0]} />
+                  <Bar dataKey="invested"  name="Invested"          stackId="a" fill="#c4b9e0" radius={[5, 5, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
-              <LegendRow items={[{ color: '#fca5a5', label: 'Expenses', value: kpis.expenses, square: true }, { color: '#c4b9e0', label: 'Invested', value: kpis.invested, square: true }]} />
+              <LegendRow items={[{ color: '#fca5a5', label: 'Total expenses', value: kpis.expenses, square: true }, { color: '#f9ae77', label: 'Recurring', value: yearRecurringTotal, square: true }, { color: '#c4b9e0', label: 'Invested', value: kpis.invested, square: true }]} />
             </Card>
           </div>
         </section>
 
-        {/* ── § Insights ────────────────────────────────────────────────────── */}
+        {/* Insights */}
         <section>
           <SectionHeader icon={<Sparkles size={14} />} title="Insights" subtitle="Monthly performance and year at a glance" />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '1.25rem' }}>
-
             <Card title="Monthly Net — Breakdown" subtitle="Best vs worst and full ranking" icon={<CalendarDays size={13} />}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 4 }}>
@@ -633,11 +611,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
                     { label: '🏆 Best month',  m: bestMonth,  positive: true },
                     { label: '📉 Worst month', m: worstMonth, positive: (worstMonth?.net ?? 0) >= 0 },
                   ] as const).map(({ label, m, positive }) => (
-                    <div key={label} style={{
-                      padding: '10px 12px', borderRadius: 12, display: 'flex', flexDirection: 'column',
-                      background: positive ? 'color-mix(in srgb, #16a34a 8%, var(--background))' : 'color-mix(in srgb, #dc2626 8%, var(--background))',
-                      border: `1px solid ${positive ? 'color-mix(in srgb, #16a34a 20%, transparent)' : 'color-mix(in srgb, #dc2626 20%, transparent)'}`,
-                    }}>
+                    <div key={label} style={{ padding: '10px 12px', borderRadius: 12, display: 'flex', flexDirection: 'column', background: positive ? 'color-mix(in srgb, #16a34a 8%, var(--background))' : 'color-mix(in srgb, #dc2626 8%, var(--background))', border: `1px solid ${positive ? 'color-mix(in srgb, #16a34a 20%, transparent)' : 'color-mix(in srgb, #dc2626 20%, transparent)'}` }}>
                       <p style={{ fontSize: '0.67rem', color: 'var(--muted-foreground)', margin: '0 0 4px', fontWeight: 500 }}>{label}</p>
                       <p style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--foreground)', margin: '0 0 2px' }}>{m?.label ?? '—'}</p>
                       <p style={{ fontSize: '0.82rem', fontWeight: 700, color: positive ? '#16a34a' : '#dc2626', margin: 0 }}>
@@ -665,12 +639,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
 
             <Card title="Year at a Glance" subtitle="Key metrics for the period" icon={<Sparkles size={13} />}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '0.9rem 1rem', borderRadius: 12,
-                  background: streak > 0 ? 'color-mix(in srgb, #f97316 8%, var(--background))' : 'var(--accent)',
-                  border: `1px solid ${streak > 0 ? 'color-mix(in srgb, #f97316 20%, transparent)' : 'var(--border)'}`,
-                }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.9rem 1rem', borderRadius: 12, background: streak > 0 ? 'color-mix(in srgb, #f97316 8%, var(--background))' : 'var(--accent)', border: `1px solid ${streak > 0 ? 'color-mix(in srgb, #f97316 20%, transparent)' : 'var(--border)'}` }}>
                   <div>
                     <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '0 0 2px', fontWeight: 500 }}>Savings streak 🔥</p>
                     <p style={{ fontSize: '0.85rem', fontWeight: 700, color: streak > 0 ? '#f97316' : 'var(--muted-foreground)', margin: 0 }}>
@@ -720,17 +689,11 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
           </div>
         </section>
 
-        {/* ── § Year-over-Year ──────────────────────────────────────────────── */}
+        {/* Year-over-Year */}
         <section>
-          <SectionHeader icon={<GitCompare size={14} />} title="Year-over-Year" subtitle="Compare multiple years side by side" />
+          <SectionHeader icon={<GitCompare size={14} />} title="Year-over-Year" subtitle="Compare multiple years side by side (recurring included)" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-
-            {/* Controls row */}
-            <div style={{
-              display: 'flex', alignItems: isMobile ? 'flex-start' : 'center',
-              justifyContent: 'space-between', flexDirection: isMobile ? 'column' : 'row', gap: '0.75rem',
-              background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '0.85rem 1.1rem',
-            }}>
+            <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', flexDirection: isMobile ? 'column' : 'row', gap: '0.75rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '0.85rem 1.1rem' }}>
               <div>
                 <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', fontWeight: 600, margin: '0 0 0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Select years (max 5)</p>
                 <YearChips years={availableYears} selected={compareYears} onChange={setCompareYears} max={5} />
@@ -782,7 +745,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
           </div>
         </section>
 
-        {/* ── § Month Comparison ────────────────────────────────────────────── */}
+        {/* Month Comparison */}
         <section>
           <SectionHeader icon={<CalendarDays size={14} />} title="Month Comparison" subtitle="Same months across different years" />
           <Card title="Expenses per month across years">
@@ -818,13 +781,18 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
                 </thead>
                 <tbody>
                   {compareMonthYears.map((y, yi) => {
-                    const rowTotal = compareMonths.reduce((s, m) =>
-                      s + allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m && t.type === 'expense' && !isInvestment(t); }).reduce((ss, t) => ss + t.amount, 0), 0);
+                    const rowTotal = compareMonths.reduce((s, m) => {
+                      const txAmt = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m && t.type === 'expense' && !isInvestment(t); }).reduce((ss, t) => ss + t.amount, 0);
+                      const recAmt = getTotalRecurringForMonth(allRecurringEntries, y, m + 1);
+                      return s + txAmt + recAmt;
+                    }, 0);
                     return (
                       <tr key={y} style={{ background: yi % 2 === 0 ? 'transparent' : 'var(--accent)' }}>
                         <td style={{ padding: '8px 10px', fontWeight: 800, color: YEAR_COLORS[yi % YEAR_COLORS.length], fontSize: '0.82rem' }}>{y}</td>
                         {compareMonths.map(m => {
-                          const val = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m && t.type === 'expense' && !isInvestment(t); }).reduce((s, t) => s + t.amount, 0);
+                          const txAmt = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m && t.type === 'expense' && !isInvestment(t); }).reduce((s, t) => s + t.amount, 0);
+                          const recAmt = getTotalRecurringForMonth(allRecurringEntries, y, m + 1);
+                          const val = txAmt + recAmt;
                           return <td key={m} style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--foreground)', fontWeight: 500 }}>{val > 0 ? fmtEur(val, 2) : <span style={{ color: 'var(--muted-foreground)' }}>—</span>}</td>;
                         })}
                         <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 800, color: 'var(--foreground)' }}>{fmtEur(rowTotal, 2)}</td>
@@ -836,13 +804,11 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({ allTransactions, onBac
             </div>
           </Card>
         </section>
-
       </div>
     </div>
   );
 };
 
-// ─── Legend row helper ────────────────────────────────────────────────────────
 const LegendRow: React.FC<{ items: { color: string; label: string; value: number; square?: boolean }[] }> = ({ items }) => (
   <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', paddingTop: '0.5rem' }}>
     {items.map(({ color, label, value, square }) => (

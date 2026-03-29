@@ -272,6 +272,9 @@ export const COMMANDS: CommandMap = {
   create_recurring_expense:  { method: "POST",   path: "/budget/recurring-expenses" },
   update_recurring_expense:  { method: "PUT",    path: "/budget/recurring-expenses/:id" },
   delete_recurring_expense:  { method: "DELETE", path: "/budget/recurring-expenses/:id" },
+  get_recurring_entries:   { method: "GET", path: "/budget/recurring-entries" },
+  upsert_recurring_entry:  { method: "PUT", path: "/budget/recurring-entries" },
+  delete_recurring_entry:  { method: "DELETE", path: "/budget/recurring-entries/:id" },
 
 
 };
@@ -1353,6 +1356,39 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       url = url.replace(":id", id.toString());
       break;
     }
+
+    case "get_recurring_entries": {
+    const { year, month, recurringExpenseId } = (payload ?? {}) as {
+      year?: number; month?: number; recurringExpenseId?: number;
+    };
+    const params = new URLSearchParams();
+    if (year  !== undefined) params.set("year",  String(year));
+    if (month !== undefined) params.set("month", String(month));
+    if (recurringExpenseId !== undefined)
+      params.set("recurring_expense_id", String(recurringExpenseId));
+    const qs = params.toString();
+    if (qs) url += `?${qs}`;
+    break;
+  }
+
+  case "upsert_recurring_entry": {
+    const { recurringExpenseId, year, month, amount, notes } = payload as {
+      recurringExpenseId: number; year: number; month: number;
+      amount: number; notes?: string | null;
+    };
+    body = JSON.stringify({
+      recurring_expense_id: recurringExpenseId,
+      year, month, amount,
+      notes: notes ?? null,
+    });
+    break;
+  }
+
+  case "delete_recurring_entry": {
+    const { id } = payload as { id: number | string };
+    url = url.replace(":id", id.toString());
+    break;
+    }
   }
 
   const headers: HeadersInit = {};
@@ -1447,6 +1483,36 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       updatedAt: e.updated_at,
     })) as T;
   }
+
+  if (command === "get_recurring_entries") {
+  const data = await res.json();
+  return data.map((e: any) => ({
+    id:                  e.id,
+    recurringExpenseId:  e.recurring_expense_id,
+    year:                e.year,
+    month:               e.month,
+    amount:              e.amount,
+    notes:               e.notes ?? undefined,
+    createdAt:           e.created_at,
+    updatedAt:           e.updated_at,
+  })) as T;
+}
+
+if (command === "upsert_recurring_entry") {
+  const e = await res.json();
+  return {
+    id:                  e.id,
+    recurringExpenseId:  e.recurring_expense_id,
+    year:                e.year,
+    month:               e.month,
+    amount:              e.amount,
+    notes:               e.notes ?? undefined,
+    createdAt:           e.created_at,
+    updatedAt:           e.updated_at,
+  } as T;
+}
+
+
 // Check if response has content
 const contentType = res.headers.get('content-type');
 if (!contentType || !contentType.includes('application/json')) {
