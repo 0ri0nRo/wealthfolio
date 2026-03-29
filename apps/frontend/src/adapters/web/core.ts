@@ -267,6 +267,11 @@ export const COMMANDS: CommandMap = {
   get_fire_data: { method: "GET", path: "/fire/data" },
   get_fire_settings: { method: "GET", path: "/fire/settings" },
   save_fire_settings: { method: "POST", path: "/fire/settings" },
+  // Recurring expenses
+  get_recurring_expenses:    { method: "GET",    path: "/budget/recurring-expenses" },
+  create_recurring_expense:  { method: "POST",   path: "/budget/recurring-expenses" },
+  update_recurring_expense:  { method: "PUT",    path: "/budget/recurring-expenses/:id" },
+  delete_recurring_expense:  { method: "DELETE", path: "/budget/recurring-expenses/:id" },
 
 
 };
@@ -1317,6 +1322,37 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       url = url.replace(":id", id.toString());
       break;
     }
+    case "get_recurring_expenses":
+      // no extra params needed, GET /budget/recurring-expenses
+      break;
+
+    case "create_recurring_expense": {
+      const { category_id, amount, description, frequency, custom_days, start_date, end_date, notes } = payload as {
+        category_id: number;
+        amount: number;
+        description: string;
+        frequency: string;
+        custom_days?: number | null;
+        start_date: string;
+        end_date?: string | null;
+        notes?: string | null;
+      };
+      body = JSON.stringify({ category_id, amount, description, frequency, custom_days: custom_days ?? null, start_date, end_date: end_date ?? null, notes: notes ?? null });
+      break;
+    }
+
+    case "update_recurring_expense": {
+      const { id, ...data } = payload as { id: number | string } & Record<string, unknown>;
+      url = url.replace(":id", id.toString());
+      body = JSON.stringify(data);
+      break;
+    }
+
+    case "delete_recurring_expense": {
+      const { id } = payload as { id: number | string };
+      url = url.replace(":id", id.toString());
+      break;
+    }
   }
 
   const headers: HeadersInit = {};
@@ -1393,6 +1429,23 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       balance: data.balance,
       categoryBreakdown: [],
     } as T;
+  }
+  if (command === "get_recurring_expenses") {
+    const data = await res.json();
+    return data.map((e: any) => ({
+      id: e.id,
+      categoryId: e.category_id,
+      amount: e.amount,
+      description: e.description,
+      frequency: e.frequency,
+      customDays: e.custom_days ?? undefined,
+      startDate: e.start_date,
+      endDate: e.end_date ?? null,
+      notes: e.notes ?? undefined,
+      isActive: e.is_active === 1,
+      createdAt: e.created_at,
+      updatedAt: e.updated_at,
+    })) as T;
   }
 // Check if response has content
 const contentType = res.headers.get('content-type');

@@ -5,11 +5,10 @@ import {
   BudgetTransaction,
   CreateBudgetTransactionInput,
 } from '@/lib/types/budget';
+import { RecurringExpense } from '@/lib/types/recurring';
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '../adapters/shared/platform';
 
-// How many years back to fetch for allTransactions (used by YearlyStats and charts).
-// Increase this value if you have data older than 2 years.
 const YEARS_BACK = 2;
 
 export const useBudget = (month: Date) => {
@@ -17,6 +16,7 @@ export const useBudget = (month: Date) => {
   const [allTransactions, setAllTransactions] = useState<BudgetTransaction[]>([]);
   const [categories, setCategories] = useState<BudgetCategory[]>([]);
   const [summary, setSummary] = useState<BudgetSummary | null>(null);
+  const [recurringExpenses, setRecurringExpenses] = useState<RecurringExpense[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -26,14 +26,12 @@ export const useBudget = (month: Date) => {
     try {
       const now = new Date();
 
-      // Start from January of (currentYear - YEARS_BACK) so YearlyStats always
-      // receives complete calendar years rather than a rolling 12-month window.
       const startDate = new Date(now.getFullYear() - YEARS_BACK, 0, 1);
       const totalMonths =
         (now.getFullYear() - startDate.getFullYear()) * 12 +
         (now.getMonth() - startDate.getMonth()) + 1;
 
-      const [cats, txns, sum, allTxns] = await Promise.all([
+      const [cats, txns, sum, allTxns, recurring] = await Promise.all([
         invoke<BudgetCategory[]>('get_budget_categories'),
         invoke<BudgetTransaction[]>('get_budget_transactions', {
           month: month.getMonth() + 1,
@@ -52,11 +50,11 @@ export const useBudget = (month: Date) => {
             });
           })
         ).then(results => results.flat()),
+        invoke<RecurringExpense[]>('get_recurring_expenses').catch(() => [] as RecurringExpense[]),
       ]);
 
       const categoriesMap = new Map(cats.map((c: BudgetCategory) => [String(c.id), c]));
 
-      // Normalize fields: backend may return snake_case (transaction_type, category_id)
       const normalizeTxn = (txn: any): BudgetTransaction => ({
         ...txn,
         type: txn.type ?? txn.transaction_type,
@@ -104,6 +102,7 @@ export const useBudget = (month: Date) => {
       setTransactions(enrichedTxns);
       setAllTransactions(enrichedAllTxns);
       setSummary({ ...sum, categoryBreakdown });
+      setRecurringExpenses(recurring);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error loading data');
       console.error('Error fetching budget data:', err);
@@ -215,6 +214,55 @@ export const useBudget = (month: Date) => {
     }
   };
 
+  // ── Recurring expenses CRUD ───────────────────────────────────────────────
+
+  const createRecurringExpense = async (data: Partial<RecurringExpense>) => {
+    try {
+      await invoke('create_recurring_expense', {
+        category_id: data.categoryId,
+        amount: data.amount,
+        description: data.description,
+        frequency: data.frequency,
+        custom_days: data.customDays ?? null,
+        start_date: data.startDate,
+        end_date: data.endDate ?? null,
+        notes: data.notes ?? null,
+      });
+      await fetchData();
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Error creating recurring expense');
+    }
+  };
+
+  const updateRecurringExpense = async (id: number, data: Partial<RecurringExpense>) => {
+    try {
+      await invoke('update_recurring_expense', {
+        id,
+        category_id: data.categoryId,
+        amount: data.amount,
+        description: data.description,
+        frequency: data.frequency,
+        custom_days: data.customDays ?? null,
+        start_date: data.startDate,
+        end_date: data.endDate ?? null,
+        notes: data.notes ?? null,
+        is_active: data.isActive,
+      });
+      await fetchData();
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Error updating recurring expense');
+    }
+  };
+
+  const deleteRecurringExpense = async (id: string | number) => {
+    try {
+      await invoke('delete_recurring_expense', { id });
+      await fetchData();
+    } catch (err) {
+      throw new Error(err instanceof Error ? err.message : 'Error deleting recurring expense');
+    }
+  };
+
   return {
     transactions,
     allTransactions,
@@ -229,6 +277,10 @@ export const useBudget = (month: Date) => {
     createCategory,
     updateCategory,
     deleteCategory,
+    recurringExpenses,
+    createRecurringExpense,
+    updateRecurringExpense,
+    deleteRecurringExpense,
   };
 };
 

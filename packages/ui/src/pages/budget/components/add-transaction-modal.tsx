@@ -114,7 +114,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                       : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
                   }`}
                 >
-                  💰 Entrata
+                  💰 Income
                 </button>
                 <button
                   type="button"
@@ -125,7 +125,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                       : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
                   }`}
                 >
-                  💸 Uscita
+                  💸 Expenses
                 </button>
               </div>
             </div>
@@ -133,7 +133,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             {/* Description */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Descrizione *
+                Description *
               </label>
               <input
                 type="text"
@@ -152,7 +152,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             {/* Category */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Categoria *
+                Category *
               </label>
               <select
                 value={formData.categoryId}
@@ -177,7 +177,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Importo (€) *
+                  Amount (€) *
                 </label>
                 <input
                   type="number"
@@ -197,7 +197,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Data *
+                  Date *
                 </label>
                 <input
                   type="date"
@@ -216,7 +216,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
             {/* Notes */}
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Note
+                Notes
               </label>
               <textarea
                 value={formData.notes}
@@ -237,7 +237,7 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
               />
               <label htmlFor="recurring" className="ml-2 text-sm text-gray-700 dark:text-gray-300">
-                Transazione ricorrente
+                Recurring transaction
               </label>
             </div>
 
@@ -248,13 +248,13 @@ export const AddTransactionModal: React.FC<AddTransactionModalProps> = ({
                 onClick={onClose}
                 className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 font-medium transition-colors"
               >
-                Annulla
+                Cancel
               </button>
               <button
                 type="submit"
                 className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
               >
-                Salva
+                Save
               </button>
             </div>
           </form>

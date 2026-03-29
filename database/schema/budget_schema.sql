@@ -75,20 +75,48 @@ INSERT INTO budget_categories (name, type, color, icon) VALUES
 ('Altro (Spese)', 'expense', '#6b7280', '💸');
 
 -- Trigger per aggiornare updated_at
-CREATE TRIGGER IF NOT EXISTS update_budget_transactions_timestamp 
+CREATE TRIGGER IF NOT EXISTS update_budget_transactions_timestamp
 AFTER UPDATE ON budget_transactions
 BEGIN
     UPDATE budget_transactions SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER IF NOT EXISTS update_budget_categories_timestamp 
+CREATE TRIGGER IF NOT EXISTS update_budget_categories_timestamp
 AFTER UPDATE ON budget_categories
 BEGIN
     UPDATE budget_categories SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;
 
-CREATE TRIGGER IF NOT EXISTS update_budget_limits_timestamp 
+CREATE TRIGGER IF NOT EXISTS update_budget_limits_timestamp
 AFTER UPDATE ON budget_limits
 BEGIN
     UPDATE budget_limits SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+END;
+
+-- Tabella per le spese ricorrenti
+CREATE TABLE IF NOT EXISTS recurring_expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category_id INTEGER NOT NULL,
+    amount REAL NOT NULL,
+    description TEXT NOT NULL,
+    frequency TEXT NOT NULL CHECK(frequency IN ('monthly', 'bimonthly', 'quarterly', 'semiannual', 'annual', 'custom')),
+    custom_days INTEGER,
+    start_date DATE NOT NULL,
+    end_date DATE,
+    notes TEXT,
+    is_active BOOLEAN DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES budget_categories(id)
+);
+
+-- Indice per performance
+CREATE INDEX IF NOT EXISTS idx_recurring_expenses_category ON recurring_expenses(category_id);
+CREATE INDEX IF NOT EXISTS idx_recurring_expenses_active ON recurring_expenses(is_active);
+
+-- Trigger per aggiornare updated_at
+CREATE TRIGGER IF NOT EXISTS update_recurring_expenses_timestamp
+AFTER UPDATE ON recurring_expenses
+BEGIN
+    UPDATE recurring_expenses SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
 END;

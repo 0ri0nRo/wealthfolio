@@ -53,6 +53,35 @@ pub struct BudgetSummary {
     pub balance: f64,
 }
 
+// ── NEW: RecurringExpense struct ────────────────────────────────────────────
+#[derive(Debug, Serialize, Deserialize, QueryableByName)]
+pub struct RecurringExpense {
+    #[diesel(sql_type = BigInt)]
+    pub id: i64,
+    #[diesel(sql_type = BigInt)]
+    pub category_id: i64,
+    #[diesel(sql_type = Double)]
+    pub amount: f64,
+    #[diesel(sql_type = Text)]
+    pub description: String,
+    #[diesel(sql_type = Text)]
+    pub frequency: String,
+    #[diesel(sql_type = Nullable<BigInt>)]
+    pub custom_days: Option<i64>,
+    #[diesel(sql_type = Text)]
+    pub start_date: String,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub end_date: Option<String>,
+    #[diesel(sql_type = Nullable<Text>)]
+    pub notes: Option<String>,
+    #[diesel(sql_type = BigInt)]
+    pub is_active: i64,
+    #[diesel(sql_type = Text)]
+    pub created_at: String,
+    #[diesel(sql_type = Text)]
+    pub updated_at: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct TransactionQuery {
     month: u32,
@@ -79,12 +108,11 @@ struct UpdateTransactionRequest {
     notes: Option<String>,
 }
 
-// ── NEW: structs per le categorie ──────────────────────────────────────────
 #[derive(Debug, Deserialize)]
 struct CreateCategoryRequest {
     name: String,
     #[serde(rename = "type")]
-    category_type: String, // "income" o "expense"
+    category_type: String,
     color: String,
     icon: Option<String>,
     parent_id: Option<i64>,
@@ -98,6 +126,32 @@ struct UpdateCategoryRequest {
     color: Option<String>,
     icon: Option<String>,
     parent_id: Option<i64>,
+    is_active: Option<bool>,
+}
+
+// ── NEW: RecurringExpense request structs ───────────────────────────────────
+#[derive(Debug, Deserialize)]
+struct CreateRecurringExpenseRequest {
+    category_id: i64,
+    amount: f64,
+    description: String,
+    frequency: String,
+    custom_days: Option<i64>,
+    start_date: String,
+    end_date: Option<String>,
+    notes: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateRecurringExpenseRequest {
+    category_id: Option<i64>,
+    amount: Option<f64>,
+    description: Option<String>,
+    frequency: Option<String>,
+    custom_days: Option<i64>,
+    start_date: Option<String>,
+    end_date: Option<String>,
+    notes: Option<String>,
     is_active: Option<bool>,
 }
 
@@ -119,7 +173,6 @@ async fn get_categories(
     Ok(Json(categories))
 }
 
-// ── NEW: create category ────────────────────────────────────────────────────
 async fn create_category(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateCategoryRequest>,
@@ -152,7 +205,6 @@ async fn create_category(
         .map(|r| r.id)
         .map_err(|e| anyhow::anyhow!("Get ID error: {}", e))?;
 
-    // Ritorna la categoria appena creata
     let category: BudgetCategory = diesel::sql_query(
         "SELECT id, name, type, color, icon, parent_id, is_active, created_at, updated_at
          FROM budget_categories
@@ -165,7 +217,6 @@ async fn create_category(
     Ok(Json(category))
 }
 
-// ── NEW: update category ────────────────────────────────────────────────────
 async fn update_category(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
@@ -215,7 +266,6 @@ async fn update_category(
     Ok(StatusCode::OK)
 }
 
-// ── NEW: delete category (soft delete) ─────────────────────────────────────
 async fn delete_category(
     State(state): State<Arc<AppState>>,
     Path(id): Path<i64>,
@@ -225,11 +275,12 @@ async fn delete_category(
         .get()
         .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
 
-    // Soft delete: setta is_active = 0
-    diesel::sql_query("UPDATE budget_categories SET is_active = 0, updated_at = datetime('now') WHERE id = ?")
-        .bind::<BigInt, _>(id)
-        .execute(&mut conn)
-        .map_err(|e| anyhow::anyhow!("Delete error: {}", e))?;
+    diesel::sql_query(
+        "UPDATE budget_categories SET is_active = 0, updated_at = datetime('now') WHERE id = ?",
+    )
+    .bind::<BigInt, _>(id)
+    .execute(&mut conn)
+    .map_err(|e| anyhow::anyhow!("Delete error: {}", e))?;
 
     Ok(StatusCode::OK)
 }
@@ -452,6 +503,152 @@ async fn get_summary(
     }))
 }
 
+// ── NEW: Recurring Expenses CRUD ────────────────────────────────────────────
+
+async fn get_recurring_expenses(
+    State(state): State<Arc<AppState>>,
+) -> ApiResult<Json<Vec<RecurringExpense>>> {
+    let mut conn = state
+        .pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
+
+    let expenses: Vec<RecurringExpense> = diesel::sql_query(
+        "SELECT id, category_id, amount, description, frequency, custom_days,
+                start_date, end_date, notes, is_active, created_at, updated_at
+         FROM recurring_expenses
+         ORDER BY is_active DESC, description ASC",
+    )
+    .load(&mut conn)
+    .map_err(|e| anyhow::anyhow!("DB error: {}", e))?;
+
+    Ok(Json(expenses))
+}
+
+async fn create_recurring_expense(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<CreateRecurringExpenseRequest>,
+) -> ApiResult<Json<RecurringExpense>> {
+    let mut conn = state
+        .pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
+
+    diesel::sql_query(
+        "INSERT INTO recurring_expenses
+         (category_id, amount, description, frequency, custom_days, start_date, end_date, notes, is_active, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, datetime('now'), datetime('now'))",
+    )
+    .bind::<BigInt, _>(payload.category_id)
+    .bind::<Double, _>(payload.amount)
+    .bind::<Text, _>(&payload.description)
+    .bind::<Text, _>(&payload.frequency)
+    .bind::<Nullable<BigInt>, _>(payload.custom_days)
+    .bind::<Text, _>(&payload.start_date)
+    .bind::<Nullable<Text>, _>(payload.end_date.as_deref())
+    .bind::<Nullable<Text>, _>(payload.notes.as_deref())
+    .execute(&mut conn)
+    .map_err(|e| anyhow::anyhow!("Insert error: {}", e))?;
+
+    #[derive(QueryableByName)]
+    struct LastId {
+        #[diesel(sql_type = BigInt)]
+        id: i64,
+    }
+
+    let id: i64 = diesel::sql_query("SELECT last_insert_rowid() as id")
+        .get_result::<LastId>(&mut conn)
+        .map(|r| r.id)
+        .map_err(|e| anyhow::anyhow!("Get ID error: {}", e))?;
+
+    let expense: RecurringExpense = diesel::sql_query(
+        "SELECT id, category_id, amount, description, frequency, custom_days,
+                start_date, end_date, notes, is_active, created_at, updated_at
+         FROM recurring_expenses
+         WHERE id = ?",
+    )
+    .bind::<BigInt, _>(id)
+    .get_result(&mut conn)
+    .map_err(|e| anyhow::anyhow!("Fetch error: {}", e))?;
+
+    Ok(Json(expense))
+}
+
+async fn update_recurring_expense(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+    Json(payload): Json<UpdateRecurringExpenseRequest>,
+) -> ApiResult<StatusCode> {
+    let mut conn = state
+        .pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
+
+    let mut updates = vec![];
+
+    if let Some(cat_id) = payload.category_id {
+        updates.push(format!("category_id = {}", cat_id));
+    }
+    if let Some(amt) = payload.amount {
+        updates.push(format!("amount = {}", amt));
+    }
+    if let Some(ref desc) = payload.description {
+        updates.push(format!("description = '{}'", desc.replace("'", "''")));
+    }
+    if let Some(ref freq) = payload.frequency {
+        updates.push(format!("frequency = '{}'", freq.replace("'", "''")));
+    }
+    if let Some(days) = payload.custom_days {
+        updates.push(format!("custom_days = {}", days));
+    }
+    if let Some(ref start) = payload.start_date {
+        updates.push(format!("start_date = '{}'", start));
+    }
+    if let Some(ref end) = payload.end_date {
+        updates.push(format!("end_date = '{}'", end.replace("'", "''")));
+    }
+    if let Some(ref notes) = payload.notes {
+        updates.push(format!("notes = '{}'", notes.replace("'", "''")));
+    }
+    if let Some(active) = payload.is_active {
+        updates.push(format!("is_active = {}", if active { 1 } else { 0 }));
+    }
+    updates.push("updated_at = datetime('now')".to_string());
+
+    if updates.is_empty() {
+        return Ok(StatusCode::BAD_REQUEST);
+    }
+
+    let query = format!(
+        "UPDATE recurring_expenses SET {} WHERE id = {}",
+        updates.join(", "),
+        id
+    );
+
+    diesel::sql_query(&query)
+        .execute(&mut conn)
+        .map_err(|e| anyhow::anyhow!("Update error: {}", e))?;
+
+    Ok(StatusCode::OK)
+}
+
+async fn delete_recurring_expense(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<i64>,
+) -> ApiResult<StatusCode> {
+    let mut conn = state
+        .pool
+        .get()
+        .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
+
+    diesel::sql_query("DELETE FROM recurring_expenses WHERE id = ?")
+        .bind::<BigInt, _>(id)
+        .execute(&mut conn)
+        .map_err(|e| anyhow::anyhow!("Delete error: {}", e))?;
+
+    Ok(StatusCode::OK)
+}
+
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route(
@@ -471,4 +668,12 @@ pub fn router() -> Router<Arc<AppState>> {
             put(update_transaction).delete(delete_transaction),
         )
         .route("/budget/summary", get(get_summary))
+        .route(
+            "/budget/recurring-expenses",
+            get(get_recurring_expenses).post(create_recurring_expense),
+        )
+        .route(
+            "/budget/recurring-expenses/{id}",
+            put(update_recurring_expense).delete(delete_recurring_expense),
+        )
 }
