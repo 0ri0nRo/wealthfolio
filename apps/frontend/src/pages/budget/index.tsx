@@ -129,22 +129,21 @@ export const BudgetPage: React.FC = () => {
   }, [showGearMenu]);
 
   // ── Derived values ────────────────────────────────────────────────────────
-  const txList         = transactions    || [];
-  const allTxList      = allTransactions || [];
-  const recurringList  = recurringExpenses || [];
-  const entryTxns      = recurringEntryTxns || [];  // virtual txns for this month
+  const txList        = transactions    || [];
+  const allTxList     = allTransactions || [];
+  const recurringList = recurringExpenses || [];
+  const entryTxns     = recurringEntryTxns || [];
 
   // Meal vouchers (from regular transactions only)
-  const bpIncomeMonth   = txList.filter(t => t.type === 'income'  && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
-  const bpExpensesMonth = txList.filter(t => t.type === 'expense' && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
-  const bpIncomeAll     = allTxList.filter(t => t.type === 'income'  && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
-  const bpExpensesAll   = allTxList.filter(t => t.type === 'expense' && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
-  const bpBalance       = bpIncomeAll - bpExpensesAll;
+  const bpIncomeMonth = txList.filter(t => t.type === 'income'  && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
+  const bpIncomeAll   = allTxList.filter(t => t.type === 'income'  && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
+  const bpExpensesAll = allTxList.filter(t => t.type === 'expense' && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
+  const bpBalance     = bpIncomeAll - bpExpensesAll;
 
-  const investments  = txList.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
-  const totalIncome  = summary?.totalIncome ?? 0;
+  const investments = txList.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
+  const totalIncome = summary?.totalIncome ?? 0;
 
-  // Regular expenses from manual transactions (no investments)
+  // Regular expenses: no BP, no investments
   const txExpensesTotal = txList
     .filter(t => t.type === 'expense' && !isInvestmentTx(t))
     .reduce((s, t) => s + t.amount, 0);
@@ -152,7 +151,7 @@ export const BudgetPage: React.FC = () => {
   // Recurring expenses for this month = sum of entry amounts
   const recurringMonthlyTotal = entryTxns.reduce((s, e) => s + e.amount, 0);
 
-  // Total expenses = manual + recurring entries
+  // Total expenses = manual (no investments) + recurring entries
   const expensesTotal = txExpensesTotal + recurringMonthlyTotal;
 
   // ── Prev month deltas ─────────────────────────────────────────────────────
@@ -174,47 +173,27 @@ export const BudgetPage: React.FC = () => {
   const prevTxExpenses = prevMonthTx.filter(t => t.type === 'expense' && !isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
   const prevSavings    = prevMonthTx.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
 
-  const prevRecurringTotal = useMemo(() => {
-    return recurringList
+  const prevRecurringTotal = useMemo(() =>
+    recurringList
       .filter(e => isRecurringActiveInMonth(e, prevMonth.getFullYear(), prevMonth.getMonth() + 1))
-      .reduce((s, e) => s + e.amount, 0);
-  }, [recurringList, prevMonth]);
+      .reduce((s, e) => s + e.amount, 0),
+    [recurringList, prevMonth]
+  );
 
   const prevExpenses = prevTxExpenses + prevRecurringTotal;
 
-  // ── Cumulative cash ───────────────────────────────────────────────────────
-  const cumulativePreviousCash = useMemo(() => {
-    const startDate  = new Date(2026, 0, 1);
-    const monthStart = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1);
+  // ── Cash balance (solo mese corrente, nessun cumulativo) ──────────────────
+  //
+  // Cash = Entrate (no BP) − Spese normali (no BP, no invest.) − Ricorrenti − Investimenti
+  //
+  const currentMonthIncome = totalIncome - bpIncomeMonth;
 
-    const pastTx = allTxList.filter(t => {
-      const d = new Date(t.date);
-      return d >= startDate && d < monthStart;
-    });
+  const currentMonthExpenses = txList
+    .filter(t => t.type === 'expense' && !isMealVoucher(t) && !isInvestmentTx(t))
+    .reduce((s, t) => s + t.amount, 0);
 
-    const pastBpIncome    = pastTx.filter(t => t.type === 'income'  && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
-    const pastBpExpenses  = pastTx.filter(t => t.type === 'expense' && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
-    const pastInvestments = pastTx.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
-    const pastIncome      = pastTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-    const pastTxExpenses  = pastTx.filter(t => t.type === 'expense' && !isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
-
-    let pastRecurring = 0;
-    const cursor = new Date(startDate);
-    while (cursor < monthStart) {
-      const y = cursor.getFullYear();
-      const m = cursor.getMonth() + 1;
-      pastRecurring += recurringList
-        .filter(e => isRecurringActiveInMonth(e, y, m))
-        .reduce((s, e) => s + e.amount, 0);
-      cursor.setMonth(cursor.getMonth() + 1);
-    }
-
-    return (pastIncome - pastBpIncome) - (pastTxExpenses - pastBpExpenses) - pastInvestments - pastRecurring;
-  }, [allTxList, selectedMonth, recurringList]);
-
-  const cashBalance = cumulativePreviousCash
-    + (totalIncome - bpIncomeMonth)
-    - (txExpensesTotal - bpExpensesMonth)
+  const cashBalance = currentMonthIncome
+    - currentMonthExpenses
     - recurringMonthlyTotal
     - investments;
 
@@ -229,7 +208,6 @@ export const BudgetPage: React.FC = () => {
   }, [txList, entryTxns, categories]);
 
   // ── Recurring entries shaped as BudgetTransaction for charts/insights ──────
-  // Adds the `category` object so BudgetChart and BudgetInsights can group by category
   const entryTxnsAsTx = useMemo(() =>
     entryTxns.map(e => ({
       ...e,
@@ -259,7 +237,7 @@ export const BudgetPage: React.FC = () => {
     setFilterAmtMin(''); setFilterAmtMax('');
   };
 
-  // ── Fixed vs discretionary (unified) ─────────────────────────────────────
+  // ── Fixed vs discretionary ────────────────────────────────────────────────
   const manualRecurringFixed = txList.filter(t => recurringIds.has(String(t.id)) && t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const totalRecurringFixed  = manualRecurringFixed + recurringMonthlyTotal;
   const discretionary        = expensesTotal - totalRecurringFixed;
@@ -494,7 +472,6 @@ export const BudgetPage: React.FC = () => {
                     />
                   )}
 
-                  {/* FIX: include recurring entries so the pie chart shows them */}
                   <BudgetChart transactions={[...txList, ...entryTxnsAsTx] as any[]} isBalanceHidden={isBalanceHidden} />
                   <BudgetInsights
                     transactions={[...txList, ...entryTxnsAsTx] as any[]}
@@ -569,7 +546,6 @@ export const BudgetPage: React.FC = () => {
                     isBalanceHidden={isBalanceHidden}
                   />
                 )}
-                {/* FIX: include recurring entries so the pie chart shows them */}
                 <BudgetChart transactions={[...txList, ...entryTxnsAsTx] as any[]} isBalanceHidden={isBalanceHidden} />
                 <RecurringExpenseCard
                   recurringExpenses={recurringList}
@@ -612,7 +588,6 @@ export const BudgetPage: React.FC = () => {
                     ))
                   }
                 </div>
-                {/* FIX: include recurring entries so Top Categories includes them */}
                 <BudgetInsights
                   transactions={[...txList, ...entryTxnsAsTx] as any[]}
                   allTransactions={allTransactions || []}
@@ -771,7 +746,7 @@ const EmptyState: React.FC<{ onAdd: () => void; message: string; compact?: boole
   </div>
 );
 
-// ── Unified Fixed vs Discretionary card ───────────────────────────────────────
+// ── Fixed vs Discretionary card ───────────────────────────────────────────────
 const FixedVsDiscretionaryCard: React.FC<{
   recurringFixed: number;
   discretionary: number;
@@ -780,8 +755,7 @@ const FixedVsDiscretionaryCard: React.FC<{
   entryTxns: RecurringEntryAsTx[];
   isBalanceHidden: boolean;
 }> = ({ recurringFixed, discretionary, totalExpenses, entryTxns, isBalanceHidden }) => {
-  const fmtEur = (n: number) => `€${n.toLocaleString('en-US', { minimumFractionDigits: 2 })}`;
-  const fixedPct = totalExpenses > 0 ? Math.round((recurringFixed / totalExpenses) * 100) : 0;
+  const fixedPct  = totalExpenses > 0 ? Math.round((recurringFixed / totalExpenses) * 100) : 0;
   const topEntries = entryTxns.slice(0, 4);
 
   return (
@@ -829,7 +803,7 @@ const FixedVsDiscretionaryCard: React.FC<{
   );
 };
 
-// ── Swipeable row — supports both regular tx and recurring entry tx ────────────
+// ── Swipeable row ─────────────────────────────────────────────────────────────
 const SwipeableRow: React.FC<{
   transaction: any;
   isRecurring: boolean;
@@ -860,10 +834,10 @@ const SwipeableRow: React.FC<{
   };
   const close = () => { setOffsetX(0); setRevealed(false); };
 
-  const isIncome  = t.type === 'income';
-  const amtColor  = isIncome ? 'var(--success)' : 'var(--destructive)';
-  const catName   = t.category?.name ?? '—';
-  const dateStr   = new Date(t.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  const isIncome = t.type === 'income';
+  const amtColor = isIncome ? 'var(--success)' : 'var(--destructive)';
+  const catName  = t.category?.name ?? '—';
+  const dateStr  = new Date(t.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
 
   return (
     <div style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid var(--border)' }}>
