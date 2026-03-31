@@ -9,7 +9,7 @@ import {
   Trash2, TrendingDown, TrendingUp, UtensilsCrossed, Wallet, X,
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AddTransactionModal } from "./components/add-transaction-modal";
 import { BudgetChart } from "./components/budget-chart";
 import { BudgetInsights } from "./components/budget-insights";
@@ -64,6 +64,395 @@ function saveRecurring(s: Set<string>) {
   localStorage.setItem(RECURRING_KEY, JSON.stringify([...s]));
 }
 
+// ── Toast ─────────────────────────────────────────────────────────────────────
+interface ToastState { message: string; visible: boolean; }
+
+const ToastContext = React.createContext<(msg: string) => void>(() => {});
+
+const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [toast, setToast] = useState<ToastState>({ message: '', visible: false });
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  const showToast = useCallback((msg: string) => {
+    clearTimeout(timerRef.current);
+    setToast({ message: msg, visible: true });
+    timerRef.current = setTimeout(() => setToast(t => ({ ...t, visible: false })), 2500);
+  }, []);
+
+  return (
+    <ToastContext.Provider value={showToast}>
+      {children}
+      <div style={{
+        position: 'fixed',
+        bottom: 'calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 12px)',
+        left: '50%',
+        transform: `translateX(-50%) translateY(${toast.visible ? '0' : '16px'})`,
+        opacity: toast.visible ? 1 : 0,
+        transition: 'transform 0.28s cubic-bezier(0.34,1.4,0.64,1), opacity 0.2s',
+        pointerEvents: 'none',
+        zIndex: 999,
+        background: 'var(--foreground)',
+        color: 'var(--background)',
+        borderRadius: '999px',
+        padding: '9px 20px',
+        fontSize: '0.8rem',
+        fontWeight: 600,
+        whiteSpace: 'nowrap',
+        boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+      }}>
+        {toast.message}
+      </div>
+    </ToastContext.Provider>
+  );
+};
+
+const useToast = () => React.useContext(ToastContext);
+
+// ── Action Sheet (bottom sheet) ───────────────────────────────────────────────
+interface ActionSheetProps {
+  transaction: any | null;
+  isRecurring: boolean;
+  isRecurringEntry: boolean;
+  onClose: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+  onToggleRecurring: () => void;
+}
+
+const ActionSheet: React.FC<ActionSheetProps> = ({
+  transaction: t, isRecurring, isRecurringEntry, onClose,
+  onEdit, onDelete, onDuplicate, onToggleRecurring,
+}) => {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (t) {
+      // Small delay so the overlay mounts before animating in
+      requestAnimationFrame(() => setVisible(true));
+      document.body.style.overflow = 'hidden';
+    } else {
+      setVisible(false);
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [t]);
+
+  if (!t) return null;
+
+  const isIncome = t.type === 'income';
+  const amtColor = isIncome ? 'var(--success)' : 'var(--destructive)';
+
+  const actionRowStyle: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', gap: '0.85rem',
+    padding: '0.8rem 1.25rem', cursor: 'pointer', border: 'none',
+    background: 'transparent', width: '100%', fontFamily: 'var(--font-sans)',
+    transition: 'background 0.12s', WebkitTapHighlightColor: 'transparent',
+  };
+  const iconBoxStyle = (bg: string, color: string): React.CSSProperties => ({
+    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+    background: bg, color, display: 'flex', alignItems: 'center', justifyContent: 'center',
+  });
+
+  return (
+    <>
+      {/* Overlay */}
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 80,
+          background: visible ? 'rgba(0,0,0,0.35)' : 'transparent',
+          transition: 'background 0.2s',
+        }}
+      />
+      {/* Sheet */}
+      <div style={{
+        position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 90,
+        background: 'var(--card)',
+        borderRadius: '20px 20px 0 0',
+        border: '1px solid var(--border)',
+        transform: visible ? 'translateY(0)' : 'translateY(100%)',
+        transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)',
+        paddingBottom: 'max(env(safe-area-inset-bottom), 16px)',
+      }}>
+        {/* Handle */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 4px' }}>
+          <div style={{ width: 36, height: 4, borderRadius: 999, background: 'var(--muted)' }} />
+        </div>
+
+        {/* Transaction preview */}
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.75rem',
+          padding: '0.6rem 1.25rem 0.9rem', borderBottom: '1px solid var(--border)',
+        }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+            background: isRecurringEntry
+              ? 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))'
+              : isIncome
+                ? 'color-mix(in srgb, var(--success) 12%, var(--background))'
+                : 'color-mix(in srgb, var(--destructive) 12%, var(--background))',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {isRecurringEntry
+              ? <RefreshCw size={15} color="var(--color-orange-400)" />
+              : isIncome
+                ? <TrendingUp size={15} color="var(--success)" />
+                : <TrendingDown size={15} color="var(--destructive)" />}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--foreground)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {t.description || t.category?.name || '—'}
+            </p>
+            <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>
+              {t.category?.name ?? '—'} · {new Date(t.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}
+            </p>
+          </div>
+          <span style={{ fontSize: '0.92rem', fontWeight: 700, color: isRecurringEntry ? 'var(--color-orange-400)' : amtColor, letterSpacing: '-0.01em' }}>
+            {isIncome ? '+' : '-'}{fmtEur(t.amount)}
+          </span>
+        </div>
+
+        {/* Actions */}
+        {!isRecurringEntry && (
+          <>
+            <button
+              style={actionRowStyle}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              onClick={onEdit}
+            >
+              <div style={iconBoxStyle('color-mix(in srgb, var(--color-blue-600) 12%, var(--background))', 'var(--color-blue-600)')}>
+                <Edit2 size={15} />
+              </div>
+              <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--foreground)' }}>Edit transaction</span>
+            </button>
+
+            <button
+              style={actionRowStyle}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              onClick={onDuplicate}
+            >
+              <div style={iconBoxStyle('var(--muted)', 'var(--muted-foreground)')}>
+                <Copy size={15} />
+              </div>
+              <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--foreground)' }}>Duplicate</span>
+            </button>
+
+            <button
+              style={actionRowStyle}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              onClick={onToggleRecurring}
+            >
+              <div style={iconBoxStyle(
+                isRecurring
+                  ? 'color-mix(in srgb, var(--color-orange-400) 15%, var(--background))'
+                  : 'var(--muted)',
+                isRecurring ? 'var(--color-orange-400)' : 'var(--muted-foreground)',
+              )}>
+                <RefreshCw size={15} />
+              </div>
+              <div style={{ textAlign: 'left' }}>
+                <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--foreground)', margin: 0 }}>
+                  {isRecurring ? 'Unmark as fixed' : 'Mark as fixed'}
+                </p>
+                <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>
+                  {isRecurring ? 'Remove from fixed costs' : 'Include in fixed costs breakdown'}
+                </p>
+              </div>
+            </button>
+          </>
+        )}
+
+        <button
+          style={{ ...actionRowStyle, borderTop: !isRecurringEntry ? '1px solid var(--border)' : undefined, marginTop: !isRecurringEntry ? '4px' : 0 }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'color-mix(in srgb, var(--destructive) 6%, var(--card))')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+          onClick={onDelete}
+        >
+          <div style={iconBoxStyle('color-mix(in srgb, var(--destructive) 12%, var(--background))', 'var(--destructive)')}>
+            <Trash2 size={15} />
+          </div>
+          <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--destructive)' }}>
+            {isRecurringEntry ? 'Remove this entry' : 'Delete transaction'}
+          </span>
+        </button>
+
+        {/* Cancel */}
+        <div style={{ padding: '8px 1rem 0' }}>
+          <button
+            onClick={onClose}
+            style={{
+              width: '100%', padding: '0.8rem', borderRadius: '12px',
+              border: '1px solid var(--border)', background: 'var(--muted)',
+              color: 'var(--foreground)', fontSize: '0.88rem', fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'var(--font-sans)',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </>
+  );
+};
+
+// ── Long-press row (replaces SwipeableRow) ────────────────────────────────────
+const LongPressRow: React.FC<{
+  transaction: any;
+  isRecurring: boolean;
+  isRecurringEntry: boolean;
+  isBalanceHidden: boolean;
+  isMobile: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onDuplicate: () => void;
+  onToggleRecurring: () => void;
+  onLongPress: () => void;
+}> = ({
+  transaction: t, isRecurring, isRecurringEntry, isBalanceHidden,
+  isMobile, onEdit, onDelete, onDuplicate, onToggleRecurring, onLongPress,
+}) => {
+  const lpTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [pressing, setPressing] = useState(false);
+
+  const startPress = () => {
+    setPressing(true);
+    lpTimer.current = setTimeout(() => {
+      setPressing(false);
+      onLongPress();
+    }, 500);
+  };
+  const cancelPress = () => {
+    clearTimeout(lpTimer.current);
+    setPressing(false);
+  };
+
+  const isIncome = t.type === 'income';
+  const amtColor = isIncome ? 'var(--success)' : 'var(--destructive)';
+  const catName  = t.category?.name ?? '—';
+  const dateStr  = new Date(t.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+
+  return (
+    <div
+      style={{
+        position: 'relative', borderBottom: '1px solid var(--border)',
+        background: pressing
+          ? 'var(--accent)'
+          : isRecurringEntry
+            ? 'color-mix(in srgb, var(--color-orange-400) 3%, var(--card))'
+            : 'var(--card)',
+        transition: 'background 0.15s',
+        userSelect: 'none', WebkitUserSelect: 'none',
+      }}
+      onTouchStart={isMobile ? startPress : undefined}
+      onTouchEnd={isMobile ? cancelPress : undefined}
+      onTouchMove={isMobile ? cancelPress : undefined}
+      onMouseDown={!isMobile ? startPress : undefined}
+      onMouseUp={!isMobile ? cancelPress : undefined}
+      onMouseLeave={!isMobile ? cancelPress : undefined}
+      onClick={() => {
+        if (!isMobile && !isRecurringEntry) onEdit();
+      }}
+      onMouseEnter={e => { if (!isMobile) (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; }}
+    >
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '0.75rem 1rem',
+        cursor: isRecurringEntry ? 'default' : 'pointer',
+        WebkitTapHighlightColor: 'transparent',
+      }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: 10, flexShrink: 0,
+          background: isRecurringEntry
+            ? 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))'
+            : isIncome
+              ? 'color-mix(in srgb, var(--success) 12%, var(--background))'
+              : 'color-mix(in srgb, var(--destructive) 12%, var(--background))',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {isRecurringEntry
+            ? <RefreshCw size={14} color="var(--color-orange-400)" />
+            : isIncome
+              ? <TrendingUp size={14} color="var(--success)" />
+              : <TrendingDown size={14} color="var(--destructive)" />}
+        </div>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
+            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {t.description || catName}
+            </span>
+            {isRecurringEntry && (
+              <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', fontSize: '0.6rem', fontWeight: 700 }}>
+                <RefreshCw size={8} />Recurring
+              </span>
+            )}
+            {!isRecurringEntry && isRecurring && (
+              <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', fontSize: '0.6rem', fontWeight: 700 }}>
+                <RefreshCw size={8} />Fixed
+              </span>
+            )}
+          </div>
+          <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)' }}>{catName} · {dateStr}</span>
+          {t.notes && !t.notes.startsWith('recurring:') && (
+            <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
+              💬 {t.notes}
+            </p>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <span style={{ fontSize: '0.88rem', fontWeight: 700, color: isRecurringEntry ? 'var(--color-orange-400)' : amtColor, letterSpacing: '-0.01em' }}>
+            {isBalanceHidden
+              ? '€••••••'
+              : `${isIncome ? '+' : '-'}${t.amount.toLocaleString('en-US', { minimumFractionDigits: 2, style: 'currency', currency: 'EUR' }).replace('€', '€')}`}
+          </span>
+
+          {/* Desktop action buttons — unchanged */}
+          {!isMobile && !isRecurringEntry && (
+            <div style={{ display: 'flex', gap: 3 }}>
+              {([
+                { icon: <RefreshCw size={11} />, fn: onToggleRecurring, title: isRecurring ? 'Unmark fixed' : 'Mark fixed', active: isRecurring, danger: false },
+                { icon: <Copy size={11} />,       fn: onDuplicate,       title: 'Duplicate',                                active: false,        danger: false },
+                { icon: <Edit2 size={11} />,      fn: onEdit,            title: 'Edit',                                     active: false,        danger: false },
+                { icon: <Trash2 size={11} />,     fn: onDelete,          title: 'Delete',                                   active: false,        danger: true  },
+              ]).map(({ icon, fn, title, active, danger }) => (
+                <button key={title} onClick={e => { e.stopPropagation(); fn(); }} title={title}
+                  style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 7, cursor: 'pointer', transition: 'all 0.12s', background: active ? 'color-mix(in srgb, var(--color-orange-400) 15%, var(--background))' : 'var(--muted)', color: active ? 'var(--color-orange-400)' : 'var(--muted-foreground)' }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = danger ? 'color-mix(in srgb, var(--destructive) 12%, var(--background))' : 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = danger ? 'var(--destructive)' : 'var(--foreground)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? 'color-mix(in srgb, var(--color-orange-400) 15%, var(--background))' : 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.color = active ? 'var(--color-orange-400)' : 'var(--muted-foreground)'; }}
+                >{icon}</button>
+              ))}
+            </div>
+          )}
+          {!isMobile && isRecurringEntry && (
+            <button onClick={e => { e.stopPropagation(); onDelete(); }} title="Remove entry"
+              style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 7, cursor: 'pointer', background: 'var(--muted)', color: 'var(--muted-foreground)' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, var(--destructive) 12%, var(--background))'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--destructive)'; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)'; }}
+            ><Trash2 size={11} /></button>
+          )}
+
+          {/* Mobile: hint icon */}
+          {isMobile && (
+            <div style={{ width: 20, height: 20, borderRadius: 6, background: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: 0.5 }}>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <circle cx="5" cy="2" r="1" fill="currentColor" />
+                <circle cx="5" cy="5" r="1" fill="currentColor" />
+                <circle cx="5" cy="8" r="1" fill="currentColor" />
+              </svg>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ── Main component ────────────────────────────────────────────────────────────
 export const BudgetPage: React.FC = () => {
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
@@ -75,9 +464,16 @@ export const BudgetPage: React.FC = () => {
   const [showGearMenu, setShowGearMenu] = useState(false);
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState<RecurringExpense | null>(null);
+
+  // Action sheet state
+  const [sheetTx, setSheetTx]               = useState<any | null>(null);
+  const [sheetIsRecurring, setSheetIsRecurring] = useState(false);
+  const [sheetIsEntry, setSheetIsEntry]         = useState(false);
+
   const gearRef     = useRef<HTMLDivElement>(null);
   const isMobile    = useIsMobile();
   const tabLayoutId = useId();
+  const showToast   = useToast();
 
   const [search,       setSearch]       = useState('');
   const [filterType,   setFilterType]   = useState<'all' | 'income' | 'expense'>('all');
@@ -94,19 +490,6 @@ export const BudgetPage: React.FC = () => {
       saveRecurring(next);
       return next;
     });
-  };
-
-  const TAB_ORDER: ActiveTab[] = ['overview', 'transactions', 'yearly', 'recurring'];
-  const swipeX = useRef<number | null>(null);
-  const onTouchStart = (e: React.TouchEvent) => { swipeX.current = e.touches[0].clientX; };
-  const onTouchEnd   = (e: React.TouchEvent) => {
-    if (swipeX.current === null) return;
-    const dx = e.changedTouches[0].clientX - swipeX.current;
-    swipeX.current = null;
-    if (Math.abs(dx) < 50) return;
-    const idx = TAB_ORDER.indexOf(activeTab);
-    if (dx < 0 && idx < TAB_ORDER.length - 1) setActiveTab(TAB_ORDER[idx + 1]);
-    if (dx > 0 && idx > 0)                    setActiveTab(TAB_ORDER[idx - 1]);
   };
 
   const { isBalanceHidden, toggleBalanceVisibility } = useBalancePrivacy();
@@ -134,7 +517,6 @@ export const BudgetPage: React.FC = () => {
   const recurringList = recurringExpenses || [];
   const entryTxns     = recurringEntryTxns || [];
 
-  // Meal vouchers (from regular transactions only)
   const bpIncomeMonth = txList.filter(t => t.type === 'income'  && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
   const bpIncomeAll   = allTxList.filter(t => t.type === 'income'  && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
   const bpExpensesAll = allTxList.filter(t => t.type === 'expense' && isMealVoucher(t)).reduce((s, t) => s + t.amount, 0);
@@ -143,18 +525,13 @@ export const BudgetPage: React.FC = () => {
   const investments = txList.filter(t => t.type === 'expense' && isInvestmentTx(t)).reduce((s, t) => s + t.amount, 0);
   const totalIncome = summary?.totalIncome ?? 0;
 
-  // Regular expenses: no BP, no investments
   const txExpensesTotal = txList
     .filter(t => t.type === 'expense' && !isInvestmentTx(t))
     .reduce((s, t) => s + t.amount, 0);
 
-  // Recurring expenses for this month = sum of entry amounts
   const recurringMonthlyTotal = entryTxns.reduce((s, e) => s + e.amount, 0);
-
-  // Total expenses = manual (no investments) + recurring entries
   const expensesTotal = txExpensesTotal + recurringMonthlyTotal;
 
-  // ── Prev month deltas ─────────────────────────────────────────────────────
   const prevMonth = useMemo(() => {
     const d = new Date(selectedMonth);
     d.setMonth(d.getMonth() - 1);
@@ -182,22 +559,12 @@ export const BudgetPage: React.FC = () => {
 
   const prevExpenses = prevTxExpenses + prevRecurringTotal;
 
-  // ── Cash balance (solo mese corrente, nessun cumulativo) ──────────────────
-  //
-  // Cash = Entrate (no BP) − Spese normali (no BP, no invest.) − Ricorrenti − Investimenti
-  //
-  const currentMonthIncome = totalIncome - bpIncomeMonth;
-
-  const currentMonthExpenses = txList
+  const currentMonthIncome    = totalIncome - bpIncomeMonth;
+  const currentMonthExpenses  = txList
     .filter(t => t.type === 'expense' && !isMealVoucher(t) && !isInvestmentTx(t))
     .reduce((s, t) => s + t.amount, 0);
+  const cashBalance = currentMonthIncome - currentMonthExpenses - recurringMonthlyTotal - investments;
 
-  const cashBalance = currentMonthIncome
-    - currentMonthExpenses
-    - recurringMonthlyTotal
-    - investments;
-
-  // ── Combined transaction list (manual + recurring entries) ─────────────────
   const combinedTxList = useMemo(() => {
     const entryAsAny = entryTxns.map(e => ({
       ...e,
@@ -207,7 +574,6 @@ export const BudgetPage: React.FC = () => {
     return [...txList, ...entryAsAny as any[]].sort((a, b) => b.date.localeCompare(a.date));
   }, [txList, entryTxns, categories]);
 
-  // ── Recurring entries shaped as BudgetTransaction for charts/insights ──────
   const entryTxnsAsTx = useMemo(() =>
     entryTxns.map(e => ({
       ...e,
@@ -217,7 +583,6 @@ export const BudgetPage: React.FC = () => {
     [entryTxns, categories]
   );
 
-  // ── Filtered combined transactions ────────────────────────────────────────
   const filteredTx = useMemo(() => {
     let r = combinedTxList;
     if (search) r = r.filter((t: any) =>
@@ -237,16 +602,25 @@ export const BudgetPage: React.FC = () => {
     setFilterAmtMin(''); setFilterAmtMax('');
   };
 
-  // ── Fixed vs discretionary ────────────────────────────────────────────────
   const manualRecurringFixed = txList.filter(t => recurringIds.has(String(t.id)) && t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const totalRecurringFixed  = manualRecurringFixed + recurringMonthlyTotal;
   const discretionary        = expensesTotal - totalRecurringFixed;
+
+  // ── Action sheet openers ──────────────────────────────────────────────────
+  const openSheet = useCallback((t: any) => {
+    setSheetTx(t);
+    setSheetIsRecurring(recurringIds.has(String(t.id)));
+    setSheetIsEntry(!!t.isRecurringEntry);
+  }, [recurringIds]);
+
+  const closeSheet = useCallback(() => setSheetTx(null), []);
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleAddTransaction = async (transaction: Partial<BudgetTransaction>) => {
     try {
       if (editingTransaction) {
         await updateTransaction(Number(editingTransaction.id), transaction);
+        showToast('Transaction updated');
       } else {
         await createTransaction({
           categoryId:  transaction.categoryId!,
@@ -256,6 +630,7 @@ export const BudgetPage: React.FC = () => {
           date:        transaction.date!,
           notes:       transaction.notes,
         });
+        showToast('Transaction added');
       }
       setShowAddModal(false); setEditingTransaction(null);
     } catch (err) {
@@ -270,15 +645,16 @@ export const BudgetPage: React.FC = () => {
         amount:      t.amount, type: t.type,
         description: `${t.description} (copy)`, date: t.date, notes: t.notes,
       });
+      showToast('Transaction duplicated');
     } catch {}
   };
 
   const handleDeleteTransaction = async (id: string | number) => {
     if (typeof id === 'string' && id.startsWith('rec-')) {
       const entryId = id.replace('rec-', '');
-      try { await deleteRecurringEntry(entryId); } catch {}
+      try { await deleteRecurringEntry(entryId); showToast('Entry removed'); } catch {}
     } else {
-      try { await deleteTransaction(id); } catch {}
+      try { await deleteTransaction(id); showToast('Transaction deleted'); } catch {}
     }
   };
 
@@ -292,8 +668,13 @@ export const BudgetPage: React.FC = () => {
         startDate: expense.startDate, endDate: expense.endDate || null,
         notes: expense.notes, isActive: true,
       };
-      if (editingRecurring) await updateRecurringExpense(Number(editingRecurring.id), payload);
-      else await createRecurringExpense(payload);
+      if (editingRecurring) {
+        await updateRecurringExpense(Number(editingRecurring.id), payload);
+        showToast('Recurring expense updated');
+      } else {
+        await createRecurringExpense(payload);
+        showToast('Recurring expense added');
+      }
       setShowRecurringModal(false); setEditingRecurring(null);
     } catch (err) {
       alert('Error saving recurring expense: ' + (err instanceof Error ? err.message : 'Unknown error'));
@@ -302,7 +683,7 @@ export const BudgetPage: React.FC = () => {
 
   const handleDeleteRecurringExpense = async (id: string | number) => {
     if (!confirm('Are you sure you want to delete this recurring expense?')) return;
-    try { await deleteRecurringExpense(id); }
+    try { await deleteRecurringExpense(id); showToast('Recurring expense deleted'); }
     catch (err) { console.error('Error deleting recurring expense:', err); }
   };
 
@@ -314,8 +695,37 @@ export const BudgetPage: React.FC = () => {
         customDays: expense.customDays, startDate: new Date().toISOString().split('T')[0],
         endDate: null, notes: expense.notes, isActive: true,
       });
+      showToast('Recurring expense duplicated');
     } catch (err) { console.error('Error duplicating recurring expense:', err); }
   };
+
+  // Action sheet action handlers (mobile)
+  const handleSheetEdit = useCallback(() => {
+    closeSheet();
+    if (sheetTx && !sheetTx.isRecurringEntry) {
+      setEditingTransaction(sheetTx);
+      setShowAddModal(true);
+    }
+  }, [sheetTx, closeSheet]);
+
+  const handleSheetDelete = useCallback(async () => {
+    closeSheet();
+    if (sheetTx) await handleDeleteTransaction(sheetTx.id);
+  }, [sheetTx, closeSheet]);
+
+  const handleSheetDuplicate = useCallback(() => {
+    closeSheet();
+    if (sheetTx && !sheetTx.isRecurringEntry) handleDuplicate(sheetTx);
+  }, [sheetTx, closeSheet]);
+
+  const handleSheetToggleRecurring = useCallback(() => {
+    closeSheet();
+    if (sheetTx && !sheetTx.isRecurringEntry) {
+      toggleRecurring(String(sheetTx.id));
+      const wasFixed = recurringIds.has(String(sheetTx.id));
+      showToast(wasFixed ? 'Removed from fixed costs' : 'Marked as fixed');
+    }
+  }, [sheetTx, closeSheet, recurringIds]);
 
   const goToPrevMonth = () => { const d = new Date(selectedMonth); d.setMonth(d.getMonth() - 1); setSelectedMonth(d); };
   const goToNextMonth = () => { const d = new Date(selectedMonth); d.setMonth(d.getMonth() + 1); setSelectedMonth(d); };
@@ -356,8 +766,26 @@ export const BudgetPage: React.FC = () => {
     ['recurring',    isMobile ? 'Rec.' : 'Recurring'],
   ];
 
+  // Shared row renderer using LongPressRow
+  const renderRow = (t: any) => (
+    <LongPressRow
+      key={t.id}
+      transaction={t}
+      isRecurring={recurringIds.has(String(t.id))}
+      isRecurringEntry={!!t.isRecurringEntry}
+      isBalanceHidden={isBalanceHidden}
+      isMobile={isMobile}
+      onEdit={() => { if (!t.isRecurringEntry) { setEditingTransaction(t); setShowAddModal(true); } }}
+      onDelete={() => handleDeleteTransaction(t.id)}
+      onDuplicate={() => { if (!t.isRecurringEntry) handleDuplicate(t); }}
+      onToggleRecurring={() => { if (!t.isRecurringEntry) toggleRecurring(String(t.id)); }}
+      onLongPress={() => openSheet(t)}
+    />
+  );
+
   return (
-    <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd} style={{ minHeight: '100vh', background: 'var(--background)' }}>
+    // NOTE: removed onTouchStart / onTouchEnd from this wrapper — no more swipe-tab conflict
+    <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
 
       {/* ── NAVBAR ─────────────────────────────────────────────────────────── */}
       <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
@@ -460,37 +888,14 @@ export const BudgetPage: React.FC = () => {
               <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                   <StatCards cards={statCards} isBalanceHidden={isBalanceHidden} />
-
                   {(totalRecurringFixed > 0) && (
-                    <FixedVsDiscretionaryCard
-                      recurringFixed={totalRecurringFixed}
-                      discretionary={discretionary}
-                      totalExpenses={expensesTotal}
-                      recurringMonthlyTotal={recurringMonthlyTotal}
-                      entryTxns={entryTxns}
-                      isBalanceHidden={isBalanceHidden}
-                    />
+                    <FixedVsDiscretionaryCard recurringFixed={totalRecurringFixed} discretionary={discretionary} totalExpenses={expensesTotal} recurringMonthlyTotal={recurringMonthlyTotal} entryTxns={entryTxns} isBalanceHidden={isBalanceHidden} />
                   )}
-
                   <BudgetChart transactions={[...txList, ...entryTxnsAsTx] as any[]} isBalanceHidden={isBalanceHidden} />
-                  <BudgetInsights
-                    transactions={[...txList, ...entryTxnsAsTx] as any[]}
-                    allTransactions={allTransactions || []}
-                    totalIncome={totalIncome}
-                    totalExpenses={expensesTotal}
-                    savings={investments}
-                    isBalanceHidden={isBalanceHidden}
-                  />
+                  <BudgetInsights transactions={[...txList, ...entryTxnsAsTx] as any[]} allTransactions={allTransactions || []} totalIncome={totalIncome} totalExpenses={expensesTotal} savings={investments} isBalanceHidden={isBalanceHidden} />
                 </div>
-
                 <div style={{ width: 360, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                  <RecurringMiniTable
-                    recurringExpenses={recurringList}
-                    entryTxns={entryTxns}
-                    isBalanceHidden={isBalanceHidden}
-                    onViewAll={() => setActiveTab('recurring')}
-                    onAdd={() => { setEditingRecurring(null); setShowRecurringModal(true); }}
-                  />
+                  <RecurringMiniTable recurringExpenses={recurringList} entryTxns={entryTxns} isBalanceHidden={isBalanceHidden} onViewAll={() => setActiveTab('recurring')} onAdd={() => { setEditingRecurring(null); setShowRecurringModal(true); }} />
                   <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
                     <div style={{ padding: '0.85rem 1.1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <h2 style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--foreground)', margin: 0 }}>Transactions</h2>
@@ -499,20 +904,7 @@ export const BudgetPage: React.FC = () => {
                     <div style={{ maxHeight: 480, overflowY: 'auto' }}>
                       {combinedTxList.length === 0
                         ? <EmptyState onAdd={() => setShowAddModal(true)} message="No transactions yet this month" />
-                        : combinedTxList.slice(0, 10).map((t: any) => (
-                          <SwipeableRow
-                            key={t.id}
-                            transaction={t}
-                            isRecurring={recurringIds.has(String(t.id))}
-                            isRecurringEntry={!!t.isRecurringEntry}
-                            isBalanceHidden={isBalanceHidden}
-                            isMobile={isMobile}
-                            onEdit={() => { if (!t.isRecurringEntry) { setEditingTransaction(t); setShowAddModal(true); } }}
-                            onDelete={() => handleDeleteTransaction(t.id)}
-                            onDuplicate={() => { if (!t.isRecurringEntry) handleDuplicate(t); }}
-                            onToggleRecurring={() => { if (!t.isRecurringEntry) toggleRecurring(String(t.id)); }}
-                          />
-                        ))
+                        : combinedTxList.slice(0, 10).map((t: any) => renderRow(t))
                       }
                     </div>
                     <div onClick={() => setActiveTab('yearly')}
@@ -537,21 +929,10 @@ export const BudgetPage: React.FC = () => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '0 1rem' }}>
                 <StatCardsMobile cards={statCards} isBalanceHidden={isBalanceHidden} />
                 {totalRecurringFixed > 0 && (
-                  <FixedVsDiscretionaryCard
-                    recurringFixed={totalRecurringFixed}
-                    discretionary={discretionary}
-                    totalExpenses={expensesTotal}
-                    recurringMonthlyTotal={recurringMonthlyTotal}
-                    entryTxns={entryTxns}
-                    isBalanceHidden={isBalanceHidden}
-                  />
+                  <FixedVsDiscretionaryCard recurringFixed={totalRecurringFixed} discretionary={discretionary} totalExpenses={expensesTotal} recurringMonthlyTotal={recurringMonthlyTotal} entryTxns={entryTxns} isBalanceHidden={isBalanceHidden} />
                 )}
                 <BudgetChart transactions={[...txList, ...entryTxnsAsTx] as any[]} isBalanceHidden={isBalanceHidden} />
-                <RecurringExpenseCard
-                  recurringExpenses={recurringList}
-                  isBalanceHidden={isBalanceHidden}
-                  onViewAll={() => setActiveTab('recurring')}
-                />
+                <RecurringExpenseCard recurringExpenses={recurringList} isBalanceHidden={isBalanceHidden} onViewAll={() => setActiveTab('recurring')} />
                 <BalanceSplitCard cashBalance={cashBalance} bpBalance={bpBalance} isBalanceHidden={isBalanceHidden} />
                 <MobileSavingsCard income={totalIncome} expenses={expensesTotal} savings={investments} isBalanceHidden={isBalanceHidden} />
                 <div onClick={() => setActiveTab('yearly')}
@@ -572,28 +953,10 @@ export const BudgetPage: React.FC = () => {
                   </div>
                   {combinedTxList.length === 0
                     ? <EmptyState onAdd={() => setShowAddModal(true)} message="No transactions this month" compact />
-                    : combinedTxList.slice(0, 5).map((t: any) => (
-                      <SwipeableRow
-                        key={t.id}
-                        transaction={t}
-                        isRecurring={recurringIds.has(String(t.id))}
-                        isRecurringEntry={!!t.isRecurringEntry}
-                        isBalanceHidden={isBalanceHidden}
-                        isMobile={isMobile}
-                        onEdit={() => { if (!t.isRecurringEntry) { setEditingTransaction(t); setShowAddModal(true); } }}
-                        onDelete={() => handleDeleteTransaction(t.id)}
-                        onDuplicate={() => { if (!t.isRecurringEntry) handleDuplicate(t); }}
-                        onToggleRecurring={() => { if (!t.isRecurringEntry) toggleRecurring(String(t.id)); }}
-                      />
-                    ))
+                    : combinedTxList.slice(0, 5).map((t: any) => renderRow(t))
                   }
                 </div>
-                <BudgetInsights
-                  transactions={[...txList, ...entryTxnsAsTx] as any[]}
-                  allTransactions={allTransactions || []}
-                  totalIncome={totalIncome} totalExpenses={expensesTotal}
-                  savings={investments} isBalanceHidden={isBalanceHidden}
-                />
+                <BudgetInsights transactions={[...txList, ...entryTxnsAsTx] as any[]} allTransactions={allTransactions || []} totalIncome={totalIncome} totalExpenses={expensesTotal} savings={investments} isBalanceHidden={isBalanceHidden} />
               </div>
             )}
           </div>
@@ -662,23 +1025,9 @@ export const BudgetPage: React.FC = () => {
                 </div>
               )}
             </div>
-
             {filteredTx.length === 0
               ? <EmptyState onAdd={() => setShowAddModal(true)} message={hasActiveFilter ? 'No transactions match your filters' : 'No transactions this month'} />
-              : filteredTx.map((t: any) => (
-                <SwipeableRow
-                  key={t.id}
-                  transaction={t}
-                  isRecurring={recurringIds.has(String(t.id))}
-                  isRecurringEntry={!!t.isRecurringEntry}
-                  isBalanceHidden={isBalanceHidden}
-                  isMobile={isMobile}
-                  onEdit={() => { if (!t.isRecurringEntry) { setEditingTransaction(t); setShowAddModal(true); } }}
-                  onDelete={() => handleDeleteTransaction(t.id)}
-                  onDuplicate={() => { if (!t.isRecurringEntry) handleDuplicate(t); }}
-                  onToggleRecurring={() => { if (!t.isRecurringEntry) toggleRecurring(String(t.id)); }}
-                />
-              ))
+              : filteredTx.map((t: any) => renderRow(t))
             }
           </div>
         </div>
@@ -687,11 +1036,7 @@ export const BudgetPage: React.FC = () => {
       {/* ── ANNUAL ─────────────────────────────────────────────────────────── */}
       {activeTab === 'yearly' && (
         <div style={{ paddingBottom: isMobile ? `calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)))` : 0 }}>
-          <YearlyStats
-            allTransactions={allTransactions || []}
-            allRecurringEntries={(recurringExpenses || []).map(r => ({ recurringExpense: r, entries: [] }))}
-            hideNav
-          />
+          <YearlyStats allTransactions={allTransactions || []} allRecurringEntries={(recurringExpenses || []).map(r => ({ recurringExpense: r, entries: [] }))} hideNav />
         </div>
       )}
 
@@ -699,31 +1044,30 @@ export const BudgetPage: React.FC = () => {
       {activeTab === 'recurring' && (
         <div style={{ paddingTop: isMobile ? '1rem' : 0, paddingBottom: isMobile ? `calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : 0 }}>
           <div style={{ padding: isMobile ? 0 : '1.75rem 1.5rem' }}>
-            <RecurringExpensesTable
-              recurringExpenses={recurringList}
-              isMobile={isMobile}
-              isBalanceHidden={isBalanceHidden}
-              onAdd={() => { setEditingRecurring(null); setShowRecurringModal(true); }}
-              onEdit={(expense) => { setEditingRecurring(expense); setShowRecurringModal(true); }}
-              onDelete={handleDeleteRecurringExpense}
-              onDuplicate={handleDuplicateRecurringExpense}
-            />
+            <RecurringExpensesTable recurringExpenses={recurringList} isMobile={isMobile} isBalanceHidden={isBalanceHidden} onAdd={() => { setEditingRecurring(null); setShowRecurringModal(true); }} onEdit={(expense) => { setEditingRecurring(expense); setShowRecurringModal(true); }} onDelete={handleDeleteRecurringExpense} onDuplicate={handleDuplicateRecurringExpense} />
           </div>
         </div>
       )}
 
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
       {showRecurringModal && (
-        <RecurringExpenseModal
-          categories={categories || []}
-          onClose={() => { setShowRecurringModal(false); setEditingRecurring(null); }}
-          onSave={handleAddRecurringExpense}
-          initialData={editingRecurring || undefined}
-        />
+        <RecurringExpenseModal categories={categories || []} onClose={() => { setShowRecurringModal(false); setEditingRecurring(null); }} onSave={handleAddRecurringExpense} initialData={editingRecurring || undefined} />
       )}
       {showExportModal     && <ExportModal transactions={allTransactions || []} onClose={() => setShowExportModal(false)} />}
       {showAddModal        && <AddTransactionModal categories={categories || []} onClose={() => { setShowAddModal(false); setEditingTransaction(null); }} onSave={handleAddTransaction} initialData={editingTransaction || undefined} />}
       {showCategoriesModal && <ManageCategoriesModal categories={categories || []} onClose={() => setShowCategoriesModal(false)} onCreate={createCategory} onUpdate={updateCategory} onDelete={deleteCategory} />}
+
+      {/* ── Action Sheet ───────────────────────────────────────────────────── */}
+      <ActionSheet
+        transaction={sheetTx}
+        isRecurring={sheetIsRecurring}
+        isRecurringEntry={sheetIsEntry}
+        onClose={closeSheet}
+        onEdit={handleSheetEdit}
+        onDelete={handleSheetDelete}
+        onDuplicate={handleSheetDuplicate}
+        onToggleRecurring={handleSheetToggleRecurring}
+      />
 
       <style>{`
         @keyframes dropIn { from { opacity:0; transform:scale(0.92) translateY(-6px); } to { opacity:1; transform:scale(1) translateY(0); } }
@@ -732,6 +1076,14 @@ export const BudgetPage: React.FC = () => {
     </div>
   );
 };
+
+// ── Wrap BudgetPage with ToastProvider at the export level ────────────────────
+const BudgetPageWithToast: React.FC = () => (
+  <ToastProvider>
+    <BudgetPage />
+  </ToastProvider>
+);
+export default BudgetPageWithToast;
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 const EmptyState: React.FC<{ onAdd: () => void; message: string; compact?: boolean }> = ({ onAdd, message, compact }) => (
@@ -748,28 +1100,18 @@ const EmptyState: React.FC<{ onAdd: () => void; message: string; compact?: boole
 
 // ── Fixed vs Discretionary card ───────────────────────────────────────────────
 const FixedVsDiscretionaryCard: React.FC<{
-  recurringFixed: number;
-  discretionary: number;
-  totalExpenses: number;
-  recurringMonthlyTotal: number;
-  entryTxns: RecurringEntryAsTx[];
-  isBalanceHidden: boolean;
+  recurringFixed: number; discretionary: number; totalExpenses: number;
+  recurringMonthlyTotal: number; entryTxns: RecurringEntryAsTx[]; isBalanceHidden: boolean;
 }> = ({ recurringFixed, discretionary, totalExpenses, entryTxns, isBalanceHidden }) => {
-  const fixedPct  = totalExpenses > 0 ? Math.round((recurringFixed / totalExpenses) * 100) : 0;
+  const fixedPct   = totalExpenses > 0 ? Math.round((recurringFixed / totalExpenses) * 100) : 0;
   const topEntries = entryTxns.slice(0, 4);
-
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, padding: '1rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '0.85rem' }}>
-        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <RefreshCw size={13} />
-        </div>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><RefreshCw size={13} /></div>
         <h3 style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Fixed vs Discretionary</h3>
-        <span style={{ fontSize: '0.65rem', fontWeight: 600, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)' }}>
-          {entryTxns.length} recurring
-        </span>
+        <span style={{ fontSize: '0.65rem', fontWeight: 600, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)' }}>{entryTxns.length} recurring</span>
       </div>
-
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: '0.85rem' }}>
         <div style={{ background: 'color-mix(in srgb, var(--destructive) 7%, var(--background))', borderRadius: 10, padding: '0.7rem' }}>
           <p style={{ fontSize: '0.6rem', color: 'var(--muted-foreground)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Fixed costs</p>
@@ -782,11 +1124,9 @@ const FixedVsDiscretionaryCard: React.FC<{
           <p style={{ fontSize: '0.62rem', color: 'var(--muted-foreground)', margin: '2px 0 0' }}>{100 - fixedPct}% of expenses</p>
         </div>
       </div>
-
       <div style={{ height: 6, background: 'var(--muted)', borderRadius: 999, overflow: 'hidden', marginBottom: '0.75rem' }}>
         <div style={{ height: '100%', width: `${fixedPct}%`, background: 'var(--destructive)', borderRadius: 999, transition: 'width 0.5s ease' }} />
       </div>
-
       {topEntries.map(e => (
         <div key={e.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.72rem', marginBottom: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -799,135 +1139,6 @@ const FixedVsDiscretionaryCard: React.FC<{
       {entryTxns.length > 4 && (
         <p style={{ fontSize: '0.63rem', color: 'var(--muted-foreground)', margin: '4px 0 0' }}>+{entryTxns.length - 4} more recurring</p>
       )}
-    </div>
-  );
-};
-
-// ── Swipeable row ─────────────────────────────────────────────────────────────
-const SwipeableRow: React.FC<{
-  transaction: any;
-  isRecurring: boolean;
-  isRecurringEntry: boolean;
-  isBalanceHidden: boolean;
-  isMobile: boolean;
-  onEdit: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onToggleRecurring: () => void;
-}> = ({ transaction: t, isRecurring, isRecurringEntry, isBalanceHidden, isMobile, onEdit, onDelete, onDuplicate, onToggleRecurring }) => {
-  const [offsetX, setOffsetX] = useState(0);
-  const [revealed, setRevealed] = useState(false);
-  const startX  = useRef<number | null>(null);
-  const ACTIONS_W = isRecurringEntry ? 104 : 156;
-
-  const handleTouchStart = (e: React.TouchEvent) => { startX.current = e.touches[0].clientX; };
-  const handleTouchMove  = (e: React.TouchEvent) => {
-    if (startX.current === null) return;
-    const dx = e.touches[0].clientX - startX.current;
-    if (dx < 0) setOffsetX(Math.max(dx, -ACTIONS_W - 10));
-    else if (revealed) setOffsetX(Math.min(dx - ACTIONS_W, 0));
-  };
-  const handleTouchEnd = () => {
-    if (offsetX < -(ACTIONS_W / 2)) { setOffsetX(-ACTIONS_W); setRevealed(true); }
-    else { setOffsetX(0); setRevealed(false); }
-    startX.current = null;
-  };
-  const close = () => { setOffsetX(0); setRevealed(false); };
-
-  const isIncome = t.type === 'income';
-  const amtColor = isIncome ? 'var(--success)' : 'var(--destructive)';
-  const catName  = t.category?.name ?? '—';
-  const dateStr  = new Date(t.date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
-
-  return (
-    <div style={{ position: 'relative', overflow: 'hidden', borderBottom: '1px solid var(--border)' }}>
-      {isMobile && (
-        <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, display: 'flex', width: ACTIONS_W }}>
-          {!isRecurringEntry && (
-            <button onClick={() => { close(); onToggleRecurring(); }}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, border: 'none', cursor: 'pointer', background: isRecurring ? 'var(--color-orange-400)' : '#c97a1a', color: 'white', fontSize: '0.6rem', fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
-              <RefreshCw size={14} />
-              <span style={{ lineHeight: 1.2, textAlign: 'center' }}>{isRecurring ? 'Fixed ✓' : 'Mark\nFixed'}</span>
-            </button>
-          )}
-          {!isRecurringEntry && (
-            <button onClick={() => { close(); onDuplicate(); }}
-              style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, border: 'none', cursor: 'pointer', background: '#1d6fb5', color: 'white', fontSize: '0.6rem', fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
-              <Copy size={14} />Copy
-            </button>
-          )}
-          <button onClick={() => { close(); onDelete(); }}
-            style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, border: 'none', cursor: 'pointer', background: 'var(--destructive)', color: 'white', fontSize: '0.6rem', fontWeight: 700, WebkitTapHighlightColor: 'transparent' }}>
-            <Trash2 size={14} />Delete
-          </button>
-        </div>
-      )}
-      <div
-        onClick={() => { if (isMobile && revealed) { close(); return; } if (!isRecurringEntry) onEdit(); }}
-        onTouchStart={isMobile ? handleTouchStart : undefined}
-        onTouchMove={isMobile ? handleTouchMove : undefined}
-        onTouchEnd={isMobile ? handleTouchEnd : undefined}
-        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0.75rem 1rem', background: isRecurringEntry ? 'color-mix(in srgb, var(--color-orange-400) 3%, var(--card))' : 'var(--card)', transform: `translateX(${offsetX}px)`, transition: startX.current === null ? 'transform 0.2s ease' : 'none', cursor: isRecurringEntry ? 'default' : 'pointer', WebkitTapHighlightColor: 'transparent', userSelect: 'none' }}
-        onMouseEnter={e => { if (!isMobile && !isRecurringEntry) (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; }}
-        onMouseLeave={e => { if (!isMobile) (e.currentTarget as HTMLDivElement).style.background = isRecurringEntry ? 'color-mix(in srgb, var(--color-orange-400) 3%, var(--card))' : 'var(--card)'; }}
-      >
-        <div style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, background: isRecurringEntry ? 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))' : isIncome ? 'color-mix(in srgb, var(--success) 12%, var(--background))' : 'color-mix(in srgb, var(--destructive) 12%, var(--background))', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {isRecurringEntry ? <RefreshCw size={14} color="var(--color-orange-400)" /> : isIncome ? <TrendingUp size={14} color="var(--success)" /> : <TrendingDown size={14} color="var(--destructive)" />}
-        </div>
-
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 1 }}>
-            <span style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {t.description || catName}
-            </span>
-            {isRecurringEntry && (
-              <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', fontSize: '0.6rem', fontWeight: 700 }}>
-                <RefreshCw size={8} />Recurring
-              </span>
-            )}
-            {!isRecurringEntry && isRecurring && (
-              <span style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3, padding: '1px 6px', borderRadius: 999, background: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', color: 'var(--color-orange-400)', fontSize: '0.6rem', fontWeight: 700 }}>
-                <RefreshCw size={8} />Fixed
-              </span>
-            )}
-          </div>
-          <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)' }}>{catName} · {dateStr}</span>
-          {t.notes && !t.notes.startsWith('recurring:') && (
-            <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
-              💬 {t.notes}
-            </p>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <span style={{ fontSize: '0.88rem', fontWeight: 700, color: isRecurringEntry ? 'var(--color-orange-400)' : amtColor, letterSpacing: '-0.01em' }}>
-            {isBalanceHidden ? '€••••••' : `${isIncome ? '+' : '-'}${t.amount.toLocaleString('en-US', { minimumFractionDigits: 2, style: 'currency', currency: 'EUR' }).replace('€', '€')}`}
-          </span>
-          {!isMobile && !isRecurringEntry && (
-            <div style={{ display: 'flex', gap: 3 }}>
-              {([
-                { icon: <RefreshCw size={11} />, fn: onToggleRecurring, title: isRecurring ? 'Unmark fixed' : 'Mark fixed', active: isRecurring, danger: false },
-                { icon: <Copy size={11} />,       fn: onDuplicate,       title: 'Duplicate',                                active: false,        danger: false },
-                { icon: <Edit2 size={11} />,      fn: onEdit,            title: 'Edit',                                     active: false,        danger: false },
-                { icon: <Trash2 size={11} />,     fn: onDelete,          title: 'Delete',                                   active: false,        danger: true  },
-              ]).map(({ icon, fn, title, active, danger }) => (
-                <button key={title} onClick={e => { e.stopPropagation(); fn(); }} title={title}
-                  style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 7, cursor: 'pointer', transition: 'all 0.12s', background: active ? 'color-mix(in srgb, var(--color-orange-400) 15%, var(--background))' : 'var(--muted)', color: active ? 'var(--color-orange-400)' : 'var(--muted-foreground)' }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = danger ? 'color-mix(in srgb, var(--destructive) 12%, var(--background))' : 'var(--accent)'; (e.currentTarget as HTMLButtonElement).style.color = danger ? 'var(--destructive)' : 'var(--foreground)'; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = active ? 'color-mix(in srgb, var(--color-orange-400) 15%, var(--background))' : 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.color = active ? 'var(--color-orange-400)' : 'var(--muted-foreground)'; }}
-                >{icon}</button>
-              ))}
-            </div>
-          )}
-          {!isMobile && isRecurringEntry && (
-            <button onClick={e => { e.stopPropagation(); onDelete(); }} title="Remove entry"
-              style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', border: 'none', borderRadius: 7, cursor: 'pointer', background: 'var(--muted)', color: 'var(--muted-foreground)' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'color-mix(in srgb, var(--destructive) 12%, var(--background))'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--destructive)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--muted)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--muted-foreground)'; }}
-            ><Trash2 size={11} /></button>
-          )}
-        </div>
-      </div>
     </div>
   );
 };
@@ -966,16 +1177,28 @@ const StatCards: React.FC<{ cards: StatCard[]; isBalanceHidden: boolean }> = ({ 
   </div>
 );
 
+// ── Stat cards mobile — more compact 2x2 grid ─────────────────────────────────
 const StatCardsMobile: React.FC<{ cards: StatCard[]; isBalanceHidden: boolean }> = ({ cards, isBalanceHidden }) => (
   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
     {cards.map(({ label, value, delta, icon, iconColor, iconBg }, idx) => (
-      <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px 8px 8px', borderRadius: 999, background: 'var(--card)', border: '1px solid var(--border)', ...(idx === 4 ? { gridColumn: 'span 2', justifySelf: 'start' as const } : {}) }}>
-        <div style={{ width: 26, height: 26, borderRadius: '50%', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
+      <div
+        key={label}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 7,
+          padding: '7px 10px',
+          borderRadius: 999,
+          background: 'var(--card)', border: '1px solid var(--border)',
+          ...(idx === 4 ? { gridColumn: 'span 2', justifySelf: 'start' as const } : {}),
+        }}
+      >
+        <div style={{ width: 24, height: 24, borderRadius: '50%', background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <div style={{ width: 13, height: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
+        </div>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <p style={{ fontSize: '0.63rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</p>
+          <p style={{ fontSize: '0.58rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 1px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{label}</p>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-            <p style={{ fontSize: '0.85rem', fontWeight: 700, margin: 0, letterSpacing: isBalanceHidden ? '0.02em' : '-0.01em', color: (label === 'Cash' || label === 'Meal Vouchers') ? iconColor : 'var(--foreground)', whiteSpace: 'nowrap' }}>
-              {isBalanceHidden ? '€••••••' : fmtEur(value)}
+            <p style={{ fontSize: '0.8rem', fontWeight: 700, margin: 0, letterSpacing: isBalanceHidden ? '0.02em' : '-0.015em', color: (label === 'Cash' || label === 'Meal Vouchers') ? iconColor : 'var(--foreground)', whiteSpace: 'nowrap' }}>
+              {isBalanceHidden ? '€•••' : fmtEur(value)}
             </p>
             {delta !== undefined && !isBalanceHidden && <DeltaBadge delta={delta} label={label} small />}
           </div>
@@ -1010,15 +1233,11 @@ const FREQ_LABEL: Record<string, string> = {
 };
 
 const RecurringMiniTable: React.FC<{
-  recurringExpenses: RecurringExpense[];
-  entryTxns: RecurringEntryAsTx[];
-  isBalanceHidden: boolean;
-  onViewAll: () => void;
-  onAdd: () => void;
+  recurringExpenses: RecurringExpense[]; entryTxns: RecurringEntryAsTx[];
+  isBalanceHidden: boolean; onViewAll: () => void; onAdd: () => void;
 }> = ({ recurringExpenses, entryTxns, isBalanceHidden, onViewAll, onAdd }) => {
   const active = recurringExpenses.filter(e => e.isActive);
   const monthlyTotal = entryTxns.reduce((s, e) => s + e.amount, 0);
-
   return (
     <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
       <div style={{ padding: '0.85rem 1.1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1034,12 +1253,9 @@ const RecurringMiniTable: React.FC<{
           </button>
         </div>
       </div>
-
       {active.length === 0 ? (
         <div style={{ padding: '1.5rem 1rem', textAlign: 'center' }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.6rem' }}>
-            <RefreshCw size={16} color="var(--muted-foreground)" />
-          </div>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 0.6rem' }}><RefreshCw size={16} color="var(--muted-foreground)" /></div>
           <p style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', margin: '0 0 0.65rem', fontWeight: 500 }}>No recurring expenses yet</p>
           <button onClick={onAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '5px 14px', background: 'var(--foreground)', color: 'var(--background)', border: 'none', borderRadius: 999, fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer' }}>
             <Plus size={11} />Add first
