@@ -47,38 +47,29 @@ interface RecurringWithEntries {
 
 interface YearlyStatsProps {
   allTransactions: BudgetTransaction[];
-  /** All recurring expenses with their historical entries, for accurate yearly stats */
   allRecurringEntries?: RecurringWithEntries[];
   onBack?: () => void;
   hideNav?: boolean;
 }
 
 // ─── Recurring helpers ────────────────────────────────────────────────────────
-
-/**
- * Get the actual amount paid for a recurring expense in a given month.
- * Uses the entry amount if it exists, otherwise falls back to the default amount
- * if the recurring expense was active in that month.
- */
 function getRecurringAmountForMonth(
   rwe: RecurringWithEntries,
   year: number,
-  month: number  // 1-12
+  month: number
 ): number {
   const entry = rwe.entries.find(e => e.year === year && e.month === month);
   if (entry) return entry.amount;
-  // Fallback: if active but no entry yet, use default amount
   if (isRecurringActiveInMonth(rwe.recurringExpense, year, month)) {
     return rwe.recurringExpense.amount;
   }
   return 0;
 }
 
-/** Sum all recurring expense amounts for a given month across all recurring expenses */
 function getTotalRecurringForMonth(
   allRec: RecurringWithEntries[],
   year: number,
-  month: number  // 1-12
+  month: number
 ): number {
   return allRec.reduce((s, rwe) => s + getRecurringAmountForMonth(rwe, year, month), 0);
 }
@@ -214,10 +205,8 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
 
   const availableYears = useMemo(() => {
     const s = new Set(allTransactions.map(t => new Date(t.date).getFullYear()));
-    // Also include years from recurring entries
     allRecurringEntries.forEach(rwe => {
       rwe.entries.forEach(e => s.add(e.year));
-      // Include the start year of each recurring expense
       const startYear = new Date(rwe.recurringExpense.startDate).getFullYear();
       s.add(startYear);
     });
@@ -239,7 +228,6 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     return PERIOD_PRESETS.find(p => p.value === periodPreset)?.months ?? [0,1,2,3,4,5,6,7,8,9,10,11];
   }, [periodPreset, customMonths]);
 
-  // ── filtered tx + recurring ───────────────────────────────────────────────
   const yearTx = useMemo(() =>
     allTransactions.filter(t => {
       const d = new Date(t.date);
@@ -254,7 +242,6 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     }),
     [allTransactions, selectedYear, activeMonths]);
 
-  // Recurring totals for selected year/period
   const yearRecurringTotal = useMemo(() =>
     activeMonths.reduce((s, m) =>
       s + getTotalRecurringForMonth(allRecurringEntries, selectedYear, m + 1), 0),
@@ -265,7 +252,6 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
       s + getTotalRecurringForMonth(allRecurringEntries, selectedYear - 1, m + 1), 0),
     [allRecurringEntries, selectedYear, activeMonths]);
 
-  // ── KPIs ─────────────────────────────────────────────────────────────────
   const kpis = useMemo(() => {
     const income       = yearTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
     const txExpenses   = yearTx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
@@ -281,7 +267,6 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     return { income, expenses, invested, balance, savRate, yoyInc, yoyExp };
   }, [yearTx, prevYearTx, yearRecurringTotal, prevYearRecurringTotal]);
 
-  // ── monthly data (tx + recurring entries) ─────────────────────────────────
   const monthly = useMemo(() =>
     MONTH_LABELS.map((label, m) => {
       if (!activeMonths.includes(m)) return null;
@@ -300,11 +285,13 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     return monthly.map(m => { r += m.net; return { label: m.label, cumulative: r }; });
   }, [monthly]);
 
-  // ── categories (tx + recurring entries lumped as "Recurring" category) ─────
+  // ── categories ────────────────────────────────────────────────────────────
+  // FIX: recurring expenses are now merged into their category (by categoryId),
+  // same as manual transactions — no more separate "Rent", "Housing" entries.
   const catBreakdown = useMemo(() => {
     const map = new Map<string, { name: string; icon: string; amount: number; count: number }>();
 
-    // Manual transactions
+    // 1. Manual transactions (no investments)
     yearTx.filter(t => t.type === 'expense' && !isInvestment(t)).forEach(t => {
       if (!t.category) return;
       const k = String(t.category.id);
@@ -313,24 +300,40 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
       else map.set(k, { name: t.category.name, icon: t.category.icon ?? '📦', amount: t.amount, count: 1 });
     });
 
-    // Recurring entries — group by their category via the recurring expense definition
+    // 2. Recurring entries — grouped by categoryId (same key as manual transactions)
+    //    so they merge correctly into the same category bucket.
     allRecurringEntries.forEach(rwe => {
       const amount = activeMonths.reduce((s, m) =>
         s + getRecurringAmountForMonth(rwe, selectedYear, m + 1), 0);
       if (amount <= 0) return;
-      // Use recurring expense id as key to keep them separate per recurring expense
-      const k = `rec-${rwe.recurringExpense.id}`;
-      const ex = map.get(k);
-      if (ex) { ex.amount += amount; ex.count++; }
-      else map.set(k, { name: rwe.recurringExpense.description, icon: '🔁', amount, count: 1 });
+
+      const catId = String(rwe.recurringExpense.categoryId);
+      const ex = map.get(catId);
+      if (ex) {
+        // Category already exists from manual tx → just add the amount
+        ex.amount += amount;
+        ex.count++;
+      } else {
+        // Category only has recurring entries → create a new bucket.
+        // We don't have the full category object here, so we fall back to
+        // the recurring expense description as the display name.
+        // If you have access to a categories array here you could look it up.
+        map.set(catId, {
+          name:  rwe.recurringExpense.description,
+          icon:  '🔁',
+          amount,
+          count: 1,
+        });
+      }
     });
 
     const total = [...map.values()].reduce((s, c) => s + c.amount, 0);
-    return [...map.values()].sort((a, b) => b.amount - a.amount).slice(0, 8)
+    return [...map.values()]
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 8)
       .map((c, i) => ({ ...c, pct: total > 0 ? (c.amount / total) * 100 : 0, color: CAT_COLORS[i % CAT_COLORS.length] }));
   }, [yearTx, allRecurringEntries, selectedYear, activeMonths]);
 
-  // ── streak ────────────────────────────────────────────────────────────────
   const streak = useMemo(() => {
     const nets = MONTH_LABELS.map((_, m) => {
       const mx = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && d.getMonth() === m; });
@@ -350,7 +353,6 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
   const negMonths  = monthly.filter(m => m.net < 0).length;
   const avgMonthly = monthly.length ? monthly.reduce((s, m) => s + m.net, 0) / monthly.length : 0;
 
-  // ── compare data (with recurring) ─────────────────────────────────────────
   const compareData = useMemo(() =>
     MONTH_LABELS.map((label, m) => {
       const row: Record<string, any> = { label };
@@ -396,7 +398,6 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     }),
     [allTransactions, allRecurringEntries, compareYears]);
 
-  // ─────────────────────────────────────────────────────────────────────────
   const axisTick = { fontSize: 10, fill: 'var(--muted-foreground)' } as any;
   const tickFmt  = (v: number) => `€${v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}`;
 
@@ -414,7 +415,6 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     </div>
   );
 
-  // ──────────────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: hideNav ? undefined : '100vh', background: 'var(--background)', fontFamily: 'var(--font-sans)' }}>
 
@@ -544,7 +544,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
         <section>
           <SectionHeader icon={<BarChart2 size={14} />} title="Spending Breakdown" subtitle="Categories including recurring expenses" />
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '300px 1fr', gap: '1.25rem' }}>
-            <Card title="Expenses by Category" subtitle="Including recurring" icon={<BarChart2 size={13} />}>
+            <Card title="Expenses by Category" subtitle="Recurring merged by category" icon={<BarChart2 size={13} />}>
               {catBreakdown.length > 0 ? (
                 <>
                   <div style={{ width: '100%', height: 180 }}>

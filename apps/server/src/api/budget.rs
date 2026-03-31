@@ -650,6 +650,15 @@ async fn get_recurring_entries(
         .get()
         .map_err(|e| anyhow::anyhow!("Pool error: {}", e))?;
 
+    // ── Fix: abilita WAL e busy_timeout per evitare "database is locked"
+    // quando più richieste concorrenti tentano di scrivere (auto-insert entries).
+    diesel::sql_query("PRAGMA journal_mode = WAL;")
+        .execute(&mut conn)
+        .map_err(|e| anyhow::anyhow!("PRAGMA journal_mode error: {}", e))?;
+    diesel::sql_query("PRAGMA busy_timeout = 5000;")
+        .execute(&mut conn)
+        .map_err(|e| anyhow::anyhow!("PRAGMA busy_timeout error: {}", e))?;
+
     // If year+month supplied, auto-ensure entries exist for active recurring expenses
     if let (Some(year), Some(month)) = (query.year, query.month) {
         // Load all active recurring expenses whose start_date <= end of month
