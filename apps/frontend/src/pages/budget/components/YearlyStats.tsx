@@ -3,7 +3,7 @@ import { BudgetTransaction } from '@/lib/types/budget';
 import { RecurringExpense, RecurringExpenseEntry, isRecurringActiveInMonth } from '@/lib/types/recurring';
 import {
   ArrowLeft, ArrowUpRight, BarChart2, CalendarDays,
-  Flame, GitCompare, Sparkles, TrendingDown, TrendingUp, Wallet,
+  GitCompare, Sparkles, TrendingDown, TrendingUp, Wallet
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import React, { useEffect, useId, useMemo, useState } from 'react';
@@ -27,7 +27,6 @@ const fmtCompact = (n: number) =>
 
 const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-// ── Categorical palette — echoes index.tsx orange accent family ───────────────
 const CAT_COLORS = [
   'var(--color-orange-400)',
   'var(--color-blue-600)',
@@ -39,7 +38,6 @@ const CAT_COLORS = [
   '#f6e2a0',
 ];
 
-// ── Year colours — keep numeric, since recharts needs concrete hex ────────────
 const YEAR_COLORS = ['#2563eb','#16a34a','#dc2626','#7c3aed','#d97706'];
 
 function useIsMobile(bp = 768) {
@@ -77,7 +75,7 @@ function getTotalRecurringForMonth(allRec: RecurringWithEntries[], year: number,
   return allRec.reduce((s, rwe) => s + getRecurringAmountForMonth(rwe, year, month), 0);
 }
 
-// ─── Tooltip — matches index.tsx card style ───────────────────────────────────
+// ─── Tooltip ──────────────────────────────────────────────────────────────────
 const ChartTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload?.length) return null;
   return (
@@ -110,7 +108,29 @@ const ChartTooltip = ({ active, payload, label }: any) => {
   );
 };
 
-// ─── Section header — matches index.tsx ──────────────────────────────────────
+// ─── Empty state ──────────────────────────────────────────────────────────────
+const ChartEmptyState: React.FC<{ height?: number; message?: string }> = ({
+  height = 200,
+  message = 'No data for this period',
+}) => (
+  <div style={{
+    height,
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: 'var(--muted-foreground)',
+    fontSize: '0.8rem',
+    gap: 6,
+    background: 'var(--accent)',
+    borderRadius: 10,
+  }}>
+    <span style={{ fontSize: '1.4rem', opacity: 0.5 }}>📊</span>
+    {message}
+  </div>
+);
+
+// ─── Section header ───────────────────────────────────────────────────────────
 const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle?: string }> = ({ icon, title, subtitle }) => (
   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '1rem' }}>
     <div style={{ width: 30, height: 30, borderRadius: 9, background: 'var(--muted)', color: 'var(--muted-foreground)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -123,7 +143,7 @@ const SectionHeader: React.FC<{ icon: React.ReactNode; title: string; subtitle?:
   </div>
 );
 
-// ─── Card — border/radius matching index.tsx ──────────────────────────────────
+// ─── Card ─────────────────────────────────────────────────────────────────────
 const Card: React.FC<{
   title: string;
   subtitle?: string;
@@ -219,7 +239,7 @@ const YoyBadge: React.FC<{ label: string; value: number; positiveIsGood: boolean
   );
 };
 
-// ─── Year picker (pill tab — same as tab nav in index.tsx) ────────────────────
+// ─── Year picker ──────────────────────────────────────────────────────────────
 const YearPicker: React.FC<{ years: number[]; selected: number; onChange: (y: number) => void; layoutId: string; small?: boolean }> = ({ years, selected, onChange, layoutId, small }) => (
   <div style={{ display: 'flex', gap: 2, background: 'color-mix(in srgb, var(--muted) 60%, transparent)', borderRadius: 999, padding: 3 }}>
     {years.map(y => {
@@ -252,7 +272,7 @@ const PERIOD_PRESETS: { value: PeriodPreset; label: string; months: number[] }[]
 
 type CompareMetric = 'expenses' | 'income' | 'net';
 
-// ─── Stat pill — identical shape to index.tsx StatCards ──────────────────────
+// ─── Stat pill ────────────────────────────────────────────────────────────────
 interface StatPill {
   label: string;
   value: string;
@@ -358,31 +378,40 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     [allRecurringEntries, selectedYear, activeMonths]);
 
   const kpis = useMemo(() => {
-    const income     = yearTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-    const txExpenses = yearTx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-    const expenses   = txExpenses + yearRecurringTotal;
-    const invested   = yearTx.filter(t => isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-    const balance    = income - expenses;
-    const savRate    = income > 0 ? ((income - expenses) / income) * 100 : 0;
-    const prevInc    = prevYearTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-    const prevTxExp  = prevYearTx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-    const prevExp    = prevTxExp + prevYearRecurringTotal;
-    const yoyInc     = prevInc > 0 ? ((income   - prevInc) / prevInc)  * 100 : null;
-    const yoyExp     = prevExp > 0 ? ((expenses - prevExp) / prevExp)  * 100 : null;
-    return { income, expenses, invested, balance, savRate, yoyInc, yoyExp };
+    const income      = yearTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const txExpenses  = yearTx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+    // FIX: expenses = living expenses only (recurring included); invested is tracked separately
+    const expenses    = txExpenses + yearRecurringTotal;
+    const invested    = yearTx.filter(t => isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+    // FIX: balance = income minus ALL outgoing (expenses + investments = actual cash left)
+    const balance     = income - expenses - invested;
+    // Saving rate: % of income not spent on living expenses (investments count as "saved/invested")
+    const savRate     = income > 0 ? ((income - expenses) / income) * 100 : 0;
+    // Invest rate: % of income going to investments
+    const investRate  = income > 0 ? (invested / income) * 100 : 0;
+    const prevInc     = prevYearTx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+    const prevTxExp   = prevYearTx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+    const prevExp     = prevTxExp + prevYearRecurringTotal;
+    const yoyInc      = prevInc > 0 ? ((income   - prevInc) / prevInc)  * 100 : null;
+    const yoyExp      = prevExp > 0 ? ((expenses - prevExp) / prevExp)  * 100 : null;
+    return { income, expenses, invested, balance, savRate, investRate, yoyInc, yoyExp };
   }, [yearTx, prevYearTx, yearRecurringTotal, prevYearRecurringTotal]);
 
+  // FIX: monthly data now exposes `txExpenses` (living expenses without recurring)
+  // separately from `expenses` (total = txExpenses + recurring) so the stacked bar
+  // doesn't double-count recurring.
   const monthly = useMemo(() =>
     MONTH_LABELS.map((label, m) => {
       if (!activeMonths.includes(m)) return null;
-      const mx       = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && d.getMonth() === m; });
-      const income   = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-      const txExp    = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-      const recExp   = getTotalRecurringForMonth(allRecurringEntries, selectedYear, m + 1);
-      const expenses = txExp + recExp;
-      const invested = mx.filter(t => isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-      return { label, income, expenses, invested, net: income - expenses, recurring: recExp };
-    }).filter(Boolean) as { label: string; income: number; expenses: number; invested: number; net: number; recurring: number }[],
+      const mx         = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && d.getMonth() === m; });
+      const income     = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+      const txExpenses = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+      const recExp     = getTotalRecurringForMonth(allRecurringEntries, selectedYear, m + 1);
+      const expenses   = txExpenses + recExp;  // total living expenses
+      const invested   = mx.filter(t => isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+      // FIX: net = income - expenses - invested (actual cash left)
+      return { label, income, txExpenses, recurring: recExp, expenses, invested, net: income - expenses - invested };
+    }).filter(Boolean) as { label: string; income: number; txExpenses: number; recurring: number; expenses: number; invested: number; net: number }[],
     [allTransactions, allRecurringEntries, selectedYear, activeMonths]);
 
   const cumulative = useMemo(() => {
@@ -414,18 +443,20 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
       .map((c, i) => ({ ...c, pct: total > 0 ? (c.amount / total) * 100 : 0, color: CAT_COLORS[i % CAT_COLORS.length] }));
   }, [yearTx, allRecurringEntries, selectedYear, activeMonths]);
 
+  // FIX: streak now respects activeMonths instead of always scanning all 12 months
   const streak = useMemo(() => {
-    const nets = MONTH_LABELS.map((_, m) => {
-      const mx = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && d.getMonth() === m; });
+    const nets = activeMonths.map(m => {
+      const mx     = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === selectedYear && d.getMonth() === m; });
       const income = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
       const txExp  = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
       const recExp = getTotalRecurringForMonth(allRecurringEntries, selectedYear, m + 1);
-      return income - txExp - recExp;
+      const inv    = mx.filter(t => isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+      return income - txExp - recExp - inv;
     });
     let s = 0;
     for (let i = nets.length - 1; i >= 0; i--) { if (nets[i] > 0) s++; else break; }
     return s;
-  }, [allTransactions, allRecurringEntries, selectedYear]);
+  }, [allTransactions, allRecurringEntries, selectedYear, activeMonths]);
 
   const bestMonth  = monthly.length ? monthly.reduce((a, b) => b.net > a.net ? b : a) : null;
   const worstMonth = monthly.length ? monthly.reduce((a, b) => b.net < a.net ? b : a) : null;
@@ -433,20 +464,24 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
   const negMonths  = monthly.filter(m => m.net < 0).length;
   const avgMonthly = monthly.length ? monthly.reduce((s, m) => s + m.net, 0) / monthly.length : 0;
 
+  // FIX: compareData now respects activeMonths — only include selected months
   const compareData = useMemo(() =>
-    MONTH_LABELS.map((label, m) => {
-      const row: Record<string, any> = { label };
-      compareYears.forEach(y => {
-        const mx     = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
-        const inc    = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-        const txExp  = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-        const recExp = getTotalRecurringForMonth(allRecurringEntries, y, m + 1);
-        const exp    = txExp + recExp;
-        row[String(y)] = Math.round(compareMetric === 'income' ? inc : compareMetric === 'net' ? inc - exp : exp);
-      });
-      return row;
-    }),
-    [allTransactions, allRecurringEntries, compareYears, compareMetric]);
+    MONTH_LABELS
+      .map((label, m) => {
+        if (!activeMonths.includes(m)) return null;
+        const row: Record<string, any> = { label };
+        compareYears.forEach(y => {
+          const mx     = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === m; });
+          const inc    = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+          const txExp  = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+          const recExp = getTotalRecurringForMonth(allRecurringEntries, y, m + 1);
+          const exp    = txExp + recExp;
+          row[String(y)] = Math.round(compareMetric === 'income' ? inc : compareMetric === 'net' ? inc - exp : exp);
+        });
+        return row;
+      })
+      .filter(Boolean) as Record<string, any>[],
+    [allTransactions, allRecurringEntries, compareYears, compareMetric, activeMonths]);
 
   const monthCompareData = useMemo(() =>
     compareMonthYears.map(y => {
@@ -461,22 +496,29 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     }),
     [allTransactions, allRecurringEntries, compareMonths, compareMonthYears]);
 
+  // FIX: cumCompareData also respects activeMonths
   const cumCompareData = useMemo(() =>
-    MONTH_LABELS.map((label, m) => {
-      const row: Record<string, any> = { label };
-      compareYears.forEach(y => {
-        const running = MONTH_LABELS.slice(0, m + 1).reduce((acc, _, mm) => {
-          const mx     = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === mm; });
-          const inc    = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-          const txExp  = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
-          const recExp = getTotalRecurringForMonth(allRecurringEntries, y, mm + 1);
-          return acc + inc - txExp - recExp;
-        }, 0);
-        row[String(y)] = Math.round(running);
-      });
-      return row;
-    }),
-    [allTransactions, allRecurringEntries, compareYears]);
+    MONTH_LABELS
+      .map((label, m) => {
+        if (!activeMonths.includes(m)) return null;
+        const row: Record<string, any> = { label };
+        compareYears.forEach(y => {
+          // accumulate only over activeMonths up to and including m
+          const running = activeMonths
+            .filter(mm => mm <= m)
+            .reduce((acc, mm) => {
+              const mx     = allTransactions.filter(t => { const d = new Date(t.date); return d.getFullYear() === y && d.getMonth() === mm; });
+              const inc    = mx.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+              const txExp  = mx.filter(t => t.type === 'expense' && !isInvestment(t)).reduce((s, t) => s + t.amount, 0);
+              const recExp = getTotalRecurringForMonth(allRecurringEntries, y, mm + 1);
+              return acc + inc - txExp - recExp;
+            }, 0);
+          row[String(y)] = Math.round(running);
+        });
+        return row;
+      })
+      .filter(Boolean) as Record<string, any>[],
+    [allTransactions, allRecurringEntries, compareYears, activeMonths]);
 
   const periodLabel = periodPreset === 'custom'
     ? activeMonths.length === 12 ? 'Full year' : `${MONTH_LABELS[activeMonths[0]]}–${MONTH_LABELS[activeMonths[activeMonths.length - 1]]}`
@@ -493,8 +535,17 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     </div>
   );
 
-  // ── KPI pills data ────────────────────────────────────────────────────────
+  // ── KPI pills — FIX: removed duplicate "Saving streak" pill, replaced with Income ──
   const statPills: StatPill[] = [
+    {
+      label: 'Income',
+      value: fmtEur(kpis.income),
+      sub: kpis.yoyInc !== null ? `${kpis.yoyInc > 0 ? '+' : ''}${kpis.yoyInc.toFixed(1)}% vs last year` : undefined,
+      subGood: kpis.yoyInc !== null ? kpis.yoyInc > 0 : undefined,
+      icon: <TrendingUp size={14} />,
+      iconColor: 'var(--success)',
+      iconBg: 'color-mix(in srgb, var(--success) 12%, var(--background))',
+    },
     {
       label: 'Expenses',
       value: fmtEur(kpis.expenses),
@@ -507,13 +558,14 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
     {
       label: 'Invested',
       value: fmtEur(kpis.invested),
-      sub: kpis.invested > 0 && kpis.income > 0 ? `${((kpis.invested / kpis.income) * 100).toFixed(1)}% of income` : undefined,
+      sub: kpis.invested > 0 && kpis.income > 0 ? `${kpis.investRate.toFixed(1)}% of income` : undefined,
       icon: <TrendingUp size={14} />,
       iconColor: 'var(--color-purple-600)',
       iconBg: 'color-mix(in srgb, var(--color-purple-600) 12%, var(--background))',
     },
     {
-      label: 'Net balance',
+      // FIX: balance now = income - expenses - invested (true cash left)
+      label: 'Cash left',
       value: `${kpis.balance >= 0 ? '+' : ''}${fmtEur(kpis.balance)}`,
       sub: `avg ${fmtCompact(Math.round(avgMonthly))}/mo`,
       icon: <Wallet size={14} />,
@@ -533,23 +585,12 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
         ? 'color-mix(in srgb, var(--success) 12%, var(--background))'
         : 'color-mix(in srgb, var(--destructive) 12%, var(--background))',
     },
-    {
-      label: 'Saving streak',
-      value: `${streak} months`,
-      sub: streak > 0 ? 'consecutive positive' : 'No current streak',
-      subGood: streak > 0 ? true : false,
-      icon: <Flame size={14} />,
-      iconColor: streak > 0 ? 'var(--color-orange-400)' : 'var(--muted-foreground)',
-      iconBg: streak > 0
-        ? 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))'
-        : 'var(--muted)',
-    },
   ];
 
   return (
     <div style={{ minHeight: hideNav ? undefined : '100vh', background: 'var(--background)', fontFamily: 'var(--font-sans)' }}>
 
-      {/* ── Top nav (standalone mode) ──────────────────────────────────────── */}
+      {/* ── Top nav ────────────────────────────────────────────────────────── */}
       {!hideNav && (
         <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <div style={{ padding: isMobile ? '0 1rem' : '0 1.5rem', height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
@@ -566,7 +607,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
         </div>
       )}
 
-      {/* ── Sub-nav (embedded mode, hideNav=true) ──────────────────────────── */}
+      {/* ── Sub-nav (embedded) ─────────────────────────────────────────────── */}
       {hideNav && (
         <div style={{ position: 'sticky', top: 52, zIndex: 19, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: isMobile ? '0.5rem 1rem' : '0.5rem 1.5rem', height: 44, gap: '0.75rem' }}>
@@ -576,7 +617,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
         </div>
       )}
 
-      {/* ── HERO — no gradient, clean header matching index.tsx ────────────── */}
+      {/* ── HERO ──────────────────────────────────────────────────────────── */}
       <div style={{ borderBottom: '1px solid var(--border)', padding: isMobile ? '1.25rem 1rem 1.5rem' : '1.5rem 1.75rem' }}>
 
         {/* Period presets */}
@@ -601,7 +642,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
             {selectedYear} · {periodLabel} — Total income
             {yearRecurringTotal > 0 && (
               <span style={{ marginLeft: 8, color: 'var(--color-orange-400)' }}>
-                · {fmtEur(yearRecurringTotal)} recurring included
+                · {fmtEur(yearRecurringTotal)} recurring included in expenses
               </span>
             )}
           </p>
@@ -610,19 +651,25 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
               {fmtEur(kpis.income, 2)}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+              {/* FIX: balance pill now reflects income - expenses - invested */}
               <span style={{ fontSize: '0.88rem', fontWeight: 700, color: kpis.balance >= 0 ? 'var(--success)' : 'var(--destructive)' }}>
-                {kpis.balance >= 0 ? '+' : ''}{fmtEur(kpis.balance, 2)} net
+                {kpis.balance >= 0 ? '+' : ''}{fmtEur(kpis.balance, 2)} cash left
               </span>
-              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: kpis.savRate >= 0 ? 'var(--success)' : 'var(--destructive)' }}>
-                {kpis.savRate.toFixed(1)}% saved
+              {/* FIX: two distinct rates — "non-expense" rate and invest rate */}
+              <span title="% of income not spent on living expenses (investments included)" style={{ fontSize: '0.88rem', fontWeight: 700, color: kpis.savRate >= 0 ? 'var(--success)' : 'var(--destructive)' }}>
+                {kpis.savRate.toFixed(1)}% saved+invested
               </span>
+              {kpis.investRate > 0 && (
+                <span title="% of income allocated to investments" style={{ fontSize: '0.88rem', fontWeight: 700, color: 'var(--color-purple-600)' }}>
+                  {kpis.investRate.toFixed(1)}% invested
+                </span>
+              )}
               {kpis.yoyInc !== null && <YoyBadge label="income"   value={kpis.yoyInc} positiveIsGood />}
               {kpis.yoyExp !== null && <YoyBadge label="expenses" value={kpis.yoyExp} positiveIsGood={false} />}
             </div>
           </div>
         </div>
 
-        {/* KPI pills — same shape as index.tsx stat cards */}
         <StatPillRow pills={statPills} isMobile={isMobile} />
       </div>
 
@@ -636,51 +683,55 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
 
             <Card
               title="Income vs Expenses"
-              subtitle="Recurring included"
+              subtitle="Recurring included in expenses"
               icon={<TrendingUp size={13} />}
               legend={<>
                 <LegendDot color="var(--success)"     label="Income"   value={kpis.income} />
                 <LegendDot color="var(--destructive)" label="Expenses" value={kpis.expenses} />
               </>}
             >
-              <ResponsiveContainer width="100%" height={200}>
-                <AreaChart data={monthly} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gInc" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#16a34a" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="gExp" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#ef4444" stopOpacity={0.14} />
-                      <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid {...gridProps} />
-                  <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
-                  <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmt} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Area type="monotone" dataKey="income"   name="Income"   stroke="#16a34a" strokeWidth={2} fill="url(#gInc)" dot={false} activeDot={{ r: 4, fill: '#16a34a', strokeWidth: 0 }} />
-                  <Area type="monotone" dataKey="expenses" name="Expenses" stroke="#ef4444" strokeWidth={2} fill="url(#gExp)" dot={false} activeDot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} />
-                </AreaChart>
-              </ResponsiveContainer>
+              {monthly.length === 0 ? <ChartEmptyState height={200} /> : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart data={monthly} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="gInc" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#16a34a" stopOpacity={0.18} />
+                        <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="gExp" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%"  stopColor="#ef4444" stopOpacity={0.14} />
+                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid {...gridProps} />
+                    <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
+                    <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmt} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Area type="monotone" dataKey="income"   name="Income"   stroke="#16a34a" strokeWidth={2} fill="url(#gInc)" dot={false} activeDot={{ r: 4, fill: '#16a34a', strokeWidth: 0 }} />
+                    <Area type="monotone" dataKey="expenses" name="Expenses" stroke="#ef4444" strokeWidth={2} fill="url(#gExp)" dot={false} activeDot={{ r: 4, fill: '#ef4444', strokeWidth: 0 }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </Card>
 
             <Card
               title="Cumulative Net Balance"
-              subtitle="Running total"
+              subtitle="Running total (income − expenses − investments)"
               icon={<TrendingUp size={13} />}
               legend={<LegendDot color={kpis.balance >= 0 ? '#2563eb' : '#ef4444'} label={`Final: ${kpis.balance >= 0 ? '+' : ''}${fmtEur(kpis.balance, 2)}`} />}
             >
-              <ResponsiveContainer width="100%" height={200}>
-                <LineChart data={cumulative} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-                  <CartesianGrid {...gridProps} />
-                  <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
-                  <YAxis tick={axisTick} axisLine={false} tickLine={false} width={52} tickFormatter={tickFmt} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1.5} strokeDasharray="4 3" />
-                  <Line type="monotone" dataKey="cumulative" name="Net" stroke={kpis.balance >= 0 ? '#2563eb' : '#ef4444'} strokeWidth={2.5} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
-                </LineChart>
-              </ResponsiveContainer>
+              {cumulative.length === 0 ? <ChartEmptyState height={200} /> : (
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={cumulative} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                    <CartesianGrid {...gridProps} />
+                    <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
+                    <YAxis tick={axisTick} axisLine={false} tickLine={false} width={52} tickFormatter={tickFmt} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1.5} strokeDasharray="4 3" />
+                    <Line type="monotone" dataKey="cumulative" name="Net" stroke={kpis.balance >= 0 ? '#2563eb' : '#ef4444'} strokeWidth={2.5} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </Card>
           </div>
         </section>
@@ -691,7 +742,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '300px 1fr', gap: '1.25rem' }}>
 
             <Card title="By category" subtitle="Recurring merged" icon={<BarChart2 size={13} />}>
-              {catBreakdown.length > 0 ? (
+              {catBreakdown.length === 0 ? <ChartEmptyState height={200} message="No expense data for this period" /> : (
                 <>
                   <div style={{ width: '100%', height: 180 }}>
                     <ResponsiveContainer>
@@ -722,34 +773,40 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
                     ))}
                   </div>
                 </>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--muted-foreground)', fontSize: '0.82rem' }}>
-                  No expense data for this period
-                </div>
               )}
             </Card>
 
+            {/*
+              FIX: stacked bar now uses `txExpenses` (transaction-only living expenses)
+              + `recurring` + `invested` — all with the same stackId="a".
+              Previously `expenses` (= txExpenses + recurring) and `recurring` were both
+              plotted, double-counting recurring amounts.
+              Legend values are also corrected accordingly.
+            */}
             <Card
               title="Monthly expenses + investments"
-              subtitle="Stacked by type"
+              subtitle="Stacked: living expenses · recurring · invested"
               icon={<BarChart2 size={13} />}
               legend={<>
-                <LegendDot color="#fca5a5" label="Expenses"  value={kpis.expenses}          square />
+                <LegendDot color="#fca5a5" label="Expenses"  value={kpis.expenses - yearRecurringTotal} square />
                 <LegendDot color="var(--color-orange-400)" label="Recurring" value={yearRecurringTotal} square />
-                <LegendDot color="#c4b9e0" label="Invested"  value={kpis.invested}           square />
+                <LegendDot color="#c4b9e0" label="Invested"  value={kpis.invested} square />
               </>}
             >
-              <ResponsiveContainer width="100%" height={isMobile ? 220 : 340}>
-                <BarChart data={monthly} margin={{ top: 8, right: 4, left: 0, bottom: 0 }} barCategoryGap="24%">
-                  <CartesianGrid {...gridProps} />
-                  <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
-                  <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmt} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <Bar dataKey="expenses"  name="Expenses"  stackId="a" fill="#fca5a5" isAnimationActive />
-                  <Bar dataKey="recurring" name="Recurring" stackId="b" fill="#f9ae77" isAnimationActive />
-                  <Bar dataKey="invested"  name="Invested"  stackId="a" fill="#c4b9e0" radius={[5,5,0,0]} isAnimationActive />
-                </BarChart>
-              </ResponsiveContainer>
+              {monthly.length === 0 ? <ChartEmptyState height={isMobile ? 220 : 340} /> : (
+                <ResponsiveContainer width="100%" height={isMobile ? 220 : 340}>
+                  <BarChart data={monthly} margin={{ top: 8, right: 4, left: 0, bottom: 0 }} barCategoryGap="24%">
+                    <CartesianGrid {...gridProps} />
+                    <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
+                    <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmt} />
+                    <Tooltip content={<ChartTooltip />} />
+                    {/* FIX: all three bars share stackId="a" — no separate stack for recurring */}
+                    <Bar dataKey="txExpenses" name="Expenses"  stackId="a" fill="#fca5a5" isAnimationActive />
+                    <Bar dataKey="recurring"  name="Recurring" stackId="a" fill="#f9ae77" isAnimationActive />
+                    <Bar dataKey="invested"   name="Invested"  stackId="a" fill="#c4b9e0" radius={[5,5,0,0]} isAnimationActive />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </Card>
           </div>
         </section>
@@ -760,42 +817,44 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '1.25rem' }}>
 
             <Card title="Monthly net — ranking" subtitle="Best vs worst and full breakdown" icon={<CalendarDays size={13} />}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 4 }}>
-                  {([
-                    { label: '🏆 Best month',  m: bestMonth,  good: true },
-                    { label: '📉 Worst month', m: worstMonth, good: (worstMonth?.net ?? 0) >= 0 },
-                  ] as const).map(({ label, m, good }) => (
-                    <div key={label} style={{ padding: '10px 12px', borderRadius: 12, display: 'flex', flexDirection: 'column', background: good ? 'color-mix(in srgb, var(--success) 8%, var(--background))' : 'color-mix(in srgb, var(--destructive) 8%, var(--background))', border: `1px solid ${good ? 'color-mix(in srgb, var(--success) 18%, transparent)' : 'color-mix(in srgb, var(--destructive) 18%, transparent)'}` }}>
-                      <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '0 0 3px', fontWeight: 500 }}>{label}</p>
-                      <p style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--foreground)', margin: '0 0 2px' }}>{m?.label ?? '—'}</p>
-                      <p style={{ fontSize: '0.82rem', fontWeight: 700, color: good ? 'var(--success)' : 'var(--destructive)', margin: 0 }}>
-                        {(m?.net ?? 0) >= 0 ? '+' : ''}{fmtEur(m?.net ?? 0, 2)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                {monthly.map(m => {
-                  const maxAbs = Math.max(...monthly.map(x => Math.abs(x.net)), 1);
-                  return (
-                    <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', width: 26, flexShrink: 0, fontWeight: 600 }}>{m.label}</span>
-                      <div style={{ flex: 1, background: 'var(--muted)', borderRadius: 999, height: 5, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', borderRadius: 999, width: `${(Math.abs(m.net) / maxAbs) * 100}%`, background: m.net >= 0 ? 'var(--success)' : 'var(--destructive)', transition: 'width 0.5s ease' }} />
+              {monthly.length === 0 ? <ChartEmptyState height={200} message="No data for this period" /> : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 4 }}>
+                    {([
+                      { label: '🏆 Best month',  m: bestMonth,  good: true },
+                      { label: '📉 Worst month', m: worstMonth, good: (worstMonth?.net ?? 0) >= 0 },
+                    ] as const).map(({ label, m, good }) => (
+                      <div key={label} style={{ padding: '10px 12px', borderRadius: 12, display: 'flex', flexDirection: 'column', background: good ? 'color-mix(in srgb, var(--success) 8%, var(--background))' : 'color-mix(in srgb, var(--destructive) 8%, var(--background))', border: `1px solid ${good ? 'color-mix(in srgb, var(--success) 18%, transparent)' : 'color-mix(in srgb, var(--destructive) 18%, transparent)'}` }}>
+                        <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '0 0 3px', fontWeight: 500 }}>{label}</p>
+                        <p style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--foreground)', margin: '0 0 2px' }}>{m?.label ?? '—'}</p>
+                        <p style={{ fontSize: '0.82rem', fontWeight: 700, color: good ? 'var(--success)' : 'var(--destructive)', margin: 0 }}>
+                          {(m?.net ?? 0) >= 0 ? '+' : ''}{fmtEur(m?.net ?? 0, 2)}
+                        </p>
                       </div>
-                      <span style={{ fontSize: '0.68rem', fontWeight: 700, color: m.net >= 0 ? 'var(--success)' : 'var(--destructive)', width: 62, textAlign: 'right', flexShrink: 0 }}>
-                        {m.net >= 0 ? '+' : ''}{fmtEur(m.net)}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+                    ))}
+                  </div>
+                  {monthly.map(m => {
+                    const maxAbs = Math.max(...monthly.map(x => Math.abs(x.net)), 1);
+                    return (
+                      <div key={m.label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', width: 26, flexShrink: 0, fontWeight: 600 }}>{m.label}</span>
+                        <div style={{ flex: 1, background: 'var(--muted)', borderRadius: 999, height: 5, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', borderRadius: 999, width: `${(Math.abs(m.net) / maxAbs) * 100}%`, background: m.net >= 0 ? 'var(--success)' : 'var(--destructive)', transition: 'width 0.5s ease' }} />
+                        </div>
+                        <span style={{ fontSize: '0.68rem', fontWeight: 700, color: m.net >= 0 ? 'var(--success)' : 'var(--destructive)', width: 62, textAlign: 'right', flexShrink: 0 }}>
+                          {m.net >= 0 ? '+' : ''}{fmtEur(m.net)}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </Card>
 
             <Card title="Year at a glance" subtitle="Key metrics for the period" icon={<Sparkles size={13} />}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
 
-                {/* Streak */}
+                {/* Streak — FIX: streak now computed over activeMonths only */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1rem', borderRadius: 12, background: streak > 0 ? 'color-mix(in srgb, var(--color-orange-400) 8%, var(--background))' : 'var(--accent)', border: `1px solid ${streak > 0 ? 'color-mix(in srgb, var(--color-orange-400) 20%, transparent)' : 'var(--border)'}` }}>
                   <div>
                     <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '0 0 2px', fontWeight: 500 }}>Savings streak</p>
@@ -809,8 +868,8 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
                 {/* Pos/neg months */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   {[
-                    { label: 'Profitable months', value: posMonths,  total: monthly.length, color: 'var(--success)',     bg: 'color-mix(in srgb, var(--success) 10%, var(--background))' },
-                    { label: 'Deficit months',    value: negMonths,  total: monthly.length, color: 'var(--destructive)', bg: 'color-mix(in srgb, var(--destructive) 10%, var(--background))' },
+                    { label: 'Profitable months', value: posMonths, total: monthly.length, color: 'var(--success)',     bg: 'color-mix(in srgb, var(--success) 10%, var(--background))' },
+                    { label: 'Deficit months',    value: negMonths, total: monthly.length, color: 'var(--destructive)', bg: 'color-mix(in srgb, var(--destructive) 10%, var(--background))' },
                   ].map(({ label, value, total, color, bg }) => (
                     <div key={label} style={{ background: bg, borderRadius: 12, padding: '0.75rem 1rem' }}>
                       <p style={{ fontSize: '0.63rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: '0 0 2px' }}>{label}</p>
@@ -843,7 +902,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
                       <div style={{ height: '100%', width: `${Math.min((kpis.invested / kpis.income) * 100, 100)}%`, background: 'var(--color-purple-600)', borderRadius: 999, transition: 'width 0.5s ease' }} />
                     </div>
                     <p style={{ fontSize: '0.63rem', color: 'var(--color-purple-600)', fontWeight: 600, margin: '5px 0 0' }}>
-                      {kpis.income > 0 ? `${((kpis.invested / kpis.income) * 100).toFixed(1)}% of income invested` : '—'}
+                      {kpis.income > 0 ? `${kpis.investRate.toFixed(1)}% of income invested` : '—'}
                     </p>
                   </div>
                 )}
@@ -854,10 +913,9 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
 
         {/* ── Year-over-Year ─────────────────────────────────────────────── */}
         <section>
-          <SectionHeader icon={<GitCompare size={14} />} title="Year-over-Year" subtitle="Compare multiple years side by side" />
+          <SectionHeader icon={<GitCompare size={14} />} title="Year-over-Year" subtitle={`Comparing ${periodLabel} — same period across years`} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
 
-            {/* Controls card */}
             <div style={{ display: 'flex', alignItems: isMobile ? 'flex-start' : 'center', justifyContent: 'space-between', flexDirection: isMobile ? 'column' : 'row', gap: '0.75rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '0.85rem 1.1rem' }}>
               <div>
                 <p style={{ fontSize: '0.63rem', color: 'var(--muted-foreground)', fontWeight: 600, margin: '0 0 0.4rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Years (max 5)</p>
@@ -880,17 +938,19 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
                 })}
               </div>}
             >
-              <ResponsiveContainer width="100%" height={230}>
-                <BarChart data={compareData} barCategoryGap="20%" margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-                  <CartesianGrid {...gridProps} />
-                  <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
-                  <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmt} />
-                  <Tooltip content={<ChartTooltip />} />
-                  {compareYears.map((y, i) => (
-                    <Bar key={y} dataKey={String(y)} name={String(y)} fill={YEAR_COLORS[i % YEAR_COLORS.length]} radius={[4,4,0,0]} isAnimationActive />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
+              {compareData.length === 0 ? <ChartEmptyState height={230} /> : (
+                <ResponsiveContainer width="100%" height={230}>
+                  <BarChart data={compareData} barCategoryGap="20%" margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                    <CartesianGrid {...gridProps} />
+                    <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
+                    <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmt} />
+                    <Tooltip content={<ChartTooltip />} />
+                    {compareYears.map((y, i) => (
+                      <Bar key={y} dataKey={String(y)} name={String(y)} fill={YEAR_COLORS[i % YEAR_COLORS.length]} radius={[4,4,0,0]} isAnimationActive />
+                    ))}
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </Card>
 
             <Card
@@ -898,18 +958,20 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
               subtitle="Running balance per year"
               icon={<TrendingUp size={13} />}
             >
-              <ResponsiveContainer width="100%" height={210}>
-                <LineChart data={cumCompareData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-                  <CartesianGrid {...gridProps} />
-                  <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
-                  <YAxis tick={axisTick} axisLine={false} tickLine={false} width={52} tickFormatter={tickFmt} />
-                  <Tooltip content={<ChartTooltip />} />
-                  <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1.5} strokeDasharray="4 3" />
-                  {compareYears.map((y, i) => (
-                    <Line key={y} type="monotone" dataKey={String(y)} name={String(y)} stroke={YEAR_COLORS[i % YEAR_COLORS.length]} strokeWidth={2.5} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
+              {cumCompareData.length === 0 ? <ChartEmptyState height={210} /> : (
+                <ResponsiveContainer width="100%" height={210}>
+                  <LineChart data={cumCompareData} margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                    <CartesianGrid {...gridProps} />
+                    <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
+                    <YAxis tick={axisTick} axisLine={false} tickLine={false} width={52} tickFormatter={tickFmt} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1.5} strokeDasharray="4 3" />
+                    {compareYears.map((y, i) => (
+                      <Line key={y} type="monotone" dataKey={String(y)} name={String(y)} stroke={YEAR_COLORS[i % YEAR_COLORS.length]} strokeWidth={2.5} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </Card>
           </div>
         </section>
@@ -929,17 +991,19 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
               </div>
             </div>
 
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={monthCompareData} barCategoryGap="24%" margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
-                <CartesianGrid {...gridProps} />
-                <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
-                <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmt} />
-                <Tooltip content={<ChartTooltip />} />
-                {compareMonths.map((m, i) => (
-                  <Bar key={m} dataKey={MONTH_LABELS[m]} name={`${MONTH_LABELS[m]} expenses`} fill={CAT_COLORS[i % CAT_COLORS.length]} radius={[4,4,0,0]} isAnimationActive />
-                ))}
-              </BarChart>
-            </ResponsiveContainer>
+            {monthCompareData.length === 0 ? <ChartEmptyState height={200} /> : (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={monthCompareData} barCategoryGap="24%" margin={{ top: 8, right: 4, left: 0, bottom: 0 }}>
+                  <CartesianGrid {...gridProps} />
+                  <XAxis dataKey="label" tick={axisTick} axisLine={false} tickLine={false} />
+                  <YAxis tick={axisTick} axisLine={false} tickLine={false} width={44} tickFormatter={tickFmt} />
+                  <Tooltip content={<ChartTooltip />} />
+                  {compareMonths.map((m, i) => (
+                    <Bar key={m} dataKey={MONTH_LABELS[m]} name={`${MONTH_LABELS[m]} expenses`} fill={CAT_COLORS[i % CAT_COLORS.length]} radius={[4,4,0,0]} isAnimationActive />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            )}
 
             {/* Summary table */}
             <div style={{ marginTop: '1rem', overflowX: 'auto', borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
