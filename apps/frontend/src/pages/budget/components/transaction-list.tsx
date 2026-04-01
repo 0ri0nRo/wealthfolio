@@ -1,5 +1,5 @@
 import { BudgetTransaction } from '@/lib/types/budget';
-import { Pencil, Trash2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, Pencil, Trash2 } from 'lucide-react';
 import React, { useEffect, useMemo, useState } from 'react';
 
 interface TransactionListProps {
@@ -11,6 +11,7 @@ interface TransactionListProps {
 
 type FilterType = 'all' | 'income' | 'expense';
 type SortKey = 'date' | 'amount';
+type SortDir = 'desc' | 'asc';
 
 function useIsMobileList(bp = 640) {
   const [is, setIs] = useState(typeof window !== 'undefined' ? window.innerWidth < bp : false);
@@ -41,6 +42,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
 }) => {
   const [filter, setFilter] = useState<FilterType>('all');
   const [sort, setSort]     = useState<SortKey>('date');
+  const [dir, setDir]       = useState<SortDir>('desc');
   const isMobile = useIsMobileList();
 
   const filtered = useMemo(() => {
@@ -48,11 +50,12 @@ export const TransactionList: React.FC<TransactionListProps> = ({
       ? transactions
       : transactions.filter(t => t.type === filter);
     return [...base].sort((a, b) => {
-      if (sort === 'date')   return new Date(b.date).getTime() - new Date(a.date).getTime();
-      if (sort === 'amount') return b.amount - a.amount;
-      return 0;
+      let cmp = 0;
+      if (sort === 'date')   cmp = new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (sort === 'amount') cmp = b.amount - a.amount;
+      return dir === 'desc' ? cmp : -cmp;
     });
-  }, [transactions, filter, sort]);
+  }, [transactions, filter, sort, dir]);
 
   return (
     <div style={{ background: 'var(--card)' }}>
@@ -66,6 +69,7 @@ export const TransactionList: React.FC<TransactionListProps> = ({
         justifyContent: 'space-between',
         gap: '0.5rem',
       }}>
+        {/* Filter pills */}
         <div style={{ display: 'flex', gap: '3px', background: 'var(--muted)', borderRadius: '8px', padding: '3px' }}>
           {FILTERS.map(({ key, label }) => (
             <button
@@ -84,23 +88,44 @@ export const TransactionList: React.FC<TransactionListProps> = ({
             </button>
           ))}
         </div>
-        <div style={{ display: 'flex', gap: '3px', background: 'var(--muted)', borderRadius: '8px', padding: '3px' }}>
-          {SORTS.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setSort(key)}
-              style={{
-                flex: isMobile ? 1 : undefined,
-                padding: '5px 9px', fontSize: '0.72rem', fontWeight: 600,
-                border: 'none', borderRadius: '6px', cursor: 'pointer', transition: 'all 0.15s',
-                background: sort === key ? 'var(--card)' : 'transparent',
-                color:      sort === key ? 'var(--foreground)' : 'var(--muted-foreground)',
-                boxShadow:  sort === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-              }}
-            >
-              {label}
-            </button>
-          ))}
+
+        {/* Sort pills + direction toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <div style={{ display: 'flex', gap: '3px', background: 'var(--muted)', borderRadius: '8px', padding: '3px' }}>
+            {SORTS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setSort(key)}
+                style={{
+                  flex: isMobile ? 1 : undefined,
+                  padding: '5px 9px', fontSize: '0.72rem', fontWeight: 600,
+                  border: 'none', borderRadius: '6px', cursor: 'pointer', transition: 'all 0.15s',
+                  background: sort === key ? 'var(--card)' : 'transparent',
+                  color:      sort === key ? 'var(--foreground)' : 'var(--muted-foreground)',
+                  boxShadow:  sort === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Direction toggle button */}
+          <button
+            onClick={() => setDir(d => d === 'desc' ? 'asc' : 'desc')}
+            title={dir === 'desc' ? 'Decrescente — clicca per crescente' : 'Crescente — clicca per decrescente'}
+            style={{
+              width: 28, height: 28, flexShrink: 0,
+              border: '1px solid var(--border)', borderRadius: '7px',
+              background: 'var(--card)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--foreground)', transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--muted)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--card)'; }}
+          >
+            {dir === 'desc' ? <ArrowDown size={13} /> : <ArrowUp size={13} />}
+          </button>
         </div>
       </div>
 

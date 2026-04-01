@@ -4,7 +4,7 @@ import { useBudget } from '@/hooks/useBudget';
 import { BudgetTransaction } from '@/lib/types/budget';
 import { RecurringEntryAsTx, RecurringExpense, isRecurringActiveInMonth } from '@/lib/types/recurring';
 import {
-  BarChart2, ChevronLeft, ChevronRight, Copy, Edit2, Plus,
+  ArrowDown, ArrowUp, BarChart2, ChevronLeft, ChevronRight, Copy, Edit2, Plus,
   RefreshCw, Search, Settings, SlidersHorizontal, Tag,
   Trash2, TrendingDown, TrendingUp, UtensilsCrossed, Wallet, X,
 } from 'lucide-react';
@@ -54,6 +54,8 @@ const fmtCompact = (n: number) => {
 };
 
 type ActiveTab = 'overview' | 'transactions' | 'yearly' | 'recurring';
+type SortKey = 'date' | 'amount';
+type SortDir = 'desc' | 'asc';
 
 const RECURRING_KEY = 'budget_recurring_ids';
 function loadRecurring(): Set<string> {
@@ -128,7 +130,6 @@ const ActionSheet: React.FC<ActionSheetProps> = ({
 
   useEffect(() => {
     if (t) {
-      // Small delay so the overlay mounts before animating in
       requestAnimationFrame(() => setVisible(true));
       document.body.style.overflow = 'hidden';
     } else {
@@ -156,7 +157,6 @@ const ActionSheet: React.FC<ActionSheetProps> = ({
 
   return (
     <>
-      {/* Overlay */}
       <div
         onClick={onClose}
         style={{
@@ -165,7 +165,6 @@ const ActionSheet: React.FC<ActionSheetProps> = ({
           transition: 'background 0.2s',
         }}
       />
-      {/* Sheet */}
       <div style={{
         position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 90,
         background: 'var(--card)',
@@ -175,12 +174,10 @@ const ActionSheet: React.FC<ActionSheetProps> = ({
         transition: 'transform 0.3s cubic-bezier(0.32,0.72,0,1)',
         paddingBottom: 'max(env(safe-area-inset-bottom), 16px)',
       }}>
-        {/* Handle */}
         <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 4px' }}>
           <div style={{ width: 36, height: 4, borderRadius: 999, background: 'var(--muted)' }} />
         </div>
 
-        {/* Transaction preview */}
         <div style={{
           display: 'flex', alignItems: 'center', gap: '0.75rem',
           padding: '0.6rem 1.25rem 0.9rem', borderBottom: '1px solid var(--border)',
@@ -213,7 +210,6 @@ const ActionSheet: React.FC<ActionSheetProps> = ({
           </span>
         </div>
 
-        {/* Actions */}
         {!isRecurringEntry && (
           <>
             <button
@@ -280,7 +276,6 @@ const ActionSheet: React.FC<ActionSheetProps> = ({
           </span>
         </button>
 
-        {/* Cancel */}
         <div style={{ padding: '8px 1rem 0' }}>
           <button
             onClick={onClose}
@@ -300,7 +295,7 @@ const ActionSheet: React.FC<ActionSheetProps> = ({
   );
 };
 
-// ── Long-press row (replaces SwipeableRow) ────────────────────────────────────
+// ── Long-press row ────────────────────────────────────────────────────────────
 const LongPressRow: React.FC<{
   transaction: any;
   isRecurring: boolean;
@@ -354,9 +349,7 @@ const LongPressRow: React.FC<{
       onMouseDown={!isMobile ? startPress : undefined}
       onMouseUp={!isMobile ? cancelPress : undefined}
       onMouseLeave={!isMobile ? cancelPress : undefined}
-      onClick={() => {
-        if (!isMobile && !isRecurringEntry) onEdit();
-      }}
+      onClick={() => { if (!isMobile && !isRecurringEntry) onEdit(); }}
       onMouseEnter={e => { if (!isMobile) (e.currentTarget as HTMLDivElement).style.background = 'var(--accent)'; }}
     >
       <div style={{
@@ -400,7 +393,7 @@ const LongPressRow: React.FC<{
           <span style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)' }}>{catName} · {dateStr}</span>
           {t.notes && !t.notes.startsWith('recurring:') && (
             <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontStyle: 'italic' }}>
-              💬 {t.notes}
+              {t.notes}
             </p>
           )}
         </div>
@@ -412,7 +405,6 @@ const LongPressRow: React.FC<{
               : `${isIncome ? '+' : '-'}${t.amount.toLocaleString('en-US', { minimumFractionDigits: 2, style: 'currency', currency: 'EUR' }).replace('€', '€')}`}
           </span>
 
-          {/* Desktop action buttons — unchanged */}
           {!isMobile && !isRecurringEntry && (
             <div style={{ display: 'flex', gap: 3 }}>
               {([
@@ -437,7 +429,6 @@ const LongPressRow: React.FC<{
             ><Trash2 size={11} /></button>
           )}
 
-          {/* Mobile: hint icon */}
           {isMobile && (
             <div style={{ width: 20, height: 20, borderRadius: 6, background: 'var(--muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: 0.5 }}>
               <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
@@ -465,7 +456,6 @@ export const BudgetPage: React.FC = () => {
   const [showRecurringModal, setShowRecurringModal] = useState(false);
   const [editingRecurring, setEditingRecurring] = useState<RecurringExpense | null>(null);
 
-  // Action sheet state
   const [sheetTx, setSheetTx]               = useState<any | null>(null);
   const [sheetIsRecurring, setSheetIsRecurring] = useState(false);
   const [sheetIsEntry, setSheetIsEntry]         = useState(false);
@@ -481,6 +471,8 @@ export const BudgetPage: React.FC = () => {
   const [filterAmtMin, setFilterAmtMin] = useState('');
   const [filterAmtMax, setFilterAmtMax] = useState('');
   const [showFilters,  setShowFilters]  = useState(false);
+  const [sortKey,      setSortKey]      = useState<SortKey>('date');
+  const [sortDir,      setSortDir]      = useState<SortDir>('desc');
 
   const [recurringIds, setRecurringIds] = useState<Set<string>>(loadRecurring);
   const toggleRecurring = (id: string) => {
@@ -593,8 +585,13 @@ export const BudgetPage: React.FC = () => {
     if (filterCatId)          r = r.filter((t: any) => Number(t.category?.id ?? t.categoryId) === filterCatId);
     const mn = parseFloat(filterAmtMin); if (!isNaN(mn)) r = r.filter((t: any) => t.amount >= mn);
     const mx = parseFloat(filterAmtMax); if (!isNaN(mx)) r = r.filter((t: any) => t.amount <= mx);
-    return r;
-  }, [combinedTxList, search, filterType, filterCatId, filterAmtMin, filterAmtMax]);
+    return [...r].sort((a: any, b: any) => {
+      let cmp = 0;
+      if (sortKey === 'date')   cmp = new Date(b.date).getTime() - new Date(a.date).getTime();
+      if (sortKey === 'amount') cmp = b.amount - a.amount;
+      return sortDir === 'desc' ? cmp : -cmp;
+    });
+  }, [combinedTxList, search, filterType, filterCatId, filterAmtMin, filterAmtMax, sortKey, sortDir]);
 
   const hasActiveFilter = !!(search || filterType !== 'all' || filterCatId || filterAmtMin || filterAmtMax);
   const clearFilters = () => {
@@ -699,7 +696,6 @@ export const BudgetPage: React.FC = () => {
     } catch (err) { console.error('Error duplicating recurring expense:', err); }
   };
 
-  // Action sheet action handlers (mobile)
   const handleSheetEdit = useCallback(() => {
     closeSheet();
     if (sheetTx && !sheetTx.isRecurringEntry) {
@@ -766,7 +762,6 @@ export const BudgetPage: React.FC = () => {
     ['recurring',    isMobile ? 'Rec.' : 'Recurring'],
   ];
 
-  // Shared row renderer using LongPressRow
   const renderRow = (t: any) => (
     <LongPressRow
       key={t.id}
@@ -784,7 +779,6 @@ export const BudgetPage: React.FC = () => {
   );
 
   return (
-    // NOTE: removed onTouchStart / onTouchEnd from this wrapper — no more swipe-tab conflict
     <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
 
       {/* ── NAVBAR ─────────────────────────────────────────────────────────── */}
@@ -878,7 +872,7 @@ export const BudgetPage: React.FC = () => {
                   <span style={{ fontSize: '1.25rem', fontWeight: 800, letterSpacing: '-0.03em', color: isCurrentMonth ? 'var(--foreground)' : 'var(--color-orange-400)' }}>
                     {selectedMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                   </span>
-                  {!isCurrentMonth && <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-blue-600)', marginLeft: '8px' }}>→ today</span>}
+                  {!isCurrentMonth && <span style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--color-blue-600)', marginLeft: '8px' }}>today</span>}
                 </button>
                 <button onClick={goToNextMonth} style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'var(--muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted-foreground)', WebkitTapHighlightColor: 'transparent' }}><ChevronRight size={16} /></button>
               </div>
@@ -899,7 +893,7 @@ export const BudgetPage: React.FC = () => {
                   <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
                     <div style={{ padding: '0.85rem 1.1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <h2 style={{ fontSize: '0.875rem', fontWeight: 500, color: 'var(--foreground)', margin: 0 }}>Transactions</h2>
-                      <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500 }}>View all →</span>
+                      <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.75rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500 }}>View all</span>
                     </div>
                     <div style={{ maxHeight: 480, overflowY: 'auto' }}>
                       {combinedTxList.length === 0
@@ -918,7 +912,7 @@ export const BudgetPage: React.FC = () => {
                           <p style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>Year-over-year trends &amp; insights</p>
                         </div>
                       </div>
-                      <span style={{ fontSize: '1rem', color: 'var(--muted-foreground)' }}>→</span>
+                      <ChevronRight size={14} color="var(--muted-foreground)" />
                     </div>
                   </div>
                 </div>
@@ -944,12 +938,12 @@ export const BudgetPage: React.FC = () => {
                       <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '1px 0 0' }}>Detailed yearly statistics</p>
                     </div>
                   </div>
-                  <span style={{ fontSize: '1rem', color: 'var(--muted-foreground)' }}>→</span>
+                  <ChevronRight size={14} color="var(--muted-foreground)" />
                 </div>
                 <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden' }}>
                   <div style={{ padding: '0.8rem 1rem', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <h2 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Recent Transactions</h2>
-                    <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}>View all →</span>
+                    <span onClick={() => setActiveTab('transactions')} style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500, WebkitTapHighlightColor: 'transparent' } as React.CSSProperties}>View all</span>
                   </div>
                   {combinedTxList.length === 0
                     ? <EmptyState onAdd={() => setShowAddModal(true)} message="No transactions this month" compact />
@@ -968,6 +962,8 @@ export const BudgetPage: React.FC = () => {
         <div style={{ padding: isMobile ? `1rem 0 calc(var(--mobile-nav-ui-height, 64px) + max(var(--mobile-nav-gap, 8px), env(safe-area-inset-bottom)) + 1rem)` : '1.75rem 1.5rem' }}>
           <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', overflow: 'hidden', margin: isMobile ? '0 1rem' : 0 }}>
             <div style={{ padding: isMobile ? '0.75rem 1rem' : '1rem 1.25rem', borderBottom: '1px solid var(--border)' }}>
+
+              {/* Title row */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                 <h2 style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>
                   All Transactions
@@ -986,19 +982,31 @@ export const BudgetPage: React.FC = () => {
                     <SlidersHorizontal size={13} />
                   </button>
                   <button onClick={() => setShowExportModal(true)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '5px 12px', background: 'var(--foreground)', color: 'var(--background)', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-sans)', WebkitTapHighlightColor: 'transparent' }}>↓ Export</button>
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '5px 12px', background: 'var(--foreground)', color: 'var(--background)', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', fontFamily: 'var(--font-sans)', WebkitTapHighlightColor: 'transparent' }}>
+                    <ArrowDown size={12} />Export
+                  </button>
                 </div>
               </div>
+
+              {/* Search */}
               <div style={{ position: 'relative' }}>
                 <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--muted-foreground)', pointerEvents: 'none' }} />
                 <input type="text" value={search} onChange={e => setSearch(e.target.value)}
                   placeholder="Search description, notes, category…"
                   style={{ width: '100%', padding: '7px 32px 7px 30px', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 10, fontSize: '0.8rem', color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none', boxSizing: 'border-box' }}
                 />
-                {search && <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--muted-foreground)', padding: 2, display: 'flex' }}><X size={12} /></button>}
+                {search && (
+                  <button onClick={() => setSearch('')} style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', cursor: 'pointer', color: 'var(--muted-foreground)', padding: 2, display: 'flex' }}>
+                    <X size={12} />
+                  </button>
+                )}
               </div>
+
+              {/* Filters panel */}
               {showFilters && (
                 <div style={{ marginTop: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
+
+                  {/* Type filter */}
                   <div style={{ display: 'flex', gap: 6 }}>
                     {(['all', 'income', 'expense'] as const).map(t => (
                       <button key={t} onClick={() => setFilterType(t)}
@@ -1007,6 +1015,8 @@ export const BudgetPage: React.FC = () => {
                       </button>
                     ))}
                   </div>
+
+                  {/* Category filter */}
                   {(categories || []).length > 0 && (
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button onClick={() => setFilterCatId(null)} style={{ padding: '3px 10px', borderRadius: 999, fontSize: '0.68rem', fontWeight: 600, cursor: 'pointer', border: '1px solid', WebkitTapHighlightColor: 'transparent', borderColor: filterCatId === null ? 'var(--foreground)' : 'var(--border)', background: filterCatId === null ? 'var(--foreground)' : 'transparent', color: filterCatId === null ? 'var(--background)' : 'var(--muted-foreground)' }}>All</button>
@@ -1016,15 +1026,42 @@ export const BudgetPage: React.FC = () => {
                       ))}
                     </div>
                   )}
+
+                  {/* Amount range */}
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input type="number" placeholder="Min €" value={filterAmtMin} onChange={e => setFilterAmtMin(e.target.value)} style={{ flex: 1, padding: '5px 8px', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.75rem', color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none' }} />
                     <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)' }}>–</span>
                     <input type="number" placeholder="Max €" value={filterAmtMax} onChange={e => setFilterAmtMax(e.target.value)} style={{ flex: 1, padding: '5px 8px', background: 'var(--accent)', border: '1px solid var(--border)', borderRadius: 8, fontSize: '0.75rem', color: 'var(--foreground)', fontFamily: 'var(--font-sans)', outline: 'none' }} />
-                    {hasActiveFilter && <button onClick={clearFilters} style={{ padding: '4px 10px', borderRadius: 8, fontSize: '0.68rem', fontWeight: 600, border: 'none', background: 'var(--destructive)', color: 'var(--background)', cursor: 'pointer', whiteSpace: 'nowrap', WebkitTapHighlightColor: 'transparent' }}>Clear all</button>}
+                    {hasActiveFilter && (
+                      <button onClick={clearFilters} style={{ padding: '4px 10px', borderRadius: 8, fontSize: '0.68rem', fontWeight: 600, border: 'none', background: 'var(--destructive)', color: 'var(--background)', cursor: 'pointer', whiteSpace: 'nowrap', WebkitTapHighlightColor: 'transparent' }}>Clear all</button>
+                    )}
                   </div>
+
+                  {/* Sort key + direction */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: '0.1rem' }}>
+                    <div style={{ display: 'flex', gap: 3, background: 'var(--muted)', borderRadius: 8, padding: 3 }}>
+                      {([['date', 'Date'], ['amount', 'Amount']] as [SortKey, string][]).map(([key, label]) => (
+                        <button key={key} onClick={() => setSortKey(key)}
+                          style={{ padding: '4px 10px', fontSize: '0.72rem', fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', WebkitTapHighlightColor: 'transparent', transition: 'all 0.15s', background: sortKey === key ? 'var(--card)' : 'transparent', color: sortKey === key ? 'var(--foreground)' : 'var(--muted-foreground)', boxShadow: sortKey === key ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <button
+                      onClick={() => setSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                      title={sortDir === 'desc' ? 'Descending — click for ascending' : 'Ascending — click for descending'}
+                      style={{ width: 28, height: 28, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 7, background: 'var(--card)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--foreground)', transition: 'all 0.15s', WebkitTapHighlightColor: 'transparent' }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--muted)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--card)'; }}
+                    >
+                      {sortDir === 'desc' ? <ArrowDown size={13} /> : <ArrowUp size={13} />}
+                    </button>
+                  </div>
+
                 </div>
               )}
             </div>
+
             {filteredTx.length === 0
               ? <EmptyState onAdd={() => setShowAddModal(true)} message={hasActiveFilter ? 'No transactions match your filters' : 'No transactions this month'} />
               : filteredTx.map((t: any) => renderRow(t))
@@ -1077,7 +1114,7 @@ export const BudgetPage: React.FC = () => {
   );
 };
 
-// ── Wrap BudgetPage with ToastProvider at the export level ────────────────────
+// ── Wrap BudgetPage with ToastProvider ────────────────────────────────────────
 const BudgetPageWithToast: React.FC = () => (
   <ToastProvider>
     <BudgetPage />
@@ -1177,7 +1214,6 @@ const StatCards: React.FC<{ cards: StatCard[]; isBalanceHidden: boolean }> = ({ 
   </div>
 );
 
-// ── Stat cards mobile — more compact 2x2 grid ─────────────────────────────────
 const StatCardsMobile: React.FC<{ cards: StatCard[]; isBalanceHidden: boolean }> = ({ cards, isBalanceHidden }) => (
   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
     {cards.map(({ label, value, delta, icon, iconColor, iconBg }, idx) => (
@@ -1213,13 +1249,16 @@ const BalanceSplitCard: React.FC<{ cashBalance: number; bpBalance: number; isBal
     <h3 style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--foreground)', margin: '0 0 0.75rem' }}>Balance Breakdown</h3>
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
       {[
-        { label: 'Cash',          value: cashBalance, color: cashBalance >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)', emoji: '💵' },
-        { label: 'Meal Vouchers', value: bpBalance,   color: bpBalance >= 0   ? 'var(--color-orange-400)' : 'var(--destructive)', emoji: '🎟️' },
-      ].map(({ label, value, color, emoji }) => (
+        { label: 'Cash',          value: cashBalance, color: cashBalance >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)', icon: <Wallet size={13} /> },
+        { label: 'Meal Vouchers', value: bpBalance,   color: bpBalance >= 0   ? 'var(--color-orange-400)' : 'var(--destructive)', icon: <UtensilsCrossed size={13} /> },
+      ].map(({ label, value, color, icon }) => (
         <div key={label} style={{ background: 'var(--accent)', borderRadius: '12px', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <span style={{ fontSize: '0.7rem', color: 'var(--muted-foreground)', fontWeight: 500 }}>{emoji} {label}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--muted-foreground)' }}>
+            {icon}
+            <span style={{ fontSize: '0.7rem', fontWeight: 500 }}>{label}</span>
+          </div>
           <span style={{ fontSize: '1.05rem', fontWeight: 800, color, letterSpacing: isBalanceHidden ? '0.04em' : '-0.02em' }}>{isBalanceHidden ? '€••••••' : fmtEur(value)}</span>
-          <span style={{ fontSize: '0.65rem', fontWeight: 600, color: value >= 0 ? 'var(--success)' : 'var(--destructive)' }}>{value >= 0 ? '▲ Positive' : '▼ Negative'}</span>
+          <span style={{ fontSize: '0.65rem', fontWeight: 600, color: value >= 0 ? 'var(--success)' : 'var(--destructive)' }}>{value >= 0 ? 'Positive' : 'Negative'}</span>
         </div>
       ))}
     </div>
@@ -1247,7 +1286,7 @@ const RecurringMiniTable: React.FC<{
           {active.length > 0 && <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '1px 6px', borderRadius: 999, background: 'var(--muted)', color: 'var(--muted-foreground)' }}>{active.length}</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {active.length > 0 && <span onClick={onViewAll} style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500 }}>Manage →</span>}
+          {active.length > 0 && <span onClick={onViewAll} style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500 }}>Manage</span>}
           <button onClick={onAdd} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '3px 9px', background: 'var(--foreground)', color: 'var(--background)', border: 'none', borderRadius: 7, fontSize: '0.7rem', fontWeight: 600, cursor: 'pointer' }}>
             <Plus size={10} />Add
           </button>
@@ -1285,7 +1324,7 @@ const RecurringMiniTable: React.FC<{
             <div onClick={onViewAll} style={{ padding: '0.6rem 1.1rem', fontSize: '0.72rem', color: 'var(--muted-foreground)', cursor: 'pointer', fontWeight: 500, textAlign: 'center', transition: 'background 0.12s' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              +{entryTxns.length - 6} more — view all →
+              +{entryTxns.length - 6} more — view all
             </div>
           )}
           <div style={{ padding: '0.65rem 1.1rem', background: 'var(--accent)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1314,7 +1353,7 @@ const MobileSavingsCard: React.FC<{ income: number; expenses: number; savings: n
         </span>
       </div>
       <div style={{ background: 'var(--muted)', borderRadius: '999px', height: 8, overflow: 'hidden', marginBottom: '0.75rem' }}>
-        <div style={{ height: '100%', borderRadius: '999px', width: `${spentPct}%`, background: spentPct > 80 ? 'linear-gradient(90deg, var(--color-red-100), var(--destructive))' : 'linear-gradient(90deg, var(--color-green-100), var(--success))', transition: 'width 0.5s ease' }} />
+        <div style={{ height: '100%', borderRadius: '999px', width: `${spentPct}%`, background: spentPct > 80 ? 'var(--destructive)' : 'var(--success)', transition: 'width 0.5s ease' }} />
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
         {[{ label: 'Income', value: income, color: 'var(--success)' }, { label: 'Spent', value: expenses, color: 'var(--destructive)' }, { label: 'Invested', value: savings, color: 'var(--color-purple-600)' }].map(({ label, value, color }) => (
