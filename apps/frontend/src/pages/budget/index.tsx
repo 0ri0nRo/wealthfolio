@@ -336,36 +336,11 @@ const RevolutDonut: React.FC<{
           {isBalanceHidden ? '€•••' : fmtEur(spent)}
         </span>
         <span style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', marginTop: 4, fontWeight: 500 }}>{month}</span>
-        {!isBalanceHidden && (
-          <span style={{ marginTop: 6, fontSize: '0.7rem', fontWeight: 700, padding: '2px 10px', borderRadius: 999, background: isOver ? 'color-mix(in srgb, var(--destructive) 12%, var(--background))' : 'color-mix(in srgb, var(--success) 12%, var(--background))', color: isOver ? 'var(--destructive)' : 'var(--success)' }}>
-            {isOver ? `-${fmtEur(Math.abs(remaining))} over` : `${fmtEur(remaining)} left`}
-          </span>
-        )}
       </div>
     </div>
   );
 };
 
-// ─── NavTile ──────────────────────────────────────────────────────────────────
-const NavTile: React.FC<{
-  icon: React.ReactNode; label: string;
-  iconColor: string; iconBg: string;
-  value?: string; valueColor?: string;
-  onClick: () => void;
-}> = ({ icon, label, iconColor, iconBg, value, valueColor, onClick }) => (
-  <button
-    onClick={onClick}
-    style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8, padding: '0.85rem 0.9rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, cursor: 'pointer', WebkitTapHighlightColor: 'transparent', transition: 'background 0.15s', flex: 1 }}
-    onTouchStart={e => (e.currentTarget.style.background = 'var(--accent)')}
-    onTouchEnd={e => (e.currentTarget.style.background = 'var(--card)')}
-  >
-    <div style={{ width: 32, height: 32, borderRadius: 10, background: iconBg, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</div>
-    <div>
-      <p style={{ fontSize: '0.7rem', fontWeight: 500, color: 'var(--muted-foreground)', margin: 0 }}>{label}</p>
-      {value && <p style={{ fontSize: '0.82rem', fontWeight: 700, color: valueColor ?? 'var(--foreground)', margin: '1px 0 0', letterSpacing: '-0.01em' }}>{value}</p>}
-    </div>
-  </button>
-);
 
 // ─── Category colors ──────────────────────────────────────────────────────────
 const CAT_COLORS = [
@@ -1156,36 +1131,59 @@ export const BudgetPage: React.FC = () => {
 
         {/* Stat pills */}
         <div style={{ padding: '0 1rem', marginBottom: '0.75rem' }}>
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', WebkitOverflowScrolling: 'touch' as any, paddingBottom: 4 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginBottom: 8 }}>
             {[
               { label: 'Income', value: totalIncome, delta: prevIncome > 0 ? totalIncome - prevIncome : undefined, color: 'var(--success)' },
               { label: 'Expenses', value: expensesTotal, delta: prevExpenses > 0 ? expensesTotal - prevExpenses : undefined, color: 'var(--destructive)' },
               { label: 'Savings', value: investments, delta: prevSavings > 0 ? investments - prevSavings : undefined, color: 'var(--color-purple-600)' },
-              { label: 'Cash', value: cashBalance, color: cashBalance >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)' },
-              { label: 'Meal Vouchers', value: bpBalance, color: bpBalance >= 0 ? 'var(--color-orange-400)' : 'var(--destructive)' },
             ].map(({ label, value, delta, color }) => (
-              <div key={label} style={{ flexShrink: 0, background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12, padding: '8px 12px', minWidth: 90 }}>
-                <p style={{ fontSize: '0.58rem', fontWeight: 600, color: 'var(--muted-foreground)', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{label}</p>
-                <p style={{ fontSize: '0.82rem', fontWeight: 800, color, margin: 0, letterSpacing: '-0.015em', whiteSpace: 'nowrap' }}>{isBalanceHidden ? '€•••' : fmtEur(value)}</p>
+              <div key={label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 10px' }}>
+                <div style={{ width: 6, height: 6, borderRadius: '50%', background: color, marginBottom: 8 }} />
+                <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '0 0 3px', fontWeight: 500, letterSpacing: '0.02em' }}>{label}</p>
+                <p style={{ fontSize: '1rem', fontWeight: 800, color, margin: 0, letterSpacing: '-0.025em' }}>{isBalanceHidden ? '€•••' : fmtEur(value)}</p>
                 {delta !== undefined && !isBalanceHidden && (
-                  <span style={{ fontSize: '0.55rem', fontWeight: 700, color: (label === 'Expenses' ? delta < 0 : delta > 0) ? 'var(--success)' : 'var(--destructive)' }}>
+                  <p style={{ fontSize: '0.65rem', color: 'var(--muted-foreground)', margin: '3px 0 0', fontWeight: 400 }}>
                     {delta > 0 ? '+' : ''}{fmtCompact(delta)}
-                  </span>
+                  </p>
                 )}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {[
+              { label: 'Cash', value: cashBalance, color: cashBalance >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)', iconBg: 'color-mix(in srgb, var(--color-blue-600) 12%, var(--background))', icon: <Wallet size={16} color={cashBalance >= 0 ? 'var(--color-blue-600)' : 'var(--destructive)'} /> },
+              { label: 'Meal Vouchers', value: bpBalance, color: bpBalance >= 0 ? 'var(--color-orange-400)' : 'var(--destructive)', iconBg: 'color-mix(in srgb, var(--color-orange-400) 12%, var(--background))', icon: <UtensilsCrossed size={16} color={bpBalance >= 0 ? 'var(--color-orange-400)' : 'var(--destructive)'} /> },
+            ].map(({ label, value, color, iconBg, icon }) => (
+              <div key={label} style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 14, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                <div style={{ width: 38, height: 38, borderRadius: '50%', background: iconBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{icon}</div>
+                <div>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: '0 0 2px', fontWeight: 500 }}>{label}</p>
+                  <p style={{ fontSize: '1.1rem', fontWeight: 800, color, margin: 0, letterSpacing: '-0.025em' }}>{isBalanceHidden ? '€•••' : fmtEur(value)}</p>
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Quick nav tiles */}
-        <div style={{ padding: '0 1rem', marginBottom: '1rem' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-            <NavTile icon={<Search size={14} />} label="Transactions" iconColor="var(--color-blue-600)" iconBg="color-mix(in srgb, var(--color-blue-600) 12%, var(--background))" value={String(combinedTxList.length)} valueColor="var(--foreground)" onClick={() => setActiveTab('transactions')} />
-            <NavTile icon={<RefreshCw size={14} />} label="Recurring" iconColor="var(--color-orange-400)" iconBg="color-mix(in srgb, var(--color-orange-400) 12%, var(--background))" value={isBalanceHidden ? '€•••' : `-${fmtEur(recurringMonthlyTotal)}`} valueColor="var(--destructive)" onClick={() => setActiveTab('recurring')} />
-            <NavTile icon={<BarChart2 size={14} />} label="Annual" iconColor="var(--color-purple-600)" iconBg="color-mix(in srgb, var(--color-purple-600) 12%, var(--background))" onClick={() => setActiveTab('yearly')} />
-            <NavTile icon={<ArrowDown size={14} />} label="Export" iconColor="var(--muted-foreground)" iconBg="var(--muted)" onClick={() => setShowExportModal(true)} />
+
+        {/* Quick nav */}
+          <div style={{ padding: '0 1rem', marginBottom: '1rem' }}>
+            <button
+              onClick={() => setActiveTab('yearly')}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.85rem 1rem', background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 16, cursor: 'pointer', WebkitTapHighlightColor: 'transparent' }}
+              onTouchStart={e => (e.currentTarget.style.background = 'var(--accent)')}
+              onTouchEnd={e => (e.currentTarget.style.background = 'var(--card)')}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 10, background: 'color-mix(in srgb, var(--color-purple-600) 12%, var(--background))', color: 'var(--color-purple-600)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><BarChart2 size={15} /></div>
+                <div style={{ textAlign: 'left' }}>
+                  <p style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)', margin: 0 }}>Annual Report</p>
+                  <p style={{ fontSize: '0.68rem', color: 'var(--muted-foreground)', margin: 0 }}>Year-over-year trends</p>
+                </div>
+              </div>
+              <ChevronRight size={16} color="var(--muted-foreground)" />
+            </button>
           </div>
-        </div>
 
         {/* Monthly budget progress */}
         {totalIncome > 0 && (
