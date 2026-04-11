@@ -15,6 +15,14 @@ interface CountryExposure {
 
 type GeographicRegion = "Europe" | "Americas" | "Asia" | "Oceania" | "Africa" | "Other";
 
+// ── NEW: Market classification type ──────────────────────────────────────────
+// "Unclassified" catches any country whose ISO code is not in MARKET_TYPE,
+// ensuring the three displayed buckets always sum to exactly 100%.
+// "CashOther" = 100% minus sum of all country %, representing Cash / Digital
+// Assets / any non-geographic allocation that has no country breakdown.
+type MarketType = "Developed" | "Emerging" | "Frontier" | "Unclassified" | "CashOther";
+
+
 interface RegionSummary {
   name: GeographicRegion;
   value: number;
@@ -37,6 +45,29 @@ const REGION_COLORS: Record<GeographicRegion, string> = {
   Oceania:  "var(--chart-4)",
   Africa:   "var(--chart-2)",
   Other:    "var(--chart-8)",
+};
+
+// ── NEW: Static country → market type mapping (MSCI-aligned) ─────────────────
+// Developed: MSCI Developed Markets members
+// Emerging:  MSCI Emerging Markets members
+// Frontier:  remaining / pre-emerging
+const MARKET_TYPE: Record<string, MarketType> = {
+  // Developed
+  US: "Developed", CA: "Developed", GB: "Developed", DE: "Developed",
+  FR: "Developed", CH: "Developed", NL: "Developed", SE: "Developed",
+  DK: "Developed", IE: "Developed", IT: "Developed", ES: "Developed",
+  NO: "Developed", BE: "Developed", FI: "Developed", AT: "Developed",
+  PT: "Developed", LU: "Developed", JP: "Developed", AU: "Developed",
+  NZ: "Developed", HK: "Developed", SG: "Developed",
+  // Emerging
+  CN: "Emerging", IN: "Emerging", KR: "Emerging", TW: "Emerging",
+  BR: "Emerging", MX: "Emerging", ZA: "Emerging", SA: "Emerging",
+  AE: "Emerging", MY: "Emerging", TH: "Emerging", ID: "Emerging",
+  PL: "Emerging", MO: "Emerging",
+  // Frontier
+  VN: "Frontier", NG: "Frontier", KE: "Frontier", PK: "Frontier",
+  BD: "Frontier", MA: "Frontier", EG: "Frontier", LK: "Frontier",
+  BH: "Frontier", KW: "Frontier", OM: "Frontier", TN: "Frontier",
 };
 
 const CHART_TOKENS = [
@@ -109,7 +140,8 @@ interface AllocationCategory {
 }
 
 interface AllocationsResponse {
-  regions: { categories: AllocationCategory[] };
+  regions:      { categories: AllocationCategory[] };
+  assetClasses: { categories: AllocationCategory[] };
 }
 
 const REGION_ID_MAP: Record<string, GeographicRegion> = {
@@ -125,9 +157,12 @@ const REGION_ID_MAP: Record<string, GeographicRegion> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function useGeographicExposure(accountId: string) {
-  const [countries, setCountries] = useState<CountryExposure[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [countries,   setCountries]   = useState<CountryExposure[]>([]);
+  const [totalPct,    setTotalPct]    = useState<number>(100);
+  const [cashPct,     setCashPct]     = useState<number>(0);
+  const [digitalPct,  setDigitalPct]  = useState<number>(0);
+  const [isLoading,   setIsLoading]   = useState(true);
+  const [error,       setError]       = useState<string | null>(null);
 
   useEffect(() => {
     setIsLoading(true);
@@ -138,33 +173,52 @@ function useGeographicExposure(accountId: string) {
         return res.json() as Promise<AllocationsResponse>;
       })
       .then((data) => {
+        // ── Asset class percentages ───────────────────────────────────────
+        let cash = 0, digital = 0;
+        for (const ac of data.assetClasses?.categories ?? []) {
+          if (ac.categoryId === "CASH")           cash    = ac.percentage;
+          if (ac.categoryId === "DIGITAL_ASSETS") digital = ac.percentage;
+        }
+        setCashPct(cash);
+        setDigitalPct(digital);
+
+        // ── Country breakdown ─────────────────────────────────────────────
         let idx = 0;
         const result: CountryExposure[] = [];
+        let sumPct = 0;
+
         for (const region of data.regions.categories) {
+          if (region.categoryId === "__UNKNOWN__") continue;
           if (!region.children?.length) continue;
+
           const mappedRegion: GeographicRegion = REGION_ID_MAP[region.categoryId] ?? "Other";
           for (const child of region.children) {
+            if (child.categoryId === "__UNKNOWN__") continue;
+
             const code = child.categoryId.startsWith("country_")
               ? child.categoryId.slice(8).toUpperCase()
               : child.categoryId.toUpperCase();
             result.push({
               code,
-              name: child.categoryName,
-              value: child.percentage,
+              name:   child.categoryName,
+              value:  child.percentage,
               region: mappedRegion,
-              color: CHART_TOKENS[idx % CHART_TOKENS.length],
+              color:  CHART_TOKENS[idx % CHART_TOKENS.length],
             });
+            sumPct += child.percentage;
             idx++;
           }
         }
+
         result.sort((a, b) => b.value - a.value);
         setCountries(result);
+        setTotalPct(parseFloat(sumPct.toFixed(2)));
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setIsLoading(false));
   }, [accountId]);
 
-  return { countries, isLoading, error };
+  return { countries, totalPct, cashPct, digitalPct, isLoading, error };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -337,6 +391,349 @@ function RegionCards({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// NEW: MarketTypePieChart
+// Full donut chart (Recharts) for Developed / Emerging / Frontier breakdown.
+// Active slice shows name + % in the centre; legend on the right lists every
+// bucket with icon, count and top-5 flags.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MarketTypeChart
+// Professional donut + structured legend with drill-down.
+// Slices: Developed | Emerging | Frontier | Cash | Digital Assets | (Other)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Colour palette — all CSS vars, no emoji
+const MARKET_PALETTE: Record<string, string> = {
+  Developed:      "var(--chart-3)",
+  Emerging:       "var(--chart-6)",
+  Frontier:       "var(--chart-2)",
+  Unclassified:   "var(--chart-8)",
+  Cash:           "var(--chart-4)",
+  "Digital Assets": "var(--chart-1)",
+};
+
+interface MarketSlice {
+  id:          string;          // unique key
+  label:       string;          // display name
+  value:       number;          // percentage
+  color:       string;
+  countries:   CountryExposure[] | null; // null = non-geographic slice
+}
+
+const renderMarketActiveShape = (props: any) => {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload } = props;
+  const sub = payload.countries != null
+    ? `${payload.countries.length} ${payload.countries.length === 1 ? "country" : "countries"}`
+    : "Non-geographic";
+  return (
+    <g>
+      <text x={cx} y={cy - 16} textAnchor="middle"
+        fill="var(--foreground)" fontSize={11} fontWeight={700} letterSpacing="0.02em">
+        {payload.label}
+      </text>
+      <text x={cx} y={cy + 10} textAnchor="middle"
+        fill={fill} fontSize={24} fontWeight={800}>
+        {payload.value.toFixed(1)}%
+      </text>
+      <text x={cx} y={cy + 27} textAnchor="middle"
+        fill="var(--muted-foreground)" fontSize={9} letterSpacing="0.03em">
+        {sub.toUpperCase()}
+      </text>
+      <Sector cx={cx} cy={cy} innerRadius={innerRadius} outerRadius={outerRadius + 5}
+        startAngle={startAngle} endAngle={endAngle} fill={fill} />
+      <Sector cx={cx} cy={cy} innerRadius={outerRadius + 9} outerRadius={outerRadius + 11}
+        startAngle={startAngle} endAngle={endAngle} fill={fill} opacity={0.4} />
+    </g>
+  );
+};
+
+function MarketTypeChart({
+  countries,
+  totalPct,
+  cashPct,
+  digitalPct,
+}: {
+  countries:   CountryExposure[];
+  totalPct:    number;
+  cashPct:     number;
+  digitalPct:  number;
+}) {
+  const [activeIndex,   setActiveIndex]   = useState(0);
+  const [drillTarget,   setDrillTarget]   = useState<MarketSlice | null>(null);
+
+  // ── Build slices ────────────────────────────────────────────────────────────
+  const slices = useMemo<MarketSlice[]>(() => {
+    // Equity buckets
+    const buckets = new Map<string, { value: number; countries: CountryExposure[] }>();
+    for (const id of ["Developed", "Emerging", "Frontier", "Unclassified"]) {
+      buckets.set(id, { value: 0, countries: [] });
+    }
+    for (const c of countries) {
+      const key = MARKET_TYPE[c.code] ?? "Unclassified";
+      const b   = buckets.get(key)!;
+      b.value  += c.value;
+      b.countries.push(c);
+    }
+
+    const result: MarketSlice[] = [];
+
+    for (const [id, b] of buckets) {
+      if (b.value < 0.005) continue;
+      result.push({
+        id,
+        label:    id,
+        value:    parseFloat(b.value.toFixed(2)),
+        color:    MARKET_PALETTE[id] ?? "var(--chart-8)",
+        countries: b.countries.sort((a, z) => z.value - a.value),
+      });
+    }
+
+    // Sort equity buckets desc
+    result.sort((a, z) => z.value - a.value);
+
+    // Non-geographic slices
+    if (cashPct > 0.005) {
+      result.push({
+        id:        "Cash",
+        label:     "Cash",
+        value:     parseFloat(cashPct.toFixed(2)),
+        color:     MARKET_PALETTE["Cash"],
+        countries: null,
+      });
+    }
+    if (digitalPct > 0.005) {
+      result.push({
+        id:        "Digital Assets",
+        label:     "Digital Assets",
+        value:     parseFloat(digitalPct.toFixed(2)),
+        color:     MARKET_PALETTE["Digital Assets"],
+        countries: null,
+      });
+    }
+
+    // Floating residual (rounding gaps, etc.)
+    const used = result.reduce((s, e) => s + e.value, 0);
+    const residual = parseFloat((100 - used).toFixed(2));
+    if (residual > 0.1) {
+      result.push({
+        id:        "Other",
+        label:     "Other",
+        value:     residual,
+        color:     "var(--muted-foreground)",
+        countries: null,
+      });
+    }
+
+    return result;
+  }, [countries, totalPct, cashPct, digitalPct]);
+
+  if (countries.length === 0) return null;
+
+  // ── Drill-down panel ────────────────────────────────────────────────────────
+  if (drillTarget?.countries) {
+    const s = drillTarget;
+    const countries = drillTarget.countries;
+    const maxVal = countries[0]?.value ?? 1;
+
+    return (
+      <div className="rounded-lg border bg-card p-4">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-block h-3 w-3 rounded-sm"
+              style={{ background: s.color }}
+            />
+            <p className="text-xs font-semibold uppercase tracking-widest text-foreground">
+              {s.label}
+            </p>
+            <span className="text-xs text-muted-foreground">
+              — {s.value.toFixed(1)}% of portfolio
+            </span>
+          </div>
+          <button
+            onClick={() => setDrillTarget(null)}
+            className="text-xs font-medium text-muted-foreground hover:text-foreground transition-colors border border-border rounded px-2 py-0.5"
+          >
+            Back
+          </button>
+        </div>
+
+        {/* Country rows */}
+        <div className="flex flex-col gap-0.5">
+          {countries.map((c) => (
+            <div key={c.code} className="flex items-center gap-2.5 px-1 py-1.5">
+              <span className="shrink-0 text-sm" style={{ minWidth: 22 }}>
+                {FLAGS[c.code] ?? ""}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-xs font-medium text-foreground">{c.name}</span>
+                  <span className="shrink-0 text-xs font-bold tabular-nums" style={{ color: s.color }}>
+                    {c.value.toFixed(1)}%
+                  </span>
+                </div>
+                <div className="mt-1 h-px overflow-hidden rounded-full bg-muted">
+                  <div
+                    className="h-full rounded-full"
+                    style={{ width: `${(c.value / maxVal) * 100}%`, background: s.color }}
+                  />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Main view ───────────────────────────────────────────────────────────────
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      {/* Section title */}
+      <p className="mb-4 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+        Market type
+      </p>
+
+      <div className="flex flex-col gap-6 md:flex-row md:items-center md:gap-8">
+
+        {/* ── Donut ─────────────────────────────────────────────────────── */}
+        <div className="mx-auto h-52 w-52 shrink-0 md:mx-0">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                {...({ activeIndex, activeShape: renderMarketActiveShape } as any)}
+                data={slices}
+                cx="50%"
+                cy="50%"
+                innerRadius={64}
+                outerRadius={86}
+                dataKey="value"
+                onMouseEnter={(_: any, i: number) => setActiveIndex(i)}
+                onClick={(_: any, i: number) => {
+                  const s = slices[i];
+                  if (s.countries !== null) setDrillTarget(s);
+                }}
+                style={{ cursor: "pointer" }}
+              >
+                {slices.map((entry) => (
+                  <Cell
+                    key={entry.id}
+                    fill={entry.color}
+                    stroke="var(--card)"
+                    strokeWidth={2}
+                  />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* ── Legend ────────────────────────────────────────────────────── */}
+        <div className="flex-1 min-w-0">
+          {/* Column headers */}
+          <div className="mb-2 grid grid-cols-[1fr_56px_80px] items-center gap-2 px-1">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Segment
+            </span>
+            <span className="text-right text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Alloc.
+            </span>
+            <span className="text-right text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Countries
+            </span>
+          </div>
+
+          {/* Divider */}
+          <div className="mb-2 h-px bg-border" />
+
+          {/* Rows */}
+          <div className="flex flex-col">
+            {slices.map((s, i) => {
+              const isDrillable = s.countries !== null;
+              const isActive    = activeIndex === i;
+              return (
+                <div
+                  key={s.id}
+                  className={`grid grid-cols-[1fr_56px_80px] items-center gap-2 rounded-md px-1 py-2 transition-colors ${
+                    isActive ? "bg-accent/60" : "hover:bg-accent/30"
+                  } ${isDrillable ? "cursor-pointer" : "cursor-default"}`}
+                  onMouseEnter={() => setActiveIndex(i)}
+                  onClick={() => { if (isDrillable) setDrillTarget(s); }}
+                >
+                  {/* Colour + label */}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                      style={{ background: s.color }}
+                    />
+                    <span className="text-xs font-semibold text-foreground truncate">
+                      {s.label}
+                    </span>
+                    {/* "No geographic data" badge for non-drillable */}
+                    {!isDrillable && (
+                      <span className="hidden sm:inline-block shrink-0 rounded border border-border px-1 py-px text-[9px] text-muted-foreground">
+                        non-geographic
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Allocation % */}
+                  <span
+                    className="text-right text-xs font-bold tabular-nums"
+                    style={{ color: s.color }}
+                  >
+                    {s.value.toFixed(1)}%
+                  </span>
+
+                  {/* Country count or dash + drill hint */}
+                  <div className="flex items-center justify-end gap-1">
+                    {isDrillable ? (
+                      <>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {s.countries!.length}
+                        </span>
+                        <svg
+                          width="10" height="10" viewBox="0 0 10 10"
+                          className="shrink-0 text-muted-foreground"
+                          fill="none" stroke="currentColor" strokeWidth="1.5"
+                        >
+                          <path d="M3.5 2.5 L6.5 5 L3.5 7.5" />
+                        </svg>
+                      </>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Divider + total */}
+          <div className="mt-2 h-px bg-border" />
+          <div className="mt-2 grid grid-cols-[1fr_56px_80px] items-center gap-2 px-1">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Total
+            </span>
+            <span className="text-right text-xs font-bold tabular-nums text-foreground">
+              {slices.reduce((s, e) => s + e.value, 0).toFixed(1)}%
+            </span>
+            <span />
+          </div>
+
+          {/* Drill hint */}
+          <p className="mt-3 text-[10px] text-muted-foreground">
+            Click a market segment to view individual country breakdown.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CountryList
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -425,7 +822,7 @@ function CountryList({
 type ViewMode = "split" | "map" | "chart";
 
 export default function GeographicExposurePage({ accountId }: GeographicExposurePageProps) {
-  const { countries: allCountries, isLoading, error } = useGeographicExposure(accountId);
+  const { countries: allCountries, totalPct, cashPct, digitalPct, isLoading, error } = useGeographicExposure(accountId);
 
   const [activeIndex, setActiveIndex]       = useState(0);
   const [showAll, setShowAll]               = useState(false);
@@ -487,8 +884,6 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  // pb-safe-nav: padding-bottom accounts for the fixed mobile nav bar so the
-  // last item is always reachable. Uses env(safe-area-inset-bottom) + nav height.
 
   return (
     <div
@@ -525,7 +920,7 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         </div>
       </div>
 
-      {/* ── Region filter pills: 2-col grid on mobile, flex-wrap on sm+ ───── */}
+      {/* ── Region filter pills ────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
         <button
           onClick={() => setSelectedRegion(null)}
@@ -559,10 +954,9 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
       </div>
 
       {/* ════════════════════════════════════════════════════════════════════ */}
-      {/* MOBILE layout (< md): stacked cards, no fixed heights               */}
+      {/* MOBILE layout (< md)                                                */}
       {/* ════════════════════════════════════════════════════════════════════ */}
 
-      {/* Region summary cards */}
       <div className="md:hidden">
         <RegionCards
           regionData={regionData}
@@ -571,7 +965,6 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         />
       </div>
 
-      {/* Donut chart */}
       <div className="md:hidden rounded-lg border bg-card p-4">
         <p className="mb-2 text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Allocation
@@ -599,7 +992,6 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         </div>
       </div>
 
-      {/* Country list — no maxHeight cap, expands freely */}
       <div className="md:hidden rounded-lg border bg-card p-4">
         <p className="mb-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">
           Countries
@@ -616,8 +1008,18 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         />
       </div>
 
+      {/* ── Market type chart — mobile ─────────────────────────────────── */}
+      <div className="md:hidden">
+        <MarketTypeChart
+          countries={allCountries}
+          totalPct={totalPct}
+          cashPct={cashPct}
+          digitalPct={digitalPct}
+        />
+      </div>
+
       {/* ════════════════════════════════════════════════════════════════════ */}
-      {/* DESKTOP layout (≥ md): split / map / chart panels side by side       */}
+      {/* DESKTOP layout (≥ md)                                               */}
       {/* ════════════════════════════════════════════════════════════════════ */}
 
       <div
@@ -661,7 +1063,6 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
               </ResponsiveContainer>
             </div>
 
-            {/* List — remove maxHeight when expanded */}
             <div
               className="mt-2 overflow-y-auto"
               style={!showAll && !selectedRegion ? { maxHeight: 320 } : undefined}
@@ -687,6 +1088,16 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
           regionData={regionData}
           selectedRegion={selectedRegion}
           onSelect={setSelectedRegion}
+        />
+      </div>
+
+      {/* ── Market type chart — desktop ────────────────────────────────── */}
+      <div className="hidden md:block">
+        <MarketTypeChart
+          countries={allCountries}
+          totalPct={totalPct}
+          cashPct={cashPct}
+          digitalPct={digitalPct}
         />
       </div>
 
