@@ -159,6 +159,7 @@ const REGION_ID_MAP: Record<string, GeographicRegion> = {
 function useGeographicExposure(accountId: string) {
   const [countries,   setCountries]   = useState<CountryExposure[]>([]);
   const [totalPct,    setTotalPct]    = useState<number>(100);
+  const [equityPct,   setEquityPct]   = useState<number>(100);
   const [cashPct,     setCashPct]     = useState<number>(0);
   const [digitalPct,  setDigitalPct]  = useState<number>(0);
   const [isLoading,   setIsLoading]   = useState(true);
@@ -174,11 +175,13 @@ function useGeographicExposure(accountId: string) {
       })
       .then((data) => {
         // ── Asset class percentages ───────────────────────────────────────
-        let cash = 0, digital = 0;
+        let equity = 0, cash = 0, digital = 0;
         for (const ac of data.assetClasses?.categories ?? []) {
+          if (ac.categoryId === "EQUITY")         equity  = ac.percentage;
           if (ac.categoryId === "CASH")           cash    = ac.percentage;
           if (ac.categoryId === "DIGITAL_ASSETS") digital = ac.percentage;
         }
+        setEquityPct(equity || 100); // fallback to 100 so scale = 1 if missing
         setCashPct(cash);
         setDigitalPct(digital);
 
@@ -218,7 +221,7 @@ function useGeographicExposure(accountId: string) {
       .finally(() => setIsLoading(false));
   }, [accountId]);
 
-  return { countries, totalPct, cashPct, digitalPct, isLoading, error };
+  return { countries, totalPct, equityPct, cashPct, digitalPct, isLoading, error };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -450,21 +453,14 @@ const renderMarketActiveShape = (props: any) => {
 
 function MarketTypeChart({
   countries,
-  totalPct,
-  cashPct,
-  digitalPct,
 }: {
-  countries:   CountryExposure[];
-  totalPct:    number;
-  cashPct:     number;
-  digitalPct:  number;
+  countries: CountryExposure[];
 }) {
-  const [activeIndex,   setActiveIndex]   = useState(0);
-  const [drillTarget,   setDrillTarget]   = useState<MarketSlice | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [drillTarget, setDrillTarget] = useState<MarketSlice | null>(null);
 
   // ── Build slices ────────────────────────────────────────────────────────────
   const slices = useMemo<MarketSlice[]>(() => {
-    // Equity buckets
     const buckets = new Map<string, { value: number; countries: CountryExposure[] }>();
     for (const id of ["Developed", "Emerging", "Frontier", "Unclassified"]) {
       buckets.set(id, { value: 0, countries: [] });
@@ -477,42 +473,19 @@ function MarketTypeChart({
     }
 
     const result: MarketSlice[] = [];
-
     for (const [id, b] of buckets) {
       if (b.value < 0.005) continue;
       result.push({
         id,
-        label:    id,
-        value:    parseFloat(b.value.toFixed(2)),
-        color:    MARKET_PALETTE[id] ?? "var(--chart-8)",
+        label:     id,
+        value:     parseFloat(b.value.toFixed(2)),
+        color:     MARKET_PALETTE[id] ?? "var(--chart-8)",
         countries: b.countries.sort((a, z) => z.value - a.value),
       });
     }
-
-    // Sort equity buckets desc
     result.sort((a, z) => z.value - a.value);
 
-    // Non-geographic slices
-    if (cashPct > 0.005) {
-      result.push({
-        id:        "Cash",
-        label:     "Cash",
-        value:     parseFloat(cashPct.toFixed(2)),
-        color:     MARKET_PALETTE["Cash"],
-        countries: null,
-      });
-    }
-    if (digitalPct > 0.005) {
-      result.push({
-        id:        "Digital Assets",
-        label:     "Digital Assets",
-        value:     parseFloat(digitalPct.toFixed(2)),
-        color:     MARKET_PALETTE["Digital Assets"],
-        countries: null,
-      });
-    }
-
-    // Floating residual (rounding gaps, etc.)
+    // Absorb rounding gap
     const used = result.reduce((s, e) => s + e.value, 0);
     const residual = parseFloat((100 - used).toFixed(2));
     if (residual > 0.1) {
@@ -526,16 +499,15 @@ function MarketTypeChart({
     }
 
     return result;
-  }, [countries, totalPct, cashPct, digitalPct]);
+  }, [countries]);
 
   if (countries.length === 0) return null;
 
   // ── Drill-down panel ────────────────────────────────────────────────────────
-  if (drillTarget?.countries) {
-    const s = drillTarget;
-    const countries = drillTarget.countries;
-    const maxVal = countries[0]?.value ?? 1;
-
+  if (drillTarget !== null && drillTarget.countries !== null) {
+    const s        = drillTarget;
+    const items    = s.countries as CountryExposure[]; // narrowed: non-null
+    const maxVal   = items[0]?.value ?? 1;
     return (
       <div className="rounded-lg border bg-card p-4">
         {/* Header */}
@@ -549,7 +521,7 @@ function MarketTypeChart({
               {s.label}
             </p>
             <span className="text-xs text-muted-foreground">
-              — {s.value.toFixed(1)}% of portfolio
+              — {s.value.toFixed(1)}% of equity
             </span>
           </div>
           <button
@@ -562,7 +534,7 @@ function MarketTypeChart({
 
         {/* Country rows */}
         <div className="flex flex-col gap-0.5">
-          {countries.map((c) => (
+          {items.map((c) => (
             <div key={c.code} className="flex items-center gap-2.5 px-1 py-1.5">
               <span className="shrink-0 text-sm" style={{ minWidth: 22 }}>
                 {FLAGS[c.code] ?? ""}
@@ -822,7 +794,7 @@ function CountryList({
 type ViewMode = "split" | "map" | "chart";
 
 export default function GeographicExposurePage({ accountId }: GeographicExposurePageProps) {
-  const { countries: allCountries, totalPct, cashPct, digitalPct, isLoading, error } = useGeographicExposure(accountId);
+  const { countries: allCountries, isLoading, error } = useGeographicExposure(accountId);
 
   const [activeIndex, setActiveIndex]       = useState(0);
   const [showAll, setShowAll]               = useState(false);
@@ -1008,14 +980,8 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         />
       </div>
 
-      {/* ── Market type chart — mobile ─────────────────────────────────── */}
       <div className="md:hidden">
-        <MarketTypeChart
-          countries={allCountries}
-          totalPct={totalPct}
-          cashPct={cashPct}
-          digitalPct={digitalPct}
-        />
+        <MarketTypeChart countries={allCountries} />
       </div>
 
       {/* ════════════════════════════════════════════════════════════════════ */}
@@ -1091,14 +1057,8 @@ export default function GeographicExposurePage({ accountId }: GeographicExposure
         />
       </div>
 
-      {/* ── Market type chart — desktop ────────────────────────────────── */}
       <div className="hidden md:block">
-        <MarketTypeChart
-          countries={allCountries}
-          totalPct={totalPct}
-          cashPct={cashPct}
-          digitalPct={digitalPct}
-        />
+        <MarketTypeChart countries={allCountries} />
       </div>
 
     </div>
