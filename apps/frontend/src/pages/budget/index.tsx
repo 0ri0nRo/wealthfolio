@@ -765,14 +765,14 @@ export const BudgetPage: React.FC = () => {
 
   // ─── CONDITIONAL RETURNS (only after ALL hooks) ───────────────────────────
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--background)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh', background: 'var(--background)' }}>
       <div style={{ width: 28, height: 28, border: '2.5px solid var(--foreground)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 
   if (error) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--background)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh', background: 'var(--background)' }}>
       <div style={{ textAlign: 'center', padding: '0 1.5rem' }}>
         <p style={{ color: 'var(--destructive)', fontWeight: 600, marginBottom: 8 }}>Error loading budget data</p>
         <p style={{ color: 'var(--muted-foreground)', marginBottom: 24 }}>{error}</p>
@@ -787,7 +787,7 @@ export const BudgetPage: React.FC = () => {
   if (!isMobile) {
     const TABS: [ActiveTab, string][] = [['overview', 'Overview'], ['transactions', 'Transactions'], ['yearly', 'Annual'], ['recurring', 'Recurring']];
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
+      <div style={{ minHeight: '100dvh', background: 'var(--background)' }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', padding: '0.75rem 1rem' }}>
             <nav style={{ display: 'inline-flex', alignItems: 'center', background: 'color-mix(in srgb, var(--muted) 60%, transparent)', borderRadius: '999px', padding: '3px', gap: '2px' }}>
@@ -963,7 +963,7 @@ export const BudgetPage: React.FC = () => {
 
   if (activeTab === 'yearly') {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
+      <div style={{ minHeight: '100dvh', background: 'var(--background)' }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '0.8rem 1rem' }}>
             <button onClick={() => setActiveTab('overview')} style={{ width: 34, height: 34, border: 'none', borderRadius: 10, background: 'var(--muted)', color: 'var(--foreground)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}><ChevronLeft size={16} /></button>
@@ -981,7 +981,7 @@ export const BudgetPage: React.FC = () => {
 
   if (activeTab === 'recurring') {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
+      <div style={{ minHeight: '100dvh', background: 'var(--background)' }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.8rem 1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1002,7 +1002,7 @@ export const BudgetPage: React.FC = () => {
 
   if (activeTab === 'transactions') {
     return (
-      <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
+      <div style={{ minHeight: '100dvh', background: 'var(--background)' }}>
         <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', borderBottom: '1px solid var(--border)', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <div style={{ padding: '0.8rem 1rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
@@ -1071,7 +1071,7 @@ export const BudgetPage: React.FC = () => {
 
   // ── MOBILE OVERVIEW ───────────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--background)' }}>
       {/* Top Nav */}
       <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'color-mix(in srgb, var(--background) 92%, transparent)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)', paddingTop: 'env(safe-area-inset-top, 0px)', borderBottom: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.7rem 1rem' }}>

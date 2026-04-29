@@ -42,7 +42,7 @@ const colorClasses = {
 
 export function ConnectEmptyState() {
   return (
-    <div className="flex min-h-[calc(100vh-12rem)] flex-col items-center justify-center px-4 py-6">
+    <div className="flex min-h-[calc(100dvh-12rem)] flex-col items-center justify-center px-4 py-6">
       <div className="w-full max-w-3xl space-y-8 sm:space-y-12">
         {/* Header with Logo */}
         <header className="text-center">

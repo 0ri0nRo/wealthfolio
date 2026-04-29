@@ -63,8 +63,8 @@ export default function PortfolioInsightsPage() {
     [selectedAccount],
   );
 
-  // Reuse the same account selector for the geography tab
-  const geographyActions = useMemo(
+  // Reuse the same account selector for the ETF tab
+  const etfActions = useMemo(
     () => (
       <AccountSelector
         selectedAccount={selectedAccount}
@@ -93,14 +93,14 @@ export default function PortfolioInsightsPage() {
       },
       {
         value: "geography",
-        label: "Geography",
-        icon: Icons.Globe,            // use whichever globe/map icon is available in @wealthfolio/ui
+        label: "ETFs",
+        icon: Icons.PieChart,
         content: (
           <Suspense fallback={<DashboardLoader />}>
             <GeographicExposurePage accountId={accountId} />
           </Suspense>
         ),
-        actions: geographyActions,
+        actions: etfActions,
       },
       {
         value: "performance",
@@ -123,7 +123,7 @@ export default function PortfolioInsightsPage() {
         ),
       },
     ],
-    [accountId, holdingsActions, geographyActions],
+    [accountId, holdingsActions, etfActions],
   );
 
   return <SwipablePage views={views} defaultView="holdings" withPadding={true} />;

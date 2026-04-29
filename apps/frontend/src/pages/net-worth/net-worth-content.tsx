@@ -4,26 +4,26 @@ import type { DateRange } from "@/lib/types";
 import { formatDateISO } from "@/lib/utils";
 import Balance from "@/pages/dashboard/balance";
 import {
-  GainAmount,
-  GainPercent,
-  IntervalSelector,
-  PrivacyAmount,
-  getInitialIntervalData,
-  usePersistentState,
-  type TimePeriod,
+    GainAmount,
+    GainPercent,
+    IntervalSelector,
+    PrivacyAmount,
+    getInitialIntervalData,
+    usePersistentState,
+    type TimePeriod,
 } from "@wealthfolio/ui";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
+    Collapsible,
+    CollapsibleContent,
+    CollapsibleTrigger,
 } from "@wealthfolio/ui/components/ui/collapsible";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
 } from "@wealthfolio/ui/components/ui/tooltip";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -405,7 +405,7 @@ export function NetWorthContent({ onAddAsset, onAddLiability }: NetWorthContentP
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-dvh flex-col">
       {/* Top section: Net Worth value */}
       <div className="px-4 pb-1 pt-2 md:px-6 md:pb-2 lg:px-8">
         <div className="flex items-start gap-2">

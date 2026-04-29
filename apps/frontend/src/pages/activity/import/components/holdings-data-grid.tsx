@@ -224,7 +224,7 @@ export function HoldingsDataGrid({ rows, onDataChange, onSymbolSelect }: Holding
 
   return (
     <>
-      <DataGrid {...dataGrid} stretchColumns height="calc(100vh - 420px)" className="text-sm" />
+      <DataGrid {...dataGrid} stretchColumns height="calc(100dvh - 420px)" className="text-sm" />
 
       <CreateCustomAssetDialog
         open={customAssetDialog.open}

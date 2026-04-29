@@ -811,7 +811,7 @@ export function ImportReviewGrid({
 
       {/* Data grid with context menu support */}
       <div className="min-h-0 flex-1" onContextMenu={handleContextMenu} onWheel={handleWheel}>
-        <DataGrid {...dataGrid} stretchColumns height="calc(100vh - 360px)" className="text-sm" />
+        <DataGrid {...dataGrid} stretchColumns height="calc(100dvh - 360px)" className="text-sm" />
       </div>
 
       {/* Context menu */}

@@ -2,10 +2,10 @@ import { HistoryChart } from "@/components/history-chart";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useValuationHistory } from "@/hooks/use-valuation-history";
 import {
-  HoldingType,
-  isAlternativeAssetKind,
-  PORTFOLIO_ACCOUNT_ID,
-  type AssetKind,
+    HoldingType,
+    isAlternativeAssetKind,
+    PORTFOLIO_ACCOUNT_ID,
+    type AssetKind,
 } from "@/lib/constants";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { DateRange, TimePeriod } from "@/lib/types";
@@ -13,11 +13,11 @@ import { calculatePerformanceMetrics } from "@/lib/utils";
 import { PortfolioUpdateTrigger } from "@/pages/dashboard/portfolio-update-trigger";
 import type { TimePeriod as UITimePeriod } from "@wealthfolio/ui";
 import {
-  GainAmount,
-  GainPercent,
-  getInitialIntervalData,
-  IntervalSelector,
-  usePersistentState,
+    GainAmount,
+    GainPercent,
+    getInitialIntervalData,
+    IntervalSelector,
+    usePersistentState,
 } from "@wealthfolio/ui";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useMemo, useState } from "react";
@@ -105,7 +105,7 @@ export function DashboardContent() {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-dvh flex-col">
       <div className="px-4 pb-1 pt-2 md:px-6 md:pb-2 lg:px-8">
         <PortfolioUpdateTrigger lastCalculatedAt={currentValuation?.calculatedAt}>
           <div className="flex items-start gap-2">

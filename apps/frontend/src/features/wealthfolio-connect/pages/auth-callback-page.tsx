@@ -44,7 +44,7 @@ export default function AuthCallbackPage() {
   }, [isConnected, isLoading, error, navigate]);
 
   return (
-    <div className="bg-background text-foreground flex min-h-screen flex-col items-center justify-center">
+    <div className="bg-background text-foreground flex min-h-dvh flex-col items-center justify-center">
       <div className="flex flex-col items-center gap-4">
         <Icons.Spinner className="text-muted-foreground h-8 w-8 animate-spin" />
         <p className="text-muted-foreground text-sm">

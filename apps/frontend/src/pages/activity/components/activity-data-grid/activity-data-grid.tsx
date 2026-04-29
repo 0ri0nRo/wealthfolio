@@ -522,7 +522,7 @@ export function ActivityDataGrid({
       />
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        <DataGrid {...dataGrid} stretchColumns height="calc(100vh - 260px)" />
+        <DataGrid {...dataGrid} stretchColumns height="calc(100dvh - 260px)" />
       </div>
 
       <ActivityDataGridPagination

@@ -1094,12 +1094,12 @@ export const FirePage: React.FC = () => {
   const isMobile = useIsMobile();
 
   if (loading) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh' }}>
       <div style={{ width: 26, height: 26, border: '2.5px solid var(--foreground)', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.7s linear infinite' }} />
     </div>
   );
   if (error || !data) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', flexDirection: 'column', gap: '1rem' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100dvh', flexDirection: 'column', gap: '1rem' }}>
       <p style={{ color: 'var(--destructive)', fontWeight: 600 }}>Failed to load FIRE data</p>
       <button onClick={refresh} style={{ padding: '8px 20px', background: 'var(--foreground)', color: 'var(--background)', border: 'none', borderRadius: 9, fontWeight: 600, cursor: 'pointer' }}>Retry</button>
     </div>
@@ -1128,7 +1128,7 @@ export const FirePage: React.FC = () => {
   ];
 
   return (
-    <div style={{ minHeight: '100vh', background: 'var(--background)' }}>
+    <div style={{ minHeight: '100dvh', background: 'var(--background)' }}>
 
       {/* ── NAVBAR ── */}
       <div style={{

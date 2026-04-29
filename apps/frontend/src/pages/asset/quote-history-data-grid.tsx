@@ -409,7 +409,7 @@ export function QuoteHistoryDataGrid({
       />
 
       <div className="min-h-0 flex-1 overflow-hidden rounded-md border">
-        <DataGrid {...dataGrid} stretchColumns height="calc(100vh - 340px)" />
+        <DataGrid {...dataGrid} stretchColumns height="calc(100dvh - 340px)" />
       </div>
     </div>
   );

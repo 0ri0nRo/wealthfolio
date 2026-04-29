@@ -63,7 +63,7 @@ export function SwipeableLayout({ children }: SwipeableLayoutProps) {
   return (
     <div
       ref={containerRef}
-      className="min-h-screen pb-20 transition-transform duration-200 ease-out"
+      className="min-h-dvh pb-20 transition-transform duration-200 ease-out"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}

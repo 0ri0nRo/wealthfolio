@@ -50,7 +50,7 @@ export const BudgetPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex items-center justify-center h-dvh bg-gray-50 dark:bg-gray-900">
         <div className="animate-spin rounded-full h-10 w-10 border-2 border-blue-600 border-t-transparent"></div>
       </div>
     );
@@ -58,7 +58,7 @@ export const BudgetPage: React.FC = () => {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="flex items-center justify-center h-dvh bg-gray-50 dark:bg-gray-900">
         <div className="text-center max-w-md">
           <p className="text-red-600 dark:text-red-400 text-lg font-semibold mb-2">Error loading budget data</p>
           <p className="text-gray-600 dark:text-gray-400 mb-6">{error}</p>
@@ -74,7 +74,7 @@ export const BudgetPage: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div className="min-h-dvh bg-gray-50 dark:bg-gray-900">
       {/* Header */}
       <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200/50 dark:border-gray-800/50 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-6 py-6">

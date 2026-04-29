@@ -135,7 +135,7 @@ export function NewAccountsFoundModal({
         </SheetHeader>
 
         <div className="flex-1 overflow-hidden">
-          <ScrollArea className="h-[calc(100vh-220px)]">
+          <ScrollArea className="h-[calc(100dvh-220px)]">
             <div className="space-y-6 p-6">
               <Alert
                 variant="warning"

@@ -51,7 +51,7 @@ const OnboardingPage = () => {
   };
 
   return (
-    <div className="bg-background flex h-screen flex-col pt-[env(safe-area-inset-top)]">
+    <div className="bg-background flex h-dvh flex-col pt-[env(safe-area-inset-top)]">
       {/* Fixed Header with Logo and Steppers */}
       <header className="flex-none px-4 pt-8 sm:px-6 sm:pt-12">
         <div className="flex flex-col items-center">

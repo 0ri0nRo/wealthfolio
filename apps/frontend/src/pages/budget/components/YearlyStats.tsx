@@ -588,7 +588,7 @@ export const YearlyStats: React.FC<YearlyStatsProps> = ({
   ];
 
   return (
-    <div style={{ minHeight: hideNav ? undefined : '100vh', background: 'var(--background)', fontFamily: 'var(--font-sans)' }}>
+    <div style={{ minHeight: hideNav ? undefined : '100dvh', background: 'var(--background)', fontFamily: 'var(--font-sans)' }}>
 
       {/* ── Top nav ────────────────────────────────────────────────────────── */}
       {!hideNav && (

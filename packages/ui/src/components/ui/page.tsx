@@ -198,7 +198,7 @@ export function PageContent({
         // In containerMode, the scroll container handles bottom padding for mobile nav
         // In standalone mode, add extra bottom padding on desktop
         !containerMode && "pb-safe md:pb-6 lg:pb-8",
-        "min-h-[calc(100vh-4rem)] md:min-h-[calc(100vh-5rem)]",
+        "min-h-[calc(100dvh-4rem)] md:min-h-[calc(100dvh-5rem)]",
         className,
       )}
       {...props}

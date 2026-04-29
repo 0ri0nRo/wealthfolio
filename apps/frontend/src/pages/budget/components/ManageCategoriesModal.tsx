@@ -130,14 +130,14 @@ export const ManageCategoriesModal: React.FC<ManageCategoriesModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      <div className="flex min-h-screen items-center justify-center p-4">
+      <div className="flex min-h-dvh items-center justify-center p-4">
         <div
           className="fixed inset-0 bg-gray-900/20 dark:bg-black/40 backdrop-blur-sm"
           onClick={onClose}
         />
 
         <div className="relative bg-white dark:bg-gray-900 rounded-2xl max-w-2xl w-full border border-gray-200/50 dark:border-gray-800">
-          
+
           {/* Header */}
           <div className="flex items-center justify-between px-6 pt-6 pb-4">
             <div className="flex items-center gap-3">

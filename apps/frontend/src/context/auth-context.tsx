@@ -1,14 +1,14 @@
 import { isWeb } from "@/adapters";
 import { getAuthToken, setAuthToken, setUnauthorizedHandler } from "@/lib/auth-token";
 import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+    type ReactNode,
 } from "react";
 
 interface AuthContextValue {
@@ -164,7 +164,7 @@ export function AuthGate({ children, fallback }: { children: ReactNode; fallback
 
   if (statusLoading) {
     return (
-      <div className="bg-background text-muted-foreground flex min-h-screen items-center justify-center">
+      <div className="bg-background text-muted-foreground flex min-h-dvh items-center justify-center">
         Checking authentication...
       </div>
     );

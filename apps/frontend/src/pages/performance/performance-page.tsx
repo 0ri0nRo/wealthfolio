@@ -483,7 +483,7 @@ export default function PerformancePage() {
           className="hidden"
         />
 
-        <div className="flex h-[calc(100vh-19rem)] flex-col md:h-[calc(100vh-12rem)]">
+        <div className="flex h-[calc(100dvh-19rem)] flex-col md:h-[calc(100dvh-12rem)]">
           <Card className="flex min-h-0 flex-1 flex-col">
             <CardHeader className={cn("pb-2", isMobile ? "px-3 py-3" : "pb-1")}>
               <div className={cn("space-y-3", isMobile ? "space-y-2" : "sm:space-y-4")}>

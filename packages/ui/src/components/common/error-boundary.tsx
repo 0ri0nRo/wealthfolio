@@ -16,7 +16,7 @@ function ErrorFallback({ error }: { error?: Error }) {
   const [showDetails, setShowDetails] = useState(false);
 
   return (
-    <ApplicationShell className="flex h-screen w-full items-center justify-center p-6">
+    <ApplicationShell className="flex h-dvh w-full items-center justify-center p-6">
       <div className="flex w-full max-w-md flex-col items-center">
         {/* Icon with subtle background */}
         <div className="bg-destructive/10 mb-6 flex h-20 w-20 items-center justify-center rounded-full">
