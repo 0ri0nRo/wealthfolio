@@ -103,7 +103,10 @@ function CompositionLegend({
             onMouseLeave={() => onHover(undefined)}
           >
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
-            <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/80">{item.symbol}</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">
+              <span className="font-medium">{item.symbol}</span>
+              {item.name ? <span className="text-muted-foreground"> · {item.name}</span> : null}
+            </span>
             <span className="font-mono tabular-nums text-xs text-muted-foreground">{formatPercent(item.share)}</span>
           </Link>
         );
