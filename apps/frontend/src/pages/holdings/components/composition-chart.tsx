@@ -1,356 +1,220 @@
-import { usePersistentState } from "@/hooks/use-persistent-state";
+import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { Holding } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { AnimatedToggleGroup, formatAmount, formatPercent } from "@wealthfolio/ui";
-import { Button } from "@wealthfolio/ui/components/ui/button";
+import { formatAmount, formatPercent } from "@wealthfolio/ui";
 import { Card, CardContent, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
 import { EmptyPlaceholder } from "@wealthfolio/ui/components/ui/empty-placeholder";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
-import { useEffect, useMemo, useRef, type FC } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Tooltip as ChartTooltip, ResponsiveContainer, type TreemapNode, Treemap } from "recharts";
-
-type ReturnType = "daily" | "total";
-type DisplayMode = "symbol" | "name";
-
-const DisplayModeToggle: React.FC<{
-  displayMode: DisplayMode;
-  onToggle: () => void;
-}> = ({ displayMode, onToggle }) => (
-  <Tooltip>
-    <TooltipTrigger asChild>
-      <Button variant="secondary" size="icon-sm" className="rounded-full" onClick={onToggle}>
-        {displayMode === "symbol" ? (
-          <Icons.Hash className="h-4 w-4" />
-        ) : (
-          <Icons.Type className="h-4 w-4" />
-        )}
-      </Button>
-    </TooltipTrigger>
-    <TooltipContent>
-      <p>{displayMode === "symbol" ? "Show full names" : "Show symbols"}</p>
-    </TooltipContent>
-  </Tooltip>
-);
-
-interface ColorScale {
-  opacity: number;
-  className: string;
-}
-
-function getColorScale(gain: number, maxGain: number, minGain: number): ColorScale {
-  const isGain = gain >= 0;
-
-  // Handle edge cases
-  if (isNaN(gain) || isNaN(maxGain) || isNaN(minGain)) {
-    return {
-      opacity: 0.5,
-      className: isGain ? "fill-success" : "fill-destructive",
-    };
-  }
-
-  // Calculate relative position in the range
-  let relativePosition: number;
-  if (isGain) {
-    relativePosition = maxGain === 0 ? 0 : Math.min(1, gain / maxGain);
-  } else {
-    relativePosition = minGain === 0 ? 0 : Math.min(1, gain / minGain);
-  }
-
-  // Semi-transparent range: 0.4 to 0.85 (more muted, matches v2)
-  const opacity = Math.max(0.4, Math.min(0.85, 0.4 + Math.abs(relativePosition) * 0.45));
-
-  return {
-    opacity,
-    className: isGain ? "fill-success" : "fill-destructive",
-  };
-}
-
-// Function to truncate text based on available width
-function truncateText(text: string, maxWidth: number, fontSize: number): string {
-  if (!text) return "";
-
-  // Approximate character width based on fontSize (rough estimate)
-  const charWidth = fontSize * 0.6;
-  const maxChars = Math.floor(maxWidth / charWidth);
-
-  if (text.length <= maxChars) return text;
-
-  // If we need to truncate, leave space for "..."
-  const truncatedLength = Math.max(1, maxChars - 3);
-  return text.substring(0, truncatedLength) + "...";
-}
-
-interface CustomizedContentProps {
-  depth?: TreemapNode["depth"];
-  x?: TreemapNode["x"];
-  y?: TreemapNode["y"];
-  width?: TreemapNode["width"];
-  height?: TreemapNode["height"];
-  id?: string; // Asset ID for navigation
-  symbol?: string;
-  name?: TreemapNode["name"];
-  gain?: number;
-  maxGain?: number;
-  minGain?: number;
-  displayMode?: DisplayMode;
-}
-
-const CustomizedContent: FC<CustomizedContentProps> = ({
-  depth = 0,
-  x = 0,
-  y = 0,
-  width = 0,
-  height = 0,
-  id,
-  symbol,
-  name,
-  gain = 0,
-  maxGain = 0,
-  minGain = 0,
-  displayMode = "symbol",
-}) => {
-  const fontSize = Math.min(width, height) < 80 ? Math.min(width, height) * 0.16 : 13;
-  const fontSize2 = Math.min(width, height) < 80 ? Math.min(width, height) * 0.14 : 12;
-  const colorScale = getColorScale(gain, maxGain, minGain);
-
-  // Determine what text to display based on mode
-  const displayText = displayMode === "name" && name ? name : symbol;
-  // Truncate text to fit within the available width (with some padding)
-  const truncatedText = truncateText(displayText || "", width - 16, fontSize + 1);
-
-  return (
-    <g style={{ cursor: "pointer" }}>
-      <rect
-        x={x}
-        y={y}
-        width={width}
-        height={height}
-        rx={10}
-        ry={10}
-        className={cn("stroke-card", {
-          "stroke-[4px]": depth === 1,
-          "fill-none stroke-0": depth === 0,
-          [colorScale.className]: depth === 1,
-        })}
-        style={{
-          fillOpacity: colorScale.opacity,
-          cursor: "pointer",
-        }}
-      />
-      {depth === 1 ? (
-        <>
-          <Link to={`/holdings/${encodeURIComponent(id || symbol || "")}`}>
-            <text
-              x={x + width / 2}
-              y={y + height / 2}
-              textAnchor="middle"
-              fill="currentColor"
-              className="font-default cursor-pointer text-sm hover:underline"
-              style={{
-                fontSize: fontSize + 1,
-              }}
-            >
-              {truncatedText}
-            </text>
-          </Link>
-
-          <text
-            x={x + width / 2}
-            y={y + height / 2 + fontSize}
-            textAnchor="middle"
-            fill="currentColor"
-            className="text- font-thin"
-            style={{
-              fontSize: fontSize2,
-            }}
-          >
-            {gain > 0 ? "+" + formatPercent(gain) : formatPercent(gain)}
-          </text>
-        </>
-      ) : null}
-    </g>
-  );
-};
+import { Cell, Tooltip as ChartTooltip, Pie, PieChart, ResponsiveContainer, Sector } from "recharts";
 
 interface PortfolioCompositionProps {
   holdings: Holding[];
   isLoading?: boolean;
 }
 
-interface TooltipProps {
-  active?: boolean;
-  payload?: {
-    value: number;
-    payload: {
-      symbol: string;
-      name?: string;
-      gain: number;
-      asOfDate?: string;
-    };
-  }[];
-  settings?: {
-    baseCurrency?: string;
-    theme?: string;
-  };
+interface CompositionItem {
+  id?: string;
+  symbol: string;
+  name?: string | null;
+  value: number;
+  share: number;
+  gain: number;
+  asOfDate?: string;
+  color: string;
 }
 
-const CompositionTooltip = ({ active, payload, settings }: TooltipProps) => {
-  if (active && payload?.length) {
-    const data = payload[0].payload;
-    const value = payload[0].value;
-    const gain = data.gain || 0;
-    const isPositive = gain >= 0;
+interface TooltipProps {
+  active?: boolean;
+  payload?: { payload: CompositionItem }[];
+  isBalanceHidden: boolean;
+  currency: string;
+}
 
-    return (
-      <Card>
-        <CardContent className="space-y-3 p-4">
-          {/* Header with symbol and name */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <span className="text-primary text-sm font-bold">{data.symbol}</span>
-              <span className="text-muted-foreground text-xs">
-                {data.asOfDate ? new Date(data.asOfDate).toLocaleDateString() : ""}
-              </span>
-            </div>
-            <p className="text-muted-foreground text-xs leading-tight">{data.name}</p>
-          </div>
+const COLORS = [
+  "var(--chart-1)",
+  "var(--chart-2)",
+  "var(--chart-3)",
+  "var(--chart-4)",
+  "var(--chart-5)",
+  "var(--chart-6)",
+  "var(--chart-7)",
+  "var(--chart-8)",
+  "var(--chart-9)",
+];
 
-          {/* Divider */}
-          <div className="border-t" />
+const CompositionTooltip = ({ active, payload, isBalanceHidden, currency }: TooltipProps) => {
+  if (!active || !payload?.length) return null;
 
-          {/* Market Value */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground pr-6 text-sm">Market Value</span>
-              <span className="text-sm font-semibold">
-                {formatAmount(value, settings?.baseCurrency ?? "USD")}
-              </span>
-            </div>
+  const item = payload[0].payload;
 
-            {/* Gain/Loss */}
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground text-sm">Return</span>
-              <span
-                className={cn(
-                  "flex items-center gap-1 text-sm font-semibold",
-                  isPositive ? "text-success" : "text-destructive",
-                )}
-              >
-                {isPositive ? "+" : ""}
-                {formatPercent(gain)}
-                <span className="text-xs">{isPositive ? "↗" : "↘"}</span>
-              </span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  }
-  return null;
+  return (
+    <div className="bg-popover border-border shadow-lg rounded-md border px-3 py-2 text-xs">
+      <div className="mb-1 flex items-center justify-between gap-4">
+        <span className="font-semibold">{item.symbol}</span>
+        <span className="text-muted-foreground tabular-nums">{formatPercent(item.share)}</span>
+      </div>
+      {item.name && <p className="text-muted-foreground mb-2 max-w-60 truncate leading-tight">{item.name}</p>}
+      <div className="space-y-1 border-t pt-2">
+        <div className="flex items-center justify-between gap-6">
+          <span className="text-muted-foreground">Market value</span>
+          <span className="font-semibold">{isBalanceHidden ? "••••" : formatAmount(item.value, currency)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-6">
+          <span className="text-muted-foreground">Share</span>
+          <span className="font-semibold">{formatPercent(item.share)}</span>
+        </div>
+        <div className="flex items-center justify-between gap-6">
+          <span className="text-muted-foreground">Return</span>
+          <span className={cn("font-semibold", item.gain >= 0 ? "text-success" : "text-destructive")}>
+            {item.gain >= 0 ? "+" : ""}
+            {formatPercent(item.gain)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function CompositionLegend({
+  items,
+  activeIndex,
+  onHover,
+  currency,
+  isBalanceHidden,
+}: {
+  items: CompositionItem[];
+  activeIndex: number | undefined;
+  onHover: (index: number | undefined) => void;
+  currency: string;
+  isBalanceHidden: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {items.map((item, index) => {
+        const isActive = activeIndex === index;
+
+        return (
+          <Link
+            key={item.symbol}
+            to={`/holdings/${encodeURIComponent(item.id || item.symbol)}`}
+            className="hover:bg-muted/60 flex items-center gap-2 rounded px-2 py-1 transition-opacity"
+            style={{ opacity: activeIndex !== undefined && !isActive ? 0.45 : 1 }}
+            onMouseEnter={() => onHover(index)}
+            onMouseLeave={() => onHover(undefined)}
+          >
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
+            <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">
+              {item.symbol}
+              {item.name ? <span className="text-muted-foreground"> · {item.name}</span> : null}
+            </span>
+            <span className="font-mono tabular-nums text-xs text-muted-foreground">{formatPercent(item.share)}</span>
+            <span className="font-mono tabular-nums text-xs text-muted-foreground">
+              {isBalanceHidden ? "••••" : formatAmount(item.value, currency)}
+            </span>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const renderSlice = (props: any) => {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index, payload } = props;
+  const isActive = index === payload?.__activeIndex;
+
+  return (
+    <g>
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius}
+        outerRadius={isActive ? outerRadius + 6 : outerRadius}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        opacity={isActive ? 1 : 0.8}
+      />
+      {isActive && (
+        <Sector
+          cx={cx}
+          cy={cy}
+          innerRadius={outerRadius + 10}
+          outerRadius={outerRadius + 14}
+          startAngle={startAngle}
+          endAngle={endAngle}
+          fill={fill}
+          opacity={0.35}
+        />
+      )}
+    </g>
+  );
 };
 
 export function PortfolioComposition({ holdings, isLoading }: PortfolioCompositionProps) {
-  const [returnType, setReturnType] = usePersistentState<ReturnType>(
-    "composition-return-type",
-    "daily",
-  );
-  const [displayMode, setDisplayMode] = usePersistentState<DisplayMode>(
-    "composition-display-mode",
-    "symbol",
-  );
+  const { isBalanceHidden } = useBalancePrivacy();
   const { settings } = useSettingsContext();
-  const lastLoggedMode = useRef<DisplayMode | null>(null);
-
-  const toggleDisplayMode = () => {
-    const prev = displayMode;
-    const next = prev === "symbol" ? "name" : "symbol";
-    if (import.meta.env.DEV) {
-      console.warn("[Composition][debug] toggle displayMode", { prev, next });
-    }
-    setDisplayMode(next);
-  };
-
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.warn("[Composition][debug] displayMode changed", { displayMode });
-    }
-  }, [displayMode]);
-
-  useEffect(() => {
-    if (import.meta.env.DEV) {
-      console.warn("[Composition][debug] returnType changed", { returnType });
-    }
-  }, [returnType]);
+  const baseCurrency = settings?.baseCurrency ?? "USD";
+  const [activeIndex, setActiveIndex] = useState<number | undefined>(undefined);
 
   const data = useMemo(() => {
-    let maxGain = -Infinity;
-    let minGain = Infinity;
-
-    // Map holdings directly, assuming backend provides aggregated data
     const processedData = holdings
       .map((holding) => {
         const symbol = holding.instrument?.symbol;
-        if (!symbol) return null; // Skip if no symbol
+        if (!symbol) return null;
 
-        const gain =
-          returnType === "daily"
-            ? Number(holding.dayChangePct) || 0
-            : Number(holding.totalGainPct) || 0;
+        const value = Number(holding.marketValue?.base) || 0;
+        const gain = Number(holding.totalGainPct) || 0;
 
-        const marketValue = Number(holding.marketValue?.base) || 0;
-
-        // Basic validation
-        if (isNaN(gain) || isNaN(marketValue) || marketValue <= 0) return null;
-
-        // Update min/max gain across all valid holdings
-        maxGain = Math.max(maxGain, gain);
-        minGain = Math.min(minGain, gain);
+        if (!Number.isFinite(value) || value <= 0) return null;
 
         return {
-          id: holding.instrument?.id, // Asset ID for navigation
-          symbol: symbol,
-          name: holding.instrument?.name, // Use symbol for the treemap node name/link
-          marketValueConverted: marketValue,
+          id: holding.instrument?.id,
+          symbol,
+          name: holding.instrument?.name ?? null,
+          value,
           gain,
           asOfDate: holding.asOfDate,
-          // We'll add min/max gain later after iterating through all
         };
       })
-      .filter((item): item is NonNullable<typeof item> => item !== null) // Explicit non-null filter
-      // Add minGain and maxGain to each item after calculating them
-      .map((item) => ({
-        ...item,
-        maxGain,
-        minGain,
-      }));
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+      .sort((a, b) => b.value - a.value);
 
-    // Sort by market value after processing all holdings
-    processedData.sort((a, b) => b.marketValueConverted - a.marketValueConverted);
+    const totalValue = processedData.reduce((sum, item) => sum + item.value, 0);
 
-    return processedData;
-  }, [holdings, returnType]);
+    return processedData.map((item, index) => ({
+      ...item,
+      share: totalValue > 0 ? item.value / totalValue : 0,
+      color: COLORS[index % COLORS.length],
+    }));
+  }, [holdings]);
+
+  const totalValue = useMemo(() => data.reduce((sum, item) => sum + item.value, 0), [data]);
 
   if (isLoading) {
     return (
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0">
+        <CardHeader className="pb-2">
           <div className="flex items-center space-x-2">
             <Icons.LayoutDashboard className="text-muted-foreground h-4 w-4" />
             <CardTitle className="text-muted-foreground text-sm font-medium uppercase tracking-wider">
               Composition
             </CardTitle>
           </div>
-          <div className="flex items-center space-x-3">
-            <Skeleton className="h-8 w-8 rounded-full" />
-            <Skeleton className="h-8 w-32 rounded-full" />
-          </div>
         </CardHeader>
         <CardContent>
-          <Skeleton className="h-[500px] w-full" />
+          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+            <Skeleton className="mx-auto h-52 w-52 shrink-0 rounded-full md:mx-0" />
+            <div className="flex-1 space-y-2 pt-2">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <Skeleton key={i} className="h-3 w-full" />
+              ))}
+            </div>
+          </div>
         </CardContent>
       </Card>
     );
@@ -365,7 +229,7 @@ export function PortfolioComposition({ holdings, isLoading }: PortfolioCompositi
             <CardTitle className="text-md font-medium">Composition</CardTitle>
           </div>
         </CardHeader>
-        <CardContent className="flex h-[500px] items-center justify-center">
+        <CardContent className="flex h-125 items-center justify-center">
           <EmptyPlaceholder
             icon={<Icons.BarChart className="h-10 w-10" />}
             title="No holdings data"
@@ -378,59 +242,64 @@ export function PortfolioComposition({ holdings, isLoading }: PortfolioCompositi
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
-        <div className="flex items-center space-x-2">
-          <CardTitle className="text-muted-foreground text-sm font-medium uppercase tracking-wider">
-            Composition
-          </CardTitle>
-        </div>
-        <div className="flex items-center space-x-3">
-          <DisplayModeToggle displayMode={displayMode} onToggle={toggleDisplayMode} />
-          <AnimatedToggleGroup
-            items={[
-              { value: "daily", label: "Daily" },
-              { value: "total", label: "Total" },
-            ]}
-            value={returnType}
-            onValueChange={(value: ReturnType) => setReturnType(value)}
-            size="sm"
-          />
-        </div>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium uppercase tracking-wider">Composition</CardTitle>
+        <p className="text-muted-foreground text-xs">ETF allocation by market value</p>
       </CardHeader>
-      <CardContent className="pl-2">
-        <ResponsiveContainer width="100%" height={500}>
-          <Treemap
-            width={400}
-            height={200}
-            data={data}
-            dataKey="marketValueConverted"
-            animationDuration={100}
-            content={(props: TreemapNode) => {
-              if (import.meta.env.DEV && lastLoggedMode.current !== displayMode) {
-                const anyProps = props as unknown as {
-                  index?: number;
-                  symbol?: string;
-                  name?: string;
-                  depth?: number;
-                };
-                if (anyProps.depth === 1 && anyProps.index === 0) {
-                  lastLoggedMode.current = displayMode;
-                  console.warn("[Composition][debug] treemap content render (sample)", {
-                    displayMode,
-                    sample: {
-                      symbol: anyProps.symbol,
-                      name: anyProps.name,
-                    },
-                  });
-                }
-              }
+      <CardContent>
+        <div className="flex flex-col gap-6 md:flex-row md:items-center">
+          <div className="mx-auto h-56 w-56 shrink-0 md:mx-0">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart
+                onMouseLeave={() => setActiveIndex(undefined)}
+                margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+              >
+                <Pie
+                  data={data}
+                  dataKey="value"
+                  nameKey="symbol"
+                  cx="50%"
+                  cy="50%"
+                  innerRadius="58%"
+                  outerRadius="82%"
+                  paddingAngle={3}
+                  stroke="hsl(var(--background))"
+                  strokeWidth={1}
+                  shape={(props) => renderSlice({ ...props, payload: { ...props.payload, __activeIndex: activeIndex } })}
+                  onMouseEnter={(_, index) => setActiveIndex(index)}
+                >
+                  {data.map((item) => (
+                    <Cell key={item.symbol} fill={item.color} />
+                  ))}
+                </Pie>
+                <ChartTooltip
+                  content={
+                    <CompositionTooltip
+                      isBalanceHidden={isBalanceHidden}
+                      currency={baseCurrency}
+                    />
+                  }
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
 
-              return <CustomizedContent {...props} displayMode={displayMode} />;
-            }}
-          >
-            <ChartTooltip content={<CompositionTooltip settings={settings ?? undefined} />} />
-          </Treemap>
-        </ResponsiveContainer>
+          <div className="min-w-0 flex-1 space-y-3">
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <span>
+                {data.length} ETF{data.length === 1 ? "" : "s"}
+              </span>
+              <span>{isBalanceHidden ? "••••" : formatAmount(totalValue, baseCurrency)}</span>
+            </div>
+            <CompositionLegend
+              items={data}
+              activeIndex={activeIndex}
+              onHover={setActiveIndex}
+              currency={baseCurrency}
+              isBalanceHidden={isBalanceHidden}
+            />
+          </div>
+        </div>
       </CardContent>
     </Card>
   );
