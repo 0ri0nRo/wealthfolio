@@ -83,17 +83,13 @@ function CompositionLegend({
   items,
   activeIndex,
   onHover,
-  currency,
-  isBalanceHidden,
 }: {
   items: CompositionItem[];
   activeIndex: number | undefined;
   onHover: (index: number | undefined) => void;
-  currency: string;
-  isBalanceHidden: boolean;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <div className="flex flex-col gap-2">
       {items.map((item, index) => {
         const isActive = activeIndex === index;
 
@@ -107,14 +103,8 @@ function CompositionLegend({
             onMouseLeave={() => onHover(undefined)}
           >
             <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: item.color }} />
-            <span className="min-w-0 flex-1 truncate text-xs text-foreground/80">
-              {item.symbol}
-              {item.name ? <span className="text-muted-foreground"> · {item.name}</span> : null}
-            </span>
+            <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground/80">{item.symbol}</span>
             <span className="font-mono tabular-nums text-xs text-muted-foreground">{formatPercent(item.share)}</span>
-            <span className="font-mono tabular-nums text-xs text-muted-foreground">
-              {isBalanceHidden ? "••••" : formatAmount(item.value, currency)}
-            </span>
           </Link>
         );
       })}
@@ -295,8 +285,6 @@ export function PortfolioComposition({ holdings, isLoading }: PortfolioCompositi
               items={data}
               activeIndex={activeIndex}
               onHover={setActiveIndex}
-              currency={baseCurrency}
-              isBalanceHidden={isBalanceHidden}
             />
           </div>
         </div>
