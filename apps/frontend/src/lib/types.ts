@@ -1,33 +1,33 @@
 import { importActivitySchema, importMappingSchema, parseConfigSchema } from "@/lib/schemas";
-export { ImportType } from "@/lib/schemas";
 import * as z from "zod";
 import {
   AccountType,
+  ACTIVITY_TYPE_DISPLAY_NAMES,
   ActivityStatus,
   ActivityType,
-  ACTIVITY_TYPE_DISPLAY_NAMES,
   AssetKind,
   HoldingType,
   QuoteMode,
   SUBTYPE_DISPLAY_NAMES,
 } from "./constants";
+export { ImportType } from "@/lib/schemas";
 
 export {
   accountCapabilities,
-  accountPurposeAccountTypes,
   AccountPurpose,
+  accountPurposeAccountTypes,
   accountSupportsPurpose,
   AccountType,
-  ActivityStatus,
-  ActivityType,
   ACTIVITY_SUBTYPES,
   ACTIVITY_TYPE_DISPLAY_NAMES,
   ACTIVITY_TYPES,
-  AlternativeAssetKind,
+  ActivityStatus,
+  ActivityType,
   ALTERNATIVE_ASSET_DEFAULT_GROUPS,
   ALTERNATIVE_ASSET_KIND_DISPLAY_NAMES,
-  AssetKind,
+  AlternativeAssetKind,
   ASSET_KIND_DISPLAY_NAMES,
+  AssetKind,
   createPortfolioAccount,
   DataSource,
   defaultGroupForAccountType,
@@ -853,6 +853,7 @@ export interface Settings {
   theme: string;
   font: string;
   language: string;
+  formattingRegion: string;
   baseCurrency: string;
   defaultReturnMetric: "twr" | "irr" | "valueReturn";
   timezone: string;

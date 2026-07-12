@@ -1401,6 +1401,21 @@
   "ai_providers_empty_description": "KI-Anbieter erscheinen hier, sobald sie konfiguriert sind. Schauen Sie später noch einmal vorbei oder wenden Sie sich an den Support.",
   "about_logo_alt": "Wealthfolio-Logo",
   "language_region_title": "Sprache & Region",
+  "formattingRegion": {
+    "title": "Region und Formate",
+    "description": "Steuert Datums-, Zeit-, Zahlen-, Prozent- und Währungsformate.",
+    "options": {
+      "system": "Systemregion",
+      "canada": "Kanada",
+      "unitedStates": "Vereinigte Staaten",
+      "unitedKingdom": "Vereinigtes Königreich",
+      "france": "Frankreich",
+      "germany": "Deutschland",
+      "spain": "Spanien",
+      "mexico": "Mexiko",
+      "china": "China"
+    }
+  },
   "appearance_navigation_title": "Navigation",
   "appearance_navigation_description": "Wählen Sie die Navigation auf großen Bildschirmen.",
   "addons_pin_to_navigation": "{{name}} an Navigation anheften",

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
+import { createFormatter } from "@wealthfolio/ui";
 import { formatDateISO, formatDateTime, resolveDisplayTimezone } from "./utils";
+
+const formatting = createFormatter("en-US");
 
 describe("timezone formatting", () => {
   it("formats with configured timezone", () => {
@@ -14,7 +17,7 @@ describe("timezone formatting", () => {
       timeZone: timezone,
     }).format(new Date(instant));
 
-    const formatted = formatDateTime(instant, timezone);
+    const formatted = formatDateTime(instant, formatting, timezone);
     expect(formatted.date).toBe(expectedDate);
   });
 
@@ -31,7 +34,7 @@ describe("timezone formatting", () => {
       timeZone: fallbackTimezone,
     }).format(new Date(instant));
 
-    const formatted = formatDateTime(instant, "Mars/Phobos");
+    const formatted = formatDateTime(instant, formatting, "Mars/Phobos");
     expect(formatted.date).toBe(expectedDate);
   });
 

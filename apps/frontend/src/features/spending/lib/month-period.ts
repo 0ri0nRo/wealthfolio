@@ -1,4 +1,5 @@
 import type { DateRange } from "@/lib/types";
+import type { FormattingApi } from "@wealthfolio/ui";
 
 import type { ReportsRange } from "./reports-period";
 import {
@@ -61,20 +62,33 @@ export function monthReportsRange(monthKey: string, timezone?: string | null): R
   };
 }
 
-export function monthLabel(monthKey: string, format: "long" | "short" = "long"): string {
+export function monthLabel(
+  monthKey: string,
+  formatting: Pick<FormattingApi, "formatCalendarDate">,
+  format: "long" | "short" = "long",
+): string {
   const parts = parseMonthKey(monthKey);
   if (!parts) return "";
-  return new Date(parts.year, parts.month - 1, 1).toLocaleString(undefined, {
-    month: format,
-    year: "numeric",
-  });
+  return formatting.formatCalendarDate(
+    { year: parts.year, month: parts.month, day: 1 },
+    {
+      month: format,
+      year: "numeric",
+    },
+  );
 }
 
-export function compactMonthLabel(monthKey: string): string {
+export function compactMonthLabel(
+  monthKey: string,
+  formatting: Pick<FormattingApi, "formatCalendarDate">,
+): string {
   const parts = parseMonthKey(monthKey);
   if (!parts) return "";
-  const month = new Date(parts.year, parts.month - 1, 1).toLocaleString(undefined, {
-    month: "short",
-  });
+  const month = formatting.formatCalendarDate(
+    { year: parts.year, month: parts.month, day: 1 },
+    {
+      month: "short",
+    },
+  );
   return `${month} '${String(parts.year).slice(2)}`;
 }

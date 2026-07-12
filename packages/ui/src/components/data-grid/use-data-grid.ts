@@ -40,6 +40,7 @@ import {
   parseCellKey,
   scrollCellIntoView,
 } from "./data-grid-utils";
+import { useDateFormatting, useNumberFormatting } from "../formatting-provider";
 
 const DEFAULT_ROW_HEIGHT = "short";
 const OVERSCAN = 6;
@@ -153,6 +154,8 @@ function useDataGrid<TData>({
   initialState,
   ...props
 }: UseDataGridProps<TData>) {
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
   const dir = useDirection(dirProp);
   const dataGridRef = React.useRef<HTMLDivElement>(null);
   const tableRef = React.useRef<ReturnType<typeof useReactTable<TData>>>(null);
@@ -781,8 +784,8 @@ function useDataGrid<TData>({
                 if (!trimmedClipboard) {
                   processedValue = null;
                 } else {
-                  const num = Number.parseFloat(trimmedClipboard);
-                  if (Number.isNaN(num)) shouldSkip = true;
+                  const num = numberFormatting.parseNumber(trimmedClipboard);
+                  if (num === undefined) shouldSkip = true;
                   else processedValue = num;
                 }
                 break;
@@ -804,8 +807,8 @@ function useDataGrid<TData>({
                 if (!trimmedClipboard) {
                   processedValue = null;
                 } else {
-                  const date = new Date(trimmedClipboard);
-                  if (Number.isNaN(date.getTime())) shouldSkip = true;
+                  const date = dateFormatting.parseDate(trimmedClipboard);
+                  if (!date) shouldSkip = true;
                   else processedValue = date;
                 }
                 break;
@@ -814,8 +817,8 @@ function useDataGrid<TData>({
                 if (!trimmedClipboard) {
                   processedValue = null;
                 } else {
-                  const date = new Date(trimmedClipboard);
-                  if (Number.isNaN(date.getTime())) shouldSkip = true;
+                  const date = dateFormatting.parseDate(trimmedClipboard);
+                  if (!date) shouldSkip = true;
                   else processedValue = date;
                 }
                 break;
@@ -968,8 +971,8 @@ function useDataGrid<TData>({
                 if (!pastedValue) {
                   processedValue = null;
                 } else {
-                  const num = Number.parseFloat(pastedValue);
-                  if (Number.isNaN(num)) shouldSkip = true;
+                  const num = numberFormatting.parseNumber(pastedValue);
+                  if (num === undefined) shouldSkip = true;
                   else processedValue = num;
                 }
                 break;
@@ -993,8 +996,8 @@ function useDataGrid<TData>({
                 if (!pastedValue) {
                   processedValue = null;
                 } else {
-                  const date = new Date(pastedValue);
-                  if (Number.isNaN(date.getTime())) shouldSkip = true;
+                  const date = dateFormatting.parseDate(pastedValue);
+                  if (!date) shouldSkip = true;
                   else processedValue = date;
                 }
                 break;
@@ -1003,8 +1006,8 @@ function useDataGrid<TData>({
                 if (!pastedValue) {
                   processedValue = null;
                 } else {
-                  const date = new Date(pastedValue);
-                  if (Number.isNaN(date.getTime())) shouldSkip = true;
+                  const date = dateFormatting.parseDate(pastedValue);
+                  if (!date) shouldSkip = true;
                   else processedValue = date;
                 }
                 break;
@@ -1117,7 +1120,7 @@ function useDataGrid<TData>({
                 if (ISO_DATE_REGEX.test(pastedValue)) {
                   const date = new Date(pastedValue);
                   if (!Number.isNaN(date.getTime())) {
-                    processedValue = date.toLocaleDateString();
+                    processedValue = pastedValue;
                     break;
                   }
                 }
@@ -1230,7 +1233,16 @@ function useDataGrid<TData>({
         toast.error(error instanceof Error ? error.message : "Failed to paste. Please try again.");
       }
     },
-    [store, navigableColumnIds, propsRef, onDataUpdate, selectRange, restoreFocus],
+    [
+      store,
+      navigableColumnIds,
+      propsRef,
+      onDataUpdate,
+      selectRange,
+      restoreFocus,
+      numberFormatting,
+      dateFormatting,
+    ],
   );
 
   // Release focus guard after delay to allow async data re-renders to settle.

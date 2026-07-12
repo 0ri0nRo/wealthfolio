@@ -49,7 +49,8 @@
       "noTimezonesFound": "未找到时区",
       "currencyRequired": "请选择一种基准货币。",
       "timezoneRequired": "请选择一个时区。",
-      "languageLabel": "语言"
+      "languageLabel": "语言",
+      "formattingRegionLabel": "地区与格式"
     }
   },
   "appearance": {

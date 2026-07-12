@@ -57,6 +57,7 @@
   "cancel": "Abbrechen",
   "delete_selected": "Ausgewählte löschen",
   "cash_balance_insufficient": "Unzureichende Mittel:",
+  "cash_balance_warning": "Unzureichender Barbestand. Erforderlich: {{required}}, verfügbar: {{available}}, Fehlbetrag: {{shortfall}}",
   "cash_balance_shortfall_hint": "Erfassen Sie Einzahlungen, um die Lücke zu schließen, oder nutzen Sie „Bestand hinzufügen“ (ohne Bargeldverfolgung).",
   "no_data": "Keine CSV-Daten",
   "activity_details": "Aktivitätsdetails",

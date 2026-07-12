@@ -1,10 +1,10 @@
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 
-import { PrivacyAmount, Skeleton, formatCompactAmount } from "@wealthfolio/ui";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { cn } from "@/lib/utils";
+import { PrivacyAmount, Skeleton, useAmountFormatting } from "@wealthfolio/ui";
 
 import type { BudgetSnapshot } from "../../types/budget";
 
@@ -31,6 +31,7 @@ export function OverallBudgetMeter({
   currency,
   isLoading,
 }: OverallBudgetMeterProps) {
+  const formatting = useAmountFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const monthlyTarget = budget?.computed.totals.spendingPlanned ?? 0;
@@ -100,10 +101,10 @@ export function OverallBudgetMeter({
               ? "••••"
               : isOver
                 ? t("spending:overallBudget.overAmount", {
-                    amount: formatCompactAmount(overage, currency),
+                    amount: formatting.formatCompactAmount(overage, currency),
                   })
                 : t("spending:overallBudget.leftAmount", {
-                    amount: formatCompactAmount(remaining, currency),
+                    amount: formatting.formatCompactAmount(remaining, currency),
                   })}
           </div>
         </div>

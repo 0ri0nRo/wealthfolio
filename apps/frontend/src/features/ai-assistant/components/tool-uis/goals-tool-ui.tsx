@@ -1,3 +1,6 @@
+import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
+import { useSettingsContext } from "@/lib/settings-provider";
+import { cn } from "@/lib/utils";
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import {
@@ -8,13 +11,15 @@ import {
   CardTitle,
   Progress,
   Skeleton,
+  useAmountFormatting,
+  useDateFormatting,
+  useLocalizationSettings,
+  useNumberFormatting,
+  type FormattingApi,
 } from "@wealthfolio/ui";
+import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { cn } from "@/lib/utils";
-import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
-import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { useSettingsContext } from "@/lib/settings-provider";
 import { CompactToolCard } from "./shared";
 
 // ============================================================================
@@ -191,17 +196,8 @@ function getProgressColor(progressPercent: number, deadline?: string | null): st
 /**
  * Formats a date string for display.
  */
-function formatDate(dateStr: string): string {
-  try {
-    const date = new Date(dateStr);
-    return new Intl.DateTimeFormat(undefined, {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    }).format(date);
-  } catch {
-    return dateStr;
-  }
+function formatDate(dateStr: string, formatting: Pick<FormattingApi, "formatDate">): string {
+  return formatting.formatDate(dateStr, { year: "numeric", month: "short", day: "numeric" });
 }
 
 // ============================================================================
@@ -238,11 +234,13 @@ function GoalsLoadingSkeleton() {
 
 function GoalCard({
   goal,
-  formatter,
+  formatting,
+  currency,
   isBalanceHidden,
 }: {
   goal: GoalDto;
-  formatter: Intl.NumberFormat;
+  formatting: FormattingApi;
+  currency: string;
   isBalanceHidden: boolean;
 }) {
   const { t } = useTranslation();
@@ -252,7 +250,7 @@ function GoalCard({
     if (isBalanceHidden) {
       return "******";
     }
-    return formatter.format(value);
+    return formatting.formatRoundedAmount(value, currency);
   };
 
   return (
@@ -295,7 +293,7 @@ function GoalCard({
         {goal.deadline && (
           <span className="text-muted-foreground flex items-center gap-1">
             <Icons.Calendar className="h-3 w-3" />
-            {formatDate(goal.deadline)}
+            {formatDate(goal.deadline, formatting)}
           </span>
         )}
       </div>
@@ -340,6 +338,18 @@ function ErrorState({ message }: { message?: string }) {
 type GoalsToolUIContentProps = ToolCallMessagePartProps<GetGoalsArgs, GetGoalsResult>;
 
 function GoalsToolUIContentImpl({ args, result, status }: GoalsToolUIContentProps) {
+  const localizationSettings = useLocalizationSettings();
+  const amountFormatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
+
+  const formatting = {
+    ...localizationSettings,
+    ...amountFormatting,
+    ...numberFormatting,
+    ...dateFormatting,
+  };
+
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
@@ -353,18 +363,6 @@ function GoalsToolUIContentImpl({ args, result, status }: GoalsToolUIContentProp
   if (args?.displayMode === "compact" && parsed && !isLoading) {
     return <CompactToolCard label={t("ai:goals.fetched", { count: parsed.goals.length })} />;
   }
-
-  // Currency formatter - default to base currency
-  const formatter = useMemo(
-    () =>
-      new Intl.NumberFormat(undefined, {
-        style: "currency",
-        currency: baseCurrency,
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      }),
-    [baseCurrency],
-  );
 
   // Show loading skeleton while running
   if (isLoading) {
@@ -410,7 +408,8 @@ function GoalsToolUIContentImpl({ args, result, status }: GoalsToolUIContentProp
           <GoalCard
             key={goal.id}
             goal={goal}
-            formatter={formatter}
+            formatting={formatting}
+            currency={baseCurrency}
             isBalanceHidden={isBalanceHidden}
           />
         ))}

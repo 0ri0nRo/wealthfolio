@@ -271,6 +271,7 @@
     "issue_info_other": "{{count}} 条信息",
     "activity_bought": "已买入",
     "activity_sold": "已卖出",
+    "activity_quantity_at_price": "{{quantity}}，价格 {{price}}",
     "activity_generic": "活动",
     "total_value": "总价值",
     "total_value_label": "总价值:",

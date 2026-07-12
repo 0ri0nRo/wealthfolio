@@ -1401,6 +1401,21 @@
   "ai_providers_empty_description": "配置完成后，AI 提供商将显示在此处。请稍后再来查看或联系支持。",
   "about_logo_alt": "Wealthfolio 徽标",
   "language_region_title": "语言与地区",
+  "formattingRegion": {
+    "title": "地区与格式",
+    "description": "控制日期、时间、数字分隔符、百分比和货币显示格式。",
+    "options": {
+      "system": "系统地区",
+      "canada": "加拿大",
+      "unitedStates": "美国",
+      "unitedKingdom": "英国",
+      "france": "法国",
+      "germany": "德国",
+      "spain": "西班牙",
+      "mexico": "墨西哥",
+      "china": "中国"
+    }
+  },
   "appearance_navigation_title": "导航",
   "appearance_navigation_description": "选择在大屏幕上的导航方式。",
   "addons_pin_to_navigation": "将 {{name}} 固定到导航栏",

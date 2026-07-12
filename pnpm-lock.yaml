@@ -333,6 +333,9 @@ importers:
       '@internationalized/date':
         specifier: ^3.11.0
         version: 3.11.0
+      '@internationalized/number':
+        specifier: ^3.6.5
+        version: 3.6.5
       '@number-flow/react':
         specifier: ^0.6.1
         version: 0.6.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -408,6 +411,9 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      '@react-aria/i18n':
+        specifier: ^3.12.15
+        version: 3.12.15(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@tanstack/react-query':
         specifier: ^5.90.20
         version: 5.90.21(react@19.2.8)

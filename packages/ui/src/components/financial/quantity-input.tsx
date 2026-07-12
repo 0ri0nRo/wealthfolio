@@ -2,6 +2,7 @@ import * as React from "react";
 import { NumericFormat } from "react-number-format";
 import { cn } from "../../lib/utils";
 import { Input } from "../ui/input";
+import { useNumberFormatting } from "../formatting-provider";
 
 export interface QuantityInputProps {
   /** Current numeric value */
@@ -58,6 +59,7 @@ const QuantityInput = React.forwardRef<HTMLInputElement, QuantityInputProps>(
     },
     ref,
   ) => {
+    const formatting = useNumberFormatting();
     // Normalize value to number or empty string
     const numericValue = value === null || value === undefined || value === "" ? "" : Number(value);
 
@@ -75,7 +77,9 @@ const QuantityInput = React.forwardRef<HTMLInputElement, QuantityInputProps>(
         onKeyDown={onKeyDown}
         allowNegative={allowNegative}
         decimalScale={maxDecimalPlaces}
-        allowedDecimalSeparators={[".", ","]}
+        thousandSeparator={formatting.groupSeparator}
+        decimalSeparator={formatting.decimalSeparator}
+        allowedDecimalSeparators={[formatting.decimalSeparator]}
         valueIsNumericString={false}
         value={numericValue}
         onValueChange={(values) => {
@@ -93,11 +97,24 @@ const QuantityInput = React.forwardRef<HTMLInputElement, QuantityInputProps>(
           }
         }}
         inputMode="decimal"
-        onPaste={(e) => {
-          const text = e.clipboardData.getData("text");
-          if ((text.match(/,/g) || []).length === 1) {
-            e.preventDefault();
-            document.execCommand("insertText", false, text.replace(",", "."));
+        onPaste={(event) => {
+          const clipboardValue = event.clipboardData.getData("text");
+          const input = event.currentTarget;
+          const hasSelection =
+            input.selectionStart !== null &&
+            input.selectionEnd !== null &&
+            (input.selectionStart > 0 || input.selectionEnd < input.value.length);
+          const plainFragmentPattern = new RegExp(
+            `^[0-9${formatting.decimalSeparator.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-]*$`,
+          );
+          if (hasSelection && plainFragmentPattern.test(clipboardValue)) return;
+
+          const parsed = formatting.parseNumber(clipboardValue);
+          event.preventDefault();
+          if (parsed === undefined || (!allowNegative && parsed < 0)) return;
+          onValueChange?.(parsed);
+          if (!onValueChange && onChange) {
+            onChange({ target: { name, value: parsed } } as unknown as React.ChangeEvent<HTMLInputElement>);
           }
         }}
       />

@@ -1,6 +1,12 @@
-import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import NumberFlow from "@number-flow/react";
+import {
+  useAmountFormatting,
+  useDateFormatting,
+  useLocalizationSettings,
+  useNumberFormatting,
+} from "@wealthfolio/ui";
+import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useMemo } from "react";
 
 const isValidCurrencyCode = (code: string) => /^[A-Za-z]{3}$/.test(code);
@@ -25,41 +31,38 @@ const Balance: React.FC<BalanceProps> = ({
   isLoading = false,
   isUnavailable = false,
 }) => {
+  const localizationSettings = useLocalizationSettings();
+  const amountFormatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
+
+  const formatting = {
+    ...localizationSettings,
+    ...amountFormatting,
+    ...numberFormatting,
+    ...dateFormatting,
+  };
+
   const { isBalanceHidden } = useBalancePrivacy();
   const validCurrency = isValidCurrencyCode(currency);
 
   const currencySymbol = useMemo(() => {
     if (!validCurrency) return currency;
-    try {
-      const formatter = new Intl.NumberFormat(undefined, {
-        style: "currency",
-        currency,
-        currencyDisplay: "narrowSymbol",
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      });
-      const parts = formatter.formatToParts(0);
-      return parts.find((part) => part.type === "currency")?.value ?? currency;
-    } catch {
-      return currency;
-    }
-  }, [currency, validCurrency]);
+    return amountFormatting.formatCurrencySymbol(currency);
+  }, [currency, formatting, validCurrency]);
 
   const formattedValue = useMemo(() => {
     const useCurrencyStyle = displayCurrency && validCurrency;
-    try {
-      const formatter = new Intl.NumberFormat(undefined, {
-        ...(useCurrencyStyle ? { currency, currencyDisplay: "narrowSymbol" } : {}),
-        style: useCurrencyStyle ? "currency" : "decimal",
-        notation: compact ? "compact" : "standard",
-        minimumFractionDigits: compact ? 0 : displayDecimal ? 2 : 0,
-        maximumFractionDigits: compact ? 1 : displayDecimal ? 2 : 0,
-      });
-      return formatter.format(targetValue);
-    } catch {
-      return targetValue.toFixed(displayDecimal ? 2 : 0);
-    }
-  }, [currency, validCurrency, displayCurrency, displayDecimal, compact, targetValue]);
+    if (compact && useCurrencyStyle)
+      return amountFormatting.formatCompactAmount(targetValue, currency);
+    return numberFormatting.formatDecimal(targetValue, {
+      ...(useCurrencyStyle ? { currency, currencyDisplay: "narrowSymbol" as const } : {}),
+      style: useCurrencyStyle ? "currency" : "decimal",
+      notation: compact ? "compact" : "standard",
+      minimumFractionDigits: compact ? 0 : displayDecimal ? 2 : 0,
+      maximumFractionDigits: compact ? 1 : displayDecimal ? 2 : 0,
+    });
+  }, [currency, formatting, validCurrency, displayCurrency, displayDecimal, compact, targetValue]);
 
   if (isLoading) {
     return <Skeleton className="h-9 w-48" />;

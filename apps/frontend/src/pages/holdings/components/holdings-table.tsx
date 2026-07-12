@@ -1,7 +1,13 @@
-import { parseOccSymbol } from "@/lib/occ-symbol";
+import { formatOptionSubtitle, parseOccSymbol } from "@/lib/occ-symbol";
 import { safeDivide } from "@/lib/utils";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Badge, GainPercent } from "@wealthfolio/ui";
+import {
+  Badge,
+  GainPercent,
+  useNumberFormatting,
+  type FormattingApi,
+  useDateFormatting,
+} from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { DataTable } from "@wealthfolio/ui/components/ui/data-table";
 import { DataTableColumnHeader } from "@wealthfolio/ui/components/ui/data-table/data-table-column-header";
@@ -20,12 +26,12 @@ import { HoldingType } from "@/lib/constants";
 import { getBaseHoldingPerformancePercent } from "@/lib/holding-performance";
 import { useSettingsContext } from "@/lib/settings-provider";
 import { Holding } from "@/lib/types";
-import { AmountDisplay, PriceDisplay, QuantityDisplay, formatPercent } from "@wealthfolio/ui";
+import { AmountDisplay, PriceDisplay, QuantityDisplay } from "@wealthfolio/ui";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
+import type { TFunction } from "i18next";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { useNavigate } from "react-router-dom";
 import { HoldingsVisibilityFacet } from "./holdings-visibility-filter";
 import { isCashHolding, isClosedPosition } from "./holdings-visibility";
@@ -86,6 +92,7 @@ export const HoldingsTable = ({
   showClosedPositions?: boolean;
 }) => {
   const { t } = useTranslation();
+  const formatting = useNumberFormatting();
   const { isBalanceHidden } = useBalancePrivacy();
   const { settings } = useSettingsContext();
   const [showConvertedValues, setShowConvertedValues] = useState(false);
@@ -136,7 +143,7 @@ export const HoldingsTable = ({
     <div className="flex h-full flex-col">
       <DataTable
         data={holdings}
-        columns={getColumns(t, isBalanceHidden, showConvertedValues, onClassify)}
+        columns={getColumns(t, isBalanceHidden, showConvertedValues, formatting, onClassify)}
         searchBy="symbol"
         filters={filters}
         showColumnToggle={true}
@@ -208,6 +215,7 @@ const getColumns = (
   t: TFunction,
   isHidden: boolean,
   showConvertedValues: boolean,
+  formatting: Pick<FormattingApi, "formatPercent">,
   onClassify?: (holding: Holding) => void,
 ): ColumnDef<Holding>[] => [
   {
@@ -220,6 +228,8 @@ const getColumns = (
       label: t("holdings:position"),
     },
     cell: ({ row }) => {
+      const numberFormatting = useNumberFormatting();
+      const dateFormatting = useDateFormatting();
       const navigate = useNavigate();
       const holding = row.original;
       const symbol = holding.instrument?.symbol ?? holding.id;
@@ -237,7 +247,7 @@ const getColumns = (
 
       // Option subtitle: "Mar 29 $150 CALL"
       const optionSubtitle = parsedOption
-        ? `${new Date(parsedOption.expiration + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} $${parsedOption.strikePrice} ${parsedOption.optionType}`
+        ? formatOptionSubtitle(parsedOption, { ...numberFormatting, ...dateFormatting })
         : null;
 
       const handleNavigate = () => {
@@ -527,7 +537,7 @@ const getColumns = (
       ) : (
         <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
           <span className="font-medium tabular-nums">
-            {formatPercent(row.original.weight ?? 0)}
+            {formatting.formatPercent(row.original.weight ?? 0)}
           </span>
           <div className="text-xs text-transparent">-</div>
         </div>

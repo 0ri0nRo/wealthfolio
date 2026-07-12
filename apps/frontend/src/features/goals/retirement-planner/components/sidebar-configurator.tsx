@@ -1,15 +1,15 @@
-import type { RetirementOverview } from "@/lib/types";
 import { GoalFundingEditor } from "@/features/goals/components/goal-funding-editor";
-import {
-  GoalLeverRow as LeverRow,
-  rateSliderMaxFor,
-  sliderMaxFor,
-} from "@/features/goals/components/goal-lever-row";
 import {
   DEFAULT_RETURN_SLIDER_MAX,
   RATE_SLIDER_INCREMENT,
   highReturnWarning,
 } from "@/features/goals/components/goal-lever-constants";
+import {
+  GoalLeverRow as LeverRow,
+  rateSliderMaxFor,
+  sliderMaxFor,
+} from "@/features/goals/components/goal-lever-row";
+import type { RetirementOverview } from "@/lib/types";
 import {
   AnimatedToggleGroup,
   Button,
@@ -17,16 +17,15 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  formatAmount,
-  formatCurrencySymbol,
-  formatPercent,
   Input,
+  useAmountFormatting,
+  useNumberFormatting,
 } from "@wealthfolio/ui";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
+import type { TFunction } from "i18next";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { TFunction } from "i18next";
 import { DEFAULT_DC_PAYOUT_ESTIMATE_RATE } from "../lib/constants";
 import { incomeStreamMonthlyAmount, type PlannerMode } from "../lib/dashboard-math";
 import {
@@ -110,6 +109,7 @@ function SidebarMonthlyRow({
   amount: number;
   currency: string;
 }) {
+  const formatting = useAmountFormatting();
   return (
     <div className="flex items-center justify-between gap-3 py-3 first:pt-1 last:pb-1">
       <div className="min-w-0">
@@ -118,7 +118,7 @@ function SidebarMonthlyRow({
       </div>
       <div className="whitespace-nowrap tabular-nums">
         <span className="text-foreground text-sm font-semibold">
-          {formatAmount(amount, currency)}
+          {formatting.formatAmount(amount, currency)}
         </span>
         <span className="text-muted-foreground text-xs">/mo</span>
       </div>
@@ -128,6 +128,7 @@ function SidebarMonthlyRow({
 
 /** Sidebar totals row: uppercase tracked label on the left, amount + /mo on the right. */
 function SidebarTotalRow({ amount, currency }: { amount: number; currency: string }) {
+  const formatting = useAmountFormatting();
   const { t } = useTranslation();
   return (
     <div className="flex items-center justify-between gap-3 py-3">
@@ -136,7 +137,7 @@ function SidebarTotalRow({ amount, currency }: { amount: number; currency: strin
       </span>
       <div className="whitespace-nowrap tabular-nums">
         <span className="text-foreground text-sm font-semibold">
-          {formatAmount(amount, currency)}
+          {formatting.formatAmount(amount, currency)}
         </span>
         <span className="text-muted-foreground text-xs">/mo</span>
       </div>
@@ -382,6 +383,9 @@ export function SidebarConfigurator({
   goalId?: string;
   dcLinkedAccountIds?: string[];
 }) {
+  const amountFormatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+
   const { t } = useTranslation();
   const [draft, setDraft] = useState<RetirementPlan>(() => structuredClone(plan));
   const [draftMode, setDraftMode] = useState<PlannerMode>(plannerMode);
@@ -389,7 +393,7 @@ export function SidebarConfigurator({
   const [editingSection, setEditingSection] = useState<string | null>(null);
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
   const [expandedIncomeId, setExpandedIncomeId] = useState<string | null>(null);
-  const moneyPrefix = formatCurrencySymbol(currency);
+  const moneyPrefix = amountFormatting.formatCurrencySymbol(currency);
 
   const update = useCallback((updater: (d: RetirementPlan) => RetirementPlan) => {
     setDraft((prev) => updater(prev));
@@ -584,7 +588,7 @@ export function SidebarConfigurator({
               {draft.personal.planningHorizonAge}
             </ConfigRow>
             <ConfigRow label={t("goals:sidebar.plan.monthly_contribution_until_retirement")}>
-              {formatAmount(draft.investment.monthlyContribution, currency)}
+              {amountFormatting.formatAmount(draft.investment.monthlyContribution, currency)}
             </ConfigRow>
           </div>
         }
@@ -879,7 +883,7 @@ export function SidebarConfigurator({
                         </span>
                       </span>
                       <span className="text-foreground shrink-0 text-sm font-semibold tabular-nums">
-                        {formatAmount(item.monthlyAmount, currency)}
+                        {amountFormatting.formatAmount(item.monthlyAmount, currency)}
                         <span className="text-muted-foreground text-xs font-normal">/mo</span>
                       </span>
                     </button>
@@ -1138,7 +1142,7 @@ export function SidebarConfigurator({
                         </span>
                       </span>
                       <span className="text-foreground shrink-0 text-sm font-semibold tabular-nums">
-                        {formatAmount(amount, currency)}
+                        {amountFormatting.formatAmount(amount, currency)}
                         <span className="text-muted-foreground text-xs font-normal">/mo</span>
                       </span>
                     </button>
@@ -1381,19 +1385,19 @@ export function SidebarConfigurator({
         readContent={
           <div className="divide-border divide-y">
             <ConfigRow label={t("goals:sidebar.assumptions.return_before_retirement")}>
-              {formatPercent(draft.investment.preRetirementAnnualReturn)}
+              {numberFormatting.formatPercent(draft.investment.preRetirementAnnualReturn)}
             </ConfigRow>
             <ConfigRow label={t("goals:sidebar.assumptions.return_during_retirement")}>
-              {formatPercent(draft.investment.retirementAnnualReturn)}
+              {numberFormatting.formatPercent(draft.investment.retirementAnnualReturn)}
             </ConfigRow>
             <ConfigRow label={t("goals:sidebar.assumptions.annual_investment_fee")}>
-              {formatPercent(draft.investment.annualInvestmentFeeRate)}
+              {numberFormatting.formatPercent(draft.investment.annualInvestmentFeeRate)}
             </ConfigRow>
             <ConfigRow label={t("goals:sidebar.assumptions.effective_before_return")}>
-              {formatPercent(effectivePreRetirementReturn)}
+              {numberFormatting.formatPercent(effectivePreRetirementReturn)}
             </ConfigRow>
             <ConfigRow label={t("goals:sidebar.assumptions.effective_retirement_return")}>
-              {formatPercent(effectiveRetirementReturn)}
+              {numberFormatting.formatPercent(effectiveRetirementReturn)}
             </ConfigRow>
             <ConfigRow
               label={
@@ -1402,14 +1406,14 @@ export function SidebarConfigurator({
                 </InfoLabel>
               }
             >
-              {formatPercent(draft.investment.annualVolatility)}
+              {numberFormatting.formatPercent(draft.investment.annualVolatility)}
             </ConfigRow>
             <ConfigRow label={t("goals:sidebar.assumptions.inflation")}>
-              {formatPercent(draft.investment.inflationRate)}
+              {numberFormatting.formatPercent(draft.investment.inflationRate)}
             </ConfigRow>
             {draft.investment.contributionGrowthRate > 0 && (
               <ConfigRow label={t("goals:sidebar.assumptions.contribution_growth_per_year")}>
-                {formatPercent(draft.investment.contributionGrowthRate)}
+                {numberFormatting.formatPercent(draft.investment.contributionGrowthRate)}
               </ConfigRow>
             )}
           </div>
@@ -1545,7 +1549,7 @@ export function SidebarConfigurator({
                   </InfoLabel>
                 }
               >
-                {formatPercent(draft.tax?.taxableWithdrawalRate ?? 0)}
+                {numberFormatting.formatPercent(draft.tax?.taxableWithdrawalRate ?? 0)}
               </ConfigRow>
               <ConfigRow
                 label={
@@ -1554,7 +1558,7 @@ export function SidebarConfigurator({
                   </InfoLabel>
                 }
               >
-                {formatPercent(draft.tax?.taxDeferredWithdrawalRate ?? 0)}
+                {numberFormatting.formatPercent(draft.tax?.taxDeferredWithdrawalRate ?? 0)}
               </ConfigRow>
               <ConfigRow
                 label={
@@ -1563,7 +1567,7 @@ export function SidebarConfigurator({
                   </InfoLabel>
                 }
               >
-                {formatPercent(draft.tax?.taxFreeWithdrawalRate ?? 0)}
+                {numberFormatting.formatPercent(draft.tax?.taxFreeWithdrawalRate ?? 0)}
               </ConfigRow>
               <ConfigRow
                 label={
@@ -1572,7 +1576,7 @@ export function SidebarConfigurator({
                   </InfoLabel>
                 }
               >
-                {formatPercent(draft.tax?.earlyWithdrawalPenaltyRate ?? 0)}
+                {numberFormatting.formatPercent(draft.tax?.earlyWithdrawalPenaltyRate ?? 0)}
               </ConfigRow>
               {(draft.tax?.earlyWithdrawalPenaltyRate ?? 0) > 0 && (
                 <ConfigRow
@@ -1625,7 +1629,7 @@ export function SidebarConfigurator({
                       </InfoLabel>
                     }
                   >
-                    {formatAmount(taxBucketBalances.taxable, currency)}{" "}
+                    {amountFormatting.formatAmount(taxBucketBalances.taxable, currency)}{" "}
                     <span className="text-muted-foreground ml-1 font-normal">
                       {pctOfTotal(taxBucketBalances.taxable, taxBucketTotal)}
                     </span>
@@ -1637,7 +1641,7 @@ export function SidebarConfigurator({
                       </InfoLabel>
                     }
                   >
-                    {formatAmount(taxBucketBalances.taxDeferred, currency)}{" "}
+                    {amountFormatting.formatAmount(taxBucketBalances.taxDeferred, currency)}{" "}
                     <span className="text-muted-foreground ml-1 font-normal">
                       {pctOfTotal(taxBucketBalances.taxDeferred, taxBucketTotal)}
                     </span>
@@ -1649,7 +1653,7 @@ export function SidebarConfigurator({
                       </InfoLabel>
                     }
                   >
-                    {formatAmount(taxBucketBalances.taxFree, currency)}{" "}
+                    {amountFormatting.formatAmount(taxBucketBalances.taxFree, currency)}{" "}
                     <span className="text-muted-foreground ml-1 font-normal">
                       {pctOfTotal(taxBucketBalances.taxFree, taxBucketTotal)}
                     </span>

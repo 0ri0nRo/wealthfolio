@@ -7,6 +7,48 @@ use async_trait::async_trait;
 use log::{debug, error};
 use std::sync::Arc;
 
+const SUPPORTED_FORMATTING_REGIONS: &[&str] =
+    &["system", "CA", "US", "GB", "FR", "DE", "ES", "MX", "CN"];
+const SUPPORTED_UI_LANGUAGES: &[&str] = &["en", "fr", "de", "es", "zh"];
+
+fn normalize_ui_language(language: &str) -> String {
+    let base = language.split(['-', '_']).next().unwrap_or(language);
+    if SUPPORTED_UI_LANGUAGES.contains(&base) {
+        base.to_string()
+    } else {
+        language.to_string()
+    }
+}
+
+fn normalize_formatting_region(language: &str, formatting_region: &str) -> String {
+    let source = if formatting_region == "system" {
+        language
+    } else {
+        formatting_region
+    };
+    let candidate = source
+        .split(['-', '_'])
+        .rev()
+        .find(|part| part.len() == 2)
+        .unwrap_or(source)
+        .to_ascii_uppercase();
+    if SUPPORTED_FORMATTING_REGIONS.contains(&candidate.as_str()) {
+        candidate
+    } else {
+        "system".to_string()
+    }
+}
+
+fn validate_formatting_region(region: &str) -> Result<()> {
+    if SUPPORTED_FORMATTING_REGIONS.contains(&region) {
+        Ok(())
+    } else {
+        Err(Error::InvalidConfigValue(format!(
+            "Unsupported formatting region: {region}"
+        )))
+    }
+}
+
 // Define the trait for SettingsService
 #[async_trait]
 pub trait SettingsServiceTrait: Send + Sync {
@@ -38,7 +80,13 @@ pub struct SettingsService {
 #[async_trait]
 impl SettingsServiceTrait for SettingsService {
     fn get_settings(&self) -> Result<Settings> {
-        self.settings_repository.get_settings()
+        let mut settings = self.settings_repository.get_settings()?;
+        // Older installations stored a full locale in `language`. Preserve
+        // those regional conventions while the UI language is normalized.
+        settings.formatting_region =
+            normalize_formatting_region(&settings.language, &settings.formatting_region);
+        settings.language = normalize_ui_language(&settings.language);
+        Ok(settings)
     }
 
     async fn update_settings(&self, new_settings: &SettingsUpdate) -> Result<()> {
@@ -54,6 +102,13 @@ impl SettingsServiceTrait for SettingsService {
 
         if let Some(ref timezone_raw) = normalized_settings.timezone {
             normalized_settings.timezone = Some(canonicalize_timezone(timezone_raw)?);
+        }
+
+        if let Some(ref region) = normalized_settings.formatting_region {
+            validate_formatting_region(region)?;
+        }
+        if let Some(ref language) = normalized_settings.language {
+            normalized_settings.language = Some(normalize_ui_language(language));
         }
 
         self.settings_repository
@@ -141,5 +196,40 @@ impl SettingsService {
             settings_repository,
             fx_service,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{normalize_formatting_region, normalize_ui_language, validate_formatting_region};
+
+    #[test]
+    fn preserves_legacy_full_language_locale_as_formatting_preference() {
+        assert_eq!(normalize_formatting_region("en-US", "system"), "US");
+        assert_eq!(normalize_formatting_region("fr-FR", "system"), "FR");
+        assert_eq!(normalize_formatting_region("en-us", "system"), "US");
+        assert_eq!(normalize_formatting_region("zh-Hans-CN", "system"), "CN");
+    }
+
+    #[test]
+    fn normalizes_legacy_full_locale_to_supported_ui_language() {
+        assert_eq!(normalize_ui_language("en-US"), "en");
+        assert_eq!(normalize_ui_language("fr_CA"), "fr");
+    }
+
+    #[test]
+    fn keeps_explicit_formatting_region_separate_from_ui_language() {
+        assert_eq!(normalize_formatting_region("en", "de-DE"), "DE");
+    }
+
+    #[test]
+    fn rejects_unknown_persisted_formatting_region() {
+        assert_eq!(normalize_formatting_region("en", "unknown"), "system");
+    }
+
+    #[test]
+    fn rejects_unknown_formatting_region_updates() {
+        assert!(validate_formatting_region("DE").is_ok());
+        assert!(validate_formatting_region("de-DE").is_err());
     }
 }

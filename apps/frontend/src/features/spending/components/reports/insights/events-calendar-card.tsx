@@ -1,13 +1,13 @@
 import { useMemo, useState, type FC } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button, Icons } from "@wealthfolio/ui";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
-import { cn, formatAmount } from "@/lib/utils";
+import { cn } from "@/lib/utils";
+import { Button, Icons, useAmountFormatting } from "@wealthfolio/ui";
 
-import { useEventDialog } from "../../event-dialog-provider";
 import { useMonthCalendar } from "../../../hooks/use-month-calendar";
 import type { EventSpendingSummary } from "../../../types/event";
+import { useEventDialog } from "../../event-dialog-provider";
 import { getEventColors } from "./event-colors";
 
 const CARD_CLASS = "border-border/60 bg-card/40 rounded-2xl border p-4 backdrop-blur-xl";
@@ -31,6 +31,7 @@ interface Props {
 }
 
 export const EventsCalendarCard: FC<Props> = ({ events, currency, selectedId, onSelect }) => {
+  const formatting = useAmountFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const { openEventDialog } = useEventDialog();
@@ -143,7 +144,9 @@ export const EventsCalendarCard: FC<Props> = ({ events, currency, selectedId, on
                   key={`bar-${bar.event.eventId}`}
                   onClick={() => onSelect(bar.event.eventId)}
                   title={`${bar.event.eventName} · ${
-                    isBalanceHidden ? "••••" : formatAmount(bar.event.totalSpending, currency)
+                    isBalanceHidden
+                      ? "••••"
+                      : formatting.formatAmount(bar.event.totalSpending, currency)
                   }`}
                   className={cn(
                     "min-h-[16px] truncate rounded-sm px-1 text-left text-[10px] leading-[16px]",

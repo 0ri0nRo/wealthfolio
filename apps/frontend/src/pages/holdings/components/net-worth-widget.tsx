@@ -1,3 +1,8 @@
+import { useNetWorth } from "@/hooks/use-alternative-assets";
+import { getNetWorthCategoryLabel } from "@/lib/net-worth-category-label";
+import { useSettingsContext } from "@/lib/settings-provider";
+import { cn, parseLocalDate } from "@/lib/utils";
+import { PrivacyAmount, useDateFormatting, type FormattingApi } from "@wealthfolio/ui";
 import { Card } from "@wealthfolio/ui/components/ui/card";
 import {
   Collapsible,
@@ -12,11 +17,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@wealthfolio/ui/components/ui/tooltip";
-import { PrivacyAmount } from "@wealthfolio/ui";
-import { useNetWorth } from "@/hooks/use-alternative-assets";
-import { getNetWorthCategoryLabel } from "@/lib/net-worth-category-label";
-import { useSettingsContext } from "@/lib/settings-provider";
-import { cn, parseLocalDate } from "@/lib/utils";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -51,9 +51,11 @@ function isValuationStale(dateStr: string): boolean {
 /**
  * Formats a date string to a human-readable format
  */
-function formatDate(dateStr: string): string {
-  const date = parseLocalDate(dateStr);
-  return date.toLocaleDateString(undefined, {
+function formatDate(
+  dateStr: string,
+  formatting: Pick<FormattingApi, "formatCalendarDate">,
+): string {
+  return formatting.formatCalendarDate(dateStr.slice(0, 10), {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -160,6 +162,7 @@ export const NetWorthWidget = ({
   compact = false,
   className,
 }: NetWorthWidgetProps) => {
+  const formatting = useDateFormatting();
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const { data: netWorthData, isLoading, isError, error } = useNetWorth({ date });
@@ -251,7 +254,7 @@ export const NetWorthWidget = ({
                       <>
                         {" "}
                         {t("holdings:last_update", {
-                          date: formatDate(netWorthData.oldestValuationDate),
+                          date: formatDate(netWorthData.oldestValuationDate, formatting),
                         })}
                       </>
                     )}

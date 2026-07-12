@@ -1,5 +1,5 @@
 import type { SaveUpProjectionPointDTO } from "@/lib/types";
-import { formatCompactAmount } from "@wealthfolio/ui";
+import { useAmountFormatting } from "@wealthfolio/ui";
 import { Card, CardContent, CardHeader, CardTitle } from "@wealthfolio/ui/components/ui/card";
 import { useTranslation } from "react-i18next";
 import {
@@ -50,6 +50,7 @@ function ProjectionTooltip({
   isHidden: boolean;
   annualReturn: number;
 }) {
+  const formatting = useAmountFormatting();
   const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload as ProjectionPoint | undefined;
@@ -57,7 +58,7 @@ function ProjectionTooltip({
 
   const [y, m] = point.date.split("-");
   const label = `${MONTHS[Number(m) - 1]} ${y}`;
-  const fmt = (v: number) => (isHidden ? "***" : formatCompactAmount(v, currency));
+  const fmt = (v: number) => (isHidden ? "***" : formatting.formatCompactAmount(v, currency));
 
   const highRate = annualReturn + RANGE_RATE_DELTA;
   const lowRate = Math.max(0, annualReturn - RANGE_RATE_DELTA);
@@ -125,12 +126,14 @@ function ProjectionChart({
   isHidden: boolean;
   annualReturn: number;
 }) {
+  const formatting = useAmountFormatting();
   const target = data[0]?.target ?? 0;
   const last = data.length > 0 ? data[data.length - 1] : null;
   const finalTarget = last?.target ?? 0;
   const finalProjected = last?.nominal ?? 0;
   const finalDate = last?.date;
-  const fmtCompact = (v: number) => (isHidden ? "***" : formatCompactAmount(v, currency));
+  const fmtCompact = (v: number) =>
+    isHidden ? "***" : formatting.formatCompactAmount(v, currency);
 
   return (
     <ResponsiveContainer width="100%" height={300}>

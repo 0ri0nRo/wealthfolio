@@ -49,7 +49,8 @@
       "noTimezonesFound": "Aucun fuseau horaire trouvé",
       "currencyRequired": "Veuillez sélectionner une devise de base.",
       "timezoneRequired": "Veuillez sélectionner un fuseau horaire.",
-      "languageLabel": "Langue"
+      "languageLabel": "Langue",
+      "formattingRegionLabel": "Région et formats"
     }
   },
   "appearance": {

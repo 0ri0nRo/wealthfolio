@@ -1,16 +1,17 @@
 import { TickerAvatar } from "@/components/ticker-avatar";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { HoldingType } from "@/lib/constants";
-import { parseOccSymbol } from "@/lib/occ-symbol";
+import { formatOptionSubtitle, parseOccSymbol } from "@/lib/occ-symbol";
 import { Account, AccountScope, Holding } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   AmountDisplay,
   Badge,
-  formatPercent,
   GainPercent,
   Input,
   Separator,
+  useDateFormatting,
+  useNumberFormatting,
 } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Card } from "@wealthfolio/ui/components/ui/card";
@@ -77,6 +78,11 @@ export const HoldingsTableMobile = ({
   hasHiddenPositions = false,
   toolbarActions,
 }: HoldingsTableMobileProps) => {
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
+
+  const formatting = { ...dateFormatting, ...numberFormatting };
+
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const navigate = useNavigate();
@@ -208,7 +214,7 @@ export const HoldingsTableMobile = ({
             const subtitle = isCash
               ? t("holdings:cash_balance")
               : parsedOption
-                ? `${new Date(parsedOption.expiration + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} $${parsedOption.strikePrice} ${parsedOption.optionType}`
+                ? formatOptionSubtitle(parsedOption, formatting)
                 : (holding.instrument?.name ?? null);
             const isNavigable = !isCash && holding.instrument?.symbol;
 
@@ -252,7 +258,7 @@ export const HoldingsTableMobile = ({
                     {isCash && (
                       <p className="text-muted-foreground text-xs">
                         {t("holdings:weight_value", {
-                          value: formatPercent(holding.weight ?? 0),
+                          value: formatting.formatPercent(holding.weight ?? 0),
                         })}
                       </p>
                     )}

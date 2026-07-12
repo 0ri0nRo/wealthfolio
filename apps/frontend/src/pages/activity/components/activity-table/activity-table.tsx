@@ -1,7 +1,40 @@
 import React from "react";
 
 import { TickerAvatar } from "@/components/ticker-avatar";
-import { parseOccSymbol } from "@/lib/occ-symbol";
+import {
+  calculateActivityValue,
+  formatSplitRatio,
+  isAssetBackedIncomeActivity,
+  isCashActivity,
+  isCashTransfer,
+  isFeeActivity,
+  isIncomeActivity,
+  isSecuritiesTransfer,
+  isSplitActivity,
+  localizeActivitySubtypeName,
+} from "@/lib/activity-utils";
+import { ActivityType, getExchangeDisplayName } from "@/lib/constants";
+import { formatOptionSubtitle, parseOccSymbol } from "@/lib/occ-symbol";
+import { useSettingsContext } from "@/lib/settings-provider";
+import { ActivityDetails } from "@/lib/types";
+import { formatDateTime } from "@/lib/utils";
+import {
+  type OnChangeFn,
+  type VisibilityState,
+  ColumnDef,
+  SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from "@tanstack/react-table";
+import {
+  Button,
+  EmptyPlaceholder,
+  useAmountFormatting,
+  useNumberFormatting,
+  useDateFormatting,
+} from "@wealthfolio/ui";
 import { DataTableColumnHeader } from "@wealthfolio/ui/components/ui/data-table/data-table-column-header";
 import {
   DropdownMenu,
@@ -18,35 +51,8 @@ import {
   TableHeader,
   TableRow,
 } from "@wealthfolio/ui/components/ui/table";
-import {
-  calculateActivityValue,
-  isAssetBackedIncomeActivity,
-  isCashActivity,
-  isCashTransfer,
-  isSecuritiesTransfer,
-  isFeeActivity,
-  isIncomeActivity,
-  isSplitActivity,
-  formatSplitRatio,
-} from "@/lib/activity-utils";
-import { localizeActivitySubtypeName } from "@/lib/activity-utils";
-import { ActivityType, getExchangeDisplayName } from "@/lib/constants";
-import { ActivityDetails } from "@/lib/types";
-import { formatDateTime } from "@/lib/utils";
-import { useSettingsContext } from "@/lib/settings-provider";
-import {
-  type OnChangeFn,
-  type VisibilityState,
-  ColumnDef,
-  SortingState,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
-import { Button, EmptyPlaceholder, formatAmount, formatPrice } from "@wealthfolio/ui";
-import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { useActivityMutations } from "../../hooks/use-activity-mutations";
 import { ActivityOperations } from "../activity-operations";
 import { ActivityTypeBadge } from "../activity-type-badge";
@@ -78,6 +84,7 @@ export const ActivityTable = ({
   onAdd,
   onClearFilters,
 }: ActivityTableProps) => {
+  const formatting = useAmountFormatting();
   const { t } = useTranslation();
   const { duplicateActivityMutation } = useActivityMutations();
   const { settings } = useSettingsContext();
@@ -164,11 +171,12 @@ export const ActivityTable = ({
           <DataTableColumnHeader column={column} title={t("activity:table_date")} />
         ),
         cell: ({ row }) => {
+          const dateFormatting = useDateFormatting();
           const dateVal = row.getValue("date");
           const formattedDate =
             typeof dateVal === "string" || dateVal instanceof Date
-              ? formatDateTime(dateVal, appTimezone)
-              : formatDateTime(String(dateVal), appTimezone);
+              ? formatDateTime(dateVal, dateFormatting, appTimezone)
+              : formatDateTime(String(dateVal), dateFormatting, appTimezone);
           return (
             <div className="ml-2 flex flex-col">
               <span>{formattedDate.date}</span>
@@ -184,6 +192,8 @@ export const ActivityTable = ({
           <DataTableColumnHeader column={column} title={t("activity:table_symbol")} />
         ),
         cell: ({ row }) => {
+          const numberFormatting = useNumberFormatting();
+          const dateFormatting = useDateFormatting();
           const symbol = String(row.getValue("assetSymbol"));
           const assetId = row.original.assetId;
           const activityType = String(row.getValue("activityType"));
@@ -221,7 +231,7 @@ export const ActivityTable = ({
 
           // Option subtitle: "Mar 29 $150 CALL"
           const optionSubtitle = parsedOption
-            ? `${new Date(parsedOption.expiration + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} $${parsedOption.strikePrice} ${parsedOption.optionType}`
+            ? formatOptionSubtitle(parsedOption, { ...numberFormatting, ...dateFormatting })
             : null;
 
           const content = (
@@ -356,10 +366,12 @@ export const ActivityTable = ({
             isCashTransfer(activityType, assetSymbol, row.original.assetId) ||
             (isIncomeActivity(activityType) && !isAssetBackedIncome)
           ) {
-            return <div className="text-right">{formatAmount(Number(amount), currency)}</div>;
+            return (
+              <div className="text-right">{formatting.formatAmount(Number(amount), currency)}</div>
+            );
           }
 
-          return <div className="text-right">{formatPrice(unitPrice, currency)}</div>;
+          return <div className="text-right">{formatting.formatPrice(unitPrice, currency)}</div>;
         },
       },
       {
@@ -388,7 +400,7 @@ export const ActivityTable = ({
 
           return (
             <div className="text-right">
-              {activityType === "SPLIT" ? "-" : formatAmount(fee, currency)}
+              {activityType === "SPLIT" ? "-" : formatting.formatAmount(fee, currency)}
             </div>
           );
         },
@@ -419,7 +431,7 @@ export const ActivityTable = ({
 
           return (
             <div className="text-right">
-              {activityType === "SPLIT" ? "-" : formatAmount(tax, currency)}
+              {activityType === "SPLIT" ? "-" : formatting.formatAmount(tax, currency)}
             </div>
           );
         },
@@ -449,7 +461,9 @@ export const ActivityTable = ({
           }
 
           const displayValue = calculateActivityValue(activity);
-          return <div className="pr-4 text-right">{formatAmount(displayValue, currency)}</div>;
+          return (
+            <div className="pr-4 text-right">{formatting.formatAmount(displayValue, currency)}</div>
+          );
         },
       },
       {
@@ -565,6 +579,7 @@ export const ActivityTable = ({
     ],
     [
       appTimezone,
+      formatting,
       handleEdit,
       handleDelete,
       handleDuplicate,

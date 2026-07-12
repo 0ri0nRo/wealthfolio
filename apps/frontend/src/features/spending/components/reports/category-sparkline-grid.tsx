@@ -1,15 +1,15 @@
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 
-import { Skeleton, formatCompactAmount } from "@wealthfolio/ui";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import type { TaxonomyCategory } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { Skeleton, useAmountFormatting } from "@wealthfolio/ui";
 
-import { CategoryIcon } from "../category-chips";
 import type { CategoryBreakdownRow, DayCategoryBucket, MonthBucket } from "../../types/report";
+import { CategoryIcon } from "../category-chips";
 
 export type SparklineGranularity = "day" | "month";
 
@@ -98,6 +98,7 @@ export function CategorySparklineGrid({
 }
 
 function SparklineCard({ row, currency }: { row: CategorySparklineRow; currency: string }) {
+  const formatting = useAmountFormatting();
   const { isBalanceHidden } = useBalancePrivacy();
   const color = row.color ?? "var(--muted-foreground)";
   const tintBg = row.color ? `${row.color}1F` : "var(--muted)";
@@ -130,7 +131,7 @@ function SparklineCard({ row, currency }: { row: CategorySparklineRow; currency:
         )}
       </div>
       <div className="text-foreground text-sm font-semibold tabular-nums">
-        {isBalanceHidden ? "••••" : formatCompactAmount(row.total, currency)}
+        {isBalanceHidden ? "••••" : formatting.formatCompactAmount(row.total, currency)}
       </div>
       <div className="-mx-1 h-10">
         <ResponsiveContainer width="100%" height="100%">

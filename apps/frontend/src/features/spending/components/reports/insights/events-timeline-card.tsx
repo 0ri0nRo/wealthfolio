@@ -5,6 +5,9 @@
 import { useEffect, useMemo, useRef, useState, type FC } from "react";
 import { useTranslation } from "react-i18next";
 
+import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
+import type { Activity } from "@/lib/types";
+import { cn, parseLocalDate } from "@/lib/utils";
 import {
   Button,
   Icons,
@@ -12,17 +15,14 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-  formatCompactAmount,
+  useAmountFormatting,
 } from "@wealthfolio/ui";
-import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
-import type { Activity } from "@/lib/types";
-import { cn, parseLocalDate } from "@/lib/utils";
 
-import { useEventDialog } from "../../event-dialog-provider";
 import { useEventsAggregate } from "../../../hooks/use-events-aggregate";
 import { getActivitySpendingAmount } from "../../../lib/constants";
 import { inclusiveDays } from "../../../lib/date-utils";
 import type { EventSpendingSummary } from "../../../types/event";
+import { useEventDialog } from "../../event-dialog-provider";
 import { getEventColors } from "./event-colors";
 import { CARD_CLASS, LABEL_CLASS, MONTH_LABELS } from "./insights-shared";
 
@@ -57,6 +57,7 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
   onPrevWindow,
   onNextWindow,
 }) => {
+  const formatting = useAmountFormatting();
   const { t: tr } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const { openEventDialog } = useEventDialog();
@@ -358,7 +359,10 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
                 fontSize={9}
                 className="fill-muted-foreground"
               >
-                {isBalanceHidden ? "••••" : formatCompactAmount(computed.normalPace, currency)}/d
+                {isBalanceHidden
+                  ? "••••"
+                  : formatting.formatCompactAmount(computed.normalPace, currency)}
+                /d
               </text>
             </>
           )}
@@ -486,7 +490,9 @@ export const EventsTimelineCard: FC<EventsTimelineCardProps> = ({
                       className={lift >= 0 ? "fill-destructive" : "fill-success"}
                     >
                       {lift >= 0 ? "+" : "−"}
-                      {isBalanceHidden ? "••••" : formatCompactAmount(Math.abs(lift), currency)}
+                      {isBalanceHidden
+                        ? "••••"
+                        : formatting.formatCompactAmount(Math.abs(lift), currency)}
                     </text>
                     <text x={x1 + 8} y={bandY + 46} fontSize={9} className="fill-muted-foreground">
                       {days}D · {kindLabel}

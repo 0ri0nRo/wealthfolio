@@ -1401,6 +1401,21 @@
   "ai_providers_empty_description": "Les fournisseurs d'IA apparaîtront ici une fois configurés. Revenez plus tard ou contactez le support.",
   "about_logo_alt": "Logo Wealthfolio",
   "language_region_title": "Langue et région",
+  "formattingRegion": {
+    "title": "Région et formats",
+    "description": "Contrôle les dates, les heures, les séparateurs de nombres, les pourcentages et l’affichage des devises.",
+    "options": {
+      "system": "Région du système",
+      "canada": "Canada",
+      "unitedStates": "États-Unis",
+      "unitedKingdom": "Royaume-Uni",
+      "france": "France",
+      "germany": "Allemagne",
+      "spain": "Espagne",
+      "mexico": "Mexique",
+      "china": "Chine"
+    }
+  },
   "appearance_navigation_title": "Navigation",
   "appearance_navigation_description": "Choisissez votre mode de navigation sur grand écran.",
   "addons_pin_to_navigation": "Épingler {{name}} à la navigation",

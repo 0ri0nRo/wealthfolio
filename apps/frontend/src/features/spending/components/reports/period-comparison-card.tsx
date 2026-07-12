@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Skeleton, formatCompactAmount } from "@wealthfolio/ui";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { cn } from "@/lib/utils";
+import { Skeleton, useAmountFormatting, type FormattingApi } from "@wealthfolio/ui";
 
 import { type ComparisonMode } from "../../lib/reports-period";
 import type { MonthlyReport } from "../../types/report";
@@ -111,6 +111,8 @@ export function PeriodComparisonCard({
 }
 
 function ComparisonMetric({ row, currency }: { row: MetricRow; currency: string }) {
+  const amountFormatting = useAmountFormatting();
+
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const { currentValue, priorValue, goodOnIncrease, label } = row;
@@ -131,14 +133,14 @@ function ComparisonMetric({ row, currency }: { row: MetricRow; currency: string 
     <div className="flex flex-col">
       <span className="text-muted-foreground text-[11px] font-light tracking-wide">{label}</span>
       <span className="text-foreground text-base font-semibold tabular-nums">
-        {isBalanceHidden ? "••••" : formatMetric(currentValue, currency, isRate)}
+        {isBalanceHidden ? "••••" : formatMetric(currentValue, currency, isRate, amountFormatting)}
       </span>
       {!isBalanceHidden && pct != null && (
         <span className={cn("mt-0.5 text-[11px] tabular-nums", toneClass)}>
           {trendingUp ? "↑" : delta < 0 ? "↓" : "→"} {Math.abs(pct * 100).toFixed(1)}%
           <span className="text-muted-foreground/70 ml-1 font-normal">
             {t("spending:comparison.was", {
-              value: formatMetric(priorValue, currency, isRate),
+              value: formatMetric(priorValue, currency, isRate, amountFormatting),
             })}
           </span>
         </span>
@@ -147,7 +149,12 @@ function ComparisonMetric({ row, currency }: { row: MetricRow; currency: string 
   );
 }
 
-function formatMetric(value: number, currency: string, isRate: boolean): string {
+function formatMetric(
+  value: number,
+  currency: string,
+  isRate: boolean,
+  formatting: Pick<FormattingApi, "formatCompactAmount">,
+): string {
   if (isRate) return `${(value * 100).toFixed(1)}%`;
-  return formatCompactAmount(value, currency);
+  return formatting.formatCompactAmount(value, currency);
 }

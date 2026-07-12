@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
-import { formatQuantity } from "@/lib/utils";
+import {} from "@/lib/utils";
 import {
   createColumnHelper,
   flexRender,
@@ -15,23 +15,9 @@ import {
   SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-
-declare module "@tanstack/react-table" {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface TableMeta<TData extends RowData> {
-    editingId?: string | null;
-    editedValues?: Record<string, unknown>;
-    handleInputChange?: (field: keyof Quote, value: string | Date, isNew?: boolean) => void;
-    handleEdit?: (quote: Quote) => void;
-    handleSave?: () => void;
-    handleCancel?: () => void;
-    handleDelete?: (quoteId: string) => void;
-  }
-}
 import {
   Button,
   DatePickerInput,
-  formatPrice,
   Icons,
   Input,
   Label,
@@ -51,7 +37,24 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useAmountFormatting,
+  useDateFormatting,
+  useLocalizationSettings,
+  useNumberFormatting,
 } from "@wealthfolio/ui";
+
+declare module "@tanstack/react-table" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface TableMeta<TData extends RowData> {
+    editingId?: string | null;
+    editedValues?: Record<string, unknown>;
+    handleInputChange?: (field: keyof Quote, value: string | Date, isNew?: boolean) => void;
+    handleEdit?: (quote: Quote) => void;
+    handleSave?: () => void;
+    handleCancel?: () => void;
+    handleDelete?: (quoteId: string) => void;
+  }
+}
 
 interface QuoteHistoryTableProps {
   data: Quote[];
@@ -80,6 +83,18 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
   onDeleteQuote,
   onChangeDataSource,
 }) => {
+  const localizationSettings = useLocalizationSettings();
+  const amountFormatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
+
+  const formatting = {
+    ...localizationSettings,
+    ...amountFormatting,
+    ...numberFormatting,
+    ...dateFormatting,
+  };
+
   const { t } = useTranslation();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedValues, setEditedValues] = useState<Partial<Quote>>({});
@@ -199,7 +214,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               onChange={(e) => handleInputChange("open", e.target.value)}
             />
           ) : (
-            formatPrice(value, info.row.original.currency, false)
+            amountFormatting.formatPrice(value, info.row.original.currency, false)
           );
         },
         enableSorting: false,
@@ -217,7 +232,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               autoFocus={true}
             />
           ) : (
-            formatPrice(value, info.row.original.currency, false)
+            amountFormatting.formatPrice(value, info.row.original.currency, false)
           );
         },
         enableSorting: false,
@@ -234,7 +249,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               onChange={(e) => handleInputChange("low", e.target.value)}
             />
           ) : (
-            formatPrice(value, info.row.original.currency, false)
+            amountFormatting.formatPrice(value, info.row.original.currency, false)
           );
         },
         enableSorting: false,
@@ -251,7 +266,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               onChange={(e) => handleInputChange("close", e.target.value)}
             />
           ) : (
-            formatPrice(value, info.row.original.currency, false)
+            amountFormatting.formatPrice(value, info.row.original.currency, false)
           );
         },
         enableSorting: false,
@@ -268,7 +283,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               onChange={(e) => handleInputChange("volume", e.target.value)}
             />
           ) : (
-            formatQuantity(value)
+            numberFormatting.formatQuantity(value)
           );
         },
         enableSorting: false,
@@ -335,7 +350,17 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
           ]
         : []),
     ],
-    [isManualDataSource, handleInputChange, handleEdit, handleSave, handleCancel, handleDelete, t],
+    [
+      columnHelper,
+      formatting,
+      isManualDataSource,
+      handleInputChange,
+      handleEdit,
+      handleSave,
+      handleCancel,
+      handleDelete,
+      t,
+    ],
   );
 
   const table = useReactTable({

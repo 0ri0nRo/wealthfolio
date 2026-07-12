@@ -1,0 +1,808 @@
+import {
+  CalendarDate,
+  CalendarDateTime,
+  parseDate,
+  parseDateTime,
+  parseTime,
+  Time,
+} from "@internationalized/date";
+import { NumberParser } from "@internationalized/number";
+import { DECIMAL_PRECISION, DISPLAY_DECIMAL_PRECISION } from "./constants";
+import { getQuoteUnitCurrency } from "./currencies";
+
+/** Max fraction digits for a standard per-unit price (prices >= 0.01). */
+const STANDARD_PRICE_DECIMAL_PRECISION = 4;
+
+export const FORMATTING_REGIONS = [
+  "system",
+  "CA",
+  "US",
+  "GB",
+  "FR",
+  "DE",
+  "ES",
+  "MX",
+  "CN",
+] as const;
+
+export type FormattingRegionSetting = (typeof FORMATTING_REGIONS)[number];
+
+export interface PercentFormatOptions {
+  digits?: number;
+  signDisplay?: "auto" | "always" | "exceptZero" | "never";
+}
+
+export type NumberDisplayOptions = Pick<
+  Intl.NumberFormatOptions,
+  | "style"
+  | "notation"
+  | "currency"
+  | "currencyDisplay"
+  | "minimumFractionDigits"
+  | "maximumFractionDigits"
+  | "minimumSignificantDigits"
+  | "maximumSignificantDigits"
+  | "signDisplay"
+  | "useGrouping"
+>;
+
+export type DateDisplayOptions = Pick<
+  Intl.DateTimeFormatOptions,
+  | "dateStyle"
+  | "timeStyle"
+  | "year"
+  | "month"
+  | "day"
+  | "weekday"
+  | "hour"
+  | "minute"
+  | "second"
+  | "hour12"
+  | "hourCycle"
+  | "timeZoneName"
+  | "timeZone"
+>;
+
+export interface CalendarDateParts {
+  year: number;
+  month: number;
+  day: number;
+}
+
+export type CalendarDateValue = string | CalendarDate | CalendarDateParts;
+
+export interface CalendarDateTimeParts extends CalendarDateParts {
+  hour: number;
+  minute: number;
+  second?: number;
+  millisecond?: number;
+}
+
+export interface TimeParts {
+  hour: number;
+  minute: number;
+  second?: number;
+  millisecond?: number;
+}
+
+export type CalendarDateTimeValue = string | CalendarDateTime | CalendarDateTimeParts;
+export type TimeValue = string | Time | TimeParts;
+
+export function calendarDateFromLocalDate(value: Date): CalendarDateParts {
+  return { year: value.getFullYear(), month: value.getMonth() + 1, day: value.getDate() };
+}
+
+export function calendarDateTimeFromLocalDate(value: Date): CalendarDateTimeParts {
+  return {
+    ...calendarDateFromLocalDate(value),
+    hour: value.getHours(),
+    minute: value.getMinutes(),
+    second: value.getSeconds(),
+    millisecond: value.getMilliseconds(),
+  };
+}
+
+export function timeFromLocalDate(value: Date): TimeParts {
+  return {
+    hour: value.getHours(),
+    minute: value.getMinutes(),
+    second: value.getSeconds(),
+    millisecond: value.getMilliseconds(),
+  };
+}
+
+export interface FormattingApi {
+  locale: string;
+  timezone?: string;
+  decimalSeparator: string;
+  groupSeparator: string;
+  formatAmount: (
+    value: number | string | null | undefined,
+    currency: string,
+    displayCurrency?: boolean,
+  ) => string;
+  formatCompactAmount: (
+    value: number | string | null | undefined,
+    currency: string,
+    displayCurrency?: boolean,
+  ) => string;
+  formatPrice: (
+    value: number | string | null | undefined,
+    currency: string,
+    displayCurrency?: boolean,
+  ) => string;
+  formatRoundedAmount: (value: number | string | null | undefined, currency: string) => string;
+  formatCurrencySymbol: (currency: string) => string;
+  currencyFractionDigits: (currency: string) => number;
+  formatPercent: (value: number | null | undefined, options?: PercentFormatOptions) => string;
+  formatQuantity: (value: number | string | null | undefined) => string;
+  formatDecimal: (value: number, options?: NumberDisplayOptions) => string;
+  formatDate: (value: Date | string | number, options?: DateDisplayOptions) => string;
+  formatCalendarDate: (value: CalendarDateValue, options?: DateDisplayOptions) => string;
+  formatCalendarDateTime: (value: CalendarDateTimeValue, options?: DateDisplayOptions) => string;
+  formatTimeOfDay: (value: TimeValue, options?: DateDisplayOptions) => string;
+  formatTime: (value: Date | string | number, options?: DateDisplayOptions) => string;
+  formatDateTime: (value: Date | string | number, options?: DateDisplayOptions) => string;
+  parseNumber: (value: string) => number | undefined;
+  parseDate: (value: string) => Date | undefined;
+}
+
+export type AmountFormatting = Pick<
+  FormattingApi,
+  | "formatAmount"
+  | "formatCompactAmount"
+  | "formatPrice"
+  | "formatRoundedAmount"
+  | "formatCurrencySymbol"
+  | "currencyFractionDigits"
+>;
+
+export type NumberFormatting = Pick<
+  FormattingApi,
+  | "decimalSeparator"
+  | "groupSeparator"
+  | "formatPercent"
+  | "formatQuantity"
+  | "formatDecimal"
+  | "parseNumber"
+>;
+
+export type DateFormatting = Pick<
+  FormattingApi,
+  | "formatDate"
+  | "formatCalendarDate"
+  | "formatCalendarDateTime"
+  | "formatTimeOfDay"
+  | "formatTime"
+  | "formatDateTime"
+  | "parseDate"
+>;
+
+export function resolveFormattingLocale(
+  setting: string | null | undefined,
+  uiLocale?: string | null,
+): string {
+  if (!setting) {
+    throw new Error("A formatting locale is required");
+  }
+  if (setting === "system") {
+    const systemLocale =
+      typeof navigator !== "undefined" ? navigator.languages?.[0] || navigator.language : undefined;
+    if (!systemLocale) {
+      throw new Error("The system formatting locale is unavailable; provide an explicit locale");
+    }
+    setting = Intl.getCanonicalLocales(systemLocale)[0]!;
+  }
+  const isRegion = /^[A-Za-z]{2}$/.test(setting);
+  if (isRegion && !uiLocale) {
+    throw new Error("A UI locale is required when resolving a formatting region");
+  }
+  try {
+    const regionLocale = isRegion
+      ? new Intl.Locale("und", { region: setting.toUpperCase() })
+      : new Intl.Locale(Intl.getCanonicalLocales(setting)[0]);
+    if (!uiLocale) return regionLocale.toString();
+    const languageLocale = new Intl.Locale(Intl.getCanonicalLocales(uiLocale)[0]);
+    return new Intl.Locale(languageLocale.language, {
+      region: regionLocale.region,
+      script: languageLocale.script,
+    }).toString();
+  } catch {
+    throw new Error(`Invalid formatting locale: ${setting}`);
+  }
+}
+
+interface PreparedFormatters {
+  decimal: Pick<Intl.NumberFormat, "format">;
+  amount: Pick<Intl.NumberFormat, "format">;
+  quantity: Pick<Intl.NumberFormat, "format">;
+  date: { format(value: Date): string };
+  calendarDate: { format(value: Date): string };
+  calendarDateTime: { format(value: Date): string };
+  timeOfDay: { format(value: Date): string };
+  time: { format(value: Date): string };
+  dateTime: { format(value: Date): string };
+}
+
+type PreparedAmountFormatters = Pick<PreparedFormatters, "decimal" | "amount">;
+type PreparedNumberFormatters = Pick<PreparedFormatters, "decimal" | "quantity">;
+type PreparedDateFormatters = Pick<
+  PreparedFormatters,
+  "date" | "calendarDate" | "calendarDateTime" | "timeOfDay" | "time" | "dateTime"
+>;
+
+function separators(locale: string) {
+  const parts = new Intl.NumberFormat(locale).formatToParts(12345.6);
+  return {
+    decimal: parts.find((part) => part.type === "decimal")?.value ?? ".",
+    group: parts.find((part) => part.type === "group")?.value ?? ",",
+  };
+}
+
+function stripFinancialAffixes(value: string): string | null {
+  const affix = String.raw`(?:\p{Sc}|[A-Z]{3}|[A-Z]{1,3}\p{Sc})`;
+  let result = value
+    .replace(new RegExp(`^([+\\-−]?)\\s*${affix}\\s*`, "u"), "$1")
+    .replace(new RegExp(`\\s*${affix}\\s*$`, "u"), "")
+    .trim();
+  if (/\p{L}|\p{Sc}/u.test(result)) return null;
+  result = result.replace(/^−/, "-");
+  return result;
+}
+
+function hasValidGrouping(value: string, locale: string, parsed: number): boolean {
+  const formatter = new Intl.NumberFormat(locale);
+  const parts = formatter.formatToParts(12345.6);
+  const decimal = parts.find((part) => part.type === "decimal")?.value;
+  const group = parts.find((part) => part.type === "group")?.value;
+  if (!group) return true;
+
+  const normalized = /\s/u.test(group) ? value.replace(/[\s\u00a0\u202f]/gu, group) : value;
+  const [integer = "", ...fractions] = decimal ? normalized.split(decimal) : [normalized];
+  if (fractions.length > 1 || fractions.some((fraction) => fraction.includes(group))) return false;
+  if (!integer.includes(group)) return true;
+
+  const actualGroups = integer.replace(/^[+-]/, "").split(group);
+  if (actualGroups.some((part) => part.length === 0)) return false;
+  const expectedGroups = new Intl.NumberFormat(locale, {
+    useGrouping: true,
+    maximumFractionDigits: 0,
+  })
+    .formatToParts(Math.trunc(Math.abs(parsed)))
+    .filter((part) => part.type === "integer")
+    .map((part) => Array.from(part.value).length);
+  return (
+    actualGroups.length === expectedGroups.length &&
+    actualGroups.every((part, index) => Array.from(part).length === expectedGroups[index])
+  );
+}
+
+export function parseLocalizedNumber(value: string, locale: string): number | undefined {
+  const resolvedLocale = locale && locale !== "system" ? locale : resolveFormattingLocale(locale);
+  const text = stripFinancialAffixes(value.trim().replace(/[\u061c\u200e\u200f]/gu, ""));
+  if (!text) return undefined;
+  const parser = new NumberParser(resolvedLocale, { style: "decimal" });
+  const parsed = parser.parse(text);
+  return Number.isFinite(parsed) && hasValidGrouping(text, resolvedLocale, parsed)
+    ? parsed
+    : undefined;
+}
+
+export function parseLocalizedDate(value: string, locale: string): Date | undefined {
+  const text = value.trim();
+  if (
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(text)
+  ) {
+    const result = new Date(text);
+    return Number.isFinite(result.getTime()) ? result : undefined;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    const [year, month, day] = text.split("-").map(Number);
+    const result = new Date(year, month - 1, day);
+    return result.getFullYear() === year &&
+      result.getMonth() === month - 1 &&
+      result.getDate() === day
+      ? result
+      : undefined;
+  }
+  const numbers = text.match(/\d+/g)?.map(Number);
+  if (numbers?.length !== 3) return undefined;
+  const resolvedLocale = locale && locale !== "system" ? locale : resolveFormattingLocale(locale);
+  const order = new Intl.DateTimeFormat(resolvedLocale, {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  })
+    .formatToParts(new Date(2006, 10, 22))
+    .filter((part) => part.type === "year" || part.type === "month" || part.type === "day")
+    .map((part) => part.type as "year" | "month" | "day");
+  const fields = Object.fromEntries(order.map((key, index) => [key, numbers[index]])) as Record<
+    string,
+    number
+  >;
+  const result = new Date(fields.year, fields.month - 1, fields.day);
+  return result.getFullYear() === fields.year &&
+    result.getMonth() === fields.month - 1 &&
+    result.getDate() === fields.day
+    ? result
+    : undefined;
+}
+
+function toDate(value: Date | string | number): Date | null {
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+function toCalendarDate(value: CalendarDateValue): CalendarDate | null {
+  try {
+    if (typeof value === "string") {
+      return /^\d{4}-\d{2}-\d{2}$/.test(value) ? parseDate(value) : null;
+    }
+    if (value instanceof CalendarDate) return value;
+    const date = new CalendarDate(value.year, value.month, value.day);
+    return date.year === value.year && date.month === value.month && date.day === value.day
+      ? date
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function toCalendarDateTime(value: CalendarDateTimeValue): CalendarDateTime | null {
+  try {
+    if (typeof value === "string") return parseDateTime(value);
+    if (value instanceof CalendarDateTime) return value;
+    return new CalendarDateTime(
+      value.year,
+      value.month,
+      value.day,
+      value.hour,
+      value.minute,
+      value.second ?? 0,
+      value.millisecond ?? 0,
+    );
+  } catch {
+    return null;
+  }
+}
+
+function toTime(value: TimeValue): Time | null {
+  try {
+    if (typeof value === "string") return parseTime(value);
+    if (value instanceof Time) return value;
+    return new Time(value.hour, value.minute, value.second ?? 0, value.millisecond ?? 0);
+  } catch {
+    return null;
+  }
+}
+
+function numeric(value: number | string | null | undefined) {
+  if (value == null || value === "") return null;
+  const result = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(result) ? result : null;
+}
+
+export function createAmountFormatting(
+  locale: string,
+  prepared?: PreparedAmountFormatters,
+): AmountFormatting {
+  const resolvedLocale = resolveFormattingLocale(locale);
+  const decimalFormatter = prepared?.decimal ?? new Intl.NumberFormat(resolvedLocale);
+  const amountFormatter =
+    prepared?.amount ??
+    new Intl.NumberFormat(resolvedLocale, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+  const roundedDecimalFormatter = new Intl.NumberFormat(resolvedLocale, {
+    maximumFractionDigits: 0,
+  });
+  const currencyFormatters = new Map<string, Intl.NumberFormat>();
+  const roundedCurrencyFormatters = new Map<string, Intl.NumberFormat>();
+  const currencySymbols = new Map<string, string>();
+  const currencyFractionDigits = new Map<string, number>();
+  const compactFormatters = new Map<string, Intl.NumberFormat>();
+  const priceDecimalFormatters = new Map<number, Intl.NumberFormat>();
+  const priceCurrencyFormatters = new Map<string, Intl.NumberFormat>();
+  const priceDecimalFormatter = (maximumFractionDigits: number) => {
+    let formatter = priceDecimalFormatters.get(maximumFractionDigits);
+    if (!formatter) {
+      formatter = new Intl.NumberFormat(resolvedLocale, {
+        minimumFractionDigits: DISPLAY_DECIMAL_PRECISION,
+        maximumFractionDigits,
+      });
+      priceDecimalFormatters.set(maximumFractionDigits, formatter);
+    }
+    return formatter;
+  };
+  const compactDecimalFormatter = (maximumFractionDigits: number) => {
+    const key = `decimal:${maximumFractionDigits}`;
+    let formatter = compactFormatters.get(key);
+    if (!formatter) {
+      formatter = new Intl.NumberFormat(resolvedLocale, {
+        notation: "compact",
+        maximumFractionDigits,
+      });
+      compactFormatters.set(key, formatter);
+    }
+    return formatter;
+  };
+
+  const formatAmount: AmountFormatting["formatAmount"] = (
+    value,
+    currency,
+    displayCurrency = true,
+  ) => {
+    const amount = numeric(value);
+    if (amount == null) return "-";
+    const displayed = Math.abs(amount) < 0.005 ? 0 : amount;
+    const quoteUnit = getQuoteUnitCurrency(currency);
+    if (quoteUnit) {
+      const result = amountFormatter.format(displayed);
+      return displayCurrency ? `${result}${quoteUnit.symbol}` : result;
+    }
+    try {
+      if (!displayCurrency) return amountFormatter.format(displayed);
+      const normalizedCurrency = currency?.toUpperCase?.() || "USD";
+      let formatter = currencyFormatters.get(normalizedCurrency);
+      if (!formatter) {
+        formatter = new Intl.NumberFormat(resolvedLocale, {
+          style: "currency",
+          currency: normalizedCurrency,
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        });
+        currencyFormatters.set(normalizedCurrency, formatter);
+      }
+      return formatter.format(displayed);
+    } catch {
+      const result = amountFormatter.format(displayed);
+      return displayCurrency ? `${result} ${currency}` : result;
+    }
+  };
+
+  return {
+    formatAmount,
+    formatRoundedAmount(value, currency) {
+      const amount = numeric(value);
+      if (amount == null) return "-";
+      const quoteUnit = getQuoteUnitCurrency(currency);
+      if (quoteUnit) return `${roundedDecimalFormatter.format(amount)}${quoteUnit.symbol}`;
+      const normalizedCurrency = currency?.toUpperCase?.() || "USD";
+      try {
+        let formatter = roundedCurrencyFormatters.get(normalizedCurrency);
+        if (!formatter) {
+          formatter = new Intl.NumberFormat(resolvedLocale, {
+            style: "currency",
+            currency: normalizedCurrency,
+            maximumFractionDigits: 0,
+          });
+          roundedCurrencyFormatters.set(normalizedCurrency, formatter);
+        }
+        return formatter.format(amount);
+      } catch {
+        return decimalFormatter.format(Math.round(amount));
+      }
+    },
+    formatCurrencySymbol(currency) {
+      const quoteUnit = getQuoteUnitCurrency(currency);
+      if (quoteUnit) return quoteUnit.symbol;
+      const normalizedCurrency = currency?.toUpperCase?.() || "USD";
+      const cached = currencySymbols.get(normalizedCurrency);
+      if (cached) return cached;
+      try {
+        const symbol =
+          new Intl.NumberFormat(resolvedLocale, {
+            style: "currency",
+            currency: normalizedCurrency,
+          })
+            .formatToParts(0)
+            .find((part) => part.type === "currency")?.value ?? normalizedCurrency;
+        currencySymbols.set(normalizedCurrency, symbol);
+        return symbol;
+      } catch {
+        return normalizedCurrency;
+      }
+    },
+    currencyFractionDigits(currency) {
+      const normalizedCurrency = currency?.toUpperCase?.() || "USD";
+      const cached = currencyFractionDigits.get(normalizedCurrency);
+      if (cached !== undefined) return cached;
+      try {
+        const digits =
+          new Intl.NumberFormat(resolvedLocale, {
+            style: "currency",
+            currency: normalizedCurrency,
+          }).resolvedOptions().maximumFractionDigits ?? 2;
+        currencyFractionDigits.set(normalizedCurrency, digits);
+        return digits;
+      } catch {
+        return 2;
+      }
+    },
+    formatCompactAmount(value, currency, displayCurrency = true) {
+      const amount = numeric(value);
+      if (amount == null) return "-";
+      const max =
+        Math.abs(amount) >= 1_000_000
+          ? 2
+          : Math.abs(amount) >= 100_000
+            ? 0
+            : Math.abs(amount) >= 1_000
+              ? 1
+              : 0;
+      if (!displayCurrency) return compactDecimalFormatter(max).format(amount);
+      const quoteUnit = getQuoteUnitCurrency(currency);
+      if (quoteUnit) return `${compactDecimalFormatter(max).format(amount)}${quoteUnit.symbol}`;
+      try {
+        const normalizedCurrency = currency?.toUpperCase?.() || "USD";
+        const key = `${normalizedCurrency}:${max}`;
+        let formatter = compactFormatters.get(key);
+        if (!formatter) {
+          formatter = new Intl.NumberFormat(resolvedLocale, {
+            style: "currency",
+            currency: normalizedCurrency,
+            notation: "compact",
+            maximumFractionDigits: max,
+          });
+          compactFormatters.set(key, formatter);
+        }
+        return formatter.format(amount);
+      } catch {
+        return `${compactDecimalFormatter(max).format(amount)} ${currency}`;
+      }
+    },
+    formatPrice(value, currency, displayCurrency = true) {
+      const amount = numeric(value);
+      if (amount == null) return "-";
+      const displayed = Math.abs(amount) < 0.000000005 ? 0 : amount;
+      const maximumFractionDigits =
+        displayed !== 0 && Math.abs(displayed) < 0.01
+          ? DECIMAL_PRECISION
+          : STANDARD_PRICE_DECIMAL_PRECISION;
+      const quoteUnit = getQuoteUnitCurrency(currency);
+      if (quoteUnit) {
+        const result = priceDecimalFormatter(maximumFractionDigits).format(displayed);
+        return displayCurrency ? `${result}${quoteUnit.symbol}` : result;
+      }
+      if (!displayCurrency) return priceDecimalFormatter(maximumFractionDigits).format(displayed);
+      try {
+        const normalizedCurrency = currency?.toUpperCase?.() || "USD";
+        const key = `${normalizedCurrency}:${maximumFractionDigits}`;
+        let formatter = priceCurrencyFormatters.get(key);
+        if (!formatter) {
+          formatter = new Intl.NumberFormat(resolvedLocale, {
+            style: "currency",
+            currency: normalizedCurrency,
+            minimumFractionDigits: DISPLAY_DECIMAL_PRECISION,
+            maximumFractionDigits,
+          });
+          priceCurrencyFormatters.set(key, formatter);
+        }
+        return formatter.format(displayed);
+      } catch {
+        return priceDecimalFormatter(maximumFractionDigits).format(displayed);
+      }
+    },
+  };
+}
+
+export function createNumberFormatting(
+  locale: string,
+  prepared?: PreparedNumberFormatters,
+): NumberFormatting {
+  const resolvedLocale = resolveFormattingLocale(locale);
+  const { decimal, group } = separators(resolvedLocale);
+  const decimalFormatter = prepared?.decimal ?? new Intl.NumberFormat(resolvedLocale);
+  const quantityFormatter =
+    prepared?.quantity ??
+    new Intl.NumberFormat(resolvedLocale, {
+      maximumFractionDigits: 8,
+      useGrouping: true,
+    });
+  const percentFormatters = new Map<string, Intl.NumberFormat>();
+  const decimalFormatters = new Map<string, Intl.NumberFormat>();
+  const numberParser = new NumberParser(resolvedLocale, { style: "decimal" });
+  const numberFormatter = (options: NumberDisplayOptions) => {
+    const key = [
+      options.style,
+      options.notation,
+      options.currency,
+      options.currencyDisplay,
+      options.minimumFractionDigits,
+      options.maximumFractionDigits,
+      options.minimumSignificantDigits,
+      options.maximumSignificantDigits,
+      options.signDisplay,
+      options.useGrouping,
+    ].join(":");
+    let formatter = decimalFormatters.get(key);
+    if (!formatter) {
+      formatter = new Intl.NumberFormat(resolvedLocale, options);
+      decimalFormatters.set(key, formatter);
+    }
+    return formatter;
+  };
+
+  return {
+    decimalSeparator: decimal,
+    groupSeparator: group,
+    formatPercent(value, options = {}) {
+      if (value == null) return "-";
+      const digits = options.digits ?? 2;
+      const signDisplay = options.signDisplay ?? "auto";
+      const key = `${digits}:${signDisplay}`;
+      let formatter = percentFormatters.get(key);
+      if (!formatter) {
+        formatter = new Intl.NumberFormat(resolvedLocale, {
+          style: "percent",
+          minimumFractionDigits: digits,
+          maximumFractionDigits: digits,
+          signDisplay,
+        });
+        percentFormatters.set(key, formatter);
+      }
+      return formatter.format(value);
+    },
+    formatQuantity(value) {
+      const quantity = numeric(value);
+      return quantity == null ? "-" : quantityFormatter.format(quantity);
+    },
+    formatDecimal(value, options) {
+      return options ? numberFormatter(options).format(value) : decimalFormatter.format(value);
+    },
+    parseNumber(value) {
+      const text = stripFinancialAffixes(value.trim().replace(/[\u061c\u200e\u200f]/gu, ""));
+      if (!text) return undefined;
+      const parsed = numberParser.parse(text);
+      return Number.isFinite(parsed) && hasValidGrouping(text, resolvedLocale, parsed)
+        ? parsed
+        : undefined;
+    },
+  };
+}
+
+export function createDateFormatting(
+  locale: string,
+  timezone?: string,
+  prepared?: PreparedDateFormatters,
+): DateFormatting {
+  const resolvedLocale = resolveFormattingLocale(locale);
+  const defaultDateFormatter =
+    prepared?.date ??
+    new Intl.DateTimeFormat(resolvedLocale, {
+      dateStyle: "medium",
+      ...(timezone ? { timeZone: timezone } : {}),
+    });
+  const defaultCalendarDateFormatter =
+    prepared?.calendarDate ??
+    new Intl.DateTimeFormat(resolvedLocale, {
+      dateStyle: "medium",
+      timeZone: "UTC",
+    });
+  const defaultCalendarDateTimeFormatter =
+    prepared?.calendarDateTime ??
+    new Intl.DateTimeFormat(resolvedLocale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "UTC",
+    });
+  const defaultTimeOfDayFormatter =
+    prepared?.timeOfDay ??
+    new Intl.DateTimeFormat(resolvedLocale, { timeStyle: "short", timeZone: "UTC" });
+  const defaultTimeFormatter =
+    prepared?.time ??
+    new Intl.DateTimeFormat(resolvedLocale, {
+      timeStyle: "short",
+      ...(timezone ? { timeZone: timezone } : {}),
+    });
+  const defaultDateTimeFormatter =
+    prepared?.dateTime ??
+    new Intl.DateTimeFormat(resolvedLocale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      ...(timezone ? { timeZone: timezone } : {}),
+    });
+  const dateFormatters = new Map<string, Intl.DateTimeFormat>();
+  const dateFormatter = (options: DateDisplayOptions, applyTimezone: boolean) => {
+    const effectiveTimezone = applyTimezone ? timezone : undefined;
+    const key = [
+      options.dateStyle,
+      options.timeStyle,
+      options.year,
+      options.month,
+      options.day,
+      options.weekday,
+      options.hour,
+      options.minute,
+      options.second,
+      options.hour12,
+      options.hourCycle,
+      options.timeZoneName,
+      options.timeZone,
+      effectiveTimezone,
+    ].join(":");
+    let formatter = dateFormatters.get(key);
+    if (!formatter) {
+      formatter = new Intl.DateTimeFormat(resolvedLocale, {
+        ...options,
+        ...(effectiveTimezone ? { timeZone: effectiveTimezone } : {}),
+      });
+      dateFormatters.set(key, formatter);
+    }
+    return formatter;
+  };
+
+  return {
+    formatDate(value, options = {}) {
+      const parsed = toDate(value);
+      return parsed
+        ? Object.keys(options).length
+          ? dateFormatter(options, true).format(parsed)
+          : defaultDateFormatter.format(parsed)
+        : "-";
+    },
+    formatCalendarDate(value, options = {}) {
+      const parsed = toCalendarDate(value);
+      return parsed
+        ? Object.keys(options).length
+          ? dateFormatter({ ...options, timeZone: "UTC" }, false).format(parsed.toDate("UTC"))
+          : defaultCalendarDateFormatter.format(parsed.toDate("UTC"))
+        : "-";
+    },
+    formatCalendarDateTime(value, options = {}) {
+      const parsed = toCalendarDateTime(value);
+      return parsed
+        ? Object.keys(options).length
+          ? dateFormatter({ ...options, timeZone: "UTC" }, false).format(parsed.toDate("UTC"))
+          : defaultCalendarDateTimeFormatter.format(parsed.toDate("UTC"))
+        : "-";
+    },
+    formatTimeOfDay(value, options = {}) {
+      const parsed = toTime(value);
+      return parsed
+        ? Object.keys(options).length
+          ? dateFormatter({ ...options, timeZone: "UTC" }, false).format(
+              new Date(Date.UTC(1970, 0, 1, parsed.hour, parsed.minute, parsed.second)),
+            )
+          : defaultTimeOfDayFormatter.format(
+              new Date(Date.UTC(1970, 0, 1, parsed.hour, parsed.minute, parsed.second)),
+            )
+        : "-";
+    },
+    formatTime(value, options = {}) {
+      const parsed = toDate(value);
+      return parsed
+        ? Object.keys(options).length
+          ? dateFormatter(options, true).format(parsed)
+          : defaultTimeFormatter.format(parsed)
+        : "-";
+    },
+    formatDateTime(value, options = {}) {
+      const parsed = toDate(value);
+      return parsed
+        ? Object.keys(options).length
+          ? dateFormatter(options, true).format(parsed)
+          : defaultDateTimeFormatter.format(parsed)
+        : "-";
+    },
+    parseDate(value) {
+      return parseLocalizedDate(value, resolvedLocale);
+    },
+  };
+}
+
+export function createFormatter(
+  locale: string,
+  timezone?: string,
+  prepared?: PreparedFormatters,
+): FormattingApi {
+  const resolvedLocale = resolveFormattingLocale(locale);
+  return {
+    locale: resolvedLocale,
+    timezone,
+    ...createAmountFormatting(resolvedLocale, prepared),
+    ...createNumberFormatting(resolvedLocale, prepared),
+    ...createDateFormatting(resolvedLocale, timezone, prepared),
+  };
+}

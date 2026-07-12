@@ -1,12 +1,12 @@
 import { getGoals } from "@/adapters";
 import { DashboardCard } from "@/components/dashboard-card";
-import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { QueryKeys } from "@/lib/query-keys";
 import type { Goal } from "@/lib/types";
 import { useQuery } from "@tanstack/react-query";
-import { cn, formatCompactAmount } from "@wealthfolio/ui";
+import { cn, useAmountFormatting } from "@wealthfolio/ui";
+import { Icons } from "@wealthfolio/ui/components/ui/icons";
+import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
@@ -76,6 +76,7 @@ function ViewAllLink() {
 }
 
 export function SavingGoals() {
+  const formatting = useAmountFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
 
@@ -137,11 +138,11 @@ export function SavingGoals() {
 
         const currentDisplay = isBalanceHidden
           ? "••••"
-          : formatCompactAmount(currentValue, currency);
+          : formatting.formatCompactAmount(currentValue, currency);
         const targetDisplay = isBalanceHidden
           ? "••••"
           : target > 0
-            ? formatCompactAmount(target, currency)
+            ? formatting.formatCompactAmount(target, currency)
             : "—";
 
         return (

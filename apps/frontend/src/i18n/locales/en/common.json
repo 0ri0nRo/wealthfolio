@@ -271,6 +271,7 @@
     "issue_info_other": "{{count}} info",
     "activity_bought": "Bought",
     "activity_sold": "Sold",
+    "activity_quantity_at_price": "{{quantity}} at {{price}}",
     "activity_generic": "Activity",
     "total_value": "Total Value",
     "total_value_label": "Total Value:",

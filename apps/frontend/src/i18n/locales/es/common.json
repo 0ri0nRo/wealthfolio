@@ -271,6 +271,7 @@
     "issue_info_other": "{{count}} avisos",
     "activity_bought": "Comprado",
     "activity_sold": "Vendido",
+    "activity_quantity_at_price": "{{quantity}} a {{price}}",
     "activity_generic": "Actividad",
     "total_value": "Valor total",
     "total_value_label": "Valor total:",

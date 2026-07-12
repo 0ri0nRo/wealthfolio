@@ -1,0 +1,90 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { FormattingProvider, MoneyInput, QuantityInput } from "@wealthfolio/ui";
+import { describe, expect, it, vi } from "vitest";
+
+function paste(text: string) {
+  fireEvent.paste(screen.getByRole("textbox"), {
+    clipboardData: { getData: () => text },
+  });
+}
+
+describe("localized financial input paste", () => {
+  it.each([
+    ["1234.56", 1234.56],
+    ["1,234.56", 1234.56],
+    ["$1,234.56", 1234.56],
+    ["USD 1,234.56", 1234.56],
+  ])("pastes %s using US formats", (clipboardValue, expected) => {
+    const onValueChange = vi.fn();
+    render(
+      <FormattingProvider locale="en-US">
+        <MoneyInput onValueChange={onValueChange} />
+      </FormattingProvider>,
+    );
+
+    paste(clipboardValue);
+
+    expect(onValueChange).toHaveBeenLastCalledWith(expected);
+  });
+
+  it.each([
+    ["1234,56", 1234.56],
+    ["1.234,56", 1234.56],
+    ["1.234,56 €", 1234.56],
+  ])("pastes %s using German formats", (clipboardValue, expected) => {
+    const onValueChange = vi.fn();
+    render(
+      <FormattingProvider locale="de-DE">
+        <MoneyInput onValueChange={onValueChange} />
+      </FormattingProvider>,
+    );
+
+    paste(clipboardValue);
+
+    expect(onValueChange).toHaveBeenLastCalledWith(expected);
+  });
+
+  it("does not update the value for malformed mixed separators", () => {
+    const onValueChange = vi.fn();
+    render(
+      <FormattingProvider locale="en-US">
+        <MoneyInput onValueChange={onValueChange} />
+      </FormattingProvider>,
+    );
+
+    paste("1.234,56");
+
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+
+  it("uses the same locale-aware paste behavior for quantities", () => {
+    const onValueChange = vi.fn();
+    render(
+      <FormattingProvider locale="de-DE">
+        <QuantityInput onValueChange={onValueChange} />
+      </FormattingProvider>,
+    );
+
+    paste("1.234,56");
+
+    expect(onValueChange).toHaveBeenLastCalledWith(1234.56);
+  });
+
+  it("leaves partial plain-number pastes to the input", () => {
+    const onValueChange = vi.fn();
+    render(
+      <FormattingProvider locale="en-US">
+        <MoneyInput value={100} onValueChange={onValueChange} />
+      </FormattingProvider>,
+    );
+    const input = screen.getByRole<HTMLInputElement>("textbox");
+    input.setSelectionRange(1, 2);
+
+    const allowed = fireEvent.paste(input, {
+      clipboardData: { getData: () => "5" },
+    });
+
+    expect(allowed).toBe(true);
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+});
