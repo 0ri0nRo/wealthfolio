@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { type UseFormReturn } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -28,6 +28,8 @@ import type { FormValues, SourceKey } from "./custom-provider-form";
 import { LATEST_TEMPLATES, HISTORICAL_TEMPLATES } from "./provider-templates";
 import type { MappingField, SourceRuntime } from "./use-source-runtime";
 
+const DEFAULT_POST_HEADERS = { "Content-Type": "application/json" };
+
 interface SourceConfigPanelProps {
   form: UseFormReturn<FormValues>;
   prefix: SourceKey;
@@ -42,8 +44,11 @@ const PLACEHOLDERS = [
   "{CURRENCY}",
   "{currency}",
   "{TODAY}",
+  "{TODAY:%Y-%m-%d}",
   "{FROM}",
+  "{FROM:%Y-%m-%d}",
   "{TO}",
+  "{TO:%Y-%m-%d}",
   "{DATE:%Y-%m-%d}",
 ];
 
@@ -307,6 +312,30 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
   const highPath = form.watch(`${prefix}.highPath`);
   const lowPath = form.watch(`${prefix}.lowPath`);
   const volumePath = form.watch(`${prefix}.volumePath`);
+  const method = form.watch(`${prefix}.method`) ?? "GET";
+
+  // Auto-add Content-Type header for POST requests
+  useEffect(() => {
+    if (method === "POST") {
+      const currentHeaders = form.getValues(`${prefix}.headers`);
+      let headersObj: Record<string, string> = {};
+      if (currentHeaders?.trim()) {
+        try {
+          headersObj = JSON.parse(currentHeaders);
+        } catch {
+          // Ignore parse errors, treat as empty
+        }
+      }
+      // Only add default if not already present (case-insensitive)
+      const hasContentType = Object.keys(headersObj).some(
+        (k) => k.toLowerCase() === "content-type"
+      );
+      if (!hasContentType) {
+        const mergedHeaders = { ...DEFAULT_POST_HEADERS, ...headersObj };
+        form.setValue(`${prefix}.headers`, JSON.stringify(mergedHeaders, null, 2));
+      }
+    }
+  }, [method, prefix, form]);
 
   const timezones = useMemo(() => {
     const supportedValuesOf = (
@@ -493,6 +522,59 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
               </FormItem>
             )}
           />
+
+          {/* HTTP Method */}
+          <FormField
+            control={form.control}
+            name={`${prefix}.method`}
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                  HTTP method
+                </FormLabel>
+                <FormControl>
+                  <select
+                    className="bg-background border border-input flex h-9 w-[180px] rounded-md px-2 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    {...field}
+                    onChange={(e) => {
+                      field.onChange(e.target.value as "GET" | "POST");
+                    }}
+                  >
+                    <option value="GET">GET</option>
+                    <option value="POST">POST</option>
+                  </select>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* POST Body (only shown when method is POST) */}
+          {form.watch(`${prefix}.method`) === "POST" && (
+            <FormField
+              control={form.control}
+              name={`${prefix}.body`}
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                    Request body (JSON)
+                  </FormLabel>
+                  <FormControl>
+                    <Textarea
+                      rows={4}
+                      placeholder='{"symbol": "{SYMBOL}", "fields": ["close", "volume"]}'
+                      className="font-mono text-xs"
+                      {...field}
+                    />
+                  </FormControl>
+                  <p className="text-muted-foreground text-[11px]">
+                    {t("settings:market_data_page.body_template_hint")}
+                  </p>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          )}
 
           {/* Format-specific inline field (html → CSS selector) */}
           {format === "html" && (

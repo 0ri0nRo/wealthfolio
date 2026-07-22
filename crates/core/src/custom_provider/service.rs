@@ -178,7 +178,21 @@ impl CustomProviderService {
             }
         }
 
-        let response = match client.get(&url).headers(headers).send().await {
+        // Build request based on HTTP method
+        let method = payload.method.as_str();
+        let request_builder = match method {
+            "POST" => {
+                let body = payload.body.as_deref().map(|b| expand_template(b, &tctx));
+                if let Some(body_str) = body {
+                    client.post(&url).headers(headers).body(body_str)
+                } else {
+                    client.post(&url).headers(headers)
+                }
+            }
+            _ => client.get(&url).headers(headers),
+        };
+
+        let response = match request_builder.send().await {
             Ok(resp) => resp,
             Err(e) => {
                 return Ok(TestSourceResult {

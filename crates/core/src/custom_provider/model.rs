@@ -4,10 +4,35 @@ use serde::{Deserialize, Serialize};
 pub const VALID_SOURCE_KINDS: &[&str] = &["latest", "historical"];
 /// Valid source formats.
 pub const VALID_SOURCE_FORMATS: &[&str] = &["json", "html", "html_table", "csv"];
+/// Valid HTTP methods.
+pub const VALID_HTTP_METHODS: &[&str] = &["GET", "POST"];
+
+/// HTTP method for custom provider requests.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum HttpMethod {
+    #[default]
+    Get,
+    Post,
+}
+
+impl HttpMethod {
+    /// Convert to uppercase string for use in reqwest.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            HttpMethod::Get => "GET",
+            HttpMethod::Post => "POST",
+        }
+    }
+}
 
 /// Cached regex for `{DATE:...}` template expansion.
 pub static DATE_TEMPLATE_RE: std::sync::LazyLock<regex::Regex> =
     std::sync::LazyLock::new(|| regex::Regex::new(r"\{DATE:([^}]+)\}").unwrap());
+
+/// Cached regex for `{FROM:...}`, `{TO:...}`, `{TODAY:...}` template expansion.
+pub static DATE_VAR_TEMPLATE_RE: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\{(FROM|TO|TODAY):([^}]+)\}").unwrap());
 
 /// Maximum HTTP response body size (10 MB).
 pub const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
@@ -30,7 +55,8 @@ pub struct TemplateContext<'a> {
 /// Expand template variables in a string (URL or path).
 ///
 /// Supported variables: `{SYMBOL}`, `{currency}`, `{CURRENCY}`, `{TODAY}`,
-/// `{FROM}`, `{TO}`, `{ISIN}`, `{MIC}`, `{DATE:format}`.
+/// `{FROM}`, `{TO}`, `{ISIN}`, `{MIC}`, `{DATE:format}`,
+/// `{FROM:format}`, `{TO:format}`, `{TODAY:format}`.
 pub fn expand_template(template: &str, ctx: &TemplateContext<'_>) -> String {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut out = template
@@ -47,10 +73,34 @@ pub fn expand_template(template: &str, ctx: &TemplateContext<'_>) -> String {
     if out.contains("{MIC}") {
         out = out.replace("{MIC}", ctx.mic.unwrap_or(""));
     }
+    // {DATE:format} - current date with custom format
     if out.contains("{DATE:") {
         out = DATE_TEMPLATE_RE
             .replace_all(&out, |caps: &regex::Captures| {
                 chrono::Utc::now().format(&caps[1]).to_string()
+            })
+            .to_string();
+    }
+    // {FROM:format}, {TO:format}, {TODAY:format} - date variables with custom format
+    if out.contains("{FROM:") || out.contains("{TO:") || out.contains("{TODAY:") {
+        out = DATE_VAR_TEMPLATE_RE
+            .replace_all(&out, |caps: &regex::Captures| {
+                let var = &caps[1]; // FROM, TO, or TODAY
+                let format = &caps[2];
+                let date_str = match var {
+                    "FROM" => ctx.from.unwrap_or(&today),
+                    "TO" => ctx.to.unwrap_or(&today),
+                    "TODAY" => &today,
+                    _ => &today,
+                };
+                // Parse the date string and format it
+                // Try to parse as ISO date first
+                if let Ok(parsed) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                    parsed.format(format).to_string()
+                } else {
+                    // Fallback: return original date string
+                    date_str.to_string()
+                }
             })
             .to_string();
     }
@@ -160,6 +210,12 @@ pub struct CustomProviderSource {
     pub locale: Option<String>,
     /// JSON object string of extra HTTP headers
     pub headers: Option<String>,
+    /// HTTP method: "GET" or "POST"
+    #[serde(default)]
+    pub method: HttpMethod,
+    /// Request body for POST requests (JSON string)
+    #[serde(default)]
+    pub body: Option<String>,
     #[serde(default)]
     pub open_path: Option<String>,
     pub high_path: Option<String>,
@@ -221,6 +277,12 @@ pub struct NewCustomProviderSource {
     pub invert: Option<bool>,
     pub locale: Option<String>,
     pub headers: Option<String>,
+    /// HTTP method: "GET" or "POST"
+    #[serde(default)]
+    pub method: HttpMethod,
+    /// Request body for POST requests (JSON string)
+    #[serde(default)]
+    pub body: Option<String>,
     #[serde(default)]
     pub open_path: Option<String>,
     pub high_path: Option<String>,
@@ -244,6 +306,12 @@ pub struct TestSourceRequest {
     pub invert: Option<bool>,
     pub locale: Option<String>,
     pub headers: Option<String>,
+    /// HTTP method: "GET" or "POST"
+    #[serde(default)]
+    pub method: HttpMethod,
+    /// Request body for POST requests (JSON string)
+    #[serde(default)]
+    pub body: Option<String>,
     /// Symbol to substitute in template variables
     pub symbol: String,
     /// Currency for {currency}/{CURRENCY} placeholders (defaults to "usd")

@@ -182,6 +182,8 @@ export function useSourceRuntime({
     const url = expandTestUrl(rawUrl);
     const headers = form.getValues(`${prefix}.headers`);
     const pricePathCurrent = form.getValues(`${prefix}.pricePath`);
+    const method = form.getValues(`${prefix}.method`) ?? "GET";
+    const body = form.getValues(`${prefix}.body`);
 
     setTestResult(null);
     setFetchError(null);
@@ -198,6 +200,8 @@ export function useSourceRuntime({
         from: isHistorical ? inputsState.from : undefined,
         to: isHistorical ? inputsState.to : undefined,
         headers: headers || undefined,
+        method,
+        body: body || undefined,
       },
       {
         onSuccess: (result) => {
@@ -284,6 +288,8 @@ export function useSourceRuntime({
             invert: values?.invert ?? undefined,
             locale: values?.locale || undefined,
             headers: values?.headers || undefined,
+            method: values?.method ?? "GET",
+            body: values?.body || undefined,
             openPath: values?.openPath || undefined,
             highPath: values?.highPath || undefined,
             lowPath: values?.lowPath || undefined,
