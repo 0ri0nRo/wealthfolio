@@ -78,7 +78,17 @@ const MAPPING_META: {
 ];
 
 /** Inline chips replacing placeholders in the preview URL. */
-function PreviewUrl({ template, values }: { template: string; values: Record<string, string> }) {
+function PreviewUrl({
+  template,
+  values,
+  multiline,
+  placeholder,
+}: {
+  template: string;
+  values: Record<string, string>;
+  multiline?: boolean;
+  placeholder?: string;
+}) {
   const { t } = useTranslation();
   const segments = useMemo(() => {
     if (!template) return [];
@@ -100,13 +110,13 @@ function PreviewUrl({ template, values }: { template: string; values: Record<str
   if (!template) {
     return (
       <span className="text-muted-foreground/60 font-mono text-xs italic">
-        {t("settings:market_data_page.enter_url_to_preview")}
+        {placeholder ?? t("settings:market_data_page.enter_url_to_preview")}
       </span>
     );
   }
 
   return (
-    <span className="break-all font-mono text-xs">
+    <span className={cn("break-all font-mono text-xs", multiline && "whitespace-pre-wrap")}>
       {segments.map((seg, i) =>
         seg.kind === "text" ? (
           <span key={i}>{seg.text}</span>
@@ -674,6 +684,13 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
     TO: inputs.to,
   };
 
+  const method = form.watch(`${prefix}.method`) ?? "GET";
+  const bodyTemplate = form.watch(`${prefix}.body`) ?? "";
+  const expandedBody = bodyTemplate.replace(
+    /\{([A-Za-z:%\-_]+)\}/g,
+    (m, k) => previewValues[k] ?? previewValues[k.toUpperCase()] ?? m,
+  );
+
   const missingRange = isHistorical && (!inputs.from || !inputs.to);
   const fetchDisabled =
     runtime.isFetching || !inputs.symbol || missingRange || !runtime.urlTemplate;
@@ -707,8 +724,8 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
           </Label>
           <span className="text-muted-foreground text-[11px]">
             {form.watch(`${prefix}.method`) === "POST"
-              ? t("settings:market_data_page.method_post")
-              : t("settings:market_data_page.method_get")}
+              ? "POST"
+              : "GET"}
             &nbsp;·&nbsp;
             {isHistorical
               ? t("settings:market_data_page.method_historical")
@@ -720,6 +737,24 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
           <CopyButton text={runtime.expandedUrl} disabled={!runtime.urlTemplate} />
         </div>
       </section>
+
+      {/* Request body preview (POST only) */}
+      {method === "POST" && (
+        <section className="space-y-2">
+          <Label className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+            Request body (preview)
+          </Label>
+          <div className="bg-background relative min-h-[40px] rounded-lg border px-3 py-2 pr-10">
+            <PreviewUrl
+              template={bodyTemplate}
+              values={previewValues}
+              multiline
+              placeholder="Enter a request body to preview…"
+            />
+            <CopyButton text={expandedBody} disabled={!bodyTemplate} />
+          </div>
+        </section>
+      )}
 
       {/* Test inputs */}
       <section className="space-y-2">
