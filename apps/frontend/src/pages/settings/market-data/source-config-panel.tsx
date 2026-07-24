@@ -348,6 +348,15 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
     }
   }, [method, prefix, form]);
 
+  // POST is only supported for the JSON API source type. Switching to any other
+  // format falls back to GET so stale POST config can't linger and trip the
+  // body-required validation while its field is hidden.
+  useEffect(() => {
+    if (format !== "json" && method === "POST") {
+      form.setValue(`${prefix}.method`, "GET");
+    }
+  }, [format, method, prefix, form]);
+
   const timezones = useMemo(() => {
     const supportedValuesOf = (
       Intl as unknown as { supportedValuesOf?: (key: "timeZone") => string[] }
@@ -534,57 +543,61 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
             )}
           />
 
-          {/* HTTP Method */}
-          <FormField
-            control={form.control}
-            name={`${prefix}.method`}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
-                  HTTP method
-                </FormLabel>
-                <FormControl>
-                  <select
-                    className="bg-background border-input ring-offset-background focus-visible:ring-ring flex h-9 w-[180px] rounded-md border px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                    {...field}
-                    onChange={(e) => {
-                      field.onChange(e.target.value as "GET" | "POST");
-                    }}
-                  >
-                    <option value="GET">GET</option>
-                    <option value="POST">POST</option>
-                  </select>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
+          {/* HTTP Method + POST body — POST is only supported for the JSON API type */}
+          {format === "json" && (
+            <>
+              <FormField
+                control={form.control}
+                name={`${prefix}.method`}
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                      HTTP method
+                    </FormLabel>
+                    <FormControl>
+                      <select
+                        className="bg-background border-input ring-offset-background focus-visible:ring-ring flex h-9 w-[180px] rounded-md border px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        {...field}
+                        onChange={(e) => {
+                          field.onChange(e.target.value as "GET" | "POST");
+                        }}
+                      >
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                      </select>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-          {/* POST Body (only shown when method is POST) */}
-          {form.watch(`${prefix}.method`) === "POST" && (
-            <FormField
-              control={form.control}
-              name={`${prefix}.body`}
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
-                    Request body (JSON)
-                  </FormLabel>
-                  <FormControl>
-                    <Textarea
-                      rows={4}
-                      placeholder='{"symbol": "{SYMBOL}", "fields": ["close", "volume"]}'
-                      className="font-mono text-xs"
-                      {...field}
-                    />
-                  </FormControl>
-                  <p className="text-muted-foreground text-[11px]">
-                    {t("settings:market_data_page.body_template_hint")}
-                  </p>
-                  <FormMessage />
-                </FormItem>
+              {/* POST Body (only shown when method is POST) */}
+              {method === "POST" && (
+                <FormField
+                  control={form.control}
+                  name={`${prefix}.body`}
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
+                        Request body (JSON)
+                      </FormLabel>
+                      <FormControl>
+                        <Textarea
+                          rows={4}
+                          placeholder='{"symbol": "{SYMBOL}", "fields": ["close", "volume"]}'
+                          className="font-mono text-xs"
+                          {...field}
+                        />
+                      </FormControl>
+                      <p className="text-muted-foreground text-[11px]">
+                        {t("settings:market_data_page.body_template_hint")}
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
               )}
-            />
+            </>
           )}
 
           {/* Format-specific inline field (html → CSS selector) */}
