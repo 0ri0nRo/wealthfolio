@@ -723,9 +723,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
             {t("settings:market_data_page.request_url_preview")}
           </Label>
           <span className="text-muted-foreground text-[11px]">
-            {form.watch(`${prefix}.method`) === "POST"
-              ? "POST"
-              : "GET"}
+            {form.watch(`${prefix}.method`) === "POST" ? "POST" : "GET"}
             &nbsp;·&nbsp;
             {isHistorical
               ? t("settings:market_data_page.method_historical")

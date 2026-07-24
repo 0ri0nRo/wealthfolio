@@ -204,12 +204,7 @@ function validateSource(
       try {
         JSON.parse(body);
       } catch {
-        addSourceIssue(
-          ctx,
-          sourceKey,
-          "body",
-          t("settings:market_data_page.validation_body_json"),
-        );
+        addSourceIssue(ctx, sourceKey, "body", t("settings:market_data_page.validation_body_json"));
       }
     }
   }

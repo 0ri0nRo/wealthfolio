@@ -326,9 +326,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
         // Ignore parse errors, treat as empty
       }
     }
-    const contentTypeKey = Object.keys(headersObj).find(
-      (k) => k.toLowerCase() === "content-type"
-    );
+    const contentTypeKey = Object.keys(headersObj).find((k) => k.toLowerCase() === "content-type");
 
     if (method === "POST") {
       // Only add default if not already present (case-insensitive)
@@ -345,7 +343,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
       delete headersObj[contentTypeKey];
       form.setValue(
         `${prefix}.headers`,
-        Object.keys(headersObj).length ? JSON.stringify(headersObj, null, 2) : ""
+        Object.keys(headersObj).length ? JSON.stringify(headersObj, null, 2) : "",
       );
     }
   }, [method, prefix, form]);
@@ -547,7 +545,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                 </FormLabel>
                 <FormControl>
                   <select
-                    className="bg-background border border-input flex h-9 w-[180px] rounded-md px-2 py-1.5 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="bg-background border-input ring-offset-background focus-visible:ring-ring flex h-9 w-[180px] rounded-md border px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                     {...field}
                     onChange={(e) => {
                       field.onChange(e.target.value as "GET" | "POST");
