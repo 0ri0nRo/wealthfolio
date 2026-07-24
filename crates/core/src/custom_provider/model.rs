@@ -380,3 +380,96 @@ pub struct TestSourceResult {
     /// Detected HTML tables (html_table format).
     pub detected_tables: Option<Vec<DetectedHtmlTable>>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx<'a>(from: Option<&'a str>, to: Option<&'a str>) -> TemplateContext<'a> {
+        TemplateContext {
+            symbol: "AAPL",
+            currency: "usd",
+            isin: None,
+            mic: None,
+            from,
+            to,
+        }
+    }
+
+    #[test]
+    fn http_method_default_and_as_str() {
+        assert_eq!(HttpMethod::default(), HttpMethod::Get);
+        assert_eq!(HttpMethod::Get.as_str(), "GET");
+        assert_eq!(HttpMethod::Post.as_str(), "POST");
+    }
+
+    #[test]
+    fn http_method_serde_is_uppercase() {
+        assert_eq!(serde_json::to_string(&HttpMethod::Post).unwrap(), "\"POST\"");
+        let m: HttpMethod = serde_json::from_str("\"GET\"").unwrap();
+        assert_eq!(m, HttpMethod::Get);
+    }
+
+    #[test]
+    fn expands_basic_placeholders() {
+        let c = ctx(Some("2024-01-01"), Some("2024-12-31"));
+        let out = expand_template(
+            "https://x.test/{SYMBOL}?ccy={currency}&CCY={CURRENCY}&from={FROM}&to={TO}",
+            &c,
+        );
+        assert_eq!(
+            out,
+            "https://x.test/AAPL?ccy=usd&CCY=USD&from=2024-01-01&to=2024-12-31"
+        );
+    }
+
+    #[test]
+    fn from_to_fall_back_to_today_when_absent() {
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let out = expand_template("{FROM}..{TO}", &ctx(None, None));
+        assert_eq!(out, format!("{today}..{today}"));
+    }
+
+    #[test]
+    fn expands_formatted_from_and_to() {
+        let c = ctx(Some("2024-01-02"), Some("2024-03-04"));
+        let out = expand_template("{FROM:%Y%m%d}-{TO:%d/%m/%Y}", &c);
+        assert_eq!(out, "20240102-04/03/2024");
+    }
+
+    #[test]
+    fn formatted_date_falls_back_on_unparseable_input() {
+        // A non-ISO {FROM} value can't be reparsed, so the raw string is kept.
+        let c = ctx(Some("not-a-date"), None);
+        let out = expand_template("{FROM:%Y}", &c);
+        assert_eq!(out, "not-a-date");
+    }
+
+    #[test]
+    fn today_formatted_uses_current_date() {
+        let expected = chrono::Utc::now().format("%Y/%m/%d").to_string();
+        let out = expand_template("{TODAY:%Y/%m/%d}", &ctx(None, None));
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn plain_today_not_clobbered_by_formatted_variant() {
+        // `{TODAY}` and `{TODAY:...}` must both expand independently.
+        let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
+        let year = chrono::Utc::now().format("%Y").to_string();
+        let out = expand_template("{TODAY} / {TODAY:%Y}", &ctx(None, None));
+        assert_eq!(out, format!("{today} / {year}"));
+    }
+
+    #[test]
+    fn expands_post_body_json() {
+        // POST bodies go through the same expander as URLs.
+        let c = ctx(Some("2024-01-01"), Some("2024-06-30"));
+        let body = r#"{"symbol":"{SYMBOL}","from":"{FROM}","to":"{TO:%Y%m%d}"}"#;
+        let out = expand_template(body, &c);
+        assert_eq!(
+            out,
+            r#"{"symbol":"AAPL","from":"2024-01-01","to":"20240630"}"#
+        );
+    }
+}

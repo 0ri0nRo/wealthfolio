@@ -1269,6 +1269,7 @@ fn extract_json_string(body: &str, path: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::custom_provider::model::HttpMethod;
     use std::borrow::Cow;
     use std::sync::Arc;
     use wealthfolio_market_data::{InstrumentId, ProviderOverrides, QuoteIdentifiers};
@@ -1292,6 +1293,8 @@ mod tests {
             invert: None,
             locale: None,
             headers: None,
+            method: HttpMethod::Get,
+            body: None,
             open_path: None,
             high_path: None,
             low_path: None,
@@ -1493,6 +1496,8 @@ mod tests {
             invert: None,
             locale: None,
             headers: None,
+            method: HttpMethod::Get,
+            body: None,
             open_path: None,
             high_path: None,
             low_path: None,
