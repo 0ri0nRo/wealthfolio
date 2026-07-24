@@ -134,46 +134,20 @@ impl CustomScraperProvider {
         source: &CustomProviderSource,
         url: &str,
         headers: reqwest::header::HeaderMap,
-        symbol: &str,
-        currency_hint: Option<&str>,
-        context: Option<&QuoteContext>,
-        from: Option<&str>,
-        to: Option<&str>,
+        tctx: &TemplateContext<'_>,
     ) -> Result<String, MarketDataError> {
         let method = source.method.as_str();
 
-        let isin = context
-            .and_then(|ctx| ctx.identifiers.isin.as_deref())
-            .map(str::to_string);
-        let mic = context
-            .and_then(|ctx| match &ctx.instrument {
-                wealthfolio_market_data::InstrumentId::Equity { mic, .. } => {
-                    mic.as_ref().map(|m| m.as_ref().to_string())
+        let do_fetch = |hdrs: reqwest::header::HeaderMap| match method {
+            "POST" => {
+                let body = source.body.as_deref().map(|b| expand_template(b, tctx));
+                if let Some(body_str) = body {
+                    self.client.post(url).headers(hdrs).body(body_str).send()
+                } else {
+                    self.client.post(url).headers(hdrs).send()
                 }
-                _ => None,
-            });
-
-        let tctx = TemplateContext {
-            symbol,
-            currency: currency_hint.unwrap_or("USD"),
-            isin: isin.as_deref(),
-            mic: mic.as_deref(),
-            from,
-            to,
-        };
-
-        let do_fetch = |hdrs: reqwest::header::HeaderMap| {
-            match method {
-                "POST" => {
-                    let body = source.body.as_deref().map(|b| expand_template(b, &tctx));
-                    if let Some(body_str) = body {
-                        self.client.post(url).headers(hdrs).body(body_str).send()
-                    } else {
-                        self.client.post(url).headers(hdrs).send()
-                    }
-                }
-                _ => self.client.get(url).headers(hdrs).send(),
             }
+            _ => self.client.get(url).headers(hdrs).send(),
         };
 
         let response = match do_fetch(headers.clone()).await {
@@ -345,16 +319,25 @@ impl CustomScraperProvider {
 
         debug!("CustomScraper: fetching {} for symbol '{}'", url, symbol);
 
-        let body = match self.fetch_body(
-            source,
-            &url,
-            headers,
+        let isin = context
+            .and_then(|ctx| ctx.identifiers.isin.as_deref())
+            .map(str::to_string);
+        let mic = context.and_then(|ctx| match &ctx.instrument {
+            wealthfolio_market_data::InstrumentId::Equity { mic, .. } => {
+                mic.as_ref().map(|m| m.as_ref().to_string())
+            }
+            _ => None,
+        });
+        let tctx = TemplateContext {
             symbol,
-            currency_hint,
-            context,
+            currency: currency_hint.unwrap_or("USD"),
+            isin: isin.as_deref(),
+            mic: mic.as_deref(),
             from,
             to,
-        ).await {
+        };
+
+        let body = match self.fetch_body(source, &url, headers, &tctx).await {
             Ok(b) => b,
             Err(e) => {
                 // Fall back to default_price on fetch failure

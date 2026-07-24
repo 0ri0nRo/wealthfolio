@@ -405,7 +405,10 @@ mod tests {
 
     #[test]
     fn http_method_serde_is_uppercase() {
-        assert_eq!(serde_json::to_string(&HttpMethod::Post).unwrap(), "\"POST\"");
+        assert_eq!(
+            serde_json::to_string(&HttpMethod::Post).unwrap(),
+            "\"POST\""
+        );
         let m: HttpMethod = serde_json::from_str("\"GET\"").unwrap();
         assert_eq!(m, HttpMethod::Get);
     }
