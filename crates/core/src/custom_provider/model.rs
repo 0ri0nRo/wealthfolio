@@ -26,13 +26,10 @@ impl HttpMethod {
     }
 }
 
-/// Cached regex for `{DATE:...}` template expansion.
+/// Cached regex for formatted date templates: `{DATE:...}`, `{FROM:...}`,
+/// `{TO:...}`, `{TODAY:...}`.
 pub static DATE_TEMPLATE_RE: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| regex::Regex::new(r"\{DATE:([^}]+)\}").unwrap());
-
-/// Cached regex for `{FROM:...}`, `{TO:...}`, `{TODAY:...}` template expansion.
-pub static DATE_VAR_TEMPLATE_RE: std::sync::LazyLock<regex::Regex> =
-    std::sync::LazyLock::new(|| regex::Regex::new(r"\{(FROM|TO|TODAY):([^}]+)\}").unwrap());
+    std::sync::LazyLock::new(|| regex::Regex::new(r"\{(DATE|FROM|TO|TODAY):([^}]+)\}").unwrap());
 
 /// Maximum HTTP response body size (10 MB).
 pub const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
@@ -73,33 +70,31 @@ pub fn expand_template(template: &str, ctx: &TemplateContext<'_>) -> String {
     if out.contains("{MIC}") {
         out = out.replace("{MIC}", ctx.mic.unwrap_or(""));
     }
-    // {DATE:format} - current date with custom format
-    if out.contains("{DATE:") {
+    // Formatted date templates:
+    //   {DATE:format}                 - current date/time (supports time components)
+    //   {FROM/TO/TODAY:format}        - the corresponding date, reformatted
+    if out.contains("{DATE:")
+        || out.contains("{FROM:")
+        || out.contains("{TO:")
+        || out.contains("{TODAY:")
+    {
         out = DATE_TEMPLATE_RE
             .replace_all(&out, |caps: &regex::Captures| {
-                chrono::Utc::now().format(&caps[1]).to_string()
-            })
-            .to_string();
-    }
-    // {FROM:format}, {TO:format}, {TODAY:format} - date variables with custom format
-    if out.contains("{FROM:") || out.contains("{TO:") || out.contains("{TODAY:") {
-        out = DATE_VAR_TEMPLATE_RE
-            .replace_all(&out, |caps: &regex::Captures| {
-                let var = &caps[1]; // FROM, TO, or TODAY
+                let var = &caps[1]; // DATE, FROM, TO, or TODAY
                 let format = &caps[2];
+                // DATE uses the current instant directly so time components work.
+                if var == "DATE" {
+                    return chrono::Utc::now().format(format).to_string();
+                }
                 let date_str = match var {
                     "FROM" => ctx.from.unwrap_or(&today),
                     "TO" => ctx.to.unwrap_or(&today),
-                    "TODAY" => &today,
-                    _ => &today,
+                    _ => &today, // TODAY
                 };
-                // Parse the date string and format it
-                // Try to parse as ISO date first
-                if let Ok(parsed) = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
-                    parsed.format(format).to_string()
-                } else {
-                    // Fallback: return original date string
-                    date_str.to_string()
+                // Parse the ISO date and reformat; fall back to the raw string.
+                match chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                    Ok(parsed) => parsed.format(format).to_string(),
+                    Err(_) => date_str.to_string(),
                 }
             })
             .to_string();
