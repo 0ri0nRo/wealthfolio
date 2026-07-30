@@ -1305,10 +1305,18 @@ impl BrokerSyncService {
             (base.to_string(), mic.map(|m| m.to_string()))
         });
 
-        let symbol = raw_parsed
+        // The API symbol decides the ticker, for the same reason it decides the
+        // MIC: it is the decorated form, so stripping one known suffix from it
+        // leaves the ticker itself intact. Stripping the raw ticker instead
+        // cannot tell an exchange suffix from a ticker that merely ends in one —
+        // `ZAAA.F` on NEO would be filed as `ZAAA`, while the activity path keeps
+        // the raw ticker verbatim and files `ZAAA.F`, splitting the instrument.
+        // `VOD.L` still resolves to `VOD`, because the API form `VOD` carries no
+        // suffix to strip.
+        let symbol = api_parsed
             .as_ref()
             .map(|(base, _)| base.clone())
-            .or_else(|| api_parsed.as_ref().map(|(base, _)| base.clone()))?;
+            .or_else(|| raw_parsed.as_ref().map(|(base, _)| base.clone()))?;
         // The API symbol is asked first: it is the field the provider decorates
         // with the exchange suffix, whereas a dot in the raw ticker is usually
         // part of the ticker (`ZAAA.F`, whose `.F` would resolve to Frankfurt).
@@ -1648,7 +1656,22 @@ mod tests {
             BrokerSyncService::normalize_holdings_symbol(Some("ZAAA.F"), Some("ZAAA.F.NE"), false)
                 .unwrap();
 
+        // Both halves matter: the `.F` is part of the ticker and must survive,
+        // and the venue is NEO rather than the Frankfurt that `.F` would name.
+        // The activity path stores `ZAAA.F` for the same instrument.
+        assert_eq!(normalized.0, "ZAAA.F");
         assert_eq!(normalized.1.as_deref(), Some("XNEO"));
+    }
+
+    /// A share-class dot is not an exchange suffix either, and there is no
+    /// decorated form to fall back on when the broker sends the same string twice.
+    #[test]
+    fn normalize_holdings_symbol_keeps_share_class_suffix() {
+        let normalized =
+            BrokerSyncService::normalize_holdings_symbol(Some("BRK.B"), Some("BRK.B"), false)
+                .unwrap();
+
+        assert_eq!(normalized.0, "BRK.B");
     }
 
     #[test]
