@@ -13,7 +13,9 @@ use rust_decimal::Decimal;
 
 use super::models::AccountUniversalActivity;
 use wealthfolio_core::activities::{self, AssetResolutionInput, NewActivity};
-use wealthfolio_core::assets::parse_symbol_with_exchange_suffix;
+use wealthfolio_core::assets::{
+    parse_symbol_with_exchange_suffix, parse_symbol_with_known_exchange,
+};
 use wealthfolio_core::fx::currency::{get_normalization_rule, normalize_amount, resolve_currency};
 
 /// Minimum confidence score to consider a mapping reliable
@@ -405,7 +407,7 @@ pub fn map_broker_activity(
     // `symbol: "ZAAA.F.NE"`, and reading the raw one first resolves `.F` to
     // Frankfurt. Some brokers do put the suffix on the raw ticker (`VOD.L`), so
     // the fallback stays.
-    let exchange_mic_from_symbol = symbol_ref
+    let symbol_exchange_mic = symbol_ref
         .and_then(|s| s.symbol.as_deref())
         .and_then(|sym| parse_symbol_with_exchange_suffix(sym).1)
         .or_else(|| {
@@ -426,7 +428,7 @@ pub fn map_broker_activity(
                 .filter(|c| !c.trim().is_empty())
                 .or_else(|| e.code.clone().filter(|c| !c.trim().is_empty()))
         });
-    let exchange_mic = exchange_mic_from_symbol.or(exchange_mic_from_underlying);
+    let exchange_mic = symbol_exchange_mic.or(exchange_mic_from_underlying);
 
     // Get the symbol's currency
     let symbol_currency = symbol_ref
@@ -456,6 +458,8 @@ pub fn map_broker_activity(
     } else {
         // For securities: raw_symbol > symbol normalized via Yahoo suffix parser.
         // This preserves valid share-class symbols like BRK.B while trimming real exchange suffixes.
+        // The resolved venue decides the fallback's trailing dot, so an undecorated
+        // `ZAAA.F` keeps its share class here too.
         symbol_ref
             .and_then(|s| s.raw_symbol.clone())
             .filter(|r| !r.trim().is_empty())
@@ -463,7 +467,11 @@ pub fn map_broker_activity(
                 symbol_ref
                     .and_then(|s| s.symbol.clone())
                     .filter(|sym| !sym.trim().is_empty())
-                    .map(|sym| parse_symbol_with_exchange_suffix(&sym).0.to_string())
+                    .map(|sym| {
+                        parse_symbol_with_known_exchange(&sym, exchange_mic.as_deref())
+                            .0
+                            .to_string()
+                    })
             })
     };
 
