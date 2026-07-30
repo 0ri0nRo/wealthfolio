@@ -382,13 +382,39 @@ pub fn map_broker_activity(
     let is_crypto = is_broker_crypto(symbol_type_code);
     let is_bond = is_broker_bond(symbol_type_code);
 
-    // Extract exchange MIC from broker data (prefer mic_code over code)
-    let exchange_mic_from_symbol = symbol_ref.and_then(|s| s.exchange.as_ref()).and_then(|e| {
+    // Exchange MIC, resolved the way `sync_holdings` resolves it for a position:
+    // the symbol's own exchange suffix first, and only then whatever the broker
+    // labelled the exchange with.
+    //
+    // The broker field is not reliably a MIC. SnapTrade reports NEO Exchange as
+    // `mic_code: "NEOE"` — not a MIC, the ISO code is XNEO — while the very same
+    // payload carries `VBU.NE`, whose suffix resolves correctly. Taking the broker
+    // field first split single instruments across two asset rows, because the
+    // holdings path derives the MIC from the suffix and so never agreed with this
+    // one. Verified live 2026-07-29: both endpoints send identical instrument
+    // identity, so the divergence was entirely ours.
+    let broker_exchange_mic = symbol_ref.and_then(|s| s.exchange.as_ref()).and_then(|e| {
         e.mic_code
             .clone()
             .filter(|c| !c.trim().is_empty())
             .or_else(|| e.code.clone().filter(|c| !c.trim().is_empty()))
     });
+    // `symbol` is asked first and `raw_symbol` only as a fallback, because it is
+    // `symbol` the provider decorates with the exchange suffix. A dot in
+    // `raw_symbol` usually belongs to the ticker — `ZAAA.F` arrives as
+    // `symbol: "ZAAA.F.NE"`, and reading the raw one first resolves `.F` to
+    // Frankfurt. Some brokers do put the suffix on the raw ticker (`VOD.L`), so
+    // the fallback stays.
+    let exchange_mic_from_symbol = symbol_ref
+        .and_then(|s| s.symbol.as_deref())
+        .and_then(|sym| parse_symbol_with_exchange_suffix(sym).1)
+        .or_else(|| {
+            symbol_ref
+                .and_then(|s| s.raw_symbol.as_deref())
+                .and_then(|sym| parse_symbol_with_exchange_suffix(sym).1)
+        })
+        .map(|mic| mic.to_string())
+        .or(broker_exchange_mic);
     let exchange_mic_from_underlying = activity
         .option_symbol
         .as_ref()
@@ -790,6 +816,94 @@ mod tests {
         assert_eq!(symbol.kind.as_deref(), Some("OPTION"));
         assert_eq!(symbol.exchange_mic, None);
         assert_eq!(mapped.subtype.as_deref(), Some("POSITION_OPEN"));
+    }
+
+    /// The live Wealthsimple/SnapTrade shape for a NEO-listed ETF: the exchange
+    /// object says `NEOE`, which is not a MIC, while `symbol` carries the `.NE`
+    /// suffix that resolves to the real one. `sync_holdings` reads the suffix, so
+    /// trusting the broker field here filed the same instrument under two asset
+    /// identities — activities under NEOE, positions under XNEO.
+    #[test]
+    fn test_map_broker_activity_prefers_symbol_suffix_over_non_iso_broker_mic() {
+        let activity = AccountUniversalActivity {
+            id: Some("act-neo".to_string()),
+            activity_type: Some("BUY".to_string()),
+            symbol: Some(crate::broker::models::AccountUniversalActivitySymbol {
+                symbol: Some("VBU.NE".to_string()),
+                raw_symbol: Some("VBU".to_string()),
+                exchange: Some(AccountUniversalActivityExchange {
+                    code: Some("NEO".to_string()),
+                    mic_code: Some("NEOE".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            units: Some(1.0),
+            price: Some(20.0),
+            ..Default::default()
+        };
+
+        let mapped = map_broker_activity(&activity, "acct-1", Some("CAD"), Some("CAD")).unwrap();
+        let symbol = mapped.asset.expect("buy activities should produce symbol");
+
+        assert_eq!(symbol.symbol.as_deref(), Some("VBU"));
+        assert_eq!(symbol.exchange_mic.as_deref(), Some("XNEO"));
+    }
+
+    /// A dot in the raw ticker is part of the ticker, not an exchange suffix.
+    /// `ZAAA.F` is a real holding whose raw symbol ends `.F` — Yahoo's suffix for
+    /// Frankfurt — while the decorated symbol `ZAAA.F.NE` names the actual venue.
+    /// Reading the raw ticker first would file a Canadian ETF under XFRA.
+    #[test]
+    fn test_map_broker_activity_ignores_ticker_dot_that_looks_like_an_exchange_suffix() {
+        let activity = AccountUniversalActivity {
+            id: Some("act-zaaa".to_string()),
+            activity_type: Some("BUY".to_string()),
+            symbol: Some(crate::broker::models::AccountUniversalActivitySymbol {
+                symbol: Some("ZAAA.F.NE".to_string()),
+                raw_symbol: Some("ZAAA.F".to_string()),
+                exchange: Some(AccountUniversalActivityExchange {
+                    code: Some("NEO".to_string()),
+                    mic_code: Some("NEOE".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            units: Some(1.0),
+            price: Some(50.0),
+            ..Default::default()
+        };
+
+        let mapped = map_broker_activity(&activity, "acct-1", Some("CAD"), Some("CAD")).unwrap();
+        let symbol = mapped.asset.expect("buy activities should produce symbol");
+
+        assert_eq!(symbol.exchange_mic.as_deref(), Some("XNEO"));
+    }
+
+    /// A broker MIC is still the answer when the symbol carries no suffix to read.
+    #[test]
+    fn test_map_broker_activity_falls_back_to_broker_mic_without_symbol_suffix() {
+        let activity = AccountUniversalActivity {
+            id: Some("act-plain".to_string()),
+            activity_type: Some("BUY".to_string()),
+            symbol: Some(crate::broker::models::AccountUniversalActivitySymbol {
+                symbol: Some("AAPL".to_string()),
+                raw_symbol: Some("AAPL".to_string()),
+                exchange: Some(AccountUniversalActivityExchange {
+                    mic_code: Some("XNAS".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            units: Some(1.0),
+            price: Some(200.0),
+            ..Default::default()
+        };
+
+        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let symbol = mapped.asset.expect("buy activities should produce symbol");
+
+        assert_eq!(symbol.exchange_mic.as_deref(), Some("XNAS"));
     }
 
     #[test]

@@ -1309,10 +1309,16 @@ impl BrokerSyncService {
             .as_ref()
             .map(|(base, _)| base.clone())
             .or_else(|| api_parsed.as_ref().map(|(base, _)| base.clone()))?;
-        let exchange_mic = raw_parsed
+        // The API symbol is asked first: it is the field the provider decorates
+        // with the exchange suffix, whereas a dot in the raw ticker is usually
+        // part of the ticker (`ZAAA.F`, whose `.F` would resolve to Frankfurt).
+        // Brokers that put the suffix on the raw ticker (`VOD.L`) keep working
+        // through the fallback. Mirrors the activity path in `mapping.rs`, so one
+        // instrument cannot land under two asset identities.
+        let exchange_mic = api_parsed
             .as_ref()
             .and_then(|(_, mic)| mic.clone())
-            .or_else(|| api_parsed.as_ref().and_then(|(_, mic)| mic.clone()));
+            .or_else(|| raw_parsed.as_ref().and_then(|(_, mic)| mic.clone()));
 
         Some((symbol, exchange_mic))
     }
@@ -1632,6 +1638,17 @@ mod tests {
 
         assert_eq!(normalized.0, "VOD");
         assert_eq!(normalized.1.as_deref(), Some("XLON"));
+    }
+
+    /// The API symbol names the venue; a dot in the raw ticker does not. `ZAAA.F`
+    /// on NEO must not be read as Frankfurt because Yahoo spells Frankfurt `.F`.
+    #[test]
+    fn normalize_holdings_symbol_prefers_api_suffix_over_a_ticker_dot() {
+        let normalized =
+            BrokerSyncService::normalize_holdings_symbol(Some("ZAAA.F"), Some("ZAAA.F.NE"), false)
+                .unwrap();
+
+        assert_eq!(normalized.1.as_deref(), Some("XNEO"));
     }
 
     #[test]
