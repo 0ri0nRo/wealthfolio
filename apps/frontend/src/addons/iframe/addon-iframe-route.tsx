@@ -120,7 +120,10 @@ export function AddonIframeRoute({ addonId, routeId }: AddonIframeRouteProps) {
   };
 
   return (
-    <div className="relative h-full min-h-0 w-full overflow-hidden">
+    <div
+      className="relative h-full min-h-0 w-full overflow-hidden"
+      data-addon-route-viewport="true"
+    >
       <div
         ref={containerRef}
         className={cn(
