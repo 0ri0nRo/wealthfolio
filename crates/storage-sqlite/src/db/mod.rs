@@ -513,6 +513,38 @@ mod migration_tests {
             1
         );
     }
+
+    /// The full embedded migration chain must apply cleanly on a fresh database.
+    ///
+    /// This is the guard for the `VACUUM` migration: SQLite refuses `VACUUM`
+    /// inside a transaction, and Diesel wraps migrations in one unless the
+    /// migration directory carries `metadata.toml` with
+    /// `run_in_transaction = false`. If that file is missing, renamed, or not
+    /// honored by `embed_migrations!`, this test fails with "cannot VACUUM from
+    /// within a transaction" rather than shipping a migration that bricks
+    /// startup.
+    #[test]
+    fn full_embedded_migration_chain_applies_including_vacuum() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("chain.db");
+        let db_path = db_path.to_str().unwrap();
+
+        run_migrations(db_path).expect("embedded migration chain must apply");
+
+        // Re-running is a no-op: every migration is recorded as applied.
+        run_migrations(db_path).expect("re-running migrations must be a no-op");
+
+        let mut conn = SqliteConnection::establish(db_path).unwrap();
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM __diesel_schema_migrations \
+                 WHERE version = '20260704000002'"
+            ),
+            1,
+            "the VACUUM migration must be recorded as applied exactly once"
+        );
+    }
 }
 
 fn create_backup_filename(timestamp: chrono::DateTime<Local>) -> String {
