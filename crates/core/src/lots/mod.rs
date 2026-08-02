@@ -495,13 +495,16 @@ pub fn lot_record_to_snapshot_lot(
     position_id: &str,
     record: LotRecord,
 ) -> crate::portfolio::snapshot::Lot {
+    // Diagnostics below name the lot and the offending column but never the
+    // stored value: these columns carry quantities, cost basis, unit price,
+    // fees and taxes, and financial data must not reach the logs. The lot id
+    // is enough to locate the row.
     let acquisition_local_date = NaiveDate::parse_from_str(&record.open_date, "%Y-%m-%d").ok();
     if acquisition_local_date.is_none() {
         log::warn!(
-            "Lot {} has an unparseable open_date {:?}; falling back to the current time. \
+            "Lot {} has an unparseable open_date; falling back to the current time. \
              The hydrated lot's acquisition date will be wrong.",
-            record.id,
-            record.open_date
+            record.id
         );
     }
     let acquisition_date = acquisition_local_date
@@ -513,9 +516,8 @@ pub fn lot_record_to_snapshot_lot(
         Ok(ratio) if !ratio.is_zero() => ratio,
         _ => {
             log::warn!(
-                "Lot {} has an invalid split_ratio {:?}; defaulting to 1.",
-                record.id,
-                record.split_ratio
+                "Lot {} has an invalid split_ratio; defaulting to 1.",
+                record.id
             );
             Decimal::ONE
         }
@@ -525,10 +527,9 @@ pub fn lot_record_to_snapshot_lot(
     let parse = |field: &str, value: &str| {
         Decimal::from_str(value).unwrap_or_else(|_| {
             log::warn!(
-                "Lot {} has an unparseable {} {:?}; defaulting to 0.",
+                "Lot {} has an unparseable {}; defaulting to 0.",
                 lot_id,
-                field,
-                value
+                field
             );
             Decimal::ZERO
         })
