@@ -535,6 +535,29 @@ mod migration_tests {
         run_migrations(db_path).expect("re-running migrations must be a no-op");
 
         let mut conn = SqliteConnection::establish(db_path).unwrap();
+
+        // The redundant quote index is dropped, while the unique index and the
+        // (asset_id, source, day) index the latest-quote batch query needs both
+        // survive.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM sqlite_master \
+                 WHERE type = 'index' AND name = 'idx_quotes_asset_day'"
+            ),
+            0,
+            "the redundant (asset_id, day) prefix index must be dropped"
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'index' \
+                 AND name IN ('uq_quotes_asset_day_source', 'idx_quotes_asset_source_day')"
+            ),
+            2,
+            "the unique index and the source-ordered index must be preserved"
+        );
+
         assert_eq!(
             count(
                 &mut conn,
