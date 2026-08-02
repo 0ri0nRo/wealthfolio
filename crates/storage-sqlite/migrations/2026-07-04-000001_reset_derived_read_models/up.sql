@@ -39,3 +39,11 @@ DELETE FROM holdings_snapshots WHERE source = 'CALCULATED';
 DELETE FROM daily_account_valuation;
 DELETE FROM lot_disposals;
 DELETE FROM lots;
+
+-- 4. Drop the relational position rows orphaned by step 3. Migrations run with
+--    `PRAGMA foreign_keys = OFF`, so the ON DELETE CASCADE from
+--    holdings_snapshots does not fire here. Keyframes are sparse, so a rebuilt
+--    snapshot does not necessarily reuse the deleted row's snapshot_id and the
+--    delete-then-insert on write would not reclaim these.
+DELETE FROM snapshot_positions
+WHERE snapshot_id NOT IN (SELECT id FROM holdings_snapshots);

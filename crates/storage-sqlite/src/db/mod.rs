@@ -345,6 +345,15 @@ mod migration_tests {
                 id TEXT PRIMARY KEY NOT NULL
             );
 
+            -- Relational mirror of the snapshot positions. Migrations run with
+            -- foreign_keys OFF, so the migration must delete orphans itself
+            -- rather than relying on ON DELETE CASCADE.
+            CREATE TABLE snapshot_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_id TEXT NOT NULL REFERENCES holdings_snapshots(id) ON DELETE CASCADE,
+                asset_id TEXT NOT NULL
+            );
+
             -- One TRANSACTIONS account (replayed) and one HOLDINGS account
             -- (source data, not replayed).
             INSERT INTO accounts (id, tracking_mode) VALUES ('accT', 'TRANSACTIONS');
@@ -362,6 +371,13 @@ mod migration_tests {
             INSERT INTO daily_account_valuation (id) VALUES ('val1');
             INSERT INTO lot_disposals (id) VALUES ('disp1');
             INSERT INTO lots (id) VALUES ('lot1');
+
+            -- Position rows for a snapshot that gets deleted (orphaned), for a
+            -- snapshot that is converted and kept, and for a preserved source
+            -- snapshot.
+            INSERT INTO snapshot_positions (snapshot_id, asset_id) VALUES ('snapCalcT', 'AAPL');
+            INSERT INTO snapshot_positions (snapshot_id, asset_id) VALUES ('snapCalcH', 'AAPL');
+            INSERT INTO snapshot_positions (snapshot_id, asset_id) VALUES ('snapManual', 'AAPL');
             ",
         )
         .unwrap();
@@ -445,6 +461,40 @@ mod migration_tests {
         );
         assert_eq!(count(&mut conn, "SELECT COUNT(*) AS count FROM lots"), 0);
 
+        // Position rows orphaned by the snapshot delete are removed. Migrations
+        // run with foreign_keys OFF, so no CASCADE fires and the migration must
+        // clean these up explicitly.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions WHERE snapshot_id = 'snapCalcT'"
+            ),
+            0,
+            "positions of a deleted CALCULATED snapshot must not be left orphaned"
+        );
+        // Rows whose snapshot survived are untouched (converted or preserved).
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions WHERE snapshot_id = 'snapCalcH'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions WHERE snapshot_id = 'snapManual'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions"
+            ),
+            2
+        );
+
         // Additive account-FX columns were created on lots.
         assert_eq!(
             count(
@@ -461,6 +511,61 @@ mod migration_tests {
                  WHERE name = 'account_currency'"
             ),
             1
+        );
+    }
+
+    /// The full embedded migration chain must apply cleanly on a fresh database.
+    ///
+    /// This is the guard for the `VACUUM` migration: SQLite refuses `VACUUM`
+    /// inside a transaction, and Diesel wraps migrations in one unless the
+    /// migration directory carries `metadata.toml` with
+    /// `run_in_transaction = false`. If that file is missing, renamed, or not
+    /// honored by `embed_migrations!`, this test fails with "cannot VACUUM from
+    /// within a transaction" rather than shipping a migration that bricks
+    /// startup.
+    #[test]
+    fn full_embedded_migration_chain_applies_including_vacuum() {
+        let dir = tempfile::tempdir().unwrap();
+        let db_path = dir.path().join("chain.db");
+        let db_path = db_path.to_str().unwrap();
+
+        run_migrations(db_path).expect("embedded migration chain must apply");
+
+        // Re-running is a no-op: every migration is recorded as applied.
+        run_migrations(db_path).expect("re-running migrations must be a no-op");
+
+        let mut conn = SqliteConnection::establish(db_path).unwrap();
+
+        // The redundant quote index is dropped, while the unique index and the
+        // (asset_id, source, day) index the latest-quote batch query needs both
+        // survive.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM sqlite_master \
+                 WHERE type = 'index' AND name = 'idx_quotes_asset_day'"
+            ),
+            0,
+            "the redundant (asset_id, day) prefix index must be dropped"
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'index' \
+                 AND name IN ('uq_quotes_asset_day_source', 'idx_quotes_asset_source_day')"
+            ),
+            2,
+            "the unique index and the source-ordered index must be preserved"
+        );
+
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM __diesel_schema_migrations \
+                 WHERE version = '20260802000001'"
+            ),
+            1,
+            "the VACUUM migration must be recorded as applied exactly once"
         );
     }
 }
@@ -513,15 +618,8 @@ pub fn create_backup_path(app_data_dir: &str) -> Result<String> {
 }
 
 pub fn backup_database_to_file(app_data_dir: &str, backup_path: &str) -> Result<()> {
-    let db_path = get_db_path(app_data_dir);
-    backup_database_from_path(&db_path, backup_path)
-}
+    let source_db_path = &get_db_path(app_data_dir);
 
-/// Create a self-contained `.db` backup of `source_db_path` at `backup_path`
-/// using SQLite's `VACUUM INTO`. This is the low-level backup primitive behind
-/// the app-data-dir entry point ([`backup_database_to_file`]), and can also
-/// back up an explicit DB path independent of the configured app data dir.
-pub fn backup_database_from_path(source_db_path: &str, backup_path: &str) -> Result<()> {
     info!(
         "Creating database backup from {} to {}",
         source_db_path, backup_path

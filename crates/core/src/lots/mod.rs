@@ -495,7 +495,18 @@ pub fn lot_record_to_snapshot_lot(
     position_id: &str,
     record: LotRecord,
 ) -> crate::portfolio::snapshot::Lot {
+    // Diagnostics below name the lot and the offending column but never the
+    // stored value: these columns carry quantities, cost basis, unit price,
+    // fees and taxes, and financial data must not reach the logs. The lot id
+    // is enough to locate the row.
     let acquisition_local_date = NaiveDate::parse_from_str(&record.open_date, "%Y-%m-%d").ok();
+    if acquisition_local_date.is_none() {
+        log::warn!(
+            "Lot {} has an unparseable open_date; falling back to the current time. \
+             The hydrated lot's acquisition date will be wrong.",
+            record.id
+        );
+    }
     let acquisition_date = acquisition_local_date
         .and_then(|date| date.and_hms_opt(0, 0, 0))
         .map(|naive| naive.and_utc())
@@ -503,22 +514,38 @@ pub fn lot_record_to_snapshot_lot(
 
     let split_ratio = match Decimal::from_str(&record.split_ratio) {
         Ok(ratio) if !ratio.is_zero() => ratio,
-        _ => Decimal::ONE,
+        _ => {
+            log::warn!(
+                "Lot {} has an invalid split_ratio; defaulting to 1.",
+                record.id
+            );
+            Decimal::ONE
+        }
     };
 
-    let parse = |value: &str| Decimal::from_str(value).unwrap_or(Decimal::ZERO);
-    let fees = parse(&record.fee_allocated);
-    let taxes = parse(&record.tax_allocated);
+    let lot_id = record.id.clone();
+    let parse = |field: &str, value: &str| {
+        Decimal::from_str(value).unwrap_or_else(|_| {
+            log::warn!(
+                "Lot {} has an unparseable {}; defaulting to 0.",
+                lot_id,
+                field
+            );
+            Decimal::ZERO
+        })
+    };
+    let fees = parse("fee_allocated", &record.fee_allocated);
+    let taxes = parse("tax_allocated", &record.tax_allocated);
 
     crate::portfolio::snapshot::Lot {
         id: record.id,
         position_id: position_id.to_string(),
         acquisition_date,
         acquisition_local_date,
-        quantity: parse(&record.remaining_quantity),
-        original_quantity: parse(&record.original_quantity),
-        cost_basis: parse(&record.remaining_cost_basis),
-        acquisition_price: parse(&record.cost_per_unit),
+        quantity: parse("remaining_quantity", &record.remaining_quantity),
+        original_quantity: parse("original_quantity", &record.original_quantity),
+        cost_basis: parse("remaining_cost_basis", &record.remaining_cost_basis),
+        acquisition_price: parse("cost_per_unit", &record.cost_per_unit),
         acquisition_fees: fees,
         original_acquisition_fees: fees,
         acquisition_taxes: taxes,
@@ -566,13 +593,22 @@ pub fn check_lot_quantity_consistency(
             .copied()
             .unwrap_or(Decimal::ZERO);
         if lot_qty != position.quantity {
+            // Name the account, the asset and the failure class, but never the
+            // quantities themselves: holdings sizes are financial data and must
+            // not reach the logs. The two classes are worth distinguishing
+            // because they have different causes — an empty lot book points at
+            // extraction or seeding, while a non-empty disagreement points at
+            // drift between the two representations.
+            let detail = if lot_qty.is_zero() {
+                "no lots extracted while the position is non-empty"
+            } else {
+                "extracted lot quantities disagree with the position"
+            };
             log::error!(
-                "CRITICAL: lot quantity mismatch for account {} asset {}: \
-                 lots sum to {}, position reports {}",
+                "CRITICAL: lot quantity mismatch for account {} asset {}: {}.",
                 snapshot.account_id,
                 asset_id,
-                lot_qty,
-                position.quantity
+                detail
             );
             mismatches += 1;
         }
