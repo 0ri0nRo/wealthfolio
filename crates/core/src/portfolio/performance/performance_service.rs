@@ -642,7 +642,14 @@ impl PerformanceService {
             let denom_is_benign_low_base =
                 twr_denominator >= Decimal::ZERO && twr_denominator < Decimal::ONE;
 
-            if twr_denominator < Decimal::ZERO {
+            // A negative denominator is fatal only where it was before: once the
+            // chain has started, or on a pre-chain day whose opening value is
+            // positive. A pre-chain day with a non-positive opening value is
+            // skipped silently (the `!chain_started` branch below), matching the
+            // long-standing behavior — otherwise junk history before the account
+            // is first funded would permanently null the headline, which is the
+            // failure mode this change set out to remove.
+            if twr_denominator < Decimal::ZERO && (chain_started || prev_value > Decimal::ZERO) {
                 not_applicable_reasons.push(format!(
                     "TWR unavailable for {} because the return denominator (opening value + inflow) is negative. Review the underlying transactions, prices, and cash balances.",
                     curr_point.valuation_date
@@ -8855,6 +8862,76 @@ mod tests {
             .not_applicable_reasons
             .iter()
             .any(|reason| reason.contains("below 1 base currency unit")));
+    }
+
+    #[test]
+    fn twr_negative_denominator_before_chain_with_nonpositive_value_is_skipped_not_fatal() {
+        // A negative denominator on a day whose OPENING value is not positive,
+        // before the return chain has started, is junk history from before the
+        // account was first funded. It was silently skipped historically and
+        // must stay skipped: nulling the headline here would resurrect the
+        // "dormant junk history poisons the headline" failure mode that the
+        // low-base exclusion change exists to remove. Only a negative
+        // denominator with a positive opening value, or one after the chain has
+        // started, is a genuine data issue (see the test above).
+        let mut history = vec![
+            // Zero start.
+            valuation(
+                "2026-05-01",
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            // Opening value 0, negative inflow -> denominator -1 (< 0) while
+            // prev_value == 0. Pre-chain and non-positive opening: skip.
+            valuation(
+                "2026-05-02",
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            // Funded with 100 (zero-move boundary: 100 - 0 - 100 = 0).
+            valuation(
+                "2026-05-03",
+                dec!(100),
+                dec!(100),
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            // Grows +10% on a quiet day: the chain's only active sub-period.
+            valuation(
+                "2026-05-04",
+                dec!(110),
+                dec!(100),
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+        ];
+        history[1].external_inflow_base = dec!(-1);
+        history[1].external_flow_source = ExternalFlowSource::CashAmount;
+        history[2].external_inflow_base = dec!(100);
+        history[2].external_flow_source = ExternalFlowSource::CashAmount;
+
+        let result = PerformanceService::compute_account_performance(
+            &history,
+            Some(TrackingMode::Transactions),
+            None,
+            true,
+        )
+        .expect("performance should compute");
+
+        // Headline survives and reflects the single active sub-period (+10%).
+        assert_eq!(result.returns.twr.unwrap().round_dp(4), dec!(0.1));
+        // The skipped pre-funding day contributed no fatal TWR denominator
+        // reason. (A separate zero-starting-value reason is expected here and
+        // does not null the TWR headline.)
+        assert!(!result
+            .data_quality
+            .not_applicable_reasons
+            .iter()
+            .any(|reason| reason.contains("denominator") && reason.contains("negative")));
     }
 
     #[test]
