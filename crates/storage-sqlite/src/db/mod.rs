@@ -105,6 +105,20 @@ pub fn run_migrations(db_path: &str) -> Result<()> {
         }
     }
 
+    // Refresh query planner statistics only when migrations were actually
+    // applied. `run_pending_migrations` returns the list of applied versions;
+    // an empty list means the schema was already current, so running ANALYZE
+    // (which rewrites sqlite_stat1) on every startup would be wasted work.
+    if migration_result
+        .as_ref()
+        .map(|applied| !applied.is_empty())
+        .unwrap_or(false)
+    {
+        connection
+            .batch_execute("ANALYZE;")
+            .unwrap_or_else(|e| warn!("ANALYZE after migration failed: {}", e));
+    }
+
     // Flush WAL to main DB file before pool creation
     connection
         .batch_execute("PRAGMA wal_checkpoint(TRUNCATE);")
@@ -298,6 +312,157 @@ mod migration_tests {
             1
         );
     }
+
+    #[test]
+    fn reset_derived_read_models_migration_drops_calculated_and_preserves_source() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.batch_execute(
+            "
+            PRAGMA foreign_keys = OFF;
+
+            CREATE TABLE accounts (
+                id TEXT PRIMARY KEY NOT NULL,
+                tracking_mode TEXT NOT NULL
+            );
+
+            CREATE TABLE holdings_snapshots (
+                id TEXT PRIMARY KEY NOT NULL,
+                account_id TEXT NOT NULL,
+                source TEXT NOT NULL
+            );
+
+            CREATE TABLE daily_account_valuation (
+                id TEXT PRIMARY KEY NOT NULL
+            );
+
+            CREATE TABLE lot_disposals (
+                id TEXT PRIMARY KEY NOT NULL
+            );
+
+            -- Minimal lots table WITHOUT the new columns; the migration ALTERs
+            -- them in, so this proves the ADD COLUMN statements run.
+            CREATE TABLE lots (
+                id TEXT PRIMARY KEY NOT NULL
+            );
+
+            -- One TRANSACTIONS account (replayed) and one HOLDINGS account
+            -- (source data, not replayed).
+            INSERT INTO accounts (id, tracking_mode) VALUES ('accT', 'TRANSACTIONS');
+            INSERT INTO accounts (id, tracking_mode) VALUES ('accH', 'HOLDINGS');
+
+            -- CALCULATED on a TRANSACTIONS account -> deleted.
+            INSERT INTO holdings_snapshots (id, account_id, source) VALUES ('snapCalcT', 'accT', 'CALCULATED');
+            -- CALCULATED on a HOLDINGS account -> converted to MANUAL_ENTRY (kept).
+            INSERT INTO holdings_snapshots (id, account_id, source) VALUES ('snapCalcH', 'accH', 'CALCULATED');
+            -- Source snapshots -> preserved untouched.
+            INSERT INTO holdings_snapshots (id, account_id, source) VALUES ('snapManual', 'accT', 'MANUAL_ENTRY');
+            INSERT INTO holdings_snapshots (id, account_id, source) VALUES ('snapCsv', 'accT', 'CSV_IMPORT');
+            INSERT INTO holdings_snapshots (id, account_id, source) VALUES ('snapBroker', 'accH', 'BROKER_IMPORTED');
+
+            INSERT INTO daily_account_valuation (id) VALUES ('val1');
+            INSERT INTO lot_disposals (id) VALUES ('disp1');
+            INSERT INTO lots (id) VALUES ('lot1');
+            ",
+        )
+        .unwrap();
+
+        conn.batch_execute(include_str!(
+            "../../migrations/2026-07-04-000001_reset_derived_read_models/up.sql"
+        ))
+        .unwrap();
+
+        // No CALCULATED snapshots remain: the TRANSACTIONS one was deleted and
+        // the HOLDINGS one was converted.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots WHERE source = 'CALCULATED'"
+            ),
+            0
+        );
+        // TRANSACTIONS CALCULATED snapshot deleted outright.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots WHERE id = 'snapCalcT'"
+            ),
+            0
+        );
+        // HOLDINGS CALCULATED snapshot converted to MANUAL_ENTRY, not deleted.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots \
+                 WHERE id = 'snapCalcH' AND source = 'MANUAL_ENTRY'"
+            ),
+            1
+        );
+        // Source snapshots preserved with unchanged source values.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots \
+                 WHERE id = 'snapManual' AND source = 'MANUAL_ENTRY'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots \
+                 WHERE id = 'snapCsv' AND source = 'CSV_IMPORT'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots \
+                 WHERE id = 'snapBroker' AND source = 'BROKER_IMPORTED'"
+            ),
+            1
+        );
+        // Exactly the four non-CALCULATED rows survive.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots"
+            ),
+            4
+        );
+
+        // Generated read models emptied.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM daily_account_valuation"
+            ),
+            0
+        );
+        assert_eq!(
+            count(&mut conn, "SELECT COUNT(*) AS count FROM lot_disposals"),
+            0
+        );
+        assert_eq!(count(&mut conn, "SELECT COUNT(*) AS count FROM lots"), 0);
+
+        // Additive account-FX columns were created on lots.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM pragma_table_info('lots') \
+                 WHERE name = 'fx_rate_to_account'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM pragma_table_info('lots') \
+                 WHERE name = 'account_currency'"
+            ),
+            1
+        );
+    }
 }
 
 fn create_backup_filename(timestamp: chrono::DateTime<Local>) -> String {
@@ -349,10 +514,17 @@ pub fn create_backup_path(app_data_dir: &str) -> Result<String> {
 
 pub fn backup_database_to_file(app_data_dir: &str, backup_path: &str) -> Result<()> {
     let db_path = get_db_path(app_data_dir);
+    backup_database_from_path(&db_path, backup_path)
+}
 
+/// Create a self-contained `.db` backup of `source_db_path` at `backup_path`
+/// using SQLite's `VACUUM INTO`. This is the low-level backup primitive behind
+/// the app-data-dir entry point ([`backup_database_to_file`]), and can also
+/// back up an explicit DB path independent of the configured app data dir.
+pub fn backup_database_from_path(source_db_path: &str, backup_path: &str) -> Result<()> {
     info!(
         "Creating database backup from {} to {}",
-        db_path, backup_path
+        source_db_path, backup_path
     );
 
     if let Some(parent) = Path::new(backup_path).parent() {
@@ -369,7 +541,7 @@ pub fn backup_database_to_file(app_data_dir: &str, backup_path: &str) -> Result<
         })?;
     }
 
-    let source_conn = RusqliteConnection::open(&db_path).map_err(|e| {
+    let source_conn = RusqliteConnection::open(source_db_path).map_err(|e| {
         error!("Failed to open source database for backup: {}", e);
         Error::Database(DatabaseError::BackupFailed(e.to_string()))
     })?;
