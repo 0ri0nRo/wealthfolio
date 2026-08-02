@@ -595,15 +595,8 @@ pub fn create_backup_path(app_data_dir: &str) -> Result<String> {
 }
 
 pub fn backup_database_to_file(app_data_dir: &str, backup_path: &str) -> Result<()> {
-    let db_path = get_db_path(app_data_dir);
-    backup_database_from_path(&db_path, backup_path)
-}
+    let source_db_path = &get_db_path(app_data_dir);
 
-/// Create a self-contained `.db` backup of `source_db_path` at `backup_path`
-/// using SQLite's `VACUUM INTO`. This is the low-level backup primitive behind
-/// the app-data-dir entry point ([`backup_database_to_file`]), and can also
-/// back up an explicit DB path independent of the configured app data dir.
-pub fn backup_database_from_path(source_db_path: &str, backup_path: &str) -> Result<()> {
     info!(
         "Creating database backup from {} to {}",
         source_db_path, backup_path

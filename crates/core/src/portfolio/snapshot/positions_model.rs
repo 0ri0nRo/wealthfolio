@@ -37,16 +37,11 @@ pub fn is_quantity_significant(quantity: &Decimal) -> bool {
 /// acquisition-date FX rate is unavailable, so a scalar is derived only when it
 /// can be trusted.
 ///
-/// This is the single source of truth shared by two callers:
-///   * the write-time precompute
-///     ([`HoldingsCalculator::precompute_position_cost_basis`]), which passes a
-///     fallback backed by the FX service; and
-///   * the one-time startup backfill that strips embedded lots from legacy
-///     snapshots, which passes a fallback that always returns `None` and thus
-///     relies purely on the per-lot stored FX carried in the embedded lots.
-///
-/// Because both callers share this arithmetic, a backfilled scalar equals a
-/// write-time recompute / full rebuild for the same lots.
+/// Called from the write-time precompute
+/// ([`HoldingsCalculator::precompute_position_cost_basis`]), which passes a
+/// fallback backed by the FX service. `fx_fallback` stays a parameter so a
+/// caller without an FX service can pass one that always returns `None` and get
+/// a scalar derived purely from the per-lot stored FX.
 pub fn compute_position_cost_basis_from_lots<F>(
     position: &Position,
     target_currency: &str,
