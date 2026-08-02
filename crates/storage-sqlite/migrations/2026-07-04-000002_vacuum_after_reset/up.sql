@@ -10,4 +10,12 @@
 -- atomicity: it contains ALTER TABLE ... ADD COLUMN statements that would fail
 -- on a re-run if a crash left it recorded as unapplied. VACUUM is idempotent,
 -- so re-running this one after a crash is harmless.
+
+-- `run_migrations` sets `synchronous = OFF` for the migration connection, which
+-- is not safe to hold across a VACUUM: VACUUM rewrites the whole database file,
+-- so an OS crash or power loss mid-rewrite can corrupt it rather than losing
+-- just the in-flight migration. Restore full durability for the rewrite, then
+-- hand back to the caller, which resets the connection pragmas (to
+-- `synchronous = NORMAL`) once migrations finish.
+PRAGMA synchronous = FULL;
 VACUUM;
