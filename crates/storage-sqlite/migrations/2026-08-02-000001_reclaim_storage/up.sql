@@ -20,7 +20,8 @@
 --    day for the asset.
 DROP INDEX IF EXISTS idx_quotes_asset_day;
 
--- 2. Reclaim the space freed above and by the derived-read-model reset (000001).
+-- 2. Reclaim the space freed above and by the derived-read-model reset
+--    (2026-07-04-000001), which this migration sorts after.
 --
 -- Deleting the CALCULATED snapshots releases their pages to SQLite's freelist
 -- but does not shrink the database file; on a large instance that is hundreds
@@ -28,10 +29,14 @@ DROP INDEX IF EXISTS idx_quotes_asset_day;
 -- actually returned to the filesystem.
 --
 -- This lives in its own migration because VACUUM cannot run inside a
--- transaction (see metadata.toml). Keeping 000001 transactional preserves its
--- atomicity: it contains ALTER TABLE ... ADD COLUMN statements that would fail
--- on a re-run if a crash left it recorded as unapplied. VACUUM is idempotent,
--- so re-running this one after a crash is harmless.
+-- transaction (see metadata.toml), while 2026-07-04-000001 must stay
+-- transactional: it contains ALTER TABLE ... ADD COLUMN statements that would
+-- fail on a re-run if a crash left it recorded as unapplied.
+--
+-- Every statement here is idempotent (guarded DROP INDEX, VACUUM), so this
+-- migration is safe to re-run after a crash — and safe to renumber, which is
+-- why it carries a version above the last shipped migration while the
+-- ADD COLUMN migrations that preceded it keep theirs.
 
 -- `run_migrations` sets `synchronous = OFF` for the migration connection, which
 -- is not safe to hold across a VACUUM: VACUUM rewrites the whole database file,

@@ -562,7 +562,7 @@ mod migration_tests {
             count(
                 &mut conn,
                 "SELECT COUNT(*) AS count FROM __diesel_schema_migrations \
-                 WHERE version = '20260704000002'"
+                 WHERE version = '20260802000001'"
             ),
             1,
             "the VACUUM migration must be recorded as applied exactly once"
