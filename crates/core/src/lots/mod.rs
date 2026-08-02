@@ -593,13 +593,22 @@ pub fn check_lot_quantity_consistency(
             .copied()
             .unwrap_or(Decimal::ZERO);
         if lot_qty != position.quantity {
+            // Name the account, the asset and the failure class, but never the
+            // quantities themselves: holdings sizes are financial data and must
+            // not reach the logs. The two classes are worth distinguishing
+            // because they have different causes — an empty lot book points at
+            // extraction or seeding, while a non-empty disagreement points at
+            // drift between the two representations.
+            let detail = if lot_qty.is_zero() {
+                "no lots extracted while the position is non-empty"
+            } else {
+                "extracted lot quantities disagree with the position"
+            };
             log::error!(
-                "CRITICAL: lot quantity mismatch for account {} asset {}: \
-                 lots sum to {}, position reports {}",
+                "CRITICAL: lot quantity mismatch for account {} asset {}: {}.",
                 snapshot.account_id,
                 asset_id,
-                lot_qty,
-                position.quantity
+                detail
             );
             mismatches += 1;
         }
