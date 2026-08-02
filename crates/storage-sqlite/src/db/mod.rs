@@ -345,6 +345,15 @@ mod migration_tests {
                 id TEXT PRIMARY KEY NOT NULL
             );
 
+            -- Relational mirror of the snapshot positions. Migrations run with
+            -- foreign_keys OFF, so the migration must delete orphans itself
+            -- rather than relying on ON DELETE CASCADE.
+            CREATE TABLE snapshot_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_id TEXT NOT NULL REFERENCES holdings_snapshots(id) ON DELETE CASCADE,
+                asset_id TEXT NOT NULL
+            );
+
             -- One TRANSACTIONS account (replayed) and one HOLDINGS account
             -- (source data, not replayed).
             INSERT INTO accounts (id, tracking_mode) VALUES ('accT', 'TRANSACTIONS');
@@ -362,6 +371,13 @@ mod migration_tests {
             INSERT INTO daily_account_valuation (id) VALUES ('val1');
             INSERT INTO lot_disposals (id) VALUES ('disp1');
             INSERT INTO lots (id) VALUES ('lot1');
+
+            -- Position rows for a snapshot that gets deleted (orphaned), for a
+            -- snapshot that is converted and kept, and for a preserved source
+            -- snapshot.
+            INSERT INTO snapshot_positions (snapshot_id, asset_id) VALUES ('snapCalcT', 'AAPL');
+            INSERT INTO snapshot_positions (snapshot_id, asset_id) VALUES ('snapCalcH', 'AAPL');
+            INSERT INTO snapshot_positions (snapshot_id, asset_id) VALUES ('snapManual', 'AAPL');
             ",
         )
         .unwrap();
@@ -444,6 +460,40 @@ mod migration_tests {
             0
         );
         assert_eq!(count(&mut conn, "SELECT COUNT(*) AS count FROM lots"), 0);
+
+        // Position rows orphaned by the snapshot delete are removed. Migrations
+        // run with foreign_keys OFF, so no CASCADE fires and the migration must
+        // clean these up explicitly.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions WHERE snapshot_id = 'snapCalcT'"
+            ),
+            0,
+            "positions of a deleted CALCULATED snapshot must not be left orphaned"
+        );
+        // Rows whose snapshot survived are untouched (converted or preserved).
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions WHERE snapshot_id = 'snapCalcH'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions WHERE snapshot_id = 'snapManual'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions"
+            ),
+            2
+        );
 
         // Additive account-FX columns were created on lots.
         assert_eq!(
