@@ -190,6 +190,46 @@ mod migration_tests {
     }
 
     #[test]
+    fn asset_multiplier_rebuild_clears_only_derived_valuations() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.batch_execute(
+            "
+            CREATE TABLE daily_account_valuation (
+                id TEXT PRIMARY KEY NOT NULL
+            );
+            CREATE TABLE holdings_snapshots (
+                id TEXT PRIMARY KEY NOT NULL,
+                source TEXT NOT NULL
+            );
+            INSERT INTO daily_account_valuation (id) VALUES ('valuation1');
+            INSERT INTO holdings_snapshots (id, source) VALUES ('manual1', 'MANUAL_ENTRY');
+            INSERT INTO holdings_snapshots (id, source) VALUES ('broker1', 'BROKER_IMPORTED');
+            ",
+        )
+        .unwrap();
+
+        conn.batch_execute(include_str!(
+            "../../migrations/2026-08-02-000001_reclaim_storage/up.sql"
+        ))
+        .unwrap();
+
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM daily_account_valuation"
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots"
+            ),
+            2
+        );
+    }
+
+    #[test]
     fn lot_disposals_migration_clears_generated_data() {
         let mut conn = SqliteConnection::establish(":memory:").unwrap();
         conn.batch_execute(

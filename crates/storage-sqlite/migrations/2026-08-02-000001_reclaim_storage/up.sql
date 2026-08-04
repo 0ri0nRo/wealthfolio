@@ -20,7 +20,13 @@
 --    day for the asset.
 DROP INDEX IF EXISTS idx_quotes_asset_day;
 
--- 2. Reclaim the space freed above and by the derived-read-model reset
+-- 2. Valuations are derived data. Rebuild them once so transfer economics use
+--    the current asset contract multiplier instead of the multiplier copied
+--    into an older holdings snapshot. Existing startup backfill detection
+--    schedules the full recalculation when these rows are missing.
+DELETE FROM daily_account_valuation;
+
+-- 3. Reclaim the space freed above and by the derived-read-model reset
 --    (2026-07-04-000001), which this migration sorts after.
 --
 -- Deleting the CALCULATED snapshots releases their pages to SQLite's freelist
@@ -33,10 +39,10 @@ DROP INDEX IF EXISTS idx_quotes_asset_day;
 -- transactional: it contains ALTER TABLE ... ADD COLUMN statements that would
 -- fail on a re-run if a crash left it recorded as unapplied.
 --
--- Every statement here is idempotent (guarded DROP INDEX, VACUUM), so this
--- migration is safe to re-run after a crash — and safe to renumber, which is
--- why it carries a version above the last shipped migration while the
--- ADD COLUMN migrations that preceded it keep theirs.
+-- Every mutation here is idempotent (guarded DROP INDEX, derived-data DELETE,
+-- VACUUM), so this migration is safe to re-run after a crash — and safe to
+-- renumber, which is why it carries a version above the last shipped migration
+-- while the ADD COLUMN migrations that preceded it keep theirs.
 
 -- `run_migrations` sets `synchronous = OFF` for the migration connection, which
 -- is not safe to hold across a VACUUM: VACUUM rewrites the whole database file,

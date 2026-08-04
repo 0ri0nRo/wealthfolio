@@ -9,8 +9,7 @@ use crate::portfolio::economic_events::{
     ActivityEconomicsResolver, BasisStatus, EconomicEventEffect, EconomicEventKind,
     TransferBoundary,
 };
-use crate::quotes::QuoteServiceTrait;
-use crate::utils::occ_symbol::looks_like_occ_symbol;
+use crate::quotes::{QuoteServiceTrait, SparseAssetMarketFacts};
 use crate::utils::time_utils::{activity_date_in_tz, parse_user_timezone_or_default, user_today};
 use crate::valuation::ValuationServiceTrait;
 
@@ -1907,28 +1906,74 @@ impl PerformanceService {
         let mut warnings = Vec::new();
         let mut warned_invalid_groups = HashSet::new();
         let mut warned_unresolved_activities = HashSet::new();
-        let transfer_asset_ids: HashSet<String> = transfer_activities
+        let mut transfer_requests: Vec<(String, NaiveDate)> = transfer_activities
             .iter()
-            .filter_map(|activity| activity.asset_id.clone())
+            .filter_map(|activity| {
+                let asset_id = activity.asset_id.as_ref()?.clone();
+                let activity_date = self.activity_local_date(activity);
+                (activity_date >= start_date && activity_date <= end_date)
+                    .then_some((asset_id, activity_date))
+            })
+            .collect::<HashSet<_>>()
+            .into_iter()
             .collect();
-        let mut transfer_quotes_by_key = HashMap::new();
-        if !transfer_asset_ids.is_empty() {
+        transfer_requests.sort();
+        let transfer_market_facts = if transfer_requests.is_empty() {
+            SparseAssetMarketFacts::default()
+        } else {
             match self
                 .quote_service
-                .get_quotes_in_range_filled(&transfer_asset_ids, start_date, end_date)
+                .get_sparse_asset_market_facts(&transfer_requests)
             {
-                Ok(quotes) => {
-                    for quote in quotes {
-                        transfer_quotes_by_key
-                            .insert((quote.asset_id.clone(), quote.timestamp.date_naive()), quote);
+                Ok(facts) => facts,
+                Err(e) => {
+                    return AttributionEffectSet {
+                        effects: Vec::new(),
+                        warnings: vec![format!(
+                            "Transfer FX attribution is incomplete because transfer market facts could not be loaded: {}",
+                            e
+                        )],
+                        complete: false,
+                    };
+                }
+            }
+        };
+        let mut transfer_multipliers_by_asset_id = HashMap::new();
+        for (asset_id, _) in &transfer_requests {
+            if transfer_multipliers_by_asset_id.contains_key(asset_id) {
+                continue;
+            }
+            let multiplier = match transfer_market_facts.assets_by_id.get(asset_id) {
+                Some(asset) => {
+                    let multiplier = asset.contract_multiplier();
+                    if multiplier > Decimal::ZERO {
+                        multiplier
+                    } else {
+                        warnings.push(format!(
+                            "Asset {} has a non-positive contract multiplier; transfer attribution used 1.",
+                            asset_id
+                        ));
+                        Decimal::ONE
                     }
                 }
-                Err(e) => warnings.push(format!(
-                    "Transfer FX attribution will use degraded flow values because transfer-date quotes could not be loaded: {}",
-                    e
-                )),
-            }
+                None => {
+                    warnings.push(format!(
+                        "Asset {} was unavailable; transfer attribution used contract multiplier 1.",
+                        asset_id
+                    ));
+                    Decimal::ONE
+                }
+            };
+            transfer_multipliers_by_asset_id.insert(asset_id.clone(), multiplier);
         }
+        let multiplier_for = |activity: &Activity| {
+            activity
+                .asset_id
+                .as_ref()
+                .and_then(|asset_id| transfer_multipliers_by_asset_id.get(asset_id))
+                .copied()
+                .unwrap_or(Decimal::ONE)
+        };
 
         for activity in &transfer_activities {
             if !scope_account_ids.contains(&activity.account_id) {
@@ -2002,22 +2047,26 @@ impl PerformanceService {
             }
 
             let in_quote = pair.transfer_in.asset_id.as_ref().and_then(|asset_id| {
-                transfer_quotes_by_key.get(&(asset_id.clone(), transfer_in_date))
+                transfer_market_facts
+                    .quotes_by_request
+                    .get(&(asset_id.clone(), transfer_in_date))
             });
             let out_quote = pair.transfer_out.asset_id.as_ref().and_then(|asset_id| {
-                transfer_quotes_by_key.get(&(asset_id.clone(), transfer_out_date))
+                transfer_market_facts
+                    .quotes_by_request
+                    .get(&(asset_id.clone(), transfer_out_date))
             });
             let in_economics = ActivityEconomicsResolver::compile_activity_with_unit_multiplier(
                 &pair.transfer_in,
                 in_quote,
                 TransferBoundary::External,
-                Self::attribution_unit_multiplier(&pair.transfer_in),
+                multiplier_for(&pair.transfer_in),
             );
             let out_economics = ActivityEconomicsResolver::compile_activity_with_unit_multiplier(
                 &pair.transfer_out,
                 out_quote,
                 TransferBoundary::External,
-                Self::attribution_unit_multiplier(&pair.transfer_out),
+                multiplier_for(&pair.transfer_out),
             );
             if in_economics.performance_flow_value.is_zero()
                 && out_economics.performance_flow_value.is_zero()
@@ -2240,18 +2289,6 @@ impl PerformanceService {
                 (Decimal::ZERO, Decimal::ZERO, activity.tax_amt())
             }
             _ => (Decimal::ZERO, Decimal::ZERO, Decimal::ZERO),
-        }
-    }
-
-    fn attribution_unit_multiplier(activity: &Activity) -> Decimal {
-        if activity
-            .asset_id
-            .as_deref()
-            .is_some_and(looks_like_occ_symbol)
-        {
-            Decimal::new(100, 0)
-        } else {
-            Decimal::ONE
         }
     }
 
@@ -3225,7 +3262,9 @@ impl PerformanceService {
         effect_seed
             .warnings
             .extend(scoped_unrealized_effects.warnings);
-        effect_seed.effects.extend(scoped_transfer_effects.effects);
+        if scoped_transfer_effects.complete {
+            effect_seed.effects.extend(scoped_transfer_effects.effects);
+        }
         effect_seed
             .warnings
             .extend(scoped_transfer_effects.warnings);
@@ -5092,8 +5131,8 @@ impl PerformanceServiceTrait for PerformanceService {
 mod tests {
     use super::*;
     use crate::assets::{
-        Asset, AssetKind, AssetRepositoryTrait, NewAsset, ProviderProfile, QuoteMode,
-        UpdateAssetProfile,
+        Asset, AssetKind, AssetRepositoryTrait, InstrumentType, NewAsset, ProviderProfile,
+        QuoteMode, UpdateAssetProfile,
     };
     use crate::fx::{ExchangeRate, FxServiceTrait, NewExchangeRate};
     use crate::lots::{AssetLotView, LotClosure};
@@ -5370,6 +5409,62 @@ mod tests {
             _as_of: NaiveDate,
         ) -> Result<HashMap<String, Quote>> {
             Ok(HashMap::new())
+        }
+
+        fn get_sparse_asset_market_facts(
+            &self,
+            requests: &[(String, NaiveDate)],
+        ) -> Result<SparseAssetMarketFacts> {
+            let option_id = "AAPL240119C00150000";
+            if requests
+                .iter()
+                .any(|(asset_id, _)| asset_id == "SPARSE-FACTS-ERROR")
+            {
+                return Err(errors::Error::Repository(
+                    "sparse market facts unavailable".to_string(),
+                ));
+            }
+            let mut facts = SparseAssetMarketFacts::default();
+            if requests.iter().any(|(asset_id, _)| asset_id == option_id) {
+                facts.assets_by_id.insert(
+                    option_id.to_string(),
+                    Asset {
+                        id: option_id.to_string(),
+                        kind: AssetKind::Investment,
+                        quote_ccy: "USD".to_string(),
+                        instrument_type: Some(InstrumentType::Option),
+                        quote_mode: QuoteMode::Market,
+                        created_at: Utc::now().naive_utc(),
+                        updated_at: Utc::now().naive_utc(),
+                        ..Default::default()
+                    },
+                );
+            }
+            for (asset_id, requested_date) in requests {
+                if asset_id != option_id {
+                    continue;
+                }
+                let timestamp = requested_date.and_hms_opt(12, 0, 0).unwrap().and_utc();
+                facts.quotes_by_request.insert(
+                    (asset_id.clone(), *requested_date),
+                    Quote {
+                        id: format!("quote-{option_id}"),
+                        asset_id: asset_id.clone(),
+                        timestamp,
+                        open: dec!(5),
+                        high: dec!(5),
+                        low: dec!(5),
+                        close: dec!(5),
+                        adjclose: dec!(5),
+                        volume: Decimal::ZERO,
+                        currency: "USD".to_string(),
+                        data_source: "TEST".to_string(),
+                        created_at: timestamp,
+                        notes: None,
+                    },
+                );
+            }
+            Ok(facts)
         }
 
         fn get_latest_quotes_snapshot(
@@ -7644,6 +7739,184 @@ mod tests {
 
         assert_eq!(result.attribution.fx_effect, Decimal::ZERO);
         assert_eq!(result.attribution.residual, Decimal::ZERO);
+        assert_eq!(attribution_pnl(&result), Decimal::ZERO);
+    }
+
+    #[tokio::test]
+    async fn transfer_pair_fx_attribution_loads_quote_for_period_start_leg() {
+        let mut transfer_out = test_activity(
+            "transfer-out-at-start",
+            "from-acct",
+            ActivityType::TransferOut,
+            "2026-05-01",
+        );
+        transfer_out.asset_id = Some("AAPL240119C00150000".to_string());
+        transfer_out.quantity = Some(dec!(2));
+        transfer_out.unit_price = None;
+        transfer_out.amount = None;
+        transfer_out.currency = "USD".to_string();
+        transfer_out.source_group_id = Some("transfer-pair-at-start".to_string());
+
+        let mut transfer_in = test_activity(
+            "transfer-in-after-start",
+            "to-acct",
+            ActivityType::TransferIn,
+            "2026-05-02",
+        );
+        transfer_in.asset_id = Some("AAPL240119C00150000".to_string());
+        transfer_in.quantity = Some(dec!(2));
+        transfer_in.unit_price = None;
+        transfer_in.amount = None;
+        transfer_in.currency = "CAD".to_string();
+        transfer_in.source_group_id = Some("transfer-pair-at-start".to_string());
+
+        let performance_service = PerformanceService::new(
+            Arc::new(TestValuationService::new(Vec::new())),
+            Arc::new(TestQuoteService),
+        )
+        .with_activity_repository(
+            Arc::new(TestActivityRepository::new(vec![transfer_out, transfer_in])),
+            Arc::new(TestFxService),
+        );
+        let result = PerformanceService::build_result(
+            "scope:transfer-boundary".to_string(),
+            "USD".to_string(),
+            Some(date("2026-05-01")),
+            Some(date("2026-05-02")),
+            ReturnMethod::ValueReturn,
+            PerformanceReturns {
+                twr: None,
+                annualized_twr: None,
+                irr: None,
+                annualized_irr: None,
+                value_return: None,
+                annualized_value_return: None,
+            },
+            PerformanceAttribution::default(),
+            PerformanceService::empty_risk(),
+            PerformanceDataQuality {
+                status: DataQualityStatus::Ok,
+                warnings: Vec::new(),
+                not_applicable_reasons: Vec::new(),
+            },
+            Vec::new(),
+            false,
+            false,
+        );
+
+        let effects = performance_service
+            .collect_scoped_transfer_pair_attribution_event_effects(
+                &result,
+                &["from-acct".to_string(), "to-acct".to_string()],
+            )
+            .await;
+
+        assert!(effects.complete);
+        assert!(effects.effects.is_empty());
+        assert!(effects.warnings.is_empty());
+    }
+
+    #[tokio::test]
+    async fn transfer_pair_fx_attribution_is_incomplete_when_market_facts_fail() {
+        let mut transfer_in = test_activity(
+            "transfer-with-market-fact-error",
+            "acct",
+            ActivityType::TransferIn,
+            "2026-05-02",
+        );
+        transfer_in.asset_id = Some("SPARSE-FACTS-ERROR".to_string());
+        transfer_in.quantity = Some(dec!(1));
+
+        let performance_service = PerformanceService::new(
+            Arc::new(TestValuationService::new(Vec::new())),
+            Arc::new(TestQuoteService),
+        )
+        .with_activity_repository(
+            Arc::new(TestActivityRepository::new(vec![transfer_in])),
+            Arc::new(TestFxService),
+        );
+        let result = PerformanceService::build_result(
+            "scope:market-fact-error".to_string(),
+            "USD".to_string(),
+            Some(date("2026-05-01")),
+            Some(date("2026-05-02")),
+            ReturnMethod::ValueReturn,
+            PerformanceReturns {
+                twr: None,
+                annualized_twr: None,
+                irr: None,
+                annualized_irr: None,
+                value_return: None,
+                annualized_value_return: None,
+            },
+            PerformanceAttribution::default(),
+            PerformanceService::empty_risk(),
+            PerformanceDataQuality {
+                status: DataQualityStatus::Ok,
+                warnings: Vec::new(),
+                not_applicable_reasons: Vec::new(),
+            },
+            Vec::new(),
+            false,
+            false,
+        );
+
+        let effects = performance_service
+            .collect_scoped_transfer_pair_attribution_event_effects(&result, &["acct".to_string()])
+            .await;
+
+        assert!(!effects.complete);
+        assert!(effects.effects.is_empty());
+        assert_eq!(effects.warnings.len(), 1);
+        assert!(effects.warnings[0].contains("market facts could not be loaded"));
+    }
+
+    #[tokio::test]
+    async fn scoped_performance_reports_partial_quality_when_transfer_market_facts_fail() {
+        let mut start = valuation("2026-05-01", dec!(1000), dec!(1000), dec!(1000), dec!(1000));
+        start.account_currency = "USD".to_string();
+        start.base_currency = "USD".to_string();
+        let mut end = valuation("2026-05-02", dec!(1000), dec!(1000), dec!(1000), dec!(1000));
+        end.account_currency = "USD".to_string();
+        end.base_currency = "USD".to_string();
+
+        let mut transfer_in = test_activity(
+            "transfer-with-public-market-fact-error",
+            "acct",
+            ActivityType::TransferIn,
+            "2026-05-02",
+        );
+        transfer_in.asset_id = Some("SPARSE-FACTS-ERROR".to_string());
+        transfer_in.quantity = Some(dec!(1));
+
+        let performance_service = PerformanceService::new(
+            Arc::new(TestValuationService::new(vec![start, end])),
+            Arc::new(TestQuoteService),
+        )
+        .with_activity_repository(
+            Arc::new(TestActivityRepository::new(vec![transfer_in])),
+            Arc::new(TestFxService),
+        );
+
+        let result = performance_service
+            .calculate_performance_history_for_accounts(
+                "scope:market-fact-error",
+                &["acct".to_string()],
+                "USD",
+                &HashMap::new(),
+                &HashMap::new(),
+                Some(date("2026-05-01")),
+                Some(date("2026-05-02")),
+            )
+            .await
+            .expect("market-fact failure should return a degraded result");
+
+        assert_eq!(result.data_quality.status, DataQualityStatus::Partial);
+        assert!(result
+            .data_quality
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("market facts could not be loaded")));
         assert_eq!(attribution_pnl(&result), Decimal::ZERO);
     }
 
