@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use chrono::{NaiveDate, TimeZone, Utc};
-use log::debug;
+use log::{debug, warn};
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
@@ -232,6 +232,21 @@ impl ManualSnapshotService {
 
         let total_cost_basis: Decimal = positions.values().map(|p| p.total_cost_basis).sum();
 
+        // Cache the cash totals on the keyframe: the daily holdings calculator
+        // only fills them on CALCULATED snapshots, and the snapshot history UI
+        // reads them straight off the keyframe.
+        let cash_total_account_currency = self.sum_cash_in_currency(
+            &cash_balances,
+            &request.account_currency,
+            request.snapshot_date,
+        );
+        let cash_total_base_currency = match request.base_currency.as_deref() {
+            Some(base_currency) => {
+                self.sum_cash_in_currency(&cash_balances, base_currency, request.snapshot_date)
+            }
+            None => Decimal::ZERO,
+        };
+
         let snapshot = AccountStateSnapshot {
             id: format!(
                 "{}_{}",
@@ -246,8 +261,8 @@ impl ManualSnapshotService {
             cost_basis: total_cost_basis,
             net_contribution: Decimal::ZERO,
             net_contribution_base: Decimal::ZERO,
-            cash_total_account_currency: Decimal::ZERO,
-            cash_total_base_currency: Decimal::ZERO,
+            cash_total_account_currency,
+            cash_total_base_currency,
             calculated_at: Utc::now().naive_utc(),
             source: request.source,
         };
@@ -264,6 +279,40 @@ impl ManualSnapshotService {
         asset_ids.dedup();
 
         Ok(asset_ids)
+    }
+
+    /// Sums cash balances converted into `target_currency` at `date`.
+    /// Falls back to the unconverted amount when no FX rate is available,
+    /// matching the holdings calculator's cash-total semantics.
+    fn sum_cash_in_currency(
+        &self,
+        cash_balances: &HashMap<String, Decimal>,
+        target_currency: &str,
+        date: NaiveDate,
+    ) -> Decimal {
+        let mut total = Decimal::ZERO;
+        for (currency, &amount) in cash_balances {
+            if currency == target_currency {
+                total += amount;
+            } else {
+                match self.fx_service.convert_currency_for_date(
+                    amount,
+                    currency,
+                    target_currency,
+                    date,
+                ) {
+                    Ok(converted) => total += converted,
+                    Err(e) => {
+                        warn!(
+                            "Failed to convert cash {} {} to {}: {}. Using unconverted.",
+                            amount, currency, target_currency, e
+                        );
+                        total += amount;
+                    }
+                }
+            }
+        }
+        total
     }
 
     /// Creates a quote from snapshot data to serve as a price fallback.

@@ -460,6 +460,31 @@ describe("AccountPage", () => {
       "/activities?account=account-1",
     );
   });
+
+  it("defaults to the snapshots tab for holdings-mode accounts without a holdings tab", () => {
+    mockUseAccounts.mockReturnValue({
+      accounts: [{ ...createAccount(), trackingMode: "HOLDINGS" }],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useAccounts>);
+    mockUseValuationHistory.mockReturnValue({
+      valuationHistory: [createHistoricalValuation({ totalValue: 100 })],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useValuationHistory>);
+    mockUseCurrentValuation.mockReturnValue({
+      currentValuation: {
+        summary: createCurrentSummary({ totalValueBase: 125 }),
+        accounts: [createCurrentAccountValuation({ totalValue: 125 })],
+      },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    } as unknown as ReturnType<typeof useCurrentValuation>);
+
+    render(<AccountPage />);
+
+    expect(screen.getByText("snapshot-history")).toBeInTheDocument();
+  });
 });
 
 function createSettings(): Settings {
