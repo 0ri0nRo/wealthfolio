@@ -287,7 +287,7 @@ const AssetHistoryCard: React.FC<AssetHistoryProps> = ({
           <HistoryChart
             data={chartData}
             activityMarkers={activityMarkers}
-            averageCost={showActivityMarkers ? averageCost : undefined}
+            averageCost={showActivityMarkers && !isBalanceHidden ? averageCost : undefined}
             onActivityMarkerClick={(marker) => {
               setSelectedActivityDate(dateKey(marker.point));
               setIsActivitySheetOpen(true);
