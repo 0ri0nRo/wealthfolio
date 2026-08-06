@@ -163,16 +163,6 @@ impl FixAction {
             payload: serde_json::json!(account_ids),
         }
     }
-
-    /// Creates a new fix action for repairing activities stored without a
-    /// currency (#1388). Sets each activity's currency from its account.
-    pub fn repair_activity_currencies(activity_ids: Vec<String>) -> Self {
-        Self {
-            id: "repair_activity_currencies".to_string(),
-            label: "Repair Currencies".to_string(),
-            payload: serde_json::json!(activity_ids),
-        }
-    }
 }
 
 // =============================================================================
@@ -278,6 +268,21 @@ impl AffectedItem {
         let id_str = id.into();
         Self {
             route: Some(format!("/accounts/{}", urlencoding::encode(&id_str))),
+            id: id_str,
+            name: name.into(),
+            symbol: None,
+        }
+    }
+
+    /// Creates a new affected item for an activity, deep-linking to the row in
+    /// the activities grid so the user can edit it in place.
+    pub fn activity(id: impl Into<String>, name: impl Into<String>) -> Self {
+        let id_str = id.into();
+        Self {
+            route: Some(format!(
+                "/activities?activity={}&healthContext=activity",
+                urlencoding::encode(&id_str)
+            )),
             id: id_str,
             name: name.into(),
             symbol: None,

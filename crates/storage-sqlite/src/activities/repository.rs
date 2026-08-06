@@ -16,11 +16,10 @@ use wealthfolio_core::accounts::{account_supports_purpose, AccountPurpose};
 use wealthfolio_core::activities::ActivityError;
 use wealthfolio_core::activities::{
     import_type, is_cash_symbol, Activity, ActivityBulkIdentifierMapping,
-    ActivityBulkMutationResult, ActivityCurrencyRepair, ActivityDetails, ActivityRepositoryTrait,
-    ActivitySearchResponse, ActivitySearchResponseMeta, ActivityUpdate, ActivityUpsert,
-    BulkUpsertResult, ImportMapping, ImportTemplate, IncomeData, NewActivity, Sort,
-    ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT, INCOME_ACTIVITY_TYPES,
-    TRADING_ACTIVITY_TYPES,
+    ActivityBulkMutationResult, ActivityDetails, ActivityRepositoryTrait, ActivitySearchResponse,
+    ActivitySearchResponseMeta, ActivityUpdate, ActivityUpsert, BulkUpsertResult, ImportMapping,
+    ImportTemplate, IncomeData, NewActivity, Sort, ACTIVITY_TYPE_TRANSFER_IN,
+    ACTIVITY_TYPE_TRANSFER_OUT, INCOME_ACTIVITY_TYPES, TRADING_ACTIVITY_TYPES,
 };
 use wealthfolio_core::limits::ContributionActivity;
 use wealthfolio_core::{Error, Result};
@@ -1957,71 +1956,6 @@ impl ActivityRepositoryTrait for ActivityRepository {
                 }
 
                 Ok(num_inserted)
-            })
-            .await
-    }
-
-    async fn repair_activity_currencies(
-        &self,
-        repairs: Vec<ActivityCurrencyRepair>,
-    ) -> Result<u32> {
-        if repairs.is_empty() {
-            return Ok(0);
-        }
-
-        self.writer
-            .exec_tx(move |tx| -> Result<u32> {
-                let mut repaired = 0u32;
-                for repair in &repairs {
-                    let existing = activities::table
-                        .select(ActivityDB::as_select())
-                        .find(&repair.activity_id)
-                        .first::<ActivityDB>(tx.conn())
-                        .optional()
-                        .map_err(StorageError::from)?;
-                    let Some(existing) = existing else {
-                        continue;
-                    };
-                    // Only ever fill a blank in; a concurrently edited row keeps
-                    // whatever currency it was given.
-                    if !existing.currency.trim().is_empty() {
-                        continue;
-                    }
-
-                    let before = existing.clone();
-                    let mut updated = existing;
-                    updated.currency = repair.currency.clone();
-                    if let Some(new_key) = repair.idempotency_key.as_deref() {
-                        // The recomputed key can already exist when the same file
-                        // was re-imported before the repair; keep the old key so
-                        // the unique index is not violated.
-                        let collision: i64 = activities::table
-                            .filter(activities::idempotency_key.eq(new_key))
-                            .filter(activities::id.ne(&repair.activity_id))
-                            .count()
-                            .get_result(tx.conn())
-                            .map_err(StorageError::from)?;
-                        if collision == 0 {
-                            updated.idempotency_key = Some(new_key.to_string());
-                        }
-                    }
-                    updated.updated_at = chrono::Utc::now().to_rfc3339();
-
-                    let after = diesel::update(activities::table.find(&updated.id))
-                        .set(&updated)
-                        .get_result::<ActivityDB>(tx.conn())
-                        .map_err(StorageError::from)?;
-                    let provider_account_id =
-                        provider_account_id_for_broker_activity(tx.conn(), &before)?;
-                    queue_activity_update_outbox(
-                        tx,
-                        &before,
-                        &after,
-                        provider_account_id.as_deref(),
-                    )?;
-                    repaired += 1;
-                }
-                Ok(repaired)
             })
             .await
     }

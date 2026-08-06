@@ -1752,19 +1752,6 @@ pub struct ImportActivitiesSummary {
     pub error_message: Option<String>,
 }
 
-/// One row of the missing-currency repair (#1388): the currency to store and,
-/// when the row's import idempotency key must change with it, the recomputed key.
-#[derive(Debug, Clone)]
-pub struct ActivityCurrencyRepair {
-    /// Activity to repair. Only applied while the row's currency is still blank.
-    pub activity_id: String,
-    /// Currency to store (the owning account's currency).
-    pub currency: String,
-    /// Recomputed import idempotency key, when the row has one. `None` leaves
-    /// the stored key untouched.
-    pub idempotency_key: Option<String>,
-}
-
 /// Input model for upserting activities (insert or update on conflict).
 /// Used by broker sync to efficiently sync activities with idempotency support.
 #[derive(Debug, Clone, Serialize, Deserialize)]

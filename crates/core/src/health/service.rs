@@ -2488,10 +2488,10 @@ mod tests {
     }
 
     // Regression for #1388: activities persisted without a currency (pre-fix CSV
-    // imports, or rows synced from an older client) surface as an Error with a
-    // one-click repair action.
+    // imports, or rows synced from an older client) surface as an Error whose
+    // affected items deep-link to the rows so the user can fix them in the grid.
     #[test]
-    fn missing_currency_activities_are_flagged_with_repair_action() {
+    fn missing_currency_activities_deep_link_to_the_grid_for_manual_repair() {
         let account = health_account(
             "acc-1",
             account_types::SECURITIES,
@@ -2561,12 +2561,19 @@ mod tests {
             .expect("missing-currency issue should be reported");
 
         assert_eq!(issue.severity, crate::health::Severity::Error);
-        let fix = issue
-            .fix_action
+        // No automated fix: the user edits the rows in the activities grid, so
+        // each affected item deep-links to its row.
+        assert!(issue.fix_action.is_none());
+        let affected = issue
+            .affected_items
             .as_ref()
-            .expect("issue should carry a repair action");
-        assert_eq!(fix.id, "repair_activity_currencies");
-        assert_eq!(fix.payload, json!(["act-blank"]));
+            .expect("issue should list the affected transactions");
+        assert_eq!(affected.len(), 1);
+        assert_eq!(affected[0].id, "act-blank");
+        assert_eq!(
+            affected[0].route.as_deref(),
+            Some("/activities?activity=act-blank&healthContext=activity")
+        );
     }
 
     #[test]
