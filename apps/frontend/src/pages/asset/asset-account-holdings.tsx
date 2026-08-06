@@ -71,9 +71,7 @@ export function useHasManualSnapshots(assetId: string): boolean {
   });
 
   return useMemo(() => {
-    return snapshotQueries.some((q) =>
-      (q.data ?? []).some((snap) => snap.source !== "CALCULATED" && snap.source !== "SYNTHETIC"),
-    );
+    return snapshotQueries.some((q) => (q.data ?? []).some((snap) => snap.source !== "CALCULATED"));
   }, [snapshotQueries]);
 }
 
@@ -258,7 +256,7 @@ export function AssetSnapshotHistory({
       const snapshots = snapshotQueries[idx]?.data ?? [];
       const accountName = accountsMap.get(accountId)?.name ?? accountId;
       for (const snap of snapshots) {
-        if (snap.source === "CALCULATED" || snap.source === "SYNTHETIC") continue;
+        if (snap.source === "CALCULATED") continue;
         result.push({ ...snap, accountId, accountName });
       }
     });
