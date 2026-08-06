@@ -3639,7 +3639,8 @@ impl ActivityService {
     /// the import apply path runs a lightweight invariant check afterward.
     ///
     /// - CashMovement: clears symbol, exchange_mic, quote_ccy, instrument_type
-    /// - SPLIT: falls back to `account_currency` when currency is missing or invalid
+    /// - Any row: falls back to `account_currency` when currency is missing
+    /// - SPLIT: also falls back when the currency is not a 3-letter code
     fn normalize_for_insert(activity: &mut ActivityImport, account_currency: &str) {
         Self::normalize_import_activity_subtype(activity);
 
@@ -3655,9 +3656,14 @@ impl ActivityService {
             activity.exchange_mic = None;
             activity.quote_ccy = None;
             activity.instrument_type = None;
-            if activity.currency.trim().is_empty() {
-                activity.currency = account_currency.to_string();
-            }
+        }
+
+        // The review step sends an empty currency whenever the user kept the account
+        // currency (`currencySource: "default"` in the import UI), so every row needs
+        // this fallback, not just cash movements. It has to run before the idempotency
+        // key is built so the stored row matches what the review step keyed on.
+        if activity.currency.trim().is_empty() {
+            activity.currency = account_currency.to_string();
         }
 
         if activity.activity_type == ACTIVITY_TYPE_SPLIT {

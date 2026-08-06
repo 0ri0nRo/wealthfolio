@@ -5928,6 +5928,118 @@ mod tests {
         assert_eq!(checked.currency, "USD");
     }
 
+    // Regression for #1388. When the CSV has no currency column the review step
+    // resolves the account currency, but the frontend keeps `currencySource:
+    // "default"` and sends an empty currency on confirm. The import must fall back
+    // to the account currency instead of persisting "", which later breaks FX
+    // conversion ("" -> CAD) during valuation.
+    #[tokio::test]
+    async fn test_import_defaults_missing_currency_to_account_currency() {
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let fx_service = Arc::new(MockFxService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+
+        account_service.add_account(create_test_account("acc-1", "CAD"));
+        asset_service.add_asset(create_test_asset_with_instrument(
+            "asset-zfl",
+            "ZFL",
+            Some("XTSE"),
+            Some(InstrumentType::Equity),
+            "CAD",
+        ));
+
+        let quote_service = Arc::new(MockQuoteService);
+        let activity_service = ActivityService::new(
+            activity_repository.clone(),
+            account_service,
+            asset_service,
+            fx_service,
+            quote_service,
+        );
+
+        let checked = activity_service
+            .check_activities_import(vec![ActivityImport {
+                id: None,
+                date: "2026-07-15".to_string(),
+                symbol: "ZFL".to_string(),
+                activity_type: "BUY".to_string(),
+                quantity: Some(dec!(10)),
+                unit_price: Some(dec!(120)),
+                currency: String::new(),
+                fee: Some(dec!(0)),
+                tax: None,
+                amount: Some(dec!(1200)),
+                comment: None,
+                account_id: Some("acc-1".to_string()),
+                account_name: None,
+                symbol_name: None,
+                exchange_mic: None,
+                quote_ccy: None,
+                instrument_type: None,
+                quote_mode: None,
+                provider_id: None,
+                provider_symbol: None,
+                errors: None,
+                warnings: None,
+                duplicate_of_id: None,
+                duplicate_of_line_number: None,
+                is_draft: false,
+                is_valid: false,
+                line_number: Some(1),
+                fx_rate: None,
+                subtype: None,
+                asset_id: None,
+                isin: None,
+                force_import: false,
+                is_external: None,
+            }])
+            .await
+            .expect("import check should succeed");
+
+        // The review grid displays the account currency.
+        assert_eq!(checked[0].currency, "CAD");
+
+        // The confirm step strips it again because the row is still
+        // `currencySource: "default"` (resolved currency == account currency).
+        let mut confirmed = checked;
+        confirmed[0].currency = String::new();
+
+        let result = activity_service
+            .import_activities(confirmed.clone())
+            .await
+            .expect("import should succeed");
+
+        assert!(result.summary.success);
+        assert_eq!(result.summary.imported, 1);
+
+        let stored = activity_repository
+            .get_activities()
+            .expect("imported activity should be stored");
+        assert_eq!(stored.len(), 1);
+        assert_eq!(
+            stored[0].currency, "CAD",
+            "missing currency must fall back to the account currency, not persist as empty"
+        );
+
+        // The fallback has to happen before the idempotency key is built, otherwise
+        // re-importing the same file silently duplicates the row.
+        let reimport = activity_service
+            .import_activities(confirmed)
+            .await
+            .expect("re-import should succeed");
+
+        assert_eq!(reimport.summary.imported, 0);
+        assert_eq!(reimport.summary.duplicates, 1);
+        assert_eq!(
+            activity_repository
+                .get_activities()
+                .expect("re-import should not insert")
+                .len(),
+            1
+        );
+    }
+
     #[tokio::test]
     async fn test_check_import_does_not_resolve_reviewed_assets_again() {
         let account_service = Arc::new(MockAccountService::new());

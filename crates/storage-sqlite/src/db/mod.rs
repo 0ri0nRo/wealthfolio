@@ -554,6 +554,193 @@ mod migration_tests {
         );
     }
 
+    /// Regression guard for #1388: activities stored with an empty currency are
+    /// healed from their account, and only the affected accounts pay for a
+    /// derived-read-model rebuild.
+    #[test]
+    fn repair_empty_activity_currency_backfills_from_account() {
+        let mut conn = SqliteConnection::establish(":memory:").unwrap();
+        conn.batch_execute(
+            "
+            PRAGMA foreign_keys = OFF;
+
+            CREATE TABLE accounts (
+                id TEXT PRIMARY KEY NOT NULL,
+                currency TEXT NOT NULL
+            );
+
+            CREATE TABLE activities (
+                id TEXT PRIMARY KEY NOT NULL,
+                account_id TEXT NOT NULL,
+                currency TEXT NOT NULL
+            );
+
+            CREATE TABLE holdings_snapshots (
+                id TEXT PRIMARY KEY NOT NULL,
+                account_id TEXT NOT NULL,
+                source TEXT NOT NULL
+            );
+
+            CREATE TABLE daily_account_valuation (
+                id TEXT PRIMARY KEY NOT NULL,
+                account_id TEXT NOT NULL
+            );
+
+            CREATE TABLE lots (
+                id TEXT PRIMARY KEY NOT NULL,
+                account_id TEXT NOT NULL
+            );
+
+            CREATE TABLE lot_disposals (
+                id TEXT PRIMARY KEY NOT NULL,
+                account_id TEXT NOT NULL
+            );
+
+            CREATE TABLE snapshot_positions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_id TEXT NOT NULL REFERENCES holdings_snapshots(id) ON DELETE CASCADE
+            );
+
+            -- 'accBroken' has CSV rows that lost their currency, 'accOk' does not.
+            INSERT INTO accounts (id, currency) VALUES ('accBroken', 'CAD');
+            INSERT INTO accounts (id, currency) VALUES ('accOk', 'USD');
+            -- An account with no currency of its own: nothing to backfill from.
+            INSERT INTO accounts (id, currency) VALUES ('accNoCcy', '');
+
+            INSERT INTO activities (id, account_id, currency) VALUES ('actEmpty', 'accBroken', '');
+            INSERT INTO activities (id, account_id, currency) VALUES ('actBlank', 'accBroken', '  ');
+            INSERT INTO activities (id, account_id, currency) VALUES ('actKeep', 'accBroken', 'USD');
+            INSERT INTO activities (id, account_id, currency) VALUES ('actOk', 'accOk', 'USD');
+            INSERT INTO activities (id, account_id, currency) VALUES ('actNoCcy', 'accNoCcy', '');
+
+            INSERT INTO daily_account_valuation (id, account_id) VALUES ('valBroken', 'accBroken');
+            INSERT INTO daily_account_valuation (id, account_id) VALUES ('valOk', 'accOk');
+            INSERT INTO lots (id, account_id) VALUES ('lotBroken', 'accBroken');
+            INSERT INTO lots (id, account_id) VALUES ('lotOk', 'accOk');
+            INSERT INTO lot_disposals (id, account_id) VALUES ('dispBroken', 'accBroken');
+            INSERT INTO lot_disposals (id, account_id) VALUES ('dispOk', 'accOk');
+
+            INSERT INTO holdings_snapshots (id, account_id, source) VALUES ('snapCalcBroken', 'accBroken', 'CALCULATED');
+            INSERT INTO holdings_snapshots (id, account_id, source) VALUES ('snapCsvBroken', 'accBroken', 'CSV_IMPORT');
+            INSERT INTO holdings_snapshots (id, account_id, source) VALUES ('snapCalcOk', 'accOk', 'CALCULATED');
+
+            INSERT INTO snapshot_positions (snapshot_id) VALUES ('snapCalcBroken');
+            INSERT INTO snapshot_positions (snapshot_id) VALUES ('snapCsvBroken');
+            INSERT INTO snapshot_positions (snapshot_id) VALUES ('snapCalcOk');
+            ",
+        )
+        .unwrap();
+
+        conn.batch_execute(include_str!(
+            "../../migrations/2026-08-05-000001_repair_empty_activity_currency/up.sql"
+        ))
+        .unwrap();
+
+        // Empty and whitespace-only currencies are filled in from the account.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM activities \
+                 WHERE id IN ('actEmpty', 'actBlank') AND currency = 'CAD'"
+            ),
+            2,
+            "blank currencies must be backfilled from the owning account"
+        );
+        // Rows that already had a currency keep it, even one that differs from
+        // the account currency.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM activities \
+                 WHERE id = 'actKeep' AND currency = 'USD'"
+            ),
+            1,
+            "an explicit currency must not be overwritten with the account currency"
+        );
+        // No currency to copy: left as-is rather than given a guessed value.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM activities \
+                 WHERE id = 'actNoCcy' AND currency = ''"
+            ),
+            1
+        );
+
+        // Derived read models are cleared for the affected account only.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM daily_account_valuation"
+            ),
+            1
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM daily_account_valuation WHERE id = 'valOk'"
+            ),
+            1,
+            "an unaffected account must not be forced into a rebuild"
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM lots WHERE id = 'lotOk'"
+            ),
+            1
+        );
+        assert_eq!(count(&mut conn, "SELECT COUNT(*) AS count FROM lots"), 1);
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM lot_disposals WHERE id = 'dispOk'"
+            ),
+            1
+        );
+        assert_eq!(
+            count(&mut conn, "SELECT COUNT(*) AS count FROM lot_disposals"),
+            1
+        );
+
+        // Only the affected account's CALCULATED snapshot goes; its source
+        // snapshot and the unaffected account's snapshot stay.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots WHERE id = 'snapCalcBroken'"
+            ),
+            0
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM holdings_snapshots \
+                 WHERE id IN ('snapCsvBroken', 'snapCalcOk')"
+            ),
+            2,
+            "source snapshots and unaffected accounts must be preserved"
+        );
+
+        // Positions orphaned by the snapshot delete are removed; the rest stay.
+        // Migrations run with foreign_keys OFF, so no CASCADE fires.
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions WHERE snapshot_id = 'snapCalcBroken'"
+            ),
+            0,
+            "positions of a deleted snapshot must not be left orphaned"
+        );
+        assert_eq!(
+            count(
+                &mut conn,
+                "SELECT COUNT(*) AS count FROM snapshot_positions"
+            ),
+            2
+        );
+    }
+
     /// The full embedded migration chain must apply cleanly on a fresh database.
     ///
     /// This is the guard for the `VACUUM` migration: SQLite refuses `VACUUM`
