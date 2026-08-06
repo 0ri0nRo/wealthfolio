@@ -1686,6 +1686,37 @@ mod tests {
             Ok(map)
         }
 
+        async fn repair_activity_currencies(
+            &self,
+            repairs: Vec<ActivityCurrencyRepair>,
+        ) -> Result<u32> {
+            let mut stored = self.activities.lock().unwrap();
+            let mut repaired = 0u32;
+            for repair in &repairs {
+                // Mirror the real repository: a recomputed key that already
+                // belongs to another row keeps the old key.
+                let collides = repair.idempotency_key.as_deref().is_some_and(|key| {
+                    stored.iter().any(|a| {
+                        a.id != repair.activity_id && a.idempotency_key.as_deref() == Some(key)
+                    })
+                });
+                let Some(activity) = stored.iter_mut().find(|a| a.id == repair.activity_id) else {
+                    continue;
+                };
+                if !activity.currency.trim().is_empty() {
+                    continue;
+                }
+                activity.currency = repair.currency.clone();
+                if !collides {
+                    if let Some(key) = repair.idempotency_key.clone() {
+                        activity.idempotency_key = Some(key);
+                    }
+                }
+                repaired += 1;
+            }
+            Ok(repaired)
+        }
+
         async fn bulk_upsert(
             &self,
             _activities: Vec<crate::activities::ActivityUpsert>,
@@ -6035,6 +6066,150 @@ mod tests {
             activity_repository
                 .get_activities()
                 .expect("re-import should not insert")
+                .len(),
+            1
+        );
+    }
+
+    // Regression for #1388 (repair path). A row persisted by a pre-fix import has
+    // currency = '' and an idempotency key hashed with the old "USD" substitution.
+    // The repair must set the account currency AND recompute the key so that
+    // re-importing the same CSV row is flagged as a duplicate instead of
+    // inserting a second copy.
+    #[tokio::test]
+    async fn test_repair_missing_currency_heals_rows_and_restores_reimport_dedup() {
+        use crate::activities::idempotency::compute_idempotency_key;
+
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let fx_service = Arc::new(MockFxService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+
+        account_service.add_account(create_test_account("acc-1", "CAD"));
+        asset_service.add_asset(create_test_asset_with_instrument(
+            "asset-zfl",
+            "ZFL",
+            Some("XTSE"),
+            Some(InstrumentType::Equity),
+            "CAD",
+        ));
+
+        let activity_date: DateTime<Utc> = "2026-07-15T00:00:00Z".parse().unwrap();
+        // Pre-fix imports substituted "USD" for the blank currency when hashing.
+        let stale_key = compute_idempotency_key(
+            "acc-1",
+            "BUY",
+            &activity_date,
+            Some("asset-zfl"),
+            Some(dec!(10)),
+            Some(dec!(120)),
+            Some(dec!(1200)),
+            Some(dec!(0)),
+            "USD",
+            None,
+            None,
+        );
+
+        let mut broken = create_stored_activity("broken-1", "acc-1", Some("asset-zfl"));
+        broken.activity_date = activity_date;
+        broken.quantity = Some(dec!(10));
+        broken.unit_price = Some(dec!(120));
+        broken.amount = Some(dec!(1200));
+        broken.fee = Some(dec!(0));
+        broken.tax = None;
+        broken.currency = String::new();
+        broken.notes = None;
+        broken.source_system = Some("CSV".to_string());
+        broken.idempotency_key = Some(stale_key.clone());
+        activity_repository.add_activity(broken);
+
+        let quote_service = Arc::new(MockQuoteService);
+        let activity_service = ActivityService::new(
+            activity_repository.clone(),
+            account_service,
+            asset_service,
+            fx_service,
+            quote_service,
+        );
+
+        let repaired = activity_service
+            .repair_activities_missing_currency(vec!["broken-1".to_string()])
+            .await
+            .expect("repair should succeed");
+        assert_eq!(repaired, 1);
+
+        let stored = activity_repository
+            .get_activities()
+            .expect("stored activities");
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].currency, "CAD");
+        let healed_key = stored[0]
+            .idempotency_key
+            .clone()
+            .expect("repaired row keeps an idempotency key");
+        assert_ne!(
+            healed_key, stale_key,
+            "the key must be recomputed with the repaired currency"
+        );
+
+        // Re-run the real re-import flow: review resolves the asset, the confirm
+        // step strips the default currency back to "", and import must now match
+        // the repaired row.
+        let checked = activity_service
+            .check_activities_import(vec![ActivityImport {
+                id: None,
+                date: "2026-07-15".to_string(),
+                symbol: "ZFL".to_string(),
+                activity_type: "BUY".to_string(),
+                quantity: Some(dec!(10)),
+                unit_price: Some(dec!(120)),
+                currency: String::new(),
+                fee: Some(dec!(0)),
+                tax: None,
+                amount: Some(dec!(1200)),
+                comment: None,
+                account_id: Some("acc-1".to_string()),
+                account_name: None,
+                symbol_name: None,
+                exchange_mic: None,
+                quote_ccy: None,
+                instrument_type: None,
+                quote_mode: None,
+                provider_id: None,
+                provider_symbol: None,
+                errors: None,
+                warnings: None,
+                duplicate_of_id: None,
+                duplicate_of_line_number: None,
+                is_draft: false,
+                is_valid: false,
+                line_number: Some(1),
+                fx_rate: None,
+                subtype: None,
+                asset_id: None,
+                isin: None,
+                force_import: false,
+                is_external: None,
+            }])
+            .await
+            .expect("import check should succeed");
+
+        let mut confirmed = checked;
+        confirmed[0].currency = String::new();
+
+        let reimport = activity_service
+            .import_activities(confirmed)
+            .await
+            .expect("re-import should succeed");
+        assert_eq!(reimport.summary.imported, 0);
+        assert_eq!(
+            reimport.summary.duplicates, 1,
+            "the repaired row must dedupe against a re-import of the same file"
+        );
+        assert_eq!(
+            activity_repository
+                .get_activities()
+                .expect("stored activities")
                 .len(),
             1
         );

@@ -222,6 +222,28 @@ async fn execute_health_fix(
         return Ok(());
     }
 
+    // Handle repair_activity_currencies - heal activities stored without a
+    // currency (#1388). The service emits ActivitiesChanged, which triggers the
+    // portfolio recalculation for the affected accounts.
+    if action.id == "repair_activity_currencies" {
+        let activity_ids: Vec<String> = serde_json::from_value(action.payload.clone())
+            .map_err(|e| anyhow::anyhow!("Invalid payload for {}: {}", action.id, e))?;
+        if activity_ids.is_empty() {
+            return Err(ApiError::BadRequest(
+                "No activities selected for currency repair".to_string(),
+            ));
+        }
+
+        state
+            .activity_service
+            .repair_activities_missing_currency(activity_ids)
+            .await
+            .map_err(|e| anyhow::anyhow!("Activity currency repair failed: {}", e))?;
+
+        state.health_service.clear_cache().await;
+        return Ok(());
+    }
+
     state.health_service.execute_fix(&action).await?;
     Ok(())
 }

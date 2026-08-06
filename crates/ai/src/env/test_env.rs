@@ -531,6 +531,13 @@ impl ActivityServiceTrait for MockActivityService {
         unimplemented!("MockActivityService::import_activities")
     }
 
+    async fn repair_activities_missing_currency(
+        &self,
+        _activity_ids: Vec<String>,
+    ) -> CoreResult<u32> {
+        unimplemented!("MockActivityService::repair_activities_missing_currency")
+    }
+
     async fn save_import_mapping(
         &self,
         _mapping_data: ImportMappingData,

@@ -315,6 +315,21 @@ pub trait ActivityRepositoryTrait: Send + Sync {
         &self,
         asset_id: &str,
     ) -> Result<(Vec<String>, Vec<String>)>;
+
+    /// Repairs activities stored without a currency (#1388). Each repair sets
+    /// the currency and, when provided, replaces the idempotency key — unless
+    /// the new key already belongs to another row. Rows whose currency is no
+    /// longer blank are skipped. Returns the number of rows repaired.
+    async fn repair_activity_currencies(
+        &self,
+        repairs: Vec<ActivityCurrencyRepair>,
+    ) -> Result<u32> {
+        let _ = repairs;
+        Err(crate::activities::ActivityError::InvalidData(
+            "repair_activity_currencies is not supported by this repository".to_string(),
+        )
+        .into())
+    }
 }
 
 /// Trait defining the contract for Activity service operations.
@@ -426,6 +441,11 @@ pub trait ActivityServiceTrait: Send + Sync {
         &self,
         activities: Vec<ActivityImport>,
     ) -> Result<ImportActivitiesResult>;
+    /// Repairs activities stored without a currency (#1388) by setting each
+    /// activity's currency from its account and recomputing the import
+    /// idempotency key so re-importing the same file dedupes correctly.
+    /// Returns the number of activities repaired.
+    async fn repair_activities_missing_currency(&self, activity_ids: Vec<String>) -> Result<u32>;
     async fn link_account_template(
         &self,
         account_id: String,

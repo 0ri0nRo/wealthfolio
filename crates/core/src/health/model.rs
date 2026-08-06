@@ -163,6 +163,16 @@ impl FixAction {
             payload: serde_json::json!(account_ids),
         }
     }
+
+    /// Creates a new fix action for repairing activities stored without a
+    /// currency (#1388). Sets each activity's currency from its account.
+    pub fn repair_activity_currencies(activity_ids: Vec<String>) -> Self {
+        Self {
+            id: "repair_activity_currencies".to_string(),
+            label: "Repair Currencies".to_string(),
+            payload: serde_json::json!(activity_ids),
+        }
+    }
 }
 
 // =============================================================================
