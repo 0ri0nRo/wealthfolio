@@ -22,14 +22,16 @@ pub enum SnapshotSource {
     BrokerImported,
     /// Imported from CSV file
     CsvImport,
-    /// Legacy synthetic backfill snapshot.
-    Synthetic,
 }
 
 impl SnapshotSource {
-    /// Returns true if this is a non-calculated source (manual, broker, csv, or synthetic).
-    pub fn is_non_calculated(&self) -> bool {
-        !matches!(self, SnapshotSource::Calculated)
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SnapshotSource::Calculated => "CALCULATED",
+            SnapshotSource::ManualEntry => "MANUAL_ENTRY",
+            SnapshotSource::BrokerImported => "BROKER_IMPORTED",
+            SnapshotSource::CsvImport => "CSV_IMPORT",
+        }
     }
 }
 

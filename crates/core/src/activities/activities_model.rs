@@ -20,6 +20,27 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::str::FromStr;
 
+pub(crate) fn validate_activity_date(
+    activity_date: &str,
+) -> std::result::Result<NaiveDate, ActivityError> {
+    let date = DateTime::parse_from_rfc3339(activity_date)
+        .map(|date| date.with_timezone(&Utc).date_naive())
+        .or_else(|_| NaiveDate::parse_from_str(activity_date, "%Y-%m-%d"))
+        .map_err(|_| {
+            ActivityError::InvalidData(
+                "Invalid date format. Expected ISO 8601/RFC3339 or YYYY-MM-DD".to_string(),
+            )
+        })?;
+    let min_date = crate::portfolio::snapshot::min_supported_snapshot_date();
+    if date < min_date {
+        return Err(ActivityError::InvalidData(format!(
+            "Activity date {} isn't supported. Use a date on or after {}.",
+            date, min_date
+        )));
+    }
+    Ok(date)
+}
+
 /// Discriminator values for `import_account_templates.context_kind`.
 pub mod import_type {
     pub const ACTIVITY: &str = "CSV_ACTIVITY";
@@ -475,14 +496,7 @@ impl NewActivity {
             ));
         }
 
-        // Validate date format
-        if DateTime::parse_from_rfc3339(&self.activity_date).is_err()
-            && NaiveDate::parse_from_str(&self.activity_date, "%Y-%m-%d").is_err()
-        {
-            return Err(crate::activities::ActivityError::InvalidData(
-                "Invalid date format. Expected ISO 8601/RFC3339 or YYYY-MM-DD".to_string(),
-            ));
-        }
+        validate_activity_date(&self.activity_date)?;
 
         Self::validate_asset_backed_income_values(
             &self.activity_type,
@@ -621,6 +635,7 @@ impl ActivityUpdate {
             )
             .into());
         }
+        validate_activity_date(&self.activity_date)?;
         Ok(())
     }
 

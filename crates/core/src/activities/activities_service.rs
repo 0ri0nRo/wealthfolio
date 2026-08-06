@@ -3078,37 +3078,21 @@ impl ActivityService {
     }
 
     fn reviewed_import_asset_metadata_is_sufficient(activity: &ActivityImport) -> bool {
-        let Some(instrument_type) =
-            Self::parse_instrument_type(activity.instrument_type.as_deref())
-        else {
-            return false;
-        };
-        if Self::normalize_quote_ccy(activity.quote_ccy.as_deref()).is_none() {
-            return false;
+        ImportAssetResolutionInput {
+            key: String::new(),
+            source_symbol: activity.symbol.clone(),
+            account_currency: String::new(),
+            activity_currency: None,
+            exchange_mic: activity.exchange_mic.clone(),
+            quote_ccy: activity.quote_ccy.clone(),
+            instrument_type: Self::parse_instrument_type(activity.instrument_type.as_deref()),
+            quote_mode: Self::parse_import_quote_mode(activity.quote_mode.as_deref()),
+            isin: None,
+            asset_id: activity.asset_id.clone(),
+            provider_id: None,
+            provider_symbol: None,
         }
-
-        if Self::parse_import_quote_mode(activity.quote_mode.as_deref()) == Some(QuoteMode::Manual)
-        {
-            return true;
-        }
-
-        match instrument_type {
-            InstrumentType::Equity => {
-                activity
-                    .exchange_mic
-                    .as_deref()
-                    .map(str::trim)
-                    .is_some_and(|mic| !mic.is_empty())
-                    || parse_symbol_with_exchange_suffix(&activity.symbol)
-                        .1
-                        .is_some()
-            }
-            InstrumentType::Crypto
-            | InstrumentType::Fx
-            | InstrumentType::Option
-            | InstrumentType::Metal
-            | InstrumentType::Bond => true,
-        }
+        .reviewed_metadata_is_sufficient()
     }
 
     fn validate_import_asset_backed_income_values(
@@ -4865,15 +4849,9 @@ impl ActivityServiceTrait for ActivityService {
                 activity.quantity,
                 activity.unit_price,
             );
-            let valid_date = DateTime::parse_from_rfc3339(&activity.date).is_ok()
-                || NaiveDate::parse_from_str(&activity.date, "%Y-%m-%d").is_ok();
-            if !valid_date {
+            if let Err(error) = validate_activity_date(&activity.date) {
                 activity.is_valid = false;
-                Self::add_activity_error(
-                    activity,
-                    "activityDate",
-                    &format!("Invalid date '{}'.", activity.date),
-                );
+                Self::add_activity_error(activity, "activityDate", &error.to_string());
                 has_validation_errors = true;
                 continue;
             }

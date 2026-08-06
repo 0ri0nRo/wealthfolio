@@ -101,17 +101,6 @@ pub trait SnapshotRepositoryTrait: Send + Sync {
     /// If the date is different from existing snapshots, a new one is created.
     async fn save_or_update_snapshot(&self, snapshot: &AccountStateSnapshot) -> Result<()>;
 
-    /// Get the count of non-calculated snapshots for an account.
-    /// Non-calculated sources include user/imported snapshots and legacy Synthetic rows.
-    fn get_non_calculated_snapshot_count(&self, account_id: &str) -> Result<usize>;
-
-    /// Get the earliest non-calculated snapshot for an account.
-    /// Retained for legacy callers.
-    fn get_earliest_non_calculated_snapshot(
-        &self,
-        account_id: &str,
-    ) -> Result<Option<AccountStateSnapshot>>;
-
     /// Load positions from the `snapshot_positions` table for a given snapshot.
     /// Falls back to deserializing the legacy `holdings_snapshots.positions`
     /// JSON column when the relational table has no rows for the snapshot

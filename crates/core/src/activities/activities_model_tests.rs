@@ -362,6 +362,16 @@ mod tests {
     }
 
     #[test]
+    fn test_new_activity_rejects_date_before_supported_history() {
+        let mut activity = create_test_new_activity();
+        activity.activity_date = "1969-12-31".to_string();
+
+        let error = activity.validate().unwrap_err();
+
+        assert!(error.to_string().contains("on or after 1970-01-01"));
+    }
+
+    #[test]
     fn test_new_activity_allows_null_asset_id() {
         let mut activity = create_test_new_activity();
         activity.asset = None;
@@ -568,6 +578,16 @@ mod tests {
 
         let result = update.validate();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_activity_update_rejects_date_before_supported_history() {
+        let mut update = create_test_activity_update();
+        update.activity_date = "1969-12-31T23:59:59Z".to_string();
+
+        let error = update.validate().unwrap_err();
+
+        assert!(error.to_string().contains("on or after 1970-01-01"));
     }
 
     #[test]

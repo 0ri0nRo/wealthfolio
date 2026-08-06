@@ -1872,12 +1872,12 @@ mod tests {
             unimplemented!("unused in holdings service tests")
         }
 
-        fn get_daily_holdings_snapshots(
+        fn get_holdings_timeline(
             &self,
             _account_id: &str,
             _start_date: Option<NaiveDate>,
             _end_date: Option<NaiveDate>,
-        ) -> Result<Vec<AccountStateSnapshot>> {
+        ) -> Result<crate::portfolio::snapshot::HoldingsTimeline> {
             unimplemented!("unused in holdings service tests")
         }
 
@@ -1901,10 +1901,6 @@ mod tests {
             _account_id: &str,
             _new_source: &str,
         ) -> Result<usize> {
-            unimplemented!("unused in holdings service tests")
-        }
-
-        async fn ensure_holdings_history(&self, _account_id: &str) -> Result<()> {
             unimplemented!("unused in holdings service tests")
         }
 

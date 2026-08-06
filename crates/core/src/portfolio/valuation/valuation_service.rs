@@ -2,7 +2,7 @@ use crate::activities::{
     Activity, ActivityRepositoryTrait, TransferPairResolution, ACTIVITY_TYPE_TRANSFER_IN,
     ACTIVITY_TYPE_TRANSFER_OUT, ACTIVITY_TYPE_WITHDRAWAL,
 };
-use crate::errors::{CalculatorError, Error as CoreError, Result as CoreResult};
+use crate::errors::{CalculatorError, Error as CoreError, Result as CoreResult, ValidationError};
 use crate::fx::currency::normalize_currency_code;
 use crate::fx::FxServiceTrait;
 use crate::lots::{LotDisposal, LotRepositoryTrait};
@@ -13,7 +13,10 @@ use crate::portfolio::performance::{
     classify_flow_for_scope, classify_transfer_boundary_for_account_scope, is_external_transfer,
     FlowType, PerformanceScope,
 };
-use crate::portfolio::snapshot::{Position, SnapshotServiceTrait};
+use crate::portfolio::snapshot::{
+    min_supported_snapshot_date, validate_snapshot_read_date, HoldingsTimeline, Position,
+    SnapshotServiceTrait, SnapshotSource,
+};
 use crate::portfolio::valuation::valuation_calculator::calculate_valuation_with_price_factors;
 use crate::portfolio::valuation::valuation_model::{
     DailyAccountValuation, ExternalFlowSource, NegativeBalanceInfo, ValuationStatus,
@@ -23,20 +26,116 @@ use crate::quotes::{Quote, QuoteServiceTrait};
 use crate::utils::time_utils;
 use async_trait::async_trait;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
-use log::{debug, error, warn};
+use futures::stream::{self, StreamExt};
+use log::{debug, warn};
 use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock, Weak};
-use std::time::Instant;
 
 use super::DailyFxRateMap;
 
 static VALUATION_SERVICE_INSTANCE_COUNTER: AtomicU64 = AtomicU64::new(1);
-const SCOPED_HISTORY_CACHE_LIMIT_PER_MODE: usize = 128;
+const SCOPED_HISTORY_CACHE_LIMIT_PER_MODE: usize = 2;
 const SCOPED_HISTORY_IN_FLIGHT_LIMIT: usize = SCOPED_HISTORY_CACHE_LIMIT_PER_MODE * 2;
+
+#[derive(Clone)]
+struct PreparedValuationAccount {
+    account_id: String,
+    timeline: HoldingsTimeline,
+    incremental_anchor_date: Option<NaiveDate>,
+    replace_since_date: Option<Option<NaiveDate>>,
+    required_asset_ids: HashSet<String>,
+    required_fx_pairs: HashSet<(String, String)>,
+    acquisition_fx_requests: HashSet<(String, String, NaiveDate)>,
+    base_currency: String,
+    account_currency: String,
+}
+
+#[derive(Clone, Default)]
+struct SharedValuationFacts {
+    quotes_by_asset: HashMap<String, Vec<ValuationQuoteFact>>,
+    assets_with_quotes: HashSet<String>,
+    split_events: Vec<QuoteAdjustedSplitEvent>,
+    fx_rates_by_pair: BTreeMap<(String, String), BTreeMap<NaiveDate, Option<Decimal>>>,
+}
+
+impl SharedValuationFacts {
+    fn fx_rates_for_date(
+        &self,
+        pairs: &HashSet<(String, String)>,
+        date: NaiveDate,
+    ) -> DailyFxRateMap {
+        let mut ordered_pairs: Vec<_> = pairs.iter().collect();
+        ordered_pairs.sort();
+        ordered_pairs
+            .into_iter()
+            .filter_map(|pair| {
+                self.fx_rates_by_pair
+                    .get(pair)
+                    .and_then(|series| series.get(&date))
+                    .copied()
+                    .flatten()
+                    .map(|rate| (pair.clone(), rate))
+            })
+            .collect()
+    }
+
+    fn acquisition_fx_rates_by_date(
+        &self,
+        requests: &HashSet<(String, String, NaiveDate)>,
+    ) -> HashMap<NaiveDate, DailyFxRateMap> {
+        let mut ordered_requests: Vec<_> = requests.iter().collect();
+        ordered_requests.sort();
+        let mut rates_by_date: HashMap<NaiveDate, DailyFxRateMap> = HashMap::new();
+        for (from, to, date) in ordered_requests {
+            let pair = (from.clone(), to.clone());
+            if let Some(rate) = self
+                .fx_rates_by_pair
+                .get(&pair)
+                .and_then(|series| series.get(date))
+                .copied()
+                .flatten()
+            {
+                rates_by_date.entry(*date).or_default().insert(pair, rate);
+            }
+        }
+        rates_by_date
+    }
+}
+
+#[derive(Clone)]
+struct ValuationQuoteFact {
+    timestamp: DateTime<Utc>,
+    close: Decimal,
+    currency: String,
+}
+
+impl ValuationQuoteFact {
+    fn to_quote(&self, asset_id: &str) -> Quote {
+        Quote {
+            asset_id: asset_id.to_string(),
+            timestamp: self.timestamp,
+            close: self.close,
+            currency: self.currency.clone(),
+            ..Quote::default()
+        }
+    }
+}
+
+enum ValuationPersistence {
+    Noop,
+    Replace(Option<NaiveDate>),
+    Append,
+}
+
+struct AccountValuationCalculation {
+    account_id: String,
+    valuations: Vec<DailyAccountValuation>,
+    persistence: ValuationPersistence,
+}
 
 fn parse_decimal_lossy(value: &str) -> Decimal {
     Decimal::from_str(value).unwrap_or(Decimal::ZERO)
@@ -53,8 +152,100 @@ pub enum ValuationRecalcMode {
     SinceDate(NaiveDate),
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValuationAccountFailure {
+    pub account_id: String,
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub date: Option<NaiveDate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_date: Option<NaiveDate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_date: Option<NaiveDate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snapshot_source: Option<String>,
+}
+
+impl ValuationAccountFailure {
+    fn from_error(account_id: &str, error: &CoreError) -> Self {
+        match error {
+            CoreError::Validation(ValidationError::InvalidSnapshotDate {
+                date,
+                min_date,
+                max_date,
+                snapshot_source,
+                ..
+            }) => Self {
+                account_id: account_id.to_string(),
+                code: "INVALID_SNAPSHOT_DATE".to_string(),
+                message: error.to_string(),
+                date: Some(*date),
+                min_date: Some(*min_date),
+                max_date: Some(*max_date),
+                snapshot_source: Some(snapshot_source.clone()),
+            },
+            _ => Self {
+                account_id: account_id.to_string(),
+                code: "VALUATION_CALCULATION_FAILED".to_string(),
+                message: error.to_string(),
+                date: None,
+                min_date: None,
+                max_date: None,
+                snapshot_source: None,
+            },
+        }
+    }
+
+    fn from_fact_loading_error(account_id: &str, error: &CoreError) -> Self {
+        Self {
+            account_id: account_id.to_string(),
+            code: "VALUATION_FACT_LOADING_FAILED".to_string(),
+            message: error.to_string(),
+            date: None,
+            min_date: None,
+            max_date: None,
+            snapshot_source: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValuationBatchOutcome {
+    pub successful_accounts: Vec<String>,
+    pub failures: Vec<ValuationAccountFailure>,
+}
+
+struct ValuationBatchExecution {
+    outcome: ValuationBatchOutcome,
+    account_errors: HashMap<String, CoreError>,
+    global_error: Option<CoreError>,
+}
+
 #[async_trait]
 pub trait ValuationServiceTrait: Send + Sync {
+    async fn calculate_valuation_histories(
+        &self,
+        account_ids: &[String],
+        mode: ValuationRecalcMode,
+    ) -> CoreResult<ValuationBatchOutcome> {
+        let mut outcome = ValuationBatchOutcome::default();
+        for account_id in account_ids {
+            match self
+                .calculate_valuation_history(account_id, mode.clone())
+                .await
+            {
+                Ok(()) => outcome.successful_accounts.push(account_id.clone()),
+                Err(error) => outcome
+                    .failures
+                    .push(ValuationAccountFailure::from_error(account_id, &error)),
+            }
+        }
+        Ok(outcome)
+    }
+
     /// Ensures the valuation history for the account is calculated and stored.
     ///
     /// The `mode` controls how much history is recomputed:
@@ -70,6 +261,15 @@ pub trait ValuationServiceTrait: Send + Sync {
         account_id: &str,
         mode: ValuationRecalcMode,
     ) -> CoreResult<()>;
+
+    #[cfg(test)]
+    async fn calculate_valuation_history_dense_reference(
+        &self,
+        account_id: &str,
+        mode: ValuationRecalcMode,
+    ) -> CoreResult<()> {
+        self.calculate_valuation_history(account_id, mode).await
+    }
 
     /// Loads the valuation data for the account within the specified date range.
     ///
@@ -164,7 +364,10 @@ pub trait ValuationServiceTrait: Send + Sync {
 }
 
 fn since_date_calculation_window(date: NaiveDate) -> (NaiveDate, Option<NaiveDate>) {
-    let start_date = date.checked_sub_signed(Duration::days(1)).unwrap_or(date);
+    let start_date = date
+        .checked_sub_signed(Duration::days(1))
+        .filter(|candidate| *candidate >= min_supported_snapshot_date())
+        .unwrap_or(date);
     let anchor_date = if start_date < date {
         Some(start_date)
     } else {
@@ -172,6 +375,10 @@ fn since_date_calculation_window(date: NaiveDate) -> (NaiveDate, Option<NaiveDat
     };
 
     (start_date, anchor_date)
+}
+
+fn latest_valuation_requires_full_rebuild(last_saved: NaiveDate, today: NaiveDate) -> bool {
+    last_saved > today
 }
 
 #[derive(Clone)]
@@ -414,81 +621,40 @@ impl ValuationService {
         Self::position_requires_price_quote(position) && !position.quantity.is_zero()
     }
 
-    async fn fetch_fx_rates_for_range(
+    fn load_fx_rate(
         &self,
-        pairs: &HashSet<(String, String)>,
-        start_date: NaiveDate,
-        end_date: NaiveDate,
-    ) -> CoreResult<HashMap<NaiveDate, DailyFxRateMap>> {
-        if pairs.is_empty() {
-            return Ok(HashMap::new());
+        facts: &mut SharedValuationFacts,
+        from_curr: &str,
+        to_curr: &str,
+        date: NaiveDate,
+    ) {
+        let pair = (from_curr.to_string(), to_curr.to_string());
+        if facts
+            .fx_rates_by_pair
+            .get(&pair)
+            .is_some_and(|series| series.contains_key(&date))
+        {
+            return;
         }
 
-        let mut fx_rates_by_date: HashMap<NaiveDate, DailyFxRateMap> = HashMap::new();
-        let date_range = time_utils::get_days_between(start_date, end_date);
-
-        for current_date in date_range {
-            let mut daily_map: DailyFxRateMap = HashMap::with_capacity(pairs.len());
-            for (from_curr, to_curr) in pairs {
-                match self
-                    .fx_service
-                    .get_exchange_rate_for_date(from_curr, to_curr, current_date)
-                {
-                    Ok(rate) => {
-                        daily_map.insert((from_curr.clone(), to_curr.clone()), rate);
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to get FX rate {}->{} for date {}: {}. Valuation for this date might be affected.",
-                            from_curr, to_curr, current_date, e
-                        );
-                    }
-                }
+        let rate = match self
+            .fx_service
+            .get_exchange_rate_for_date(from_curr, to_curr, date)
+        {
+            Ok(rate) => Some(rate),
+            Err(error) => {
+                warn!(
+                    "Failed to get FX rate {}->{} for date {}: {}. Valuation for this date might be affected.",
+                    from_curr, to_curr, date, error
+                );
+                None
             }
-            if !daily_map.is_empty() {
-                fx_rates_by_date.insert(current_date, daily_map);
-            }
-        }
-
-        Ok(fx_rates_by_date)
-    }
-
-    async fn fetch_fx_rates_for_dates(
-        &self,
-        pairs: &HashSet<(String, String)>,
-        dates: &HashSet<NaiveDate>,
-    ) -> CoreResult<HashMap<NaiveDate, DailyFxRateMap>> {
-        if pairs.is_empty() || dates.is_empty() {
-            return Ok(HashMap::new());
-        }
-
-        let mut fx_rates_by_date: HashMap<NaiveDate, DailyFxRateMap> =
-            HashMap::with_capacity(dates.len());
-
-        for current_date in dates {
-            let mut daily_map: DailyFxRateMap = HashMap::with_capacity(pairs.len());
-            for (from_curr, to_curr) in pairs {
-                match self
-                    .fx_service
-                    .get_exchange_rate_for_date(from_curr, to_curr, *current_date)
-                {
-                    Ok(rate) => {
-                        daily_map.insert((from_curr.clone(), to_curr.clone()), rate);
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to get acquisition FX rate {}->{} for date {}: {}.",
-                            from_curr, to_curr, current_date, e
-                        );
-                    }
-                }
-            }
-            if !daily_map.is_empty() {
-                fx_rates_by_date.insert(*current_date, daily_map);
-            }
-        }
-
-        Ok(fx_rates_by_date)
+        };
+        facts
+            .fx_rates_by_pair
+            .entry(pair)
+            .or_default()
+            .insert(date, rate);
     }
 
     fn aggregate_scoped_valuations(
@@ -1746,87 +1912,74 @@ impl ValuationService {
         self.external_flows_from_scoped_inputs(&inputs, base_currency, start_date_opt, end_date_opt)
             .map(Some)
     }
-}
 
-#[async_trait]
-impl ValuationServiceTrait for ValuationService {
-    async fn calculate_valuation_history(
+    fn prepare_valuation_account(
         &self,
         account_id: &str,
-        mode: ValuationRecalcMode,
-    ) -> CoreResult<()> {
-        let total_start_time = Instant::now();
-        debug!(
-            "Starting valuation data update/recalculation for account '{}', mode: {:?}",
-            account_id, mode
-        );
-
-        let mut calculation_start_date: Option<NaiveDate> = None;
-        let mut incremental_anchor_date: Option<NaiveDate> = None;
-        let replace_since_date = match &mode {
+        mode: &ValuationRecalcMode,
+        base_currency: &str,
+    ) -> CoreResult<PreparedValuationAccount> {
+        let today = {
+            let timezone = self.timezone.read().unwrap();
+            time_utils::user_today(time_utils::parse_user_timezone_or_default(&timezone))
+        };
+        let mut calculation_start_date = None;
+        let mut incremental_anchor_date = None;
+        let mut replace_since_date = match mode {
             ValuationRecalcMode::Full => Some(None),
             ValuationRecalcMode::SinceDate(date) => Some(Some(*date)),
             ValuationRecalcMode::IncrementalFromLast => None,
         };
 
-        match &mode {
+        match mode {
             ValuationRecalcMode::Full => {}
             ValuationRecalcMode::SinceDate(date) => {
+                validate_snapshot_read_date(
+                    account_id,
+                    *date,
+                    SnapshotSource::Calculated.as_str(),
+                    today,
+                )?;
                 let (start_date, anchor_date) = since_date_calculation_window(*date);
                 calculation_start_date = Some(start_date);
                 incremental_anchor_date = anchor_date;
             }
             ValuationRecalcMode::IncrementalFromLast => {
-                let last_saved_date_opt = self
+                if let Some(last_saved) = self
                     .valuation_repository
-                    .load_latest_valuation_date(account_id)?;
-
-                if let Some(last_saved) = last_saved_date_opt {
-                    calculation_start_date = Some(last_saved);
-                    incremental_anchor_date = Some(last_saved);
+                    .load_latest_valuation_date(account_id)?
+                {
+                    if latest_valuation_requires_full_rebuild(last_saved, today) {
+                        replace_since_date = Some(None);
+                    } else {
+                        validate_snapshot_read_date(
+                            account_id,
+                            last_saved,
+                            SnapshotSource::Calculated.as_str(),
+                            today,
+                        )?;
+                        calculation_start_date = Some(last_saved);
+                        incremental_anchor_date = Some(last_saved);
+                    }
                 }
             }
         }
 
-        let snapshots_to_process = self
-            .snapshot_service
-            .get_daily_holdings_snapshots(account_id, calculation_start_date, None)
-            .map_err(|e| {
-                CoreError::Calculation(CalculatorError::Calculation(format!(
-                    "Failed snapshot fetch for account {}: {}",
-                    account_id, e
-                )))
-            })?;
-
-        if snapshots_to_process.is_empty() {
-            if let Some(since_date) = replace_since_date {
-                self.valuation_repository
-                    .replace_valuations_for_account(account_id, since_date, &[])
-                    .await?;
-            }
-            return Ok(());
-        }
-
-        let actual_calculation_start_date = snapshots_to_process.first().unwrap().snapshot_date;
-        let calculation_end_date = snapshots_to_process.last().unwrap().snapshot_date;
-
+        let timeline = self.snapshot_service.get_holdings_timeline(
+            account_id,
+            calculation_start_date,
+            None,
+        )?;
         let mut required_asset_ids = HashSet::new();
         let mut required_fx_pairs = HashSet::new();
-        let mut acquisition_fx_pairs = HashSet::new();
-        let mut acquisition_fx_dates = HashSet::new();
-        let base_curr = {
-            let base_guard = self.base_currency.read().unwrap();
-            normalize_currency_code(&base_guard).to_string()
-        };
-        let mut normalized_account_currency: Option<String> = None;
+        let mut acquisition_fx_requests = HashSet::new();
+        let mut account_currency = None;
 
-        for snapshot in &snapshots_to_process {
+        for snapshot in timeline.keyframes() {
             let account_curr = normalize_currency_code(&snapshot.currency);
-            if normalized_account_currency.is_none() {
-                normalized_account_currency = Some(account_curr.to_string());
-            }
-            if account_curr != base_curr {
-                required_fx_pairs.insert((account_curr.to_string(), base_curr.clone()));
+            account_currency.get_or_insert_with(|| account_curr.to_string());
+            if account_curr != base_currency {
+                required_fx_pairs.insert((account_curr.to_string(), base_currency.to_string()));
             }
             for (asset_id, position) in &snapshot.positions {
                 if !Self::position_requires_price_quote(position) {
@@ -1838,183 +1991,268 @@ impl ValuationServiceTrait for ValuationService {
                     required_fx_pairs
                         .insert((position_currency.to_string(), account_curr.to_string()));
                 }
-                if position_currency != base_curr {
-                    required_fx_pairs.insert((position_currency.to_string(), base_curr.clone()));
+                if position_currency != base_currency {
+                    required_fx_pairs
+                        .insert((position_currency.to_string(), base_currency.to_string()));
                 }
                 if !position.lots.is_empty() {
-                    if position_currency != account_curr {
-                        acquisition_fx_pairs
-                            .insert((position_currency.to_string(), account_curr.to_string()));
-                    }
-                    if position_currency != base_curr {
-                        acquisition_fx_pairs
-                            .insert((position_currency.to_string(), base_curr.clone()));
-                    }
                     for lot in &position.lots {
-                        acquisition_fx_dates.insert(lot.acquisition_date_key());
+                        let acquisition_date = lot.acquisition_date_key();
+                        if position_currency != account_curr {
+                            acquisition_fx_requests.insert((
+                                position_currency.to_string(),
+                                account_curr.to_string(),
+                                acquisition_date,
+                            ));
+                        }
+                        if position_currency != base_currency {
+                            acquisition_fx_requests.insert((
+                                position_currency.to_string(),
+                                base_currency.to_string(),
+                                acquisition_date,
+                            ));
+                        }
                     }
                 }
             }
-            for cash_curr in snapshot.cash_balances.keys() {
-                let normalized_cash_currency = normalize_currency_code(cash_curr);
-                if normalized_cash_currency != account_curr {
-                    required_fx_pairs.insert((
-                        normalized_cash_currency.to_string(),
-                        account_curr.to_string(),
-                    ));
+            for cash_currency in snapshot.cash_balances.keys() {
+                let cash_currency = normalize_currency_code(cash_currency);
+                if cash_currency != account_curr {
+                    required_fx_pairs.insert((cash_currency.to_string(), account_curr.to_string()));
                 }
             }
         }
 
-        let account_curr = normalized_account_currency.unwrap_or_else(|| base_curr.clone());
+        Ok(PreparedValuationAccount {
+            account_id: account_id.to_string(),
+            timeline,
+            incremental_anchor_date,
+            replace_since_date,
+            required_asset_ids,
+            required_fx_pairs,
+            acquisition_fx_requests,
+            base_currency: base_currency.to_string(),
+            account_currency: account_currency.unwrap_or_else(|| base_currency.to_string()),
+        })
+    }
 
-        // Fetch quotes with single call
-        let quotes_vec = self.quote_service.get_quotes_in_range_filled(
-            &required_asset_ids,
-            actual_calculation_start_date,
-            calculation_end_date,
-        )?;
-        let quote_closes_by_asset_date = Self::quote_close_by_asset_date(&quotes_vec);
-        let quote_adjusted_split_events = self.quote_adjusted_split_events_for_assets(
-            &required_asset_ids,
-            actual_calculation_start_date,
-            calculation_end_date,
-            &quote_closes_by_asset_date,
-        )?;
-
-        for quote in &quotes_vec {
-            let normalized_quote_currency = normalize_currency_code(&quote.currency);
-            if normalized_quote_currency != account_curr.as_str() {
-                required_fx_pairs
-                    .insert((normalized_quote_currency.to_string(), account_curr.clone()));
+    async fn load_shared_valuation_facts(
+        &self,
+        accounts: &mut [PreparedValuationAccount],
+    ) -> CoreResult<SharedValuationFacts> {
+        let mut asset_start_dates = BTreeMap::new();
+        let mut global_start: Option<NaiveDate> = None;
+        let mut global_end: Option<NaiveDate> = None;
+        for account in accounts.iter() {
+            if let (Some(start), Some(end)) =
+                (account.timeline.start_date(), account.timeline.end_date())
+            {
+                for asset_id in &account.required_asset_ids {
+                    asset_start_dates
+                        .entry(asset_id.clone())
+                        .and_modify(|current: &mut NaiveDate| *current = (*current).min(start))
+                        .or_insert(start);
+                }
+                global_start = Some(global_start.map_or(start, |current| current.min(start)));
+                global_end = Some(global_end.map_or(end, |current| current.max(end)));
             }
         }
 
-        let mut fx_rates_by_date = self
-            .fetch_fx_rates_for_range(
-                &required_fx_pairs,
-                actual_calculation_start_date,
-                calculation_end_date,
-            )
-            .await?;
-        let acquisition_fx_rates_by_date = self
-            .fetch_fx_rates_for_dates(&acquisition_fx_pairs, &acquisition_fx_dates)
-            .await?;
-        for (date, rates) in acquisition_fx_rates_by_date {
-            fx_rates_by_date.entry(date).or_default().extend(rates);
-        }
-
-        // Build quotes_by_date and track which assets have ANY quotes at all
-        let mut assets_with_quotes: HashSet<String> = HashSet::new();
-        let quotes_by_date = {
-            let mut map = HashMap::new();
-            for quote in quotes_vec {
-                assets_with_quotes.insert(quote.asset_id.clone());
-                map.entry(quote.timestamp.date_naive())
-                    .or_insert_with(HashMap::new)
-                    .insert(quote.asset_id.clone(), quote);
-            }
-            map
+        let mut facts = SharedValuationFacts::default();
+        let (Some(global_start), Some(global_end)) = (global_start, global_end) else {
+            return Ok(facts);
         };
 
-        let mut skipped_incomplete_dates: Vec<(NaiveDate, String)> = Vec::new();
-        let mut newly_calculated_valuations: Vec<DailyAccountValuation> = snapshots_to_process
-            .into_iter()
-            .filter_map(|holdings_snapshot| {
-                let current_date = holdings_snapshot.snapshot_date;
-                let account_id_clone = account_id.to_string();
-                let base_curr_clone = base_curr.clone();
-                let split_price_factors =
-                    Self::split_price_factors_for_date(current_date, &quote_adjusted_split_events);
+        let quotes = self
+            .quote_service
+            .get_sparse_quotes_in_range_by_asset(&asset_start_dates, global_end)?;
+        let all_asset_ids: HashSet<_> = asset_start_dates.keys().cloned().collect();
+        let quote_closes = Self::quote_close_by_asset_date(&quotes);
+        facts.split_events = self.quote_adjusted_split_events_for_assets(
+            &all_asset_ids,
+            global_start,
+            global_end,
+            &quote_closes,
+        )?;
+        for quote in quotes {
+            facts
+                .quotes_by_asset
+                .entry(quote.asset_id.clone())
+                .or_default()
+                .push(ValuationQuoteFact {
+                    timestamp: quote.timestamp,
+                    close: quote.close,
+                    currency: quote.currency,
+                });
+        }
+        for quotes in facts.quotes_by_asset.values_mut() {
+            quotes.sort_by_key(|quote| quote.timestamp);
+        }
+        facts.assets_with_quotes = facts.quotes_by_asset.keys().cloned().collect();
 
-                let quotes_for_current_date =
-                    quotes_by_date.get(&current_date).cloned().unwrap_or_default();
+        for account in accounts.iter_mut() {
+            for asset_id in &account.required_asset_ids {
+                let Some(quotes) = facts.quotes_by_asset.get(asset_id) else {
+                    continue;
+                };
+                for quote in quotes {
+                    let quote_currency = normalize_currency_code(&quote.currency);
+                    if quote_currency != account.account_currency {
+                        account
+                            .required_fx_pairs
+                            .insert((quote_currency.to_string(), account.account_currency.clone()));
+                    }
+                }
+            }
+        }
 
-                let fx_for_current_date = fx_rates_by_date
-                    .get(&current_date)
-                    .cloned()
-                    .unwrap_or_default();
+        for account in accounts.iter() {
+            let mut required_pairs: Vec<_> = account.required_fx_pairs.iter().cloned().collect();
+            required_pairs.sort();
+            if let (Some(start), Some(end)) =
+                (account.timeline.start_date(), account.timeline.end_date())
+            {
+                for date in time_utils::get_days_between(start, end) {
+                    for (from, to) in &required_pairs {
+                        self.load_fx_rate(&mut facts, from, to, date);
+                    }
+                }
+            }
+            let mut acquisition_requests: Vec<_> =
+                account.acquisition_fx_requests.iter().cloned().collect();
+            acquisition_requests.sort();
+            for (from, to, date) in acquisition_requests {
+                self.load_fx_rate(&mut facts, &from, &to, date);
+            }
+        }
+        Ok(facts)
+    }
 
-                // Count quotable positions (those with quotes somewhere in the range)
-                // and how many are missing a quote on this specific date.
-                let quotable_positions: Vec<_> = holdings_snapshot
+    fn calculate_prepared_valuation_account(
+        &self,
+        account: PreparedValuationAccount,
+        facts: &SharedValuationFacts,
+    ) -> CoreResult<AccountValuationCalculation> {
+        let flows = match (account.timeline.start_date(), account.timeline.end_date()) {
+            (Some(start), Some(end)) => self.account_external_flows_by_date(
+                std::slice::from_ref(&account.account_id),
+                &account.base_currency,
+                Some(start),
+                Some(end),
+            )?,
+            _ => None,
+        };
+        Self::calculate_prepared_valuation_account_from_facts(account, facts, flows.as_ref())
+    }
+
+    fn calculate_prepared_valuation_account_from_facts(
+        account: PreparedValuationAccount,
+        facts: &SharedValuationFacts,
+        flows: Option<&HashMap<NaiveDate, DailyFlowAmounts>>,
+    ) -> CoreResult<AccountValuationCalculation> {
+        if account.timeline.is_empty() {
+            let persistence = if account.timeline.has_deferred_future_snapshots() {
+                ValuationPersistence::Noop
+            } else if let Some(since_date) = account.replace_since_date {
+                ValuationPersistence::Replace(since_date)
+            } else {
+                ValuationPersistence::Noop
+            };
+            return Ok(AccountValuationCalculation {
+                account_id: account.account_id,
+                valuations: Vec::new(),
+                persistence,
+            });
+        }
+
+        let mut quote_cursors: HashMap<String, usize> = HashMap::new();
+        let mut active_quotes: HashMap<String, usize> = HashMap::new();
+        let mut quote_assets: Vec<_> = account.required_asset_ids.iter().cloned().collect();
+        quote_assets.sort();
+        let acquisition_fx_rates_by_date =
+            facts.acquisition_fx_rates_by_date(&account.acquisition_fx_requests);
+        let mut skipped_dates = Vec::new();
+        let mut valuations: Vec<DailyAccountValuation> = account
+            .timeline
+            .iter()
+            .filter_map(|day| {
+                let mut quotes_today = HashMap::new();
+                for asset_id in &quote_assets {
+                    let Some(quotes) = facts.quotes_by_asset.get(asset_id) else {
+                        continue;
+                    };
+                    let cursor = quote_cursors.entry(asset_id.clone()).or_insert(0);
+                    while *cursor < quotes.len()
+                        && quotes[*cursor].timestamp.date_naive() <= day.date
+                    {
+                        active_quotes.insert(asset_id.clone(), *cursor);
+                        *cursor += 1;
+                    }
+                    if let Some(active_index) = active_quotes.get(asset_id) {
+                        quotes_today
+                            .insert(asset_id.clone(), quotes[*active_index].to_quote(asset_id));
+                    }
+                }
+
+                let mut quotable_positions: Vec<_> = day
+                    .snapshot
                     .positions
                     .iter()
                     .filter(|(_, position)| Self::position_counts_for_quote_gating(position))
-                    .map(|(symbol, _)| symbol)
-                    .filter(|symbol| assets_with_quotes.contains(*symbol))
+                    .map(|(asset_id, _)| asset_id)
+                    .filter(|asset_id| facts.assets_with_quotes.contains(*asset_id))
                     .cloned()
                     .collect();
-
+                quotable_positions.sort();
                 let missing_quotes: Vec<_> = quotable_positions
                     .iter()
-                    .filter(|symbol| !quotes_for_current_date.contains_key(*symbol))
+                    .filter(|asset_id| !quotes_today.contains_key(*asset_id))
                     .cloned()
                     .collect();
-
-                // Full gap: no quotes at all for any quotable position → skip day
-                // to avoid recording a fake zero-value valuation.
-                if !quotable_positions.is_empty() && missing_quotes.len() == quotable_positions.len()
+                if !quotable_positions.is_empty()
+                    && missing_quotes.len() == quotable_positions.len()
                 {
-                    debug!(
-                        "No quotes for any quotable position on {} (account '{}'). Skipping day.",
-                        current_date, account_id_clone
-                    );
                     return None;
                 }
 
-                // Partial gap: some quotes present, some missing → proceed.
-                // Missing positions valued at ZERO by the calculator, which is
-                // better than dropping the entire day (see #683).
-                if !missing_quotes.is_empty() {
-                    debug!(
-                        "Partial quote gap for {:?} on {} (account '{}').",
-                        missing_quotes, current_date, account_id_clone
-                    );
-                }
-                let account_curr = &holdings_snapshot.currency;
-                if account_curr != &base_curr_clone
-                    && !fx_for_current_date
-                        .contains_key(&(account_curr.clone(), base_curr_clone.clone()))
+                let fx_today = facts.fx_rates_for_date(&account.required_fx_pairs, day.date);
+                if day.snapshot.currency != account.base_currency
+                    && !fx_today.contains_key(&(
+                        day.snapshot.currency.clone(),
+                        account.base_currency.clone(),
+                    ))
                 {
-                    warn!(
-                        "Base currency FX rate ({}->{}) missing for {} (account '{}'). Skipping day.",
-                        account_curr, base_curr_clone, current_date, account_id_clone
-                    );
-                    skipped_incomplete_dates.push((
-                        current_date,
+                    skipped_dates.push((
+                        day.date,
                         format!(
                             "missing base-currency FX rate {}->{}",
-                            account_curr, base_curr_clone
+                            day.snapshot.currency, account.base_currency
                         ),
                     ));
                     return None;
                 }
-
+                let split_factors =
+                    Self::split_price_factors_for_date(day.date, &facts.split_events);
                 match calculate_valuation_with_price_factors(
-                    &holdings_snapshot,
-                    &quotes_for_current_date,
-                    &fx_for_current_date,
-                    &fx_rates_by_date,
-                    current_date,
-                    &base_curr_clone,
-                    &split_price_factors,
+                    day.snapshot,
+                    &quotes_today,
+                    &fx_today,
+                    &acquisition_fx_rates_by_date,
+                    day.date,
+                    &account.base_currency,
+                    &split_factors,
                 ) {
-                    Ok(valuation_result) => Some(valuation_result),
-                    Err(e) => {
-                        error!(
-                            "Failed to calculate valuation for account {} on date {}: {}. Skipping this date.",
-                            account_id, current_date, e
-                        );
-                        skipped_incomplete_dates.push((current_date, e.to_string()));
+                    Ok(valuation) => Some(valuation),
+                    Err(error) => {
+                        skipped_dates.push((day.date, error.to_string()));
                         None
                     }
                 }
             })
             .collect();
 
-        if !skipped_incomplete_dates.is_empty() {
-            let preview = skipped_incomplete_dates
+        if !skipped_dates.is_empty() {
+            let preview = skipped_dates
                 .iter()
                 .take(5)
                 .map(|(date, reason)| format!("{} ({})", date, reason))
@@ -2023,52 +2261,394 @@ impl ValuationServiceTrait for ValuationService {
             return Err(CoreError::Calculation(CalculatorError::Calculation(
                 format!(
                     "Incomplete valuation history for account '{}': {} date(s) could not be calculated. First skipped dates: {}",
-                    account_id,
-                    skipped_incomplete_dates.len(),
+                    account.account_id,
+                    skipped_dates.len(),
                     preview
                 ),
             )));
         }
 
-        if let Some(flows_by_date) = self.account_external_flows_by_date(
-            &[account_id.to_string()],
-            &base_curr,
-            Some(actual_calculation_start_date),
-            Some(calculation_end_date),
-        )? {
+        if let Some(flows) = flows {
             Self::set_external_flows_from_activity_map_or_net_contribution_base(
-                &mut newly_calculated_valuations,
-                &flows_by_date,
+                &mut valuations,
+                flows,
             );
         } else {
-            Self::set_external_flows_from_net_contribution_base(&mut newly_calculated_valuations);
+            Self::set_external_flows_from_net_contribution_base(&mut valuations);
+        }
+        if let Some(anchor_date) = account.incremental_anchor_date {
+            valuations.retain(|valuation| valuation.valuation_date != anchor_date);
+        }
+        let persistence = account
+            .replace_since_date
+            .map(ValuationPersistence::Replace)
+            .unwrap_or(ValuationPersistence::Append);
+        Ok(AccountValuationCalculation {
+            account_id: account.account_id,
+            valuations,
+            persistence,
+        })
+    }
+
+    #[cfg(test)]
+    fn calculate_prepared_valuation_account_dense_reference(
+        account: PreparedValuationAccount,
+        facts: &SharedValuationFacts,
+        flows: Option<&HashMap<NaiveDate, DailyFlowAmounts>>,
+    ) -> CoreResult<AccountValuationCalculation> {
+        if account.timeline.is_empty() {
+            let persistence = if account.timeline.has_deferred_future_snapshots() {
+                ValuationPersistence::Noop
+            } else if let Some(since_date) = account.replace_since_date {
+                ValuationPersistence::Replace(since_date)
+            } else {
+                ValuationPersistence::Noop
+            };
+            return Ok(AccountValuationCalculation {
+                account_id: account.account_id,
+                valuations: Vec::new(),
+                persistence,
+            });
         }
 
-        if let Some(anchor_date) = incremental_anchor_date {
-            newly_calculated_valuations.retain(|valuation| valuation.valuation_date != anchor_date);
+        let start = account.timeline.start_date().unwrap();
+        let end = account.timeline.end_date().unwrap();
+        let dense_days: Vec<_> = time_utils::get_days_between(start, end)
+            .into_iter()
+            .filter_map(|date| {
+                account
+                    .timeline
+                    .snapshot_at(date)
+                    .cloned()
+                    .map(|snapshot| (date, snapshot))
+            })
+            .collect();
+        let mut quote_assets: Vec<_> = account.required_asset_ids.iter().cloned().collect();
+        quote_assets.sort();
+        let acquisition_fx_rates_by_date =
+            facts.acquisition_fx_rates_by_date(&account.acquisition_fx_requests);
+
+        let mut skipped_dates = Vec::new();
+        let mut valuations: Vec<DailyAccountValuation> = dense_days
+            .iter()
+            .filter_map(|(date, snapshot)| {
+                let quotes_today: HashMap<_, _> = quote_assets
+                    .iter()
+                    .filter_map(|asset_id| {
+                        facts
+                            .quotes_by_asset
+                            .get(asset_id)
+                            .and_then(|quotes| {
+                                quotes
+                                    .iter()
+                                    .rev()
+                                    .find(|quote| quote.timestamp.date_naive() <= *date)
+                            })
+                            .map(|quote| (asset_id.clone(), quote.to_quote(asset_id)))
+                    })
+                    .collect();
+                let mut quotable_positions: Vec<_> = snapshot
+                    .positions
+                    .iter()
+                    .filter(|(_, position)| Self::position_counts_for_quote_gating(position))
+                    .map(|(asset_id, _)| asset_id)
+                    .filter(|asset_id| facts.assets_with_quotes.contains(*asset_id))
+                    .cloned()
+                    .collect();
+                quotable_positions.sort();
+                let missing_quotes = quotable_positions
+                    .iter()
+                    .filter(|asset_id| !quotes_today.contains_key(*asset_id))
+                    .count();
+                if !quotable_positions.is_empty() && missing_quotes == quotable_positions.len() {
+                    return None;
+                }
+
+                let fx_today = facts.fx_rates_for_date(&account.required_fx_pairs, *date);
+                if snapshot.currency != account.base_currency
+                    && !fx_today
+                        .contains_key(&(snapshot.currency.clone(), account.base_currency.clone()))
+                {
+                    skipped_dates.push((
+                        *date,
+                        format!(
+                            "missing base-currency FX rate {}->{}",
+                            snapshot.currency, account.base_currency
+                        ),
+                    ));
+                    return None;
+                }
+                let split_factors = Self::split_price_factors_for_date(*date, &facts.split_events);
+                match calculate_valuation_with_price_factors(
+                    snapshot,
+                    &quotes_today,
+                    &fx_today,
+                    &acquisition_fx_rates_by_date,
+                    *date,
+                    &account.base_currency,
+                    &split_factors,
+                ) {
+                    Ok(valuation) => Some(valuation),
+                    Err(error) => {
+                        skipped_dates.push((*date, error.to_string()));
+                        None
+                    }
+                }
+            })
+            .collect();
+
+        if !skipped_dates.is_empty() {
+            let preview = skipped_dates
+                .iter()
+                .take(5)
+                .map(|(date, reason)| format!("{} ({})", date, reason))
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(CoreError::Calculation(CalculatorError::Calculation(
+                format!(
+                    "Incomplete valuation history for account '{}': {} date(s) could not be calculated. First skipped dates: {}",
+                    account.account_id,
+                    skipped_dates.len(),
+                    preview
+                ),
+            )));
         }
 
-        if let Some(since_date) = replace_since_date {
-            self.valuation_repository
-                .replace_valuations_for_account(
-                    account_id,
-                    since_date,
-                    &newly_calculated_valuations,
-                )
-                .await?;
-        } else if !newly_calculated_valuations.is_empty() {
-            self.valuation_repository
-                .save_valuations(&newly_calculated_valuations)
-                .await?;
+        if let Some(flows) = flows {
+            Self::set_external_flows_from_activity_map_or_net_contribution_base(
+                &mut valuations,
+                flows,
+            );
+        } else {
+            Self::set_external_flows_from_net_contribution_base(&mut valuations);
+        }
+        if let Some(anchor_date) = account.incremental_anchor_date {
+            valuations.retain(|valuation| valuation.valuation_date != anchor_date);
+        }
+        let persistence = account
+            .replace_since_date
+            .map(ValuationPersistence::Replace)
+            .unwrap_or(ValuationPersistence::Append);
+        Ok(AccountValuationCalculation {
+            account_id: account.account_id,
+            valuations,
+            persistence,
+        })
+    }
+
+    async fn persist_account_valuation(
+        &self,
+        calculation: AccountValuationCalculation,
+    ) -> CoreResult<()> {
+        match calculation.persistence {
+            ValuationPersistence::Noop => Ok(()),
+            ValuationPersistence::Replace(since_date) => {
+                self.valuation_repository
+                    .replace_valuations_for_account(
+                        &calculation.account_id,
+                        since_date,
+                        &calculation.valuations,
+                    )
+                    .await
+            }
+            ValuationPersistence::Append if calculation.valuations.is_empty() => Ok(()),
+            ValuationPersistence::Append => {
+                self.valuation_repository
+                    .save_valuations(&calculation.valuations)
+                    .await
+            }
+        }
+    }
+
+    async fn execute_valuation_batch(
+        &self,
+        account_ids: &[String],
+        mode: ValuationRecalcMode,
+    ) -> ValuationBatchExecution {
+        let base_currency = normalize_currency_code(
+            &self
+                .base_currency
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
+        .to_string();
+        let mut outcome = ValuationBatchOutcome::default();
+        let mut account_errors = HashMap::new();
+        let mut prepared = Vec::new();
+        let mut ordered_account_ids = account_ids.to_vec();
+        ordered_account_ids.sort();
+        ordered_account_ids.dedup();
+        for account_id in ordered_account_ids {
+            match self.prepare_valuation_account(&account_id, &mode, &base_currency) {
+                Ok(account) => prepared.push(account),
+                Err(error) => {
+                    outcome
+                        .failures
+                        .push(ValuationAccountFailure::from_error(&account_id, &error));
+                    account_errors.insert(account_id, error);
+                }
+            }
         }
 
-        let total_duration = total_start_time.elapsed();
-        debug!(
-            "Successfully updated/recalculated valuation data for account '{}' in {:?}",
-            account_id, total_duration
-        );
+        // Fact loading finishes before any account writes. If it fails, report every
+        // prepared account as failed while retaining diagnostics gathered above.
+        let shared_facts = match self.load_shared_valuation_facts(&mut prepared).await {
+            Ok(facts) => Arc::new(facts),
+            Err(error) => {
+                return Self::fact_loading_failure_execution(
+                    outcome,
+                    account_errors,
+                    &prepared,
+                    error,
+                );
+            }
+        };
+        let concurrency = std::thread::available_parallelism()
+            .map(usize::from)
+            .unwrap_or(1)
+            .clamp(1, 4);
+        let mut results = stream::iter(prepared.into_iter().map(|account| {
+            let account_id = account.account_id.clone();
+            let service = self.clone();
+            let facts = shared_facts.clone();
+            async move {
+                let result = tokio::task::spawn_blocking(move || {
+                    service.calculate_prepared_valuation_account(account, &facts)
+                })
+                .await;
+                (account_id, result)
+            }
+        }))
+        .buffer_unordered(concurrency);
 
-        Ok(())
+        while let Some((account_id, result)) = results.next().await {
+            let account_error = match result {
+                Ok(Ok(calculation)) => match self.persist_account_valuation(calculation).await {
+                    Ok(()) => {
+                        outcome.successful_accounts.push(account_id);
+                        continue;
+                    }
+                    Err(error) => error,
+                },
+                Ok(Err(error)) => error,
+                Err(error) => CoreError::Calculation(CalculatorError::Calculation(format!(
+                    "Valuation worker failed: {}",
+                    error
+                ))),
+            };
+            outcome.failures.push(ValuationAccountFailure::from_error(
+                &account_id,
+                &account_error,
+            ));
+            account_errors.insert(account_id, account_error);
+        }
+        Self::sort_batch_outcome(&mut outcome);
+        ValuationBatchExecution {
+            outcome,
+            account_errors,
+            global_error: None,
+        }
+    }
+
+    fn sort_batch_outcome(outcome: &mut ValuationBatchOutcome) {
+        outcome.successful_accounts.sort();
+        outcome
+            .failures
+            .sort_by(|left, right| left.account_id.cmp(&right.account_id));
+    }
+
+    fn fact_loading_failure_execution(
+        mut outcome: ValuationBatchOutcome,
+        account_errors: HashMap<String, CoreError>,
+        prepared: &[PreparedValuationAccount],
+        error: CoreError,
+    ) -> ValuationBatchExecution {
+        for account in prepared {
+            outcome
+                .failures
+                .push(ValuationAccountFailure::from_fact_loading_error(
+                    &account.account_id,
+                    &error,
+                ));
+        }
+        Self::sort_batch_outcome(&mut outcome);
+        ValuationBatchExecution {
+            outcome,
+            account_errors,
+            global_error: Some(error),
+        }
+    }
+
+    fn single_account_result(
+        mut execution: ValuationBatchExecution,
+        account_id: &str,
+    ) -> CoreResult<()> {
+        if let Some(error) = execution.global_error {
+            return Err(error);
+        }
+        match execution.account_errors.remove(account_id) {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+}
+
+#[async_trait]
+impl ValuationServiceTrait for ValuationService {
+    async fn calculate_valuation_histories(
+        &self,
+        account_ids: &[String],
+        mode: ValuationRecalcMode,
+    ) -> CoreResult<ValuationBatchOutcome> {
+        Ok(self
+            .execute_valuation_batch(account_ids, mode)
+            .await
+            .outcome)
+    }
+
+    async fn calculate_valuation_history(
+        &self,
+        account_id: &str,
+        mode: ValuationRecalcMode,
+    ) -> CoreResult<()> {
+        let execution = self
+            .execute_valuation_batch(&[account_id.to_string()], mode)
+            .await;
+        Self::single_account_result(execution, account_id)
+    }
+
+    #[cfg(test)]
+    async fn calculate_valuation_history_dense_reference(
+        &self,
+        account_id: &str,
+        mode: ValuationRecalcMode,
+    ) -> CoreResult<()> {
+        let base_currency = normalize_currency_code(
+            &self
+                .base_currency
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
+        .to_string();
+        let account = self.prepare_valuation_account(account_id, &mode, &base_currency)?;
+        let mut accounts = vec![account];
+        let facts = self.load_shared_valuation_facts(&mut accounts).await?;
+        let account = accounts.pop().unwrap();
+        let flows = match (account.timeline.start_date(), account.timeline.end_date()) {
+            (Some(start), Some(end)) => self.account_external_flows_by_date(
+                std::slice::from_ref(&account.account_id),
+                &account.base_currency,
+                Some(start),
+                Some(end),
+            )?,
+            _ => None,
+        };
+        let calculation = Self::calculate_prepared_valuation_account_dense_reference(
+            account,
+            &facts,
+            flows.as_ref(),
+        )?;
+        self.persist_account_valuation(calculation).await
     }
 
     fn get_historical_valuations(
@@ -2299,7 +2879,7 @@ impl ValuationServiceTrait for ValuationService {
 mod tests {
     use super::*;
     use crate::activities::ActivityStatus;
-    use crate::portfolio::snapshot::{AccountStateSnapshot, SnapshotSource};
+    use crate::portfolio::snapshot::{AccountStateSnapshot, HoldingsTimeline, SnapshotSource};
     use chrono::{DateTime, Utc};
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
@@ -2706,11 +3286,27 @@ mod tests {
     }
 
     #[test]
-    fn since_date_recalc_anchor_saturates_at_min_date() {
-        let (start_date, anchor_date) = since_date_calculation_window(NaiveDate::MIN);
+    fn since_date_recalc_at_supported_floor_has_no_anchor() {
+        let floor = min_supported_snapshot_date();
+        let (start_date, anchor_date) = since_date_calculation_window(floor);
 
-        assert_eq!(start_date, NaiveDate::MIN);
+        assert_eq!(start_date, floor);
         assert_eq!(anchor_date, None);
+    }
+
+    #[test]
+    fn future_latest_valuation_requires_full_rebuild() {
+        let today = date("2025-03-02");
+
+        assert!(latest_valuation_requires_full_rebuild(
+            date("2025-03-03"),
+            today
+        ));
+        assert!(!latest_valuation_requires_full_rebuild(today, today));
+        assert!(!latest_valuation_requires_full_rebuild(
+            date("2025-03-01"),
+            today
+        ));
     }
 
     fn transfer_activity_on_date(
@@ -2865,6 +3461,173 @@ mod tests {
             calculated_at: activity_time(snapshot_date).naive_utc(),
             source: SnapshotSource::Calculated,
         }
+    }
+
+    #[test]
+    fn interval_valuation_matches_dense_reference_with_sparse_facts() {
+        let start = date("2026-06-01");
+        let end = date("2026-06-06");
+        let mut first = snapshot_with_position("2026-06-01", "AAPL", dec!(10));
+        first.currency = "CAD".to_string();
+        let mut second = snapshot_with_position("2026-06-04", "AAPL", dec!(20));
+        second.currency = "CAD".to_string();
+        let timeline = HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+        let account = PreparedValuationAccount {
+            account_id: "account-1".to_string(),
+            timeline,
+            incremental_anchor_date: Some(start),
+            replace_since_date: Some(Some(date("2026-06-02"))),
+            required_asset_ids: HashSet::from(["AAPL".to_string()]),
+            required_fx_pairs: HashSet::from([
+                ("CAD".to_string(), "USD".to_string()),
+                ("USD".to_string(), "CAD".to_string()),
+            ]),
+            acquisition_fx_requests: HashSet::new(),
+            base_currency: "USD".to_string(),
+            account_currency: "CAD".to_string(),
+        };
+
+        let quote_facts = [
+            ("2026-06-01", dec!(100)),
+            ("2026-06-03", dec!(102)),
+            ("2026-06-05", dec!(52)),
+        ]
+        .into_iter()
+        .map(|(quote_date, close)| ValuationQuoteFact {
+            timestamp: activity_time(quote_date),
+            close,
+            currency: "USD".to_string(),
+        })
+        .collect();
+        let mut facts = SharedValuationFacts {
+            quotes_by_asset: HashMap::from([("AAPL".to_string(), quote_facts)]),
+            assets_with_quotes: HashSet::from(["AAPL".to_string()]),
+            split_events: vec![QuoteAdjustedSplitEvent {
+                asset_id: "AAPL".to_string(),
+                split_date: date("2026-06-05"),
+                ratio: dec!(2),
+            }],
+            fx_rates_by_pair: BTreeMap::new(),
+        };
+        for pair_rate in [
+            (("CAD", "USD"), dec!(0.75)),
+            (("USD", "CAD"), dec!(1.333333)),
+        ] {
+            let ((from, to), rate) = pair_rate;
+            facts.fx_rates_by_pair.insert(
+                (from.to_string(), to.to_string()),
+                time_utils::get_days_between(start, end)
+                    .into_iter()
+                    .map(|day| (day, Some(rate)))
+                    .collect(),
+            );
+        }
+        let flows = HashMap::from([(
+            date("2026-06-04"),
+            DailyFlowAmounts {
+                inflow: dec!(250),
+                outflow: Decimal::ZERO,
+                source: ExternalFlowSource::CashAmount,
+            },
+        )]);
+
+        let mut interval = ValuationService::calculate_prepared_valuation_account_from_facts(
+            account.clone(),
+            &facts,
+            Some(&flows),
+        )
+        .expect("interval valuation should succeed")
+        .valuations;
+        let mut dense = ValuationService::calculate_prepared_valuation_account_dense_reference(
+            account,
+            &facts,
+            Some(&flows),
+        )
+        .expect("dense reference valuation should succeed")
+        .valuations;
+
+        let stable_calculated_at = DateTime::<Utc>::from_timestamp(0, 0).unwrap();
+        for valuation in interval.iter_mut().chain(dense.iter_mut()) {
+            valuation.calculated_at = stable_calculated_at;
+        }
+        assert_eq!(interval, dense);
+        assert_eq!(
+            interval
+                .first()
+                .expect("anchor day should be discarded")
+                .valuation_date,
+            date("2026-06-02")
+        );
+        assert_eq!(
+            interval
+                .iter()
+                .find(|valuation| valuation.valuation_date == date("2026-06-04"))
+                .expect("flow day should be present")
+                .external_inflow_base,
+            dec!(250)
+        );
+    }
+
+    #[test]
+    fn single_account_result_preserves_the_original_error_kind() {
+        let execution = ValuationBatchExecution {
+            outcome: ValuationBatchOutcome::default(),
+            account_errors: HashMap::from([(
+                "account-1".to_string(),
+                CoreError::Repository("repository unavailable".to_string()),
+            )]),
+            global_error: None,
+        };
+
+        let error = ValuationService::single_account_result(execution, "account-1")
+            .expect_err("account failure should be returned");
+
+        assert!(
+            matches!(error, CoreError::Repository(message) if message == "repository unavailable")
+        );
+    }
+
+    #[test]
+    fn shared_fact_failure_keeps_prepare_diagnostics_in_the_batch_outcome() {
+        let prior_failure = ValuationAccountFailure {
+            account_id: "poisoned-account".to_string(),
+            code: "INVALID_SNAPSHOT_DATE".to_string(),
+            message: "invalid snapshot date".to_string(),
+            date: Some(date("1969-12-31")),
+            min_date: Some(date("1970-01-01")),
+            max_date: Some(date("2026-08-07")),
+            snapshot_source: Some("CSV_IMPORT".to_string()),
+        };
+        let prepared = PreparedValuationAccount {
+            account_id: "prepared-account".to_string(),
+            timeline: HoldingsTimeline::new(None, date("2026-08-05"), Vec::new(), None, false),
+            incremental_anchor_date: None,
+            replace_since_date: None,
+            required_asset_ids: HashSet::new(),
+            required_fx_pairs: HashSet::new(),
+            acquisition_fx_requests: HashSet::new(),
+            base_currency: "USD".to_string(),
+            account_currency: "USD".to_string(),
+        };
+
+        let execution = ValuationService::fact_loading_failure_execution(
+            ValuationBatchOutcome {
+                successful_accounts: Vec::new(),
+                failures: vec![prior_failure],
+            },
+            HashMap::new(),
+            &[prepared],
+            CoreError::Repository("quote facts unavailable".to_string()),
+        );
+
+        assert_eq!(execution.outcome.failures.len(), 2);
+        assert!(execution.outcome.failures.iter().any(|failure| {
+            failure.account_id == "poisoned-account" && failure.code == "INVALID_SNAPSHOT_DATE"
+        }));
+        assert!(execution.outcome.failures.iter().any(|failure| {
+            failure.account_id == "prepared-account"
+                && failure.code == "VALUATION_FACT_LOADING_FAILED"
+        }));
     }
 
     #[test]

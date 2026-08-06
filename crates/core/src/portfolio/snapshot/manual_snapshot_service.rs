@@ -8,13 +8,14 @@ use uuid::Uuid;
 
 use crate::assets::{AssetKind, AssetMetadata, AssetServiceTrait, InstrumentType, QuoteMode};
 use crate::errors::Result;
-use crate::events::{DomainEvent, DomainEventSink, NoOpDomainEventSink};
 use crate::fx::FxServiceTrait;
 use crate::portfolio::snapshot::{
-    AccountStateSnapshot, Position, SnapshotServiceTrait, SnapshotSource,
+    validate_snapshot_write_date, AccountStateSnapshot, Position, SnapshotServiceTrait,
+    SnapshotSource,
 };
 use crate::quotes::constants::DATA_SOURCE_MANUAL;
 use crate::quotes::{Quote, QuoteServiceTrait};
+use crate::utils::time_utils::{parse_user_timezone_or_default, user_today};
 
 #[derive(Debug, Clone)]
 pub struct ManualHoldingInput {
@@ -62,7 +63,7 @@ pub struct ManualSnapshotService {
     fx_service: Arc<dyn FxServiceTrait>,
     snapshot_service: Arc<dyn SnapshotServiceTrait>,
     quote_service: Arc<dyn QuoteServiceTrait>,
-    event_sink: Arc<dyn DomainEventSink>,
+    timezone: String,
 }
 
 impl ManualSnapshotService {
@@ -77,13 +78,12 @@ impl ManualSnapshotService {
             fx_service,
             snapshot_service,
             quote_service,
-            event_sink: Arc::new(NoOpDomainEventSink),
+            timezone: String::new(),
         }
     }
 
-    /// Sets the domain event sink for emitting ManualSnapshotSaved events.
-    pub fn with_event_sink(mut self, event_sink: Arc<dyn DomainEventSink>) -> Self {
-        self.event_sink = event_sink;
+    pub fn with_timezone(mut self, timezone: String) -> Self {
+        self.timezone = timezone;
         self
     }
 
@@ -91,6 +91,13 @@ impl ManualSnapshotService {
         &self,
         request: ManualSnapshotRequest,
     ) -> Result<Vec<String>> {
+        validate_snapshot_write_date(
+            &request.account_id,
+            request.snapshot_date,
+            request.source.as_str(),
+            user_today(parse_user_timezone_or_default(&self.timezone)),
+        )?;
+
         let mut positions: HashMap<String, Position> = HashMap::new();
         let mut asset_ids: Vec<String> = Vec::new();
 
@@ -270,10 +277,6 @@ impl ManualSnapshotService {
         self.snapshot_service
             .save_manual_snapshot(&request.account_id, snapshot)
             .await?;
-
-        // Emit domain event to trigger portfolio recalculation
-        self.event_sink
-            .emit(DomainEvent::manual_snapshot_saved(request.account_id));
 
         asset_ids.sort();
         asset_ids.dedup();
