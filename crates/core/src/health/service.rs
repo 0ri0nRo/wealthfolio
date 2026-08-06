@@ -583,6 +583,11 @@ impl HealthService {
         )
         .await;
         consistency_issues.extend(incomplete_basis_trades);
+        consistency_issues.extend(missing_currency_activities_from_data(
+            &accounts,
+            &health_activities,
+            effective_timezone,
+        ));
 
         // Run checks with gathered data
         self.run_checks_with_data(
@@ -1011,6 +1016,54 @@ fn is_lot_creating_basis_source(activity: &Activity) -> bool {
 
     activity_type.eq_ignore_ascii_case(ACTIVITY_TYPE_TRANSFER_IN)
         && (activity.source_group_id.is_none() || is_external_transfer(activity))
+}
+
+/// Flags activities stored without a currency (#1388): FX conversion fails for
+/// them, so account values can't be calculated. Covers rows written before the
+/// import fix as well as rows arriving later through device sync from an older
+/// client, which a one-shot migration could never heal.
+fn missing_currency_activities_from_data(
+    accounts: &[Account],
+    activities: &[Activity],
+    timezone: Option<&str>,
+) -> Vec<ConsistencyIssueInfo> {
+    let eligible_accounts: HashMap<&str, &Account> = accounts
+        .iter()
+        .filter(|account| account.is_active && !account.is_archived)
+        .map(|account| (account.id.as_str(), account))
+        .collect();
+    if eligible_accounts.is_empty() {
+        return Vec::new();
+    }
+
+    let tz = parse_user_timezone_or_default(timezone.unwrap_or_default());
+    activities
+        .iter()
+        .filter(|activity| activity.is_posted() && activity.currency.trim().is_empty())
+        .filter_map(|activity| {
+            let account = eligible_accounts.get(activity.account_id.as_str())?;
+            let account_currency =
+                Some(account.currency.clone()).filter(|currency| !currency.trim().is_empty());
+            Some(ConsistencyIssueInfo {
+                issue_type: super::checks::ConsistencyIssueType::MissingActivityCurrency,
+                record_id: activity.id.clone(),
+                description: account.name.clone(),
+                account_id: Some(activity.account_id.clone()),
+                asset_id: activity.asset_id.clone(),
+                first_negative_date: None,
+                cash_balance: None,
+                total_value_at_date: None,
+                account_currency,
+                activity_date: Some(activity_date_in_tz(activity.activity_date, tz)),
+                asset_symbol: None,
+                asset_name: None,
+                quantity: activity.quantity,
+                proceeds: None,
+                reason: None,
+                activity_id: Some(activity.id.clone()),
+            })
+        })
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2432,6 +2485,95 @@ mod tests {
             issue.id.starts_with("unknown_performance_flow_source:")
                 && issue.severity == crate::health::Severity::Error
         }));
+    }
+
+    // Regression for #1388: activities persisted without a currency (pre-fix CSV
+    // imports, or rows synced from an older client) surface as an Error whose
+    // affected items deep-link to the rows so the user can fix them in the grid.
+    #[test]
+    fn missing_currency_activities_deep_link_to_the_grid_for_manual_repair() {
+        let account = health_account(
+            "acc-1",
+            account_types::SECURITIES,
+            TrackingMode::Transactions,
+        );
+        let mut archived = health_account(
+            "acc-archived",
+            account_types::SECURITIES,
+            TrackingMode::Transactions,
+        );
+        archived.is_archived = true;
+
+        let mut blank = transfer_activity(
+            "act-blank",
+            "acc-1",
+            "BUY",
+            None,
+            false,
+            ActivityStatus::Posted,
+        );
+        blank.currency = String::new();
+        let with_currency = transfer_activity(
+            "act-ok",
+            "acc-1",
+            "DEPOSIT",
+            None,
+            false,
+            ActivityStatus::Posted,
+        );
+        let mut blank_draft = transfer_activity(
+            "act-draft",
+            "acc-1",
+            "BUY",
+            None,
+            false,
+            ActivityStatus::Draft,
+        );
+        blank_draft.currency = String::new();
+        let mut blank_archived = transfer_activity(
+            "act-archived",
+            "acc-archived",
+            "BUY",
+            None,
+            false,
+            ActivityStatus::Posted,
+        );
+        blank_archived.currency = String::new();
+
+        let accounts = vec![account, archived];
+        let activities = vec![blank, with_currency, blank_draft, blank_archived];
+        let issues = missing_currency_activities_from_data(&accounts, &activities, None);
+
+        assert_eq!(
+            issues.len(),
+            1,
+            "only the posted row in an active account is flagged"
+        );
+        assert_eq!(issues[0].record_id, "act-blank");
+        assert_eq!(issues[0].account_currency.as_deref(), Some("USD"));
+
+        let check = DataConsistencyCheck::new();
+        let ctx = HealthContext::new(HealthConfig::default(), "USD", 100_000.0);
+        let health_issues = check.analyze(&issues, &ctx);
+        let issue = health_issues
+            .iter()
+            .find(|issue| issue.id.starts_with("missing_activity_currency:"))
+            .expect("missing-currency issue should be reported");
+
+        assert_eq!(issue.severity, crate::health::Severity::Error);
+        // No automated fix: the user edits the rows in the activities grid, so
+        // each affected item deep-links to its row.
+        assert!(issue.fix_action.is_none());
+        let affected = issue
+            .affected_items
+            .as_ref()
+            .expect("issue should list the affected transactions");
+        assert_eq!(affected.len(), 1);
+        assert_eq!(affected[0].id, "act-blank");
+        assert_eq!(
+            affected[0].route.as_deref(),
+            Some("/activities?activity=act-blank&healthContext=activity")
+        );
     }
 
     #[test]

@@ -38,6 +38,8 @@ pub enum ConsistencyIssueType {
     IncompleteValuationBasis,
     /// A generated valuation row has an unknown performance flow boundary
     UnknownPerformanceFlowSource,
+    /// Activity was stored without a currency, so FX conversion fails (#1388)
+    MissingActivityCurrency,
 }
 
 /// Root cause classification for valuation-quality issues (incomplete value /
@@ -492,6 +494,77 @@ impl DataConsistencyCheck {
                     query: Some(serde_json::json!({ "types": "SELL" })),
                     label: "Review Transactions".to_string(),
                 })
+                .data_hash(data_hash);
+            if !affected_items.is_empty() {
+                builder = builder.affected_items(affected_items);
+            }
+            if !details.is_empty() {
+                builder = builder.details(details);
+            }
+            health_issues.push(builder.build());
+        }
+
+        if let Some(missing_currency_issues) =
+            by_type.get(&ConsistencyIssueType::MissingActivityCurrency)
+        {
+            let count = missing_currency_issues.len();
+            let record_ids: Vec<String> = missing_currency_issues
+                .iter()
+                .map(|i| i.record_id.clone())
+                .collect();
+            let data_hash = compute_data_hash(&record_ids);
+
+            // One entry per broken transaction, deep-linking to the row in the
+            // activities grid so the user can set the currency in place.
+            let affected_items: Vec<AffectedItem> = missing_currency_issues
+                .iter()
+                .map(|i| {
+                    let date = i
+                        .activity_date
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_else(|| "unknown date".to_string());
+                    AffectedItem::activity(
+                        i.record_id.clone(),
+                        format!("{} — {}", i.description, date),
+                    )
+                })
+                .collect();
+
+            let details = missing_currency_issues
+                .iter()
+                .map(|i| {
+                    let date = i
+                        .activity_date
+                        .map(|d| d.format("%Y-%m-%d").to_string())
+                        .unwrap_or_else(|| "unknown date".to_string());
+                    let suggestion = i
+                        .account_currency
+                        .as_deref()
+                        .map(|currency| format!("The account's currency is {}.", currency))
+                        .unwrap_or_else(|| "The account has no currency either.".to_string());
+                    format!("{}\nTransaction on {}\n{}", i.description, date, suggestion)
+                })
+                .collect::<Vec<_>>()
+                .join("\n\n");
+
+            let mut builder = HealthIssue::builder()
+                .id(format!("missing_activity_currency:{}", data_hash))
+                .severity(Severity::Error)
+                .category(HealthCategory::DataConsistency)
+                .code("data_missing_activity_currency")
+                .param("count", count as u32)
+                .title(if count == 1 {
+                    "Transaction has no currency".to_string()
+                } else {
+                    format!("{} transactions have no currency", count)
+                })
+                .message(
+                    "Some transactions were saved without a currency, so they can't be converted \
+                     to your base currency and account values fail to calculate. Open each \
+                     transaction and set its currency — usually the account's own currency.",
+                )
+                .affected_count(count as u32)
+                .navigate_action(NavigateAction::to_activities(None))
                 .data_hash(data_hash);
             if !affected_items.is_empty() {
                 builder = builder.affected_items(affected_items);
