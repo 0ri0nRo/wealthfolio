@@ -174,6 +174,8 @@ pub struct HoldingsPositionInput {
     pub quote_ccy: Option<String>,
     /// Instrument type resolved during asset review/search
     pub instrument_type: Option<String>,
+    /// Quote mode selected during asset review (MARKET or MANUAL)
+    pub quote_mode: Option<String>,
     /// Market data provider that resolved this position, if selected.
     pub provider_id: Option<String>,
     /// Provider-native symbol/code selected by search/import.
@@ -239,4 +241,6 @@ pub struct CheckHoldingsImportResult {
     pub existing_dates: Vec<String>,
     pub symbols: Vec<SymbolCheckResult>,
     pub validation_errors: Vec<String>,
+    pub valid_snapshot_dates: Vec<String>,
+    pub invalid_snapshot_dates: Vec<String>,
 }

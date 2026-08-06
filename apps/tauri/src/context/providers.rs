@@ -512,6 +512,7 @@ pub async fn initialize_context(
             snapshot_repository.clone(),
         )
         .with_event_sink(domain_event_sink.clone())
+        .with_timezone(timezone.clone())
         .with_snapshot_service(snapshot_service.clone())
         .with_quote_store(market_data_repo.clone()),
     );
