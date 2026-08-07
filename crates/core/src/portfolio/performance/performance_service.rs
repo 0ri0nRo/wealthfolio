@@ -2757,14 +2757,20 @@ impl PerformanceService {
     /// HOLDINGS mode doesn't track cash flows at the transaction level, so
     /// TWR/IRR aren't meaningful — we measure unrealized P&L growth instead.
     ///
+    /// * `daily_flows` — external flows over the period. Dated ranges subtract
+    ///   flows with explicit gross provenance (e.g. keyframe flows inferred by
+    ///   the valuation layer) so deposits and withdrawals don't read as gains.
+    ///   NetContributionFallback deltas stay excluded: on holdings series a
+    ///   net-contribution jump is bookkeeping backfill, not a dated flow.
     /// * `is_all_time` — when `true`, measures gain versus ending book basis
-    ///   (the recorded invested capital). When `false`, measures total value
-    ///   change over starting value. Non-positive denominators make the
-    ///   percentage undefined, so the return is omitted rather than reported as
-    ///   0%.
+    ///   (the recorded invested capital). When `false`, measures flow-adjusted
+    ///   total value change over starting value. Non-positive denominators make
+    ///   the percentage undefined, so the return is omitted rather than
+    ///   reported as 0%.
     fn compute_holdings_value_return(
         start_point: &DailyAccountValuation,
         end_point: &DailyAccountValuation,
+        daily_flows: &[DailyExternalFlow],
         is_all_time: bool,
         flow_basis: ExternalFlowBasis,
     ) -> (Option<Decimal>, Option<Decimal>) {
@@ -2783,8 +2789,10 @@ impl PerformanceService {
         }
 
         let start_value = Self::return_total_value(start_point, flow_basis);
+        let net_explicit_flow = Self::net_explicit_gross_flow(daily_flows);
         let value_change = Self::return_total_value(end_point, flow_basis)
-            - Self::return_total_value(start_point, flow_basis);
+            - Self::return_total_value(start_point, flow_basis)
+            - net_explicit_flow;
         let value_return = if start_value <= Decimal::ZERO {
             None
         } else {
@@ -2792,6 +2800,25 @@ impl PerformanceService {
         };
 
         (Some(value_change), value_return)
+    }
+
+    /// Net external flow over the period counting only flows with explicit
+    /// gross provenance. Used by HOLDINGS-mode metrics, where fallback flows
+    /// derived from net-contribution deltas are bookkeeping noise.
+    fn net_explicit_gross_flow(daily_flows: &[DailyExternalFlow]) -> Decimal {
+        daily_flows
+            .iter()
+            .filter(|flow| flow.source.is_explicit_gross())
+            .map(|flow| flow.net())
+            .sum()
+    }
+
+    /// Whether a HOLDINGS-mode series carries estimated external flows that
+    /// period metrics will subtract (worth disclosing to the user).
+    fn has_estimated_holdings_flows(daily_flows: &[DailyExternalFlow]) -> bool {
+        daily_flows.iter().any(|flow| {
+            flow.source.is_explicit_gross() && (!flow.inflow.is_zero() || !flow.outflow.is_zero())
+        })
     }
 
     fn unrealized_attribution_components(
@@ -3428,7 +3455,14 @@ impl PerformanceService {
                 let prev_value = Self::return_total_value(prev, flow_basis);
                 let curr_value = Self::return_total_value(curr, flow_basis);
                 let flow = daily_flows[index];
-                let day_gain = curr_value + flow.outflow - prev_value - flow.inflow;
+                // Same filter as the holdings headline: only explicit gross
+                // flows are real dated flows on a holdings series.
+                let (flow_inflow, flow_outflow) = if flow.source.is_explicit_gross() {
+                    (flow.inflow, flow.outflow)
+                } else {
+                    (Decimal::ZERO, Decimal::ZERO)
+                };
+                let day_gain = curr_value + flow_outflow - prev_value - flow_inflow;
                 if prev_value > Decimal::ZERO {
                     let daily_return = day_gain / prev_value;
                     cumulative_value_factor *= Decimal::ONE + daily_return;
@@ -3479,6 +3513,7 @@ impl PerformanceService {
             Some(Self::compute_holdings_value_return(
                 start_point,
                 end_point,
+                &daily_flows,
                 start_date_opt.is_none(),
                 flow_basis,
             ))
@@ -3599,6 +3634,14 @@ impl PerformanceService {
         };
 
         let mut warnings = Self::external_flow_quality_warnings(&daily_flows);
+        if is_holdings_mode
+            && start_date_opt.is_some()
+            && Self::has_estimated_holdings_flows(&daily_flows)
+        {
+            warnings.push(
+                "External cash flows for this holdings-tracked scope are estimated from position and cash changes between snapshots; cash income received between snapshots may not be captured in period gains.".to_string(),
+            );
+        }
         warnings.extend(twr.warnings);
         warnings.extend(irr.warnings);
         let mut not_applicable_reasons = twr.not_applicable_reasons;
@@ -3770,12 +3813,20 @@ impl PerformanceService {
             BasisStatus::NotApplicable
         };
         let (amount, attribution) = if matches!(component.tracking_mode, TrackingMode::Holdings) {
+            let daily_flows = Self::daily_external_flow_series(component.history, flow_basis);
             let (amount, _) = Self::compute_holdings_value_return(
                 start_point,
                 end_point,
+                &daily_flows,
                 is_all_time,
                 flow_basis,
             );
+            if !is_all_time && Self::has_estimated_holdings_flows(&daily_flows) {
+                warnings.push(format!(
+                    "External cash flows for holdings account {} are estimated from position and cash changes between snapshots.",
+                    component.account_id
+                ));
+            }
             let mut attribution = PerformanceAttribution::default();
             if let Some(amount) = amount {
                 attribution.unrealized_pnl_change = amount.round_dp(DECIMAL_PRECISION);
@@ -3847,14 +3898,24 @@ impl PerformanceService {
         let start_value = Self::return_total_value(start_point, flow_basis);
 
         if matches!(component.tracking_mode, TrackingMode::Holdings) {
+            let daily_flows = Self::daily_external_flow_series(component.history, flow_basis);
+            let mut net_flow = Decimal::ZERO;
             return component
                 .history
                 .iter()
                 .skip(1)
-                .map(|point| MixedScopeSeriesPoint {
-                    date: point.valuation_date,
-                    amount: Self::return_total_value(point, flow_basis) - start_value,
-                    denominator,
+                .zip(daily_flows.iter())
+                .map(|(point, flow)| {
+                    if flow.source.is_explicit_gross() {
+                        net_flow += flow.net();
+                    }
+                    MixedScopeSeriesPoint {
+                        date: point.valuation_date,
+                        amount: Self::return_total_value(point, flow_basis)
+                            - start_value
+                            - net_flow,
+                        denominator,
+                    }
                 })
                 .collect();
         }
@@ -10125,6 +10186,52 @@ mod tests {
         assert_eq!(attribution_pnl(&result).round_dp(2), dec!(1186.08));
         assert_eq!(result.attribution.contributions, Decimal::ZERO);
         assert_eq!(result.attribution.residual, Decimal::ZERO);
+    }
+
+    #[test]
+    fn perf_holdings_mode_period_subtracts_explicit_gross_external_flows() {
+        // A holdings valuation series carrying an inferred keyframe flow: 30k
+        // deposited (and invested) mid-period, stamped as an explicit gross
+        // inflow by the valuation layer. The deposit must not count as gain.
+        let mut history = vec![
+            valuation(
+                "2026-06-12",
+                dec!(100000),
+                Decimal::ZERO,
+                dec!(60000),
+                dec!(50000),
+            ),
+            valuation(
+                "2026-06-15",
+                dec!(130000),
+                Decimal::ZERO,
+                dec!(90000),
+                dec!(80000),
+            ),
+            valuation(
+                "2026-06-19",
+                dec!(131000),
+                Decimal::ZERO,
+                dec!(91000),
+                dec!(80000),
+            ),
+        ];
+        history[1].external_inflow_base = dec!(30000);
+        history[1].external_flow_source = ValuationExternalFlowSource::QuoteDerivedMarketValue;
+
+        let result = PerformanceService::compute_account_performance(
+            &history,
+            Some(TrackingMode::Holdings),
+            Some(date("2026-06-12")),
+            false,
+        )
+        .expect("holdings period should compute");
+
+        // Period gain = 131000 - 100000 - 30000 deposit = 1000, not 31000.
+        assert_eq!(attribution_pnl(&result), dec!(1000));
+        assert_eq!(result.summary.amount, Some(dec!(1000)));
+        assert_eq!(result.returns.value_return.unwrap().round_dp(4), dec!(0.01));
+        assert_eq!(result.attribution.contributions, Decimal::ZERO);
     }
 
     #[test]

@@ -885,6 +885,81 @@ impl ValuationService {
                 && net_contribution_delta.is_zero())
     }
 
+    /// HOLDINGS-mode keyframes record positions and cash but no cash flows, so
+    /// a deposit, withdrawal, or trade between two snapshots is otherwise
+    /// indistinguishable from market movement. Infer the external flow at each
+    /// keyframe transition by pricing BOTH keyframes at the transition day's
+    /// quotes: flow = V(new, day) - V(old, day). Position changes then enter
+    /// and exit at market value (a sale's accrued gain stays in the period)
+    /// while cash deltas count as flows. Only manual-family keyframes
+    /// participate; Calculated keyframes get their flows from activities.
+    fn apply_inferred_holdings_external_flows(
+        valuations: &mut [DailyAccountValuation],
+        account: &PreparedValuationAccount,
+        facts: &SharedValuationFacts,
+    ) {
+        if valuations.len() < 2 {
+            return;
+        }
+        valuations.sort_by_key(|valuation| valuation.valuation_date);
+        let acquisition_fx_rates_by_date =
+            facts.acquisition_fx_rates_by_date(&account.acquisition_fx_requests);
+        let mut quote_assets: Vec<_> = account.required_asset_ids.iter().cloned().collect();
+        quote_assets.sort();
+        for index in 1..valuations.len() {
+            let prev_date = valuations[index - 1].valuation_date;
+            let curr_date = valuations[index].valuation_date;
+            let Some(prev_keyframe) = account.timeline.snapshot_at(prev_date) else {
+                continue;
+            };
+            let Some(curr_keyframe) = account.timeline.snapshot_at(curr_date) else {
+                continue;
+            };
+            if prev_keyframe.snapshot_date == curr_keyframe.snapshot_date
+                || prev_keyframe.source == SnapshotSource::Calculated
+                || curr_keyframe.source == SnapshotSource::Calculated
+            {
+                continue;
+            }
+            let quotes_today: HashMap<_, _> = quote_assets
+                .iter()
+                .filter_map(|asset_id| {
+                    facts
+                        .quotes_by_asset
+                        .get(asset_id)
+                        .and_then(|quotes| {
+                            quotes
+                                .iter()
+                                .rev()
+                                .find(|quote| quote.timestamp.date_naive() <= curr_date)
+                        })
+                        .map(|quote| (asset_id.clone(), quote.to_quote(asset_id)))
+                })
+                .collect();
+            let fx_today = facts.fx_rates_for_date(&account.required_fx_pairs, curr_date);
+            let split_factors = Self::split_price_factors_for_date(curr_date, &facts.split_events);
+            let Ok(prev_at_curr) = calculate_valuation_with_price_factors(
+                prev_keyframe,
+                &quotes_today,
+                &fx_today,
+                &acquisition_fx_rates_by_date,
+                curr_date,
+                &account.base_currency,
+                &split_factors,
+            ) else {
+                continue;
+            };
+            let flow_base = valuations[index].total_value_base - prev_at_curr.total_value_base;
+            if flow_base.is_zero() {
+                continue;
+            }
+            let (inflow, outflow) = Self::split_external_flow(flow_base);
+            valuations[index].external_inflow_base = inflow;
+            valuations[index].external_outflow_base = outflow;
+            valuations[index].external_flow_source = ExternalFlowSource::QuoteDerivedMarketValue;
+        }
+    }
+
     fn set_external_flows_from_net_contribution_base(values: &mut [DailyAccountValuation]) {
         if values.is_empty() {
             return;
@@ -2268,6 +2343,8 @@ impl ValuationService {
             )));
         }
 
+        Self::apply_inferred_holdings_external_flows(&mut valuations, &account, facts);
+
         if let Some(flows) = flows {
             Self::set_external_flows_from_activity_map_or_net_contribution_base(
                 &mut valuations,
@@ -2413,6 +2490,8 @@ impl ValuationService {
                 ),
             )));
         }
+
+        Self::apply_inferred_holdings_external_flows(&mut valuations, &account, facts);
 
         if let Some(flows) = flows {
             Self::set_external_flows_from_activity_map_or_net_contribution_base(
@@ -3566,6 +3645,156 @@ mod tests {
                 .external_inflow_base,
             dec!(250)
         );
+    }
+
+    fn holdings_prepared_account(timeline: HoldingsTimeline) -> PreparedValuationAccount {
+        PreparedValuationAccount {
+            account_id: "account-1".to_string(),
+            timeline,
+            incremental_anchor_date: None,
+            replace_since_date: None,
+            required_asset_ids: HashSet::from(["AAPL".to_string()]),
+            required_fx_pairs: HashSet::new(),
+            acquisition_fx_requests: HashSet::new(),
+            base_currency: "USD".to_string(),
+            account_currency: "USD".to_string(),
+        }
+    }
+
+    fn holdings_quote_facts() -> SharedValuationFacts {
+        let quote_facts = [("2026-06-01", dec!(100)), ("2026-06-03", dec!(102))]
+            .into_iter()
+            .map(|(quote_date, close)| ValuationQuoteFact {
+                timestamp: activity_time(quote_date),
+                close,
+                currency: "USD".to_string(),
+            })
+            .collect();
+        SharedValuationFacts {
+            quotes_by_asset: HashMap::from([("AAPL".to_string(), quote_facts)]),
+            assets_with_quotes: HashSet::from(["AAPL".to_string()]),
+            split_events: Vec::new(),
+            fx_rates_by_pair: BTreeMap::new(),
+        }
+    }
+
+    #[test]
+    fn holdings_keyframe_transition_infers_explicit_external_flow() {
+        let start = date("2026-06-01");
+        let end = date("2026-06-06");
+        let mut first = snapshot_with_position("2026-06-01", "AAPL", dec!(10));
+        first.source = SnapshotSource::ManualEntry;
+        // Deposit-buy on 06-04: 10 -> 20 shares, plus 300 deposited as cash.
+        let mut second = snapshot_with_position("2026-06-04", "AAPL", dec!(20));
+        second.source = SnapshotSource::ManualEntry;
+        second.cash_balances = HashMap::from([("USD".to_string(), dec!(300))]);
+        let timeline = HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+        let account = holdings_prepared_account(timeline);
+        let facts = holdings_quote_facts();
+        let flows: HashMap<NaiveDate, DailyFlowAmounts> = HashMap::new();
+
+        let valuations = ValuationService::calculate_prepared_valuation_account_from_facts(
+            account.clone(),
+            &facts,
+            Some(&flows),
+        )
+        .expect("valuation should succeed")
+        .valuations;
+
+        // Transition day priced at the 06-03 quote (102):
+        // flow = (20 * 102 + 300 cash) - 10 * 102 = 1320.
+        let transition = valuations
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-04"))
+            .expect("transition day should be present");
+        assert_eq!(transition.external_inflow_base, dec!(1320));
+        assert_eq!(transition.external_outflow_base, Decimal::ZERO);
+        assert_eq!(
+            transition.external_flow_source,
+            ExternalFlowSource::QuoteDerivedMarketValue
+        );
+        assert_eq!(transition.net_contribution_base, Decimal::ZERO);
+
+        let quiet = valuations
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-03"))
+            .expect("quiet day should be present");
+        assert_eq!(quiet.external_inflow_base, Decimal::ZERO);
+        assert_eq!(quiet.external_flow_source, ExternalFlowSource::NoFlow);
+
+        let dense = ValuationService::calculate_prepared_valuation_account_dense_reference(
+            account,
+            &facts,
+            Some(&flows),
+        )
+        .expect("dense reference valuation should succeed")
+        .valuations;
+        let dense_transition = dense
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-04"))
+            .expect("dense transition day should be present");
+        assert_eq!(dense_transition.external_inflow_base, dec!(1320));
+        assert_eq!(
+            dense_transition.external_flow_source,
+            ExternalFlowSource::QuoteDerivedMarketValue
+        );
+    }
+
+    #[test]
+    fn holdings_keyframe_sale_at_market_infers_no_flow() {
+        // 10 shares exit on 06-04 with proceeds parked as cash at the day's
+        // quote: the position leaves at market value, so no external flow is
+        // inferred and the accrued price gain stays in the period.
+        let start = date("2026-06-01");
+        let end = date("2026-06-06");
+        let mut first = snapshot_with_position("2026-06-01", "AAPL", dec!(10));
+        first.source = SnapshotSource::ManualEntry;
+        let mut second = snapshot_with_position("2026-06-04", "AAPL", Decimal::ZERO);
+        second.source = SnapshotSource::ManualEntry;
+        second.cash_balances = HashMap::from([("USD".to_string(), dec!(1020))]);
+        let timeline = HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+
+        let valuations = ValuationService::calculate_prepared_valuation_account_from_facts(
+            holdings_prepared_account(timeline),
+            &holdings_quote_facts(),
+            Some(&HashMap::new()),
+        )
+        .expect("valuation should succeed")
+        .valuations;
+
+        let transition = valuations
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-04"))
+            .expect("transition day should be present");
+        assert_eq!(transition.external_inflow_base, Decimal::ZERO);
+        assert_eq!(transition.external_outflow_base, Decimal::ZERO);
+        assert_eq!(transition.external_flow_source, ExternalFlowSource::NoFlow);
+    }
+
+    #[test]
+    fn calculated_keyframe_transitions_do_not_infer_flows() {
+        // Transactions-mode keyframes (source Calculated) must never receive
+        // inferred flows: their flows come from activities.
+        let start = date("2026-06-01");
+        let end = date("2026-06-06");
+        let first = snapshot_with_position("2026-06-01", "AAPL", dec!(10));
+        let second = snapshot_with_position("2026-06-04", "AAPL", dec!(20));
+        let timeline = HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+
+        let valuations = ValuationService::calculate_prepared_valuation_account_from_facts(
+            holdings_prepared_account(timeline),
+            &holdings_quote_facts(),
+            Some(&HashMap::new()),
+        )
+        .expect("valuation should succeed")
+        .valuations;
+
+        let transition = valuations
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-04"))
+            .expect("transition day should be present");
+        assert_eq!(transition.external_inflow_base, Decimal::ZERO);
+        assert_eq!(transition.external_flow_source, ExternalFlowSource::NoFlow);
     }
 
     #[test]
