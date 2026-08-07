@@ -103,6 +103,8 @@ pub struct DeleteSnapshotQuery {
     #[serde(rename = "accountId")]
     pub account_id: String,
     pub date: String,
+    #[serde(rename = "snapshotId")]
+    pub snapshot_id: Option<String>,
 }
 
 /// Information about a snapshot for UI display
@@ -110,7 +112,9 @@ pub struct DeleteSnapshotQuery {
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotInfo {
     pub id: String,
+    /// Stored date, returned raw so malformed rows can be remediated.
     pub snapshot_date: String,
+    pub is_date_valid: bool,
     pub source: String,
     pub position_count: usize,
     pub cash_currency_count: usize,

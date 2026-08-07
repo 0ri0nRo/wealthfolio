@@ -34,6 +34,7 @@ interface PersistedSymbolResolution {
   quoteCcy?: string;
   instrumentType?: string;
   symbolName?: string;
+  quoteMode?: "MARKET" | "MANUAL";
   providerId?: string;
   providerSymbol?: string;
 }
@@ -48,6 +49,7 @@ function isSamePersistedResolution(
     (left.quoteCcy ?? "") === (right.quoteCcy ?? "") &&
     (left.instrumentType ?? "") === (right.instrumentType ?? "") &&
     (left.symbolName ?? "") === (right.symbolName ?? "") &&
+    (left.quoteMode ?? "") === (right.quoteMode ?? "") &&
     (left.providerId ?? "") === (right.providerId ?? "") &&
     (left.providerSymbol ?? "") === (right.providerSymbol ?? "")
   );
@@ -100,6 +102,7 @@ export function HoldingsConfirmStep() {
         quoteCcy?: string;
         instrumentType?: string;
         symbolName?: string;
+        quoteMode?: "MARKET" | "MANUAL";
         providerId?: string;
         providerSymbol?: string;
       }
@@ -117,6 +120,10 @@ export function HoldingsConfirmStep() {
           quoteCcy: draft.quoteCcy,
           instrumentType: draft.instrumentType,
           symbolName: draft.symbolName,
+          quoteMode:
+            draft.quoteMode === "MARKET" || draft.quoteMode === "MANUAL"
+              ? draft.quoteMode
+              : undefined,
           providerId: draft.providerId,
           providerSymbol: draft.providerSymbol,
         };
@@ -147,6 +154,7 @@ export function HoldingsConfirmStep() {
         resolution.quoteCcy ||
         resolution.instrumentType ||
         resolution.symbolName ||
+        resolution.quoteMode ||
         resolution.providerId ||
         resolution.providerSymbol
       ) {
@@ -155,6 +163,7 @@ export function HoldingsConfirmStep() {
           quoteCcy: resolution.quoteCcy,
           instrumentType: resolution.instrumentType,
           symbolName: resolution.symbolName,
+          quoteMode: resolution.quoteMode,
           providerId: resolution.providerId,
           providerSymbol: resolution.providerSymbol,
         };

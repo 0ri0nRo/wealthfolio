@@ -24,6 +24,37 @@ pub enum SnapshotSource {
     CsvImport,
 }
 
+/// Lightweight snapshot metadata used by listing and remediation flows.
+///
+/// `snapshot_date` and `source` intentionally remain raw strings so a corrupt
+/// stored row can still be inspected and deleted without deserializing it as a
+/// valid portfolio snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SnapshotMetadata {
+    pub id: String,
+    pub account_id: String,
+    pub snapshot_date: String,
+    pub source: String,
+    pub position_count: usize,
+    pub cash_currency_count: usize,
+    pub cash_total_account_currency: String,
+}
+
+impl From<&AccountStateSnapshot> for SnapshotMetadata {
+    fn from(snapshot: &AccountStateSnapshot) -> Self {
+        Self {
+            id: snapshot.id.clone(),
+            account_id: snapshot.account_id.clone(),
+            snapshot_date: snapshot.snapshot_date.format("%Y-%m-%d").to_string(),
+            source: snapshot.source.as_str().to_string(),
+            position_count: snapshot.positions.len(),
+            cash_currency_count: snapshot.cash_balances.len(),
+            cash_total_account_currency: snapshot.cash_total_account_currency.to_string(),
+        }
+    }
+}
+
 impl SnapshotSource {
     pub fn as_str(&self) -> &'static str {
         match self {

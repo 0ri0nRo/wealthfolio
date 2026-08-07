@@ -43,6 +43,7 @@ interface AccountSnapshotHistoryProps {
   canEditSnapshots: boolean;
   onAddSnapshot?: () => void;
   highlightedSnapshotDate?: string;
+  highlightedSnapshotId?: string;
   invalidSnapshotContext?: boolean;
   onInvalidSnapshotRemediated?: () => void;
 }
@@ -52,6 +53,7 @@ export function AccountSnapshotHistory({
   canEditSnapshots,
   onAddSnapshot,
   highlightedSnapshotDate,
+  highlightedSnapshotId,
   invalidSnapshotContext = false,
   onInvalidSnapshotRemediated,
 }: AccountSnapshotHistoryProps) {
@@ -74,16 +76,20 @@ export function AccountSnapshotHistory({
 
   const hasHighlightedInvalidSnapshot =
     invalidSnapshotContext &&
-    !!highlightedSnapshotDate &&
-    orderedSnapshots.some((snapshot) => snapshot.snapshotDate === highlightedSnapshotDate);
+    (!!highlightedSnapshotId || !!highlightedSnapshotDate) &&
+    orderedSnapshots.some((snapshot) =>
+      highlightedSnapshotId
+        ? snapshot.id === highlightedSnapshotId
+        : snapshot.snapshotDate === highlightedSnapshotDate,
+    );
 
   const highlightedSnapshotRef = useCallback(
     (node: HTMLElement | null) => {
-      if (node && invalidSnapshotContext && highlightedSnapshotDate) {
+      if (node && invalidSnapshotContext && (highlightedSnapshotId || highlightedSnapshotDate)) {
         node.scrollIntoView({ behavior: "smooth", block: "center" });
       }
     },
-    [highlightedSnapshotDate, invalidSnapshotContext],
+    [highlightedSnapshotDate, highlightedSnapshotId, invalidSnapshotContext],
   );
 
   const invalidateSnapshotQueries = (date?: string) => {
@@ -111,7 +117,7 @@ export function AccountSnapshotHistory({
     if (!deletingSnapshot) return;
     setIsDeleting(true);
     try {
-      await deleteSnapshot(account.id, deletingSnapshot.snapshotDate);
+      await deleteSnapshot(account.id, deletingSnapshot.snapshotDate, deletingSnapshot.id);
       invalidateSnapshotQueries(deletingSnapshot.snapshotDate);
       if (isHighlightedInvalidSnapshot(deletingSnapshot)) {
         onInvalidSnapshotRemediated?.();
@@ -126,12 +132,15 @@ export function AccountSnapshotHistory({
   };
 
   const canEditSnapshot = (snapshot: SnapshotInfo) =>
-    canEditSnapshots && snapshot.source !== "CALCULATED";
+    canEditSnapshots && snapshot.isDateValid && snapshot.source !== "CALCULATED";
   const isHighlightedInvalidSnapshot = (snapshot: SnapshotInfo) =>
-    hasHighlightedInvalidSnapshot && snapshot.snapshotDate === highlightedSnapshotDate;
+    hasHighlightedInvalidSnapshot &&
+    (highlightedSnapshotId
+      ? snapshot.id === highlightedSnapshotId
+      : snapshot.snapshotDate === highlightedSnapshotDate);
   const canDeleteSnapshot = (snapshot: SnapshotInfo) =>
-    snapshot.source !== "CALCULATED" &&
-    (canEditSnapshots || isHighlightedInvalidSnapshot(snapshot));
+    isHighlightedInvalidSnapshot(snapshot) ||
+    (snapshot.source !== "CALCULATED" && canEditSnapshots);
 
   if (isLoading) {
     return (

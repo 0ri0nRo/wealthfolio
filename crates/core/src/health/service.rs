@@ -29,7 +29,7 @@ use crate::portfolio::snapshot::holdings_calculator::economics::{
 };
 use crate::portfolio::snapshot::{
     max_snapshot_read_date, min_supported_snapshot_date, validate_snapshot_read_date,
-    AccountStateSnapshot, HoldingsTimeline, Position, SnapshotServiceTrait, SnapshotSource,
+    AccountStateSnapshot, HoldingsTimeline, Position, SnapshotServiceTrait,
 };
 use crate::portfolio::valuation::{DailyAccountValuation, ValuationServiceTrait};
 use crate::quotes::QuoteServiceTrait;
@@ -490,6 +490,7 @@ impl HealthService {
                     proceeds: None,
                     reason: None,
                     activity_id: None,
+                    snapshot_date_raw: None,
                     snapshot_source: None,
                     snapshot_min_date: None,
                     snapshot_max_date: None,
@@ -532,6 +533,7 @@ impl HealthService {
                     proceeds: None,
                     reason: None,
                     activity_id: None,
+                    snapshot_date_raw: None,
                     snapshot_source: None,
                     snapshot_min_date: None,
                     snapshot_max_date: None,
@@ -669,7 +671,7 @@ fn gather_invalid_snapshot_date_issues(
 
     for account in accounts {
         let snapshots = snapshot_service
-            .get_holdings_keyframes(&account.id, None, None)
+            .get_snapshot_metadata(&account.id, None, None)
             .unwrap_or_else(|error| {
                 warn!(
                     "Failed to inspect snapshot dates for account {}: {}",
@@ -678,22 +680,15 @@ fn gather_invalid_snapshot_date_issues(
                 Vec::new()
             });
         for snapshot in snapshots {
-            if snapshot.source == SnapshotSource::Calculated {
-                continue;
-            }
-            if validate_snapshot_read_date(
-                &account.id,
-                snapshot.snapshot_date,
-                snapshot.source.as_str(),
-                today,
-            )
-            .is_ok()
-            {
+            let parsed_date = NaiveDate::parse_from_str(&snapshot.snapshot_date, "%Y-%m-%d").ok();
+            if parsed_date.is_some_and(|date| {
+                validate_snapshot_read_date(&account.id, date, &snapshot.source, today).is_ok()
+            }) {
                 continue;
             }
             issues.push(ConsistencyIssueInfo {
                 issue_type: super::checks::ConsistencyIssueType::InvalidSnapshotDate,
-                record_id: format!("{}:{}", account.id, snapshot.snapshot_date),
+                record_id: snapshot.id,
                 description: account.name.clone(),
                 account_id: Some(account.id.clone()),
                 asset_id: None,
@@ -701,14 +696,15 @@ fn gather_invalid_snapshot_date_issues(
                 cash_balance: None,
                 total_value_at_date: None,
                 account_currency: None,
-                activity_date: Some(snapshot.snapshot_date),
+                activity_date: parsed_date,
                 asset_symbol: None,
                 asset_name: None,
                 quantity: None,
                 proceeds: None,
                 reason: None,
                 activity_id: None,
-                snapshot_source: Some(snapshot.source.as_str().to_string()),
+                snapshot_date_raw: parsed_date.is_none().then_some(snapshot.snapshot_date),
+                snapshot_source: Some(snapshot.source),
                 snapshot_min_date: Some(min_date),
                 snapshot_max_date: Some(max_snapshot_read_date(today)),
             });
@@ -754,6 +750,7 @@ fn gather_invalid_activity_date_issues(
                 proceeds: activity.amount,
                 reason: None,
                 activity_id: Some(activity.id.clone()),
+                snapshot_date_raw: None,
                 snapshot_source: Some("ACCOUNT_ACTIVITY".to_string()),
                 snapshot_min_date: Some(min_date),
                 snapshot_max_date: Some(today),
@@ -994,6 +991,7 @@ fn missing_lot_disposal_sells_from_data(
                 proceeds: Some(proceeds),
                 reason: None,
                 activity_id: None,
+                snapshot_date_raw: None,
                 snapshot_source: None,
                 snapshot_min_date: None,
                 snapshot_max_date: None,
@@ -1130,6 +1128,7 @@ fn incomplete_basis_trade_activities_from_data(
                 proceeds: None,
                 reason: Some(ValuationIssueReason::IncompleteBasisActivity),
                 activity_id: Some(activity.id.clone()),
+                snapshot_date_raw: None,
                 snapshot_source: None,
                 snapshot_min_date: None,
                 snapshot_max_date: None,
@@ -1191,6 +1190,7 @@ fn missing_currency_activities_from_data(
                 proceeds: None,
                 reason: None,
                 activity_id: Some(activity.id.clone()),
+                snapshot_date_raw: None,
                 snapshot_source: None,
                 snapshot_min_date: None,
                 snapshot_max_date: None,
@@ -1490,6 +1490,7 @@ fn value_asset_consistency_issue(
         proceeds: None,
         reason: Some(reason),
         activity_id: None,
+        snapshot_date_raw: None,
         snapshot_source: None,
         snapshot_min_date: None,
         snapshot_max_date: None,
@@ -1753,6 +1754,7 @@ fn basis_source_consistency_issue(
         proceeds: None,
         reason: Some(raw.reason),
         activity_id: raw.activity_id,
+        snapshot_date_raw: None,
         snapshot_source: None,
         snapshot_min_date: None,
         snapshot_max_date: None,
@@ -1786,6 +1788,7 @@ fn missing_valuation_issue(
         proceeds: None,
         reason: None,
         activity_id: None,
+        snapshot_date_raw: None,
         snapshot_source: None,
         snapshot_min_date: None,
         snapshot_max_date: None,

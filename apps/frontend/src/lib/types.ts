@@ -2299,8 +2299,10 @@ export interface HealthConfig {
 export interface SnapshotInfo {
   /** Snapshot ID */
   id: string;
-  /** Date of the snapshot (YYYY-MM-DD) */
+  /** Stored snapshot date (normally YYYY-MM-DD; raw when malformed) */
   snapshotDate: string;
+  /** Whether the stored snapshot date is a valid YYYY-MM-DD date */
+  isDateValid: boolean;
   /** Source of the snapshot (MANUAL_ENTRY, CSV_IMPORT, BROKER_IMPORTED) */
   source: string;
   /** Number of positions in this snapshot */

@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::activities::activities_model::*;
-    use chrono::{TimeZone, Utc};
+    use chrono::{NaiveDate, TimeZone, Utc};
     use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
     use serde_json::json;
@@ -369,6 +369,19 @@ mod tests {
         let error = activity.validate().unwrap_err();
 
         assert!(error.to_string().contains("on or after 1970-01-01"));
+    }
+
+    #[test]
+    fn test_activity_date_boundary_uses_configured_timezone() {
+        let timezone = "Pacific/Auckland".parse().unwrap();
+
+        assert_eq!(
+            validate_activity_date_in_timezone("1969-12-31T12:30:00Z", timezone).unwrap(),
+            NaiveDate::from_ymd_opt(1970, 1, 1).unwrap()
+        );
+        assert!(
+            validate_activity_date_in_timezone("1969-12-31T12:30:00Z", chrono_tz::UTC).is_err()
+        );
     }
 
     #[test]

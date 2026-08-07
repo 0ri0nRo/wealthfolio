@@ -2,7 +2,7 @@ use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use log::debug;
 use rust_decimal::Decimal;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use crate::accounts::{account_types, Account, AccountServiceTrait};
 use crate::activities::activities_constants::{
@@ -33,6 +33,7 @@ use crate::fx::currency::{get_normalization_rule, normalize_amount, resolve_curr
 use crate::fx::FxServiceTrait;
 use crate::quotes::constants::DATA_SOURCE_MANUAL;
 use crate::quotes::{Quote, QuoteServiceTrait};
+use crate::utils::time_utils::parse_user_timezone_or_default;
 use crate::Result;
 use log::warn;
 
@@ -109,6 +110,7 @@ pub struct ActivityService {
     quote_service: Arc<dyn QuoteServiceTrait>,
     import_run_repository: Option<Arc<dyn ImportRunRepositoryTrait>>,
     event_sink: Arc<dyn DomainEventSink>,
+    timezone: Arc<RwLock<String>>,
 }
 
 #[derive(Clone, Copy)]
@@ -554,6 +556,7 @@ impl ActivityService {
             quote_service,
             import_run_repository: None,
             event_sink: Arc::new(NoOpDomainEventSink),
+            timezone: Arc::new(RwLock::new("UTC".to_string())),
         }
     }
 
@@ -574,6 +577,7 @@ impl ActivityService {
             quote_service,
             import_run_repository: Some(import_run_repository),
             event_sink: Arc::new(NoOpDomainEventSink),
+            timezone: Arc::new(RwLock::new("UTC".to_string())),
         }
     }
 
@@ -672,6 +676,32 @@ impl ActivityService {
     pub fn with_event_sink(mut self, event_sink: Arc<dyn DomainEventSink>) -> Self {
         self.event_sink = event_sink;
         self
+    }
+
+    pub fn with_timezone(mut self, timezone: Arc<RwLock<String>>) -> Self {
+        self.timezone = timezone;
+        self
+    }
+
+    fn validate_and_normalize_activity_date(&self, activity_date: &str) -> Result<String> {
+        let configured_timezone = self.timezone.read().unwrap().clone();
+        let timezone = parse_user_timezone_or_default(&configured_timezone);
+        validate_activity_date_in_timezone(activity_date, timezone)?;
+
+        // Preserve the submitted timestamp whenever its own calendar date is
+        // already supported. Re-encode only the boundary case where the
+        // configured timezone makes the date valid but the submitted offset
+        // does not; repository validation can then reach the same conclusion.
+        if validate_activity_date(activity_date).is_ok() {
+            return Ok(activity_date.to_string());
+        }
+
+        match DateTime::parse_from_rfc3339(activity_date) {
+            Ok(date) => Ok(date.with_timezone(&timezone).to_rfc3339()),
+            Err(_) => NaiveDate::parse_from_str(activity_date, "%Y-%m-%d")
+                .map(|date| date.format("%Y-%m-%d").to_string())
+                .map_err(|error| ActivityError::InvalidData(error.to_string()).into()),
+        }
     }
 
     fn invalid_activity_data(message: impl Into<String>) -> Error {
@@ -1902,6 +1932,8 @@ impl ActivityService {
     }
 
     async fn prepare_new_activity(&self, mut activity: NewActivity) -> Result<NewActivity> {
+        activity.activity_date =
+            self.validate_and_normalize_activity_date(&activity.activity_date)?;
         activity.subtype = NewActivity::canonicalize_subtype_for_activity(
             &activity.activity_type,
             activity.subtype.as_deref(),
@@ -2358,6 +2390,8 @@ impl ActivityService {
         &self,
         mut activity: ActivityUpdate,
     ) -> Result<ActivityUpdate> {
+        activity.activity_date =
+            self.validate_and_normalize_activity_date(&activity.activity_date)?;
         let account: Account = self.account_service.get_account(&activity.account_id)?;
         Self::validate_activity_allowed_for_account(&activity.activity_type, &account)?;
         let base_ccy = self.account_service.get_base_currency().unwrap_or_default();
@@ -4849,11 +4883,14 @@ impl ActivityServiceTrait for ActivityService {
                 activity.quantity,
                 activity.unit_price,
             );
-            if let Err(error) = validate_activity_date(&activity.date) {
-                activity.is_valid = false;
-                Self::add_activity_error(activity, "activityDate", &error.to_string());
-                has_validation_errors = true;
-                continue;
+            match self.validate_and_normalize_activity_date(&activity.date) {
+                Ok(date) => activity.date = date,
+                Err(error) => {
+                    activity.is_valid = false;
+                    Self::add_activity_error(activity, "activityDate", &error.to_string());
+                    has_validation_errors = true;
+                    continue;
+                }
             }
             if let Err((field, message)) =
                 Self::validate_import_asset_backed_income_values(activity)
@@ -5579,7 +5616,14 @@ impl ActivityService {
 
         let activities: Vec<NewActivity> = activities
             .into_iter()
-            .map(Self::normalize_activity_for_preparation)
+            .map(|activity| {
+                let mut activity = Self::normalize_activity_for_preparation(activity);
+                if let Ok(date) = self.validate_and_normalize_activity_date(&activity.activity_date)
+                {
+                    activity.activity_date = date;
+                }
+                activity
+            })
             .collect();
 
         let mut result = PrepareActivitiesResult::default();

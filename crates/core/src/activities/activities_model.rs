@@ -15,6 +15,7 @@ use crate::assets::NewAsset;
 use crate::Result;
 use crate::{activities::activities_errors::ActivityError, QuoteMode};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -24,7 +25,29 @@ pub(crate) fn validate_activity_date(
     activity_date: &str,
 ) -> std::result::Result<NaiveDate, ActivityError> {
     let date = DateTime::parse_from_rfc3339(activity_date)
-        .map(|date| date.with_timezone(&Utc).date_naive())
+        .map(|date| date.date_naive())
+        .or_else(|_| NaiveDate::parse_from_str(activity_date, "%Y-%m-%d"))
+        .map_err(|_| {
+            ActivityError::InvalidData(
+                "Invalid date format. Expected ISO 8601/RFC3339 or YYYY-MM-DD".to_string(),
+            )
+        })?;
+    let min_date = crate::portfolio::snapshot::min_supported_snapshot_date();
+    if date < min_date {
+        return Err(ActivityError::InvalidData(format!(
+            "Activity date {} isn't supported. Use a date on or after {}.",
+            date, min_date
+        )));
+    }
+    Ok(date)
+}
+
+pub(crate) fn validate_activity_date_in_timezone(
+    activity_date: &str,
+    timezone: Tz,
+) -> std::result::Result<NaiveDate, ActivityError> {
+    let date = DateTime::parse_from_rfc3339(activity_date)
+        .map(|date| date.with_timezone(&timezone).date_naive())
         .or_else(|_| NaiveDate::parse_from_str(activity_date, "%Y-%m-%d"))
         .map_err(|_| {
             ActivityError::InvalidData(

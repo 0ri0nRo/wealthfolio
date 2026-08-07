@@ -32,6 +32,7 @@ pub struct HoldingsImportPositionValidationInput {
 pub struct HoldingsImportSnapshotValidationInput {
     pub date: String,
     pub positions: Vec<HoldingsImportPositionValidationInput>,
+    pub cash_balances: Vec<(String, String)>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +113,26 @@ fn holdings_position_validation_errors(
                     snapshot.date, holding
                 ));
             }
+        }
+    }
+    for (currency, amount) in &snapshot.cash_balances {
+        let currency = currency.trim();
+        if currency.is_empty() {
+            errors.push(format!(
+                "On {}, add a currency for each cash balance.",
+                snapshot.date
+            ));
+        }
+        if amount.parse::<Decimal>().is_err() {
+            let label = if currency.is_empty() {
+                "this cash balance"
+            } else {
+                currency
+            };
+            errors.push(format!(
+                "On {}, enter a valid cash amount for {}.",
+                snapshot.date, label
+            ));
         }
     }
     errors
@@ -391,6 +412,7 @@ mod tests {
         let snapshot = HoldingsImportSnapshotValidationInput {
             date: today.to_string(),
             positions: vec![invalid],
+            cash_balances: Vec::new(),
         };
 
         let errors = validate_holdings_import_snapshot("account", today, &snapshot)
@@ -407,11 +429,28 @@ mod tests {
         let snapshot = HoldingsImportSnapshotValidationInput {
             date: today.to_string(),
             positions: vec![position("AAPL")],
+            cash_balances: vec![("USD".to_string(), "100".to_string())],
         };
 
         assert_eq!(
             validate_holdings_import_snapshot("account", today, &snapshot),
             Ok(today)
         );
+    }
+
+    #[test]
+    fn apply_validation_rejects_invalid_cash_before_import() {
+        let today = NaiveDate::from_ymd_opt(2026, 8, 5).unwrap();
+        let snapshot = HoldingsImportSnapshotValidationInput {
+            date: today.to_string(),
+            positions: vec![position("AAPL")],
+            cash_balances: vec![("USD".to_string(), "not-a-number".to_string())],
+        };
+
+        let errors = validate_holdings_import_snapshot("account", today, &snapshot)
+            .expect_err("invalid cash must block preview and apply");
+        assert!(errors
+            .iter()
+            .any(|error| error.contains("valid cash amount for USD")));
     }
 }

@@ -120,6 +120,8 @@ pub struct ConsistencyIssueInfo {
     /// The specific activity to deep-link to (e.g. the acquiring transaction that
     /// lacks a cost basis), when the issue traces to one activity row.
     pub activity_id: Option<String>,
+    /// Raw stored snapshot date when it could not be parsed.
+    pub snapshot_date_raw: Option<String>,
     /// Snapshot source for snapshot-specific consistency issues.
     pub snapshot_source: Option<String>,
     /// Earliest supported date for snapshot-specific consistency issues.
@@ -164,14 +166,18 @@ impl DataConsistencyCheck {
 
         if let Some(invalid_snapshots) = by_type.get(&ConsistencyIssueType::InvalidSnapshotDate) {
             let mut invalid_date_groups: std::collections::BTreeMap<
-                (String, NaiveDate, String),
+                (String, String, String),
                 Vec<&ConsistencyIssueInfo>,
             > = std::collections::BTreeMap::new();
             for issue in invalid_snapshots {
                 let Some(account_id) = issue.account_id.as_deref() else {
                     continue;
                 };
-                let Some(snapshot_date) = issue.activity_date else {
+                let Some(snapshot_date) = issue
+                    .snapshot_date_raw
+                    .clone()
+                    .or_else(|| issue.activity_date.map(|date| date.to_string()))
+                else {
                     continue;
                 };
                 let source = issue.snapshot_source.as_deref().unwrap_or("UNKNOWN");
@@ -193,6 +199,7 @@ impl DataConsistencyCheck {
                 data_keys.sort();
                 let data_hash = compute_data_hash(&data_keys);
                 let is_activity = issue.activity_id.is_some();
+                let is_malformed_snapshot = issue.snapshot_date_raw.is_some();
                 let (
                     title,
                     navigate,
@@ -201,6 +208,9 @@ impl DataConsistencyCheck {
                     diagnostic_explanation,
                     diagnostic_code,
                 ) = if is_activity {
+                    let activity_date = issue
+                        .activity_date
+                        .expect("activity date issues always include a parsed date");
                     let title = if count == 1 {
                         "1 activity has an unsupported date".to_string()
                     } else {
@@ -221,8 +231,8 @@ impl DataConsistencyCheck {
                             route: "/activities".to_string(),
                             query: Some(serde_json::json!({
                                 "account": &account_id,
-                                "from": snapshot_date.to_string(),
-                                "to": snapshot_date.to_string(),
+                                "from": activity_date.to_string(),
+                                "to": activity_date.to_string(),
                                 "healthContext": "activity"
                             })),
                             label: if count == 1 {
@@ -236,13 +246,37 @@ impl DataConsistencyCheck {
                         "The account's existing portfolio history remains unchanged until these source activities are corrected.",
                         "INVALID_ACTIVITY_DATE",
                     )
+                } else if is_malformed_snapshot {
+                    (
+                        "A holdings entry has a malformed date".to_string(),
+                        NavigateAction {
+                            route: format!("/accounts/{}", urlencoding::encode(&account_id)),
+                            query: Some(serde_json::json!({
+                                "tab": "snapshots",
+                                "snapshotId": issue.record_id,
+                                "snapshotDate": snapshot_date,
+                                "healthContext": "invalidSnapshot"
+                            })),
+                            label: "Review entry".to_string(),
+                        },
+                        format!(
+                            "The stored date '{}' cannot be read. Delete this holdings entry, then add a replacement with a valid date if needed.",
+                            snapshot_date
+                        ),
+                        "Why this holdings entry was skipped".to_string(),
+                        "This source holdings entry has a malformed stored date, so it cannot be included in holdings and valuation calculations.",
+                        "INVALID_HOLDINGS_DATE",
+                    )
                 } else {
+                    let parsed_snapshot_date = issue
+                        .activity_date
+                        .expect("supported-range issues always include a parsed date");
                     let message = match (issue.snapshot_min_date, issue.snapshot_max_date) {
-                        (Some(min_date), _) if snapshot_date < min_date => format!(
+                        (Some(min_date), _) if parsed_snapshot_date < min_date => format!(
                             "Portfolio history starts on {}. This earlier holdings entry was not included. Delete it, then add a replacement dated {} or later if needed.",
                             min_date, min_date
                         ),
-                        (_, Some(max_date)) if snapshot_date > max_date => format!(
+                        (_, Some(max_date)) if parsed_snapshot_date > max_date => format!(
                             "Portfolio history currently supports holdings dates through {}. This later entry was not included. Delete it, then add a replacement within the supported range if needed.",
                             max_date
                         ),
@@ -255,7 +289,8 @@ impl DataConsistencyCheck {
                             route: format!("/accounts/{}", urlencoding::encode(&account_id)),
                             query: Some(serde_json::json!({
                                 "tab": "snapshots",
-                                "snapshotDate": snapshot_date.to_string(),
+                                "snapshotId": issue.record_id,
+                                "snapshotDate": snapshot_date,
                                 "healthContext": "invalidSnapshot"
                             })),
                             label: "Review entry".to_string(),
@@ -280,9 +315,9 @@ impl DataConsistencyCheck {
                     HealthEntityRef::new("account", account_id.clone())
                         .label(issue.description.clone()),
                 )
-                .date(snapshot_date.to_string())
+                .date(snapshot_date.clone())
                 .evidence(Evidence::new("Account", issue.description.clone()))
-                .evidence(Evidence::new("Date", snapshot_date.to_string()))
+                .evidence(Evidence::new("Date", snapshot_date.clone()))
                 .evidence(Evidence::new("Allowed range", supported_range.clone()))
                 .navigate(true, navigate);
                 if is_activity {
@@ -1483,6 +1518,7 @@ mod tests {
             proceeds: None,
             reason: None,
             activity_id: None,
+            snapshot_date_raw: None,
             snapshot_source: None,
             snapshot_min_date: None,
             snapshot_max_date: None,
@@ -1516,6 +1552,7 @@ mod tests {
             proceeds: None,
             reason: None,
             activity_id: None,
+            snapshot_date_raw: None,
             snapshot_source: None,
             snapshot_min_date: None,
             snapshot_max_date: None,
@@ -1549,6 +1586,7 @@ mod tests {
                 proceeds: None,
                 reason: None,
                 activity_id: None,
+                snapshot_date_raw: None,
                 snapshot_source: Some("CSV_IMPORT".to_string()),
                 snapshot_min_date: chrono::NaiveDate::from_ymd_opt(1970, 1, 1),
                 snapshot_max_date: chrono::NaiveDate::from_ymd_opt(2026, 8, 6),
@@ -1568,6 +1606,59 @@ mod tests {
         assert_eq!(
             navigate.query.as_ref().unwrap().get("snapshotDate"),
             Some(&serde_json::json!("0224-07-20"))
+        );
+        assert_eq!(
+            navigate.query.as_ref().unwrap().get("snapshotId"),
+            Some(&serde_json::json!(format!("acc-1:{}", date)))
+        );
+    }
+
+    #[test]
+    fn malformed_snapshot_date_links_to_snapshot_id() {
+        let check = DataConsistencyCheck::new();
+        let ctx = HealthContext::new(HealthConfig::default(), "USD", 100_000.0);
+        let issues = check.analyze(
+            &[ConsistencyIssueInfo {
+                issue_type: ConsistencyIssueType::InvalidSnapshotDate,
+                record_id: "snapshot-1".to_string(),
+                description: "Brokerage".to_string(),
+                account_id: Some("acc-1".to_string()),
+                asset_id: None,
+                first_negative_date: None,
+                cash_balance: None,
+                total_value_at_date: None,
+                account_currency: None,
+                activity_date: None,
+                asset_symbol: None,
+                asset_name: None,
+                quantity: None,
+                proceeds: None,
+                reason: None,
+                activity_id: None,
+                snapshot_date_raw: Some("not-a-date".to_string()),
+                snapshot_source: Some("CSV_IMPORT".to_string()),
+                snapshot_min_date: chrono::NaiveDate::from_ymd_opt(1970, 1, 1),
+                snapshot_max_date: chrono::NaiveDate::from_ymd_opt(2026, 8, 6),
+            }],
+            &ctx,
+        );
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].title, "A holdings entry has a malformed date");
+        let query = issues[0]
+            .navigate_action
+            .as_ref()
+            .unwrap()
+            .query
+            .as_ref()
+            .unwrap();
+        assert_eq!(
+            query.get("snapshotId"),
+            Some(&serde_json::json!("snapshot-1"))
+        );
+        assert_eq!(
+            query.get("snapshotDate"),
+            Some(&serde_json::json!("not-a-date"))
         );
     }
 
@@ -1593,6 +1684,7 @@ mod tests {
             proceeds: None,
             reason: None,
             activity_id: Some("activity-1".to_string()),
+            snapshot_date_raw: None,
             snapshot_source: Some("ACCOUNT_ACTIVITY".to_string()),
             snapshot_min_date: chrono::NaiveDate::from_ymd_opt(1970, 1, 1),
             snapshot_max_date: chrono::NaiveDate::from_ymd_opt(2026, 8, 6),
@@ -1646,6 +1738,7 @@ mod tests {
             proceeds: None,
             reason: None,
             activity_id: None,
+            snapshot_date_raw: None,
             snapshot_source: None,
             snapshot_min_date: None,
             snapshot_max_date: None,
@@ -1684,6 +1777,7 @@ mod tests {
                 proceeds: None,
                 reason: None,
                 activity_id: None,
+                snapshot_date_raw: None,
                 snapshot_source: None,
                 snapshot_min_date: None,
                 snapshot_max_date: None,
@@ -1705,6 +1799,7 @@ mod tests {
                 proceeds: None,
                 reason: None,
                 activity_id: None,
+                snapshot_date_raw: None,
                 snapshot_source: None,
                 snapshot_min_date: None,
                 snapshot_max_date: None,
@@ -1726,6 +1821,7 @@ mod tests {
                 proceeds: None,
                 reason: None,
                 activity_id: None,
+                snapshot_date_raw: None,
                 snapshot_source: None,
                 snapshot_min_date: None,
                 snapshot_max_date: None,
@@ -1759,6 +1855,7 @@ mod tests {
             proceeds: None,
             reason: None,
             activity_id: None,
+            snapshot_date_raw: None,
             snapshot_source: None,
             snapshot_min_date: None,
             snapshot_max_date: None,
@@ -1793,6 +1890,7 @@ mod tests {
             proceeds: Some(rust_decimal_macros::dec!(291.10598755)),
             reason: None,
             activity_id: None,
+            snapshot_date_raw: None,
             snapshot_source: None,
             snapshot_min_date: None,
             snapshot_max_date: None,
@@ -1852,6 +1950,7 @@ mod tests {
                 proceeds: None,
                 reason,
                 activity_id: is_basis_activity.then(|| record_id.to_string()),
+                snapshot_date_raw: None,
                 snapshot_source: None,
                 snapshot_min_date: None,
                 snapshot_max_date: None,

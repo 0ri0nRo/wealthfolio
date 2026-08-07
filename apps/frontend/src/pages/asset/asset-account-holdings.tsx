@@ -256,7 +256,7 @@ export function AssetSnapshotHistory({
       const snapshots = snapshotQueries[idx]?.data ?? [];
       const accountName = accountsMap.get(accountId)?.name ?? accountId;
       for (const snap of snapshots) {
-        if (snap.source === "CALCULATED") continue;
+        if (snap.source === "CALCULATED" || !snap.isDateValid) continue;
         result.push({ ...snap, accountId, accountName });
       }
     });

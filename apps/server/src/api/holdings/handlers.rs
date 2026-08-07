@@ -38,7 +38,7 @@ use super::dto::{
     HoldingsSnapshotInput, ImportHoldingsCsvRequest, ImportHoldingsCsvResult,
     SaveManualHoldingsRequest, SnapshotDateQuery, SnapshotInfo, SnapshotsQuery, SymbolCheckResult,
 };
-use super::mappers::{parse_date, parse_date_optional, snapshot_source_to_string};
+use super::mappers::{parse_date, parse_date_optional};
 
 fn resolve_scope(
     filter: &AccountScope,
@@ -450,17 +450,18 @@ pub async fn get_snapshots(
     let snapshots =
         state
             .snapshot_service
-            .get_holdings_keyframes(&q.account_id, start_date, end_date)?;
+            .get_snapshot_metadata(&q.account_id, start_date, end_date)?;
 
     let result: Vec<SnapshotInfo> = snapshots
         .into_iter()
         .map(|s| SnapshotInfo {
             id: s.id,
-            snapshot_date: s.snapshot_date.format("%Y-%m-%d").to_string(),
-            source: snapshot_source_to_string(s.source),
-            position_count: s.positions.len(),
-            cash_currency_count: s.cash_balances.len(),
-            cash_total_account_currency: s.cash_total_account_currency.to_string(),
+            is_date_valid: NaiveDate::parse_from_str(&s.snapshot_date, "%Y-%m-%d").is_ok(),
+            snapshot_date: s.snapshot_date,
+            source: s.source,
+            position_count: s.position_count,
+            cash_currency_count: s.cash_currency_count,
+            cash_total_account_currency: s.cash_total_account_currency,
         })
         .collect();
 
@@ -499,29 +500,32 @@ pub async fn delete_snapshot_handler(
     State(state): State<Arc<AppState>>,
     Query(q): Query<DeleteSnapshotQuery>,
 ) -> ApiResult<axum::http::StatusCode> {
-    let target_date = parse_date(&q.date, "date")?;
-
-    // First verify the snapshot exists and is not CALCULATED
-    let snapshots = state.snapshot_service.get_holdings_keyframes(
-        &q.account_id,
-        Some(target_date),
-        Some(target_date),
-    )?;
-
+    // Read raw metadata so a malformed stored date remains deletable by ID.
+    let snapshots = state
+        .snapshot_service
+        .get_snapshot_metadata(&q.account_id, None, None)?;
     let snapshot = snapshots
         .into_iter()
-        .find(|s| s.snapshot_date == target_date)
+        .find(|snapshot| {
+            q.snapshot_id
+                .as_deref()
+                .map(|snapshot_id| snapshot.id == snapshot_id)
+                .unwrap_or(snapshot.snapshot_date == q.date)
+        })
         .ok_or_else(|| anyhow::anyhow!("No snapshot found for date {}", q.date))?;
 
-    if snapshot.source == SnapshotSource::Calculated {
-        return Err(anyhow::anyhow!("This entry comes from account activity and can't be deleted here. Update or delete the related activity instead.").into());
-    }
-
+    let target_date = NaiveDate::parse_from_str(&snapshot.snapshot_date, "%Y-%m-%d").ok();
     let account = state.account_service.get_account(&q.account_id)?;
     let timezone = state.timezone.read().unwrap().clone();
     let today = user_today(parse_user_timezone_or_default(&timezone));
-    let requires_remediation = snapshot_date_requires_remediation(target_date, today);
-    let recalculation_start = snapshot_recalculation_start_after_delete(target_date, today);
+    let requires_remediation = target_date
+        .map(|date| snapshot_date_requires_remediation(date, today))
+        .unwrap_or(true);
+    let recalculation_start =
+        target_date.and_then(|date| snapshot_recalculation_start_after_delete(date, today));
+    if snapshot.source == SnapshotSource::Calculated.as_str() && !requires_remediation {
+        return Err(anyhow::anyhow!("This entry comes from account activity and can't be deleted here. Update or delete the related activity instead.").into());
+    }
     let standard_delete_allowed =
         account.tracking_mode == TrackingMode::Holdings && account.provider_account_id.is_none();
     if !standard_delete_allowed && !requires_remediation {
@@ -532,10 +536,21 @@ pub async fn delete_snapshot_handler(
     }
 
     // Delete via the service so snapshot deletion stays behind one entry point.
-    state
-        .snapshot_service
-        .delete_snapshot_for_account(&q.account_id, &[target_date])
-        .await?;
+    if let Some(snapshot_id) = q.snapshot_id.as_deref() {
+        state
+            .snapshot_service
+            .delete_snapshot_for_account_by_id(&q.account_id, snapshot_id)
+            .await?;
+    } else if let Some(target_date) = target_date {
+        state
+            .snapshot_service
+            .delete_snapshot_for_account(&q.account_id, &[target_date])
+            .await?;
+    } else {
+        return Err(
+            anyhow::anyhow!("snapshotId is required to delete a malformed snapshot").into(),
+        );
+    }
 
     tracing::info!(
         "Deleted {:?} snapshot for account {} on date {}",
@@ -700,6 +715,11 @@ pub async fn check_holdings_import_handler(
         .iter()
         .map(|snapshot| HoldingsImportSnapshotValidationInput {
             date: snapshot.date.clone(),
+            cash_balances: snapshot
+                .cash_balances
+                .iter()
+                .map(|(currency, amount)| (currency.clone(), amount.clone()))
+                .collect(),
             positions: snapshot
                 .positions
                 .iter()
@@ -821,6 +841,11 @@ async fn import_single_snapshot_impl(
 ) -> Result<(), anyhow::Error> {
     let validation_input = HoldingsImportSnapshotValidationInput {
         date: snapshot_input.date.clone(),
+        cash_balances: snapshot_input
+            .cash_balances
+            .iter()
+            .map(|(currency, amount)| (currency.clone(), amount.clone()))
+            .collect(),
         positions: snapshot_input
             .positions
             .iter()

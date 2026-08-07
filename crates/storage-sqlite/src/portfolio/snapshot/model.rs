@@ -9,7 +9,9 @@ use std::collections::VecDeque;
 use std::str::FromStr;
 
 use wealthfolio_core::constants::DECIMAL_PRECISION;
-use wealthfolio_core::portfolio::snapshot::{AccountStateSnapshot, Position, SnapshotSource};
+use wealthfolio_core::portfolio::snapshot::{
+    AccountStateSnapshot, Position, SnapshotMetadata, SnapshotSource,
+};
 
 use crate::errors::StorageError;
 
@@ -45,6 +47,26 @@ pub struct AccountStateSnapshotDB {
     pub cash_total_base_currency: String,
     #[diesel(sql_type = Text)]
     pub source: String,
+}
+
+impl From<&AccountStateSnapshotDB> for SnapshotMetadata {
+    fn from(db: &AccountStateSnapshotDB) -> Self {
+        let object_len = |json: &str| {
+            serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(json)
+                .map(|values| values.len())
+                .unwrap_or_default()
+        };
+
+        Self {
+            id: db.id.clone(),
+            account_id: db.account_id.clone(),
+            snapshot_date: db.snapshot_date.clone(),
+            source: db.source.clone(),
+            position_count: object_len(&db.positions),
+            cash_currency_count: object_len(&db.cash_balances),
+            cash_total_account_currency: db.cash_total_account_currency.clone(),
+        }
+    }
 }
 
 impl TryFrom<AccountStateSnapshotDB> for AccountStateSnapshot {

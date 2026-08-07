@@ -15,7 +15,7 @@ use crate::db::{get_connection, WriteHandle};
 use crate::errors::StorageError;
 use wealthfolio_core::errors::{Error, Result};
 use wealthfolio_core::portfolio::snapshot::{
-    AccountStateSnapshot, Position, SnapshotRepositoryTrait,
+    AccountStateSnapshot, Position, SnapshotMetadata, SnapshotRepositoryTrait,
 };
 
 pub struct SnapshotRepository {
@@ -112,6 +112,30 @@ impl SnapshotRepository {
             );
         }
         Self::decode_snapshots(result_db)
+    }
+
+    pub fn get_snapshot_metadata_by_account(
+        &self,
+        input_account_id: &str,
+        start_date_opt: Option<NaiveDate>,
+        end_date_opt: Option<NaiveDate>,
+    ) -> Result<Vec<SnapshotMetadata>> {
+        use crate::schema::holdings_snapshots::dsl::*;
+        let mut conn = get_connection(&self.pool)?;
+        let mut query = holdings_snapshots
+            .into_boxed()
+            .filter(account_id.eq(input_account_id));
+        if let Some(start) = start_date_opt {
+            query = query.filter(snapshot_date.ge(start.format("%Y-%m-%d").to_string()));
+        }
+        if let Some(end) = end_date_opt {
+            query = query.filter(snapshot_date.le(end.format("%Y-%m-%d").to_string()));
+        }
+        let rows = query
+            .order(snapshot_date.asc())
+            .load::<AccountStateSnapshotDB>(&mut conn)
+            .map_err(StorageError::from)?;
+        Ok(rows.iter().map(SnapshotMetadata::from).collect())
     }
 
     pub fn get_latest_snapshot_before_date(
@@ -324,6 +348,38 @@ impl SnapshotRepository {
                     tx.delete_model(row);
                 }
 
+                Ok(())
+            })
+            .await
+    }
+
+    pub async fn delete_snapshot_for_account_by_id(
+        &self,
+        input_account_id: &str,
+        input_snapshot_id: &str,
+    ) -> Result<()> {
+        use crate::schema::holdings_snapshots::dsl::*;
+
+        let account_id_owned = input_account_id.to_string();
+        let snapshot_id_owned = input_snapshot_id.to_string();
+        self.writer
+            .exec_tx(move |tx| {
+                let existing_row = holdings_snapshots
+                    .filter(account_id.eq(&account_id_owned))
+                    .filter(id.eq(&snapshot_id_owned))
+                    .first::<AccountStateSnapshotDB>(tx.conn())
+                    .optional()
+                    .map_err(StorageError::from)?
+                    .ok_or(StorageError::QueryFailed(diesel::result::Error::NotFound))?;
+
+                diesel::delete(
+                    holdings_snapshots
+                        .filter(account_id.eq(&account_id_owned))
+                        .filter(id.eq(&snapshot_id_owned)),
+                )
+                .execute(tx.conn())
+                .map_err(StorageError::from)?;
+                tx.delete_model(&existing_row);
                 Ok(())
             })
             .await
@@ -939,6 +995,15 @@ impl SnapshotRepositoryTrait for SnapshotRepository {
         self.get_snapshots_by_account(account_id_param, start_date, end_date)
     }
 
+    fn get_snapshot_metadata_by_account(
+        &self,
+        account_id_param: &str,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<SnapshotMetadata>> {
+        self.get_snapshot_metadata_by_account(account_id_param, start_date, end_date)
+    }
+
     fn get_latest_snapshot_before_date(
         &self,
         account_id_param: &str,
@@ -974,6 +1039,15 @@ impl SnapshotRepositoryTrait for SnapshotRepository {
         dates_to_delete: &[NaiveDate],
     ) -> Result<()> {
         self.delete_snapshots_for_account_and_dates(account_id_param, dates_to_delete)
+            .await
+    }
+
+    async fn delete_snapshot_for_account_by_id(
+        &self,
+        account_id_param: &str,
+        snapshot_id: &str,
+    ) -> Result<()> {
+        self.delete_snapshot_for_account_by_id(account_id_param, snapshot_id)
             .await
     }
 
@@ -1255,6 +1329,47 @@ mod tests {
             0,
             "empty batch snapshot writes must clear stale relational positions"
         );
+    }
+
+    #[tokio::test]
+    async fn malformed_date_row_can_be_listed_and_deleted_by_id() {
+        use crate::schema::holdings_snapshots::dsl as hs;
+
+        let (repo, pool, _temp_dir) = create_test_repository().await;
+        let account_id = "test-account-malformed-date";
+        create_test_account(&pool, account_id);
+        let snapshot = create_test_snapshot(
+            account_id,
+            NaiveDate::from_ymd_opt(2024, 5, 3).unwrap(),
+            SnapshotSource::CsvImport,
+        );
+        repo.save_snapshots(std::slice::from_ref(&snapshot))
+            .await
+            .expect("save snapshot");
+
+        let mut conn = get_connection(&pool).expect("get connection");
+        diesel::update(hs::holdings_snapshots.filter(hs::id.eq(&snapshot.id)))
+            .set(hs::snapshot_date.eq("not-a-date"))
+            .execute(&mut conn)
+            .expect("corrupt stored date for remediation test");
+
+        assert!(repo
+            .get_snapshots_by_account(account_id, None, None)
+            .is_err());
+        let metadata = repo
+            .get_snapshot_metadata_by_account(account_id, None, None)
+            .expect("raw metadata must remain readable");
+        assert_eq!(metadata.len(), 1);
+        assert_eq!(metadata[0].id, snapshot.id);
+        assert_eq!(metadata[0].snapshot_date, "not-a-date");
+
+        repo.delete_snapshot_for_account_by_id(account_id, &snapshot.id)
+            .await
+            .expect("malformed row must be deletable by ID");
+        assert!(repo
+            .get_snapshot_metadata_by_account(account_id, None, None)
+            .expect("list after delete")
+            .is_empty());
     }
 
     #[tokio::test]

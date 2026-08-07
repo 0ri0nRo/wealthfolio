@@ -13,7 +13,7 @@ use crate::fx::FxServiceTrait;
 use crate::lots::{check_lot_quantity_consistency, LotRepositoryTrait};
 use crate::portfolio::snapshot::{
     validate_snapshot_read_date, validate_snapshot_write_date, AccountStateSnapshot,
-    HoldingsCalculationWarning, HoldingsTimeline, SnapshotSource,
+    HoldingsCalculationWarning, HoldingsTimeline, SnapshotMetadata, SnapshotSource,
 };
 use crate::utils::time_utils::{
     activity_date_in_tz, get_days_between, parse_user_timezone_or_default, user_today,
@@ -66,6 +66,18 @@ pub trait SnapshotServiceTrait: Send + Sync {
         end_date: Option<NaiveDate>,
     ) -> Result<Vec<AccountStateSnapshot>>;
 
+    /// Retrieves lightweight snapshot metadata, including malformed stored
+    /// dates that cannot be represented by `AccountStateSnapshot`.
+    fn get_snapshot_metadata(
+        &self,
+        account_id: &str,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<SnapshotMetadata>> {
+        self.get_holdings_keyframes(account_id, start_date, end_date)
+            .map(|snapshots| snapshots.iter().map(SnapshotMetadata::from).collect())
+    }
+
     /// Builds a sparse holdings timeline whose day iterator borrows active keyframes.
     fn get_holdings_timeline(
         &self,
@@ -106,6 +118,27 @@ pub trait SnapshotServiceTrait: Send + Sync {
         account_id: &str,
         dates: &[NaiveDate],
     ) -> Result<()>;
+
+    /// Deletes one snapshot by row ID, including a row whose stored date is
+    /// malformed and therefore cannot use the date-based API.
+    async fn delete_snapshot_for_account_by_id(
+        &self,
+        account_id: &str,
+        snapshot_id: &str,
+    ) -> Result<()> {
+        let metadata = self
+            .get_snapshot_metadata(account_id, None, None)?
+            .into_iter()
+            .find(|snapshot| snapshot.id == snapshot_id)
+            .ok_or_else(|| {
+                Error::Repository(format!(
+                    "Snapshot {snapshot_id} for account {account_id} was not found"
+                ))
+            })?;
+        let date = NaiveDate::parse_from_str(&metadata.snapshot_date, "%Y-%m-%d")
+            .map_err(|error| Error::Repository(error.to_string()))?;
+        self.delete_snapshot_for_account(account_id, &[date]).await
+    }
 }
 
 // --- Service Implementation ---
@@ -1692,6 +1725,26 @@ impl SnapshotServiceTrait for SnapshotService {
             .delete_snapshots_for_account_and_dates(account_id, dates)
             .await?;
         Ok(())
+    }
+
+    fn get_snapshot_metadata(
+        &self,
+        account_id: &str,
+        start_date: Option<NaiveDate>,
+        end_date: Option<NaiveDate>,
+    ) -> Result<Vec<SnapshotMetadata>> {
+        self.snapshot_repository
+            .get_snapshot_metadata_by_account(account_id, start_date, end_date)
+    }
+
+    async fn delete_snapshot_for_account_by_id(
+        &self,
+        account_id: &str,
+        snapshot_id: &str,
+    ) -> Result<()> {
+        self.snapshot_repository
+            .delete_snapshot_for_account_by_id(account_id, snapshot_id)
+            .await
     }
 }
 

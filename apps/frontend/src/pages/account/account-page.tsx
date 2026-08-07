@@ -175,8 +175,10 @@ const AccountPage = () => {
   const { id = "" } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const invalidSnapshotDate = searchParams.get("snapshotDate")?.trim() || undefined;
+  const invalidSnapshotId = searchParams.get("snapshotId")?.trim() || undefined;
   const isInvalidSnapshotContext =
-    searchParams.get("healthContext") === "invalidSnapshot" && !!invalidSnapshotDate;
+    searchParams.get("healthContext") === "invalidSnapshot" &&
+    (!!invalidSnapshotId || !!invalidSnapshotDate);
   const requestedAccountDetailTab = parseAccountDetailTab(searchParams.get("tab"));
   const navigate = useNavigate();
   const isMobile = useIsMobileViewport();
@@ -298,6 +300,7 @@ const AccountPage = () => {
       (current) => {
         const next = new URLSearchParams(current);
         next.delete("snapshotDate");
+        next.delete("snapshotId");
         next.delete("healthContext");
         return next;
       },
@@ -316,6 +319,7 @@ const AccountPage = () => {
         }
         if (tab !== "snapshots") {
           next.delete("snapshotDate");
+          next.delete("snapshotId");
           next.delete("healthContext");
         }
         return next;
@@ -368,7 +372,7 @@ const AccountPage = () => {
   // Extract snapshot dates for chart markers (used in HOLDINGS mode)
   const snapshotDates = useMemo(() => {
     if (!snapshots) return [];
-    return snapshots.map((s) => s.snapshotDate);
+    return snapshots.filter((snapshot) => snapshot.isDateValid).map((s) => s.snapshotDate);
   }, [snapshots]);
 
   // In TRANSACTIONS mode, fetch activity dates for markers (snapshot dates include
@@ -732,6 +736,7 @@ const AccountPage = () => {
           account={account}
           canEditSnapshots={canEditHoldingsDirectly}
           highlightedSnapshotDate={invalidSnapshotDate}
+          highlightedSnapshotId={invalidSnapshotId}
           invalidSnapshotContext={isInvalidSnapshotContext}
           onInvalidSnapshotRemediated={clearInvalidSnapshotContext}
           onAddSnapshot={() => {
