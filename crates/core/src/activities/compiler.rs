@@ -140,16 +140,23 @@ impl DefaultActivityCompiler {
             .filter(|amount| !amount.is_zero())
             .or(derived_amount)
             .or(activity.amount);
-        let acquisition_unit_price = activity.unit_price.or_else(|| {
-            income_amount.and_then(|amount| {
-                let reinvested_amount = amount - activity.fee_amt() - activity.tax_amt();
-                if quantity.is_zero() || reinvested_amount <= Decimal::ZERO {
-                    None
-                } else {
-                    Some(reinvested_amount / quantity)
-                }
+        // A non-positive unit_price (forms can carry stale 0s) only stands as the
+        // acquisition price when no price can be derived from the income amount —
+        // e.g. a dust reward where FMV and amount are both genuinely zero.
+        let acquisition_unit_price = activity
+            .unit_price
+            .filter(|price| price.is_sign_positive() && !price.is_zero())
+            .or_else(|| {
+                income_amount.and_then(|amount| {
+                    let reinvested_amount = amount - activity.fee_amt() - activity.tax_amt();
+                    if quantity.is_zero() || reinvested_amount <= Decimal::ZERO {
+                        None
+                    } else {
+                        Some(reinvested_amount / quantity)
+                    }
+                })
             })
-        });
+            .or(activity.unit_price);
 
         // Leg 1: income recognition
         let mut income_leg = activity.clone();
@@ -300,6 +307,28 @@ mod tests {
         assert_eq!(result[1].unit_price, Some(dec!(20)));
         assert!(result[1].amount.is_none());
         assert_eq!(result[1].fee, Some(dec!(0)));
+    }
+
+    #[test]
+    fn test_compile_drip_non_positive_unit_price_derives_from_amount() {
+        let compiler = DefaultActivityCompiler::new();
+        let mut activity = create_test_activity();
+        activity.activity_type = ACTIVITY_TYPE_DIVIDEND.to_string();
+        activity.subtype = Some(ACTIVITY_SUBTYPE_DRIP.to_string());
+        activity.quantity = Some(dec!(5));
+        activity.amount = Some(dec!(100));
+
+        // Stale zero from a form edit must not become a zero-cost acquisition.
+        for stale_price in [dec!(0), dec!(-20)] {
+            activity.unit_price = Some(stale_price);
+
+            let result = compiler.compile(&activity).unwrap();
+
+            assert_eq!(result.len(), 2);
+            assert_eq!(result[0].amount, Some(dec!(100)));
+            // BUY leg price derived from amount / quantity, not the stale value
+            assert_eq!(result[1].unit_price, Some(dec!(20)));
+        }
     }
 
     #[test]

@@ -304,8 +304,8 @@ impl ManualSnapshotService {
                     Ok(converted) => total += converted,
                     Err(e) => {
                         warn!(
-                            "Failed to convert cash {} {} to {}: {}. Using unconverted.",
-                            amount, currency, target_currency, e
+                            "Failed to convert cash balance {} to {}: {}. Using unconverted amount.",
+                            currency, target_currency, e
                         );
                         total += amount;
                     }
