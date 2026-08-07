@@ -759,15 +759,17 @@ impl PerformanceService {
                     };
                 }
 
-                if curr_point.external_flow_source == ValuationExternalFlowSource::Unknown {
-                    // A row only carries `Unknown` when a real flow event could not
-                    // be valued (quiet days get `NoFlow`/`CashAmount`). Preserve it so
-                    // the TWR/IRR availability gate fires; never synthesize it away.
+                if curr_point.external_flow_source.is_unavailable_for_returns() {
+                    // A row only carries an unavailable source (`Unknown`, or an
+                    // `UnpricedHoldingsTransition` marker) when a real flow event
+                    // could not be valued (quiet days get `NoFlow`/`CashAmount`).
+                    // Preserve it so the availability gates fire; never
+                    // synthesize it away.
                     return DailyExternalFlow {
                         date,
                         inflow: curr_point.external_inflow_base,
                         outflow: curr_point.external_outflow_base,
-                        source: ValuationExternalFlowSource::Unknown,
+                        source: curr_point.external_flow_source,
                     };
                 }
 
@@ -1457,6 +1459,7 @@ impl PerformanceService {
             series,
             is_holdings_mode,
             is_mixed_tracking_mode,
+            holdings_flows_unavailable: false,
         };
         Self::refresh_summary(&mut result);
         result
@@ -1467,11 +1470,12 @@ impl PerformanceService {
             result.summary.amount_status == PerformanceSummaryStatus::Complete;
         let mut percent_available =
             result.summary.percent_status == PerformanceSummaryStatus::Complete;
-        if result.is_holdings_mode
-            && matches!(
-                result.basis_status,
-                BasisStatus::Unknown | BasisStatus::PartialUnknown
-            )
+        if result.holdings_flows_unavailable
+            || (result.is_holdings_mode
+                && matches!(
+                    result.basis_status,
+                    BasisStatus::Unknown | BasisStatus::PartialUnknown
+                ))
         {
             amount_available = false;
             percent_available = false;
@@ -1507,11 +1511,12 @@ impl PerformanceService {
     }
 
     fn summary_percent(result: &PerformanceResult, percent_available: bool) -> Option<Decimal> {
-        if result.is_holdings_mode
-            && matches!(
-                result.basis_status,
-                BasisStatus::Unknown | BasisStatus::PartialUnknown
-            )
+        if result.holdings_flows_unavailable
+            || (result.is_holdings_mode
+                && matches!(
+                    result.basis_status,
+                    BasisStatus::Unknown | BasisStatus::PartialUnknown
+                ))
         {
             return None;
         }
@@ -1540,11 +1545,12 @@ impl PerformanceService {
             return None;
         }
 
-        if result.is_holdings_mode
-            && matches!(
-                result.basis_status,
-                BasisStatus::Unknown | BasisStatus::PartialUnknown
-            )
+        if result.holdings_flows_unavailable
+            || (result.is_holdings_mode
+                && matches!(
+                    result.basis_status,
+                    BasisStatus::Unknown | BasisStatus::PartialUnknown
+                ))
         {
             return None;
         }
@@ -3496,9 +3502,12 @@ impl PerformanceService {
                         });
                     }
                 } else if include_returns_series {
+                    // No return base this day (e.g. fully withdrawn): carry
+                    // the cumulative return forward so the chart's final point
+                    // keeps matching the headline instead of resetting to 0%.
                     series.push(ReturnData {
                         date: curr.valuation_date,
-                        value: Decimal::ZERO,
+                        value: (cumulative_value_factor - Decimal::ONE).round_dp(DECIMAL_PRECISION),
                     });
                 }
             }
@@ -3752,6 +3761,7 @@ impl PerformanceService {
         );
         if is_holdings_mode {
             result.basis_status = Self::holdings_basis_status(end_point);
+            result.holdings_flows_unavailable = holdings_flows_unavailable;
             Self::refresh_summary(&mut result);
         }
         Ok(result)
@@ -10358,7 +10368,7 @@ mod tests {
                 dec!(1000),
             ),
         ];
-        history[1].external_flow_source = ValuationExternalFlowSource::Unknown;
+        history[1].external_flow_source = ValuationExternalFlowSource::UnpricedHoldingsTransition;
 
         let result = PerformanceService::compute_account_performance(
             &history,
@@ -10370,11 +10380,61 @@ mod tests {
 
         assert!(result.returns.value_return.is_none());
         assert!(result.summary.percent.is_none());
+        // The amount must be unavailable too — not a misleading Some(0).
+        assert!(result.summary.amount.is_none());
+        assert_eq!(
+            result.summary.amount_status,
+            PerformanceSummaryStatus::Unavailable
+        );
         assert!(result
             .data_quality
             .not_applicable_reasons
             .iter()
             .any(|reason| reason.contains("could not be inferred")));
+    }
+
+    #[test]
+    fn perf_holdings_full_withdrawal_keeps_headline_and_series_aligned() {
+        // Earn 10%, then withdraw everything and stay empty: the headline
+        // keeps the earned 10%, and the chart's final point must carry it
+        // forward instead of resetting to 0% on the no-base day.
+        let mut history = vec![
+            valuation("2026-06-12", dec!(100), Decimal::ZERO, dec!(100), dec!(90)),
+            valuation("2026-06-13", dec!(110), Decimal::ZERO, dec!(110), dec!(90)),
+            valuation(
+                "2026-06-14",
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            valuation(
+                "2026-06-15",
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+        ];
+        history[2].external_outflow_base = dec!(110);
+        history[2].external_flow_source = ValuationExternalFlowSource::QuoteDerivedMarketValue;
+
+        let result = PerformanceService::compute_account_performance(
+            &history,
+            Some(TrackingMode::Holdings),
+            Some(date("2026-06-12")),
+            true,
+        )
+        .expect("holdings period should compute");
+
+        assert_eq!(result.summary.amount, Some(dec!(10)));
+        assert_eq!(result.returns.value_return.unwrap().round_dp(4), dec!(0.1));
+        let last_series_point = result.series.last().expect("series should be present");
+        assert_eq!(last_series_point.date, date("2026-06-15"));
+        assert_eq!(
+            last_series_point.value.round_dp(4),
+            result.returns.value_return.unwrap().round_dp(4)
+        );
     }
 
     #[test]

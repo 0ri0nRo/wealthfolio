@@ -739,9 +739,10 @@ impl ValuationService {
                 Self::set_external_flows_from_activity_map_or_net_contribution_base(
                     &mut values,
                     flows_by_date,
+                    true,
                 );
             }
-            None => Self::set_external_flows_from_net_contribution_base(&mut values),
+            None => Self::set_external_flows_from_net_contribution_base(&mut values, true),
         }
         if let Some(adjustments_by_date) = internal_transfer_flow_adjustments_by_date {
             Self::apply_internal_transfer_flow_adjustments(
@@ -972,7 +973,8 @@ impl ValuationService {
                 _ => {
                     valuations[index].external_inflow_base = Decimal::ZERO;
                     valuations[index].external_outflow_base = Decimal::ZERO;
-                    valuations[index].external_flow_source = ExternalFlowSource::Unknown;
+                    valuations[index].external_flow_source =
+                        ExternalFlowSource::UnpricedHoldingsTransition;
                     continue;
                 }
             };
@@ -987,7 +989,10 @@ impl ValuationService {
         }
     }
 
-    fn set_external_flows_from_net_contribution_base(values: &mut [DailyAccountValuation]) {
+    fn set_external_flows_from_net_contribution_base(
+        values: &mut [DailyAccountValuation],
+        preserve_unavailable: bool,
+    ) {
         if values.is_empty() {
             return;
         }
@@ -998,6 +1003,17 @@ impl ValuationService {
         values[0].external_flow_source = ExternalFlowSource::NetContributionFallback;
 
         for index in 1..values.len() {
+            // The plain Unknown marker (an unpriceable holdings transition
+            // summed into an aggregate row) is sticky: it must keep gating
+            // returns, never be relabeled into a trustworthy source.
+            // UnknownBoundaryTransfer is NOT sticky — resolving it is the
+            // transfer machinery's job.
+            if preserve_unavailable
+                && values[index].external_flow_source
+                    == ExternalFlowSource::UnpricedHoldingsTransition
+            {
+                continue;
+            }
             let delta =
                 values[index].net_contribution_base - values[index - 1].net_contribution_base;
             if Self::should_preserve_stored_external_flow(&values[index], delta) {
@@ -1017,6 +1033,7 @@ impl ValuationService {
     fn set_external_flows_from_activity_map_or_net_contribution_base(
         values: &mut [DailyAccountValuation],
         flows_by_date: &HashMap<NaiveDate, DailyFlowAmounts>,
+        preserve_unavailable: bool,
     ) {
         if values.is_empty() {
             return;
@@ -1030,10 +1047,26 @@ impl ValuationService {
         for index in 1..values.len() {
             let delta =
                 values[index].net_contribution_base - values[index - 1].net_contribution_base;
+            // The activity map is authoritative: scope-aware flow inputs
+            // deliberately resolve Unknown transfer boundaries into valued
+            // flows, so it applies before the unavailable-stickiness guard.
             if let Some(flow) = flows_by_date.get(&values[index].valuation_date) {
                 values[index].external_inflow_base = flow.inflow;
                 values[index].external_outflow_base = flow.outflow;
                 values[index].external_flow_source = flow.source;
+                continue;
+            }
+            // The plain Unknown marker is sticky against the fallback paths
+            // (see the net-contribution variant): with no authoritative flow
+            // for the day, an unpriceable holdings transition summed into an
+            // aggregate row must keep gating returns, never be relabeled
+            // NoFlow. Holdings-only scopes have no activities, so their
+            // markers always take this path; UnknownBoundaryTransfer stays
+            // resolvable by the transfer machinery.
+            if preserve_unavailable
+                && values[index].external_flow_source
+                    == ExternalFlowSource::UnpricedHoldingsTransition
+            {
                 continue;
             }
 
@@ -2374,9 +2407,10 @@ impl ValuationService {
             Self::set_external_flows_from_activity_map_or_net_contribution_base(
                 &mut valuations,
                 flows,
+                false,
             );
         } else {
-            Self::set_external_flows_from_net_contribution_base(&mut valuations);
+            Self::set_external_flows_from_net_contribution_base(&mut valuations, false);
         }
         // After generic flow stamping so inferred transitions (including the
         // Unknown marker for unpriceable ones) are authoritative on holdings
@@ -2524,9 +2558,10 @@ impl ValuationService {
             Self::set_external_flows_from_activity_map_or_net_contribution_base(
                 &mut valuations,
                 flows,
+                false,
             );
         } else {
-            Self::set_external_flows_from_net_contribution_base(&mut valuations);
+            Self::set_external_flows_from_net_contribution_base(&mut valuations, false);
         }
         // After generic flow stamping so inferred transitions (including the
         // Unknown marker for unpriceable ones) are authoritative on holdings
@@ -3961,7 +3996,10 @@ mod tests {
             .expect("transition day should be present");
         assert_eq!(transition.external_inflow_base, Decimal::ZERO);
         assert_eq!(transition.external_outflow_base, Decimal::ZERO);
-        assert_eq!(transition.external_flow_source, ExternalFlowSource::Unknown);
+        assert_eq!(
+            transition.external_flow_source,
+            ExternalFlowSource::UnpricedHoldingsTransition
+        );
     }
 
     #[test]
@@ -4098,6 +4136,75 @@ mod tests {
                 "no flow source for split-to-snapshot gap of {gap_days} day(s)"
             );
         }
+    }
+
+    #[test]
+    fn aggregate_flow_stamping_preserves_unavailable_provenance() {
+        // A zero-amount Unknown marker (unpriceable holdings transition summed
+        // into an aggregate row) must survive both stamping variants when
+        // preserve_unavailable is set — relabeling it NoFlow would let scoped
+        // performance report a number from incomplete data.
+        let mut values = vec![
+            valuation(
+                "agg",
+                "2026-05-01",
+                dec!(100),
+                dec!(100),
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            valuation(
+                "agg",
+                "2026-05-02",
+                dec!(110),
+                dec!(100),
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+        ];
+        values[1].external_flow_source = ExternalFlowSource::UnpricedHoldingsTransition;
+
+        ValuationService::set_external_flows_from_net_contribution_base(&mut values, true);
+        assert_eq!(
+            values[1].external_flow_source,
+            ExternalFlowSource::UnpricedHoldingsTransition
+        );
+        assert_eq!(values[1].external_inflow_base, Decimal::ZERO);
+
+        // The activity-map variant is sticky too when the map has no entry
+        // for the day (always the case for holdings-only scopes, which have
+        // no activities).
+        ValuationService::set_external_flows_from_activity_map_or_net_contribution_base(
+            &mut values,
+            &HashMap::new(),
+            true,
+        );
+        assert_eq!(
+            values[1].external_flow_source,
+            ExternalFlowSource::UnpricedHoldingsTransition
+        );
+        assert_eq!(values[1].external_inflow_base, Decimal::ZERO);
+
+        // An authoritative activity flow for the day still wins: scope-aware
+        // flow inputs deliberately resolve unknown boundaries.
+        let flows = HashMap::from([(
+            date("2026-05-02"),
+            DailyFlowAmounts {
+                inflow: dec!(10),
+                outflow: Decimal::ZERO,
+                source: ExternalFlowSource::CashAmount,
+            },
+        )]);
+        ValuationService::set_external_flows_from_activity_map_or_net_contribution_base(
+            &mut values,
+            &flows,
+            true,
+        );
+        assert_eq!(
+            values[1].external_flow_source,
+            ExternalFlowSource::CashAmount
+        );
+        assert_eq!(values[1].external_inflow_base, dec!(10));
     }
 
     #[test]
@@ -4828,6 +4935,7 @@ mod tests {
         ValuationService::set_external_flows_from_activity_map_or_net_contribution_base(
             &mut values,
             &flows_by_date,
+            false,
         );
 
         assert_eq!(values[1].external_inflow_base, Decimal::ZERO);
@@ -4873,6 +4981,7 @@ mod tests {
         ValuationService::set_external_flows_from_activity_map_or_net_contribution_base(
             &mut values,
             &flows_by_date,
+            false,
         );
         values.retain(|valuation| valuation.valuation_date != anchor_date);
 
@@ -4921,6 +5030,7 @@ mod tests {
         ValuationService::set_external_flows_from_activity_map_or_net_contribution_base(
             &mut values,
             &flows_by_date,
+            false,
         );
 
         assert_eq!(values[1].external_inflow_base, dec!(100));
@@ -5451,7 +5561,7 @@ mod tests {
             ),
         ];
 
-        ValuationService::set_external_flows_from_net_contribution_base(&mut values);
+        ValuationService::set_external_flows_from_net_contribution_base(&mut values, false);
 
         assert_eq!(values[1].external_inflow_base, Decimal::ZERO);
         assert_eq!(values[1].external_outflow_base, Decimal::ZERO);
@@ -5486,6 +5596,7 @@ mod tests {
         ValuationService::set_external_flows_from_activity_map_or_net_contribution_base(
             &mut values,
             &flows_by_date,
+            false,
         );
 
         assert_eq!(values[1].external_inflow_base, Decimal::ZERO);
@@ -5712,7 +5823,7 @@ mod tests {
             ),
         ];
 
-        ValuationService::set_external_flows_from_net_contribution_base(&mut values);
+        ValuationService::set_external_flows_from_net_contribution_base(&mut values, false);
         values.retain(|valuation| valuation.valuation_date != anchor_date);
 
         assert_eq!(values.len(), 1);
