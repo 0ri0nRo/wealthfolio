@@ -3965,6 +3965,142 @@ mod tests {
     }
 
     #[test]
+    fn holdings_pipeline_keyframes_to_period_performance_excludes_deposit() {
+        // Full pipeline: keyframes -> daily valuations (with inferred flows)
+        // -> dated-range performance. This crosses the layer seam where unit
+        // tests hand-build valuation rows and can silently disagree with what
+        // the builder actually produces.
+        let start = date("2026-06-01");
+        let end = date("2026-06-06");
+        let mut first = snapshot_with_position("2026-06-01", "AAPL", dec!(10));
+        first.source = SnapshotSource::ManualEntry;
+        // Mid-period: buy 10 more shares and deposit 300 cash.
+        let mut second = snapshot_with_position("2026-06-04", "AAPL", dec!(20));
+        second.source = SnapshotSource::ManualEntry;
+        second.cash_balances = HashMap::from([("USD".to_string(), dec!(300))]);
+        let timeline = HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+        let account = holdings_prepared_account(timeline);
+
+        let quote_facts = [
+            ("2026-06-01", dec!(100)),
+            ("2026-06-03", dec!(102)),
+            ("2026-06-05", dec!(105)),
+        ]
+        .into_iter()
+        .map(|(quote_date, close)| ValuationQuoteFact {
+            timestamp: activity_time(quote_date),
+            close,
+            currency: "USD".to_string(),
+        })
+        .collect();
+        let facts = SharedValuationFacts {
+            quotes_by_asset: HashMap::from([("AAPL".to_string(), quote_facts)]),
+            assets_with_quotes: HashSet::from(["AAPL".to_string()]),
+            split_events: Vec::new(),
+            fx_rates_by_pair: BTreeMap::new(),
+        };
+
+        let valuations = ValuationService::calculate_prepared_valuation_account_from_facts(
+            account,
+            &facts,
+            Some(&HashMap::new()),
+        )
+        .expect("valuation should succeed")
+        .valuations;
+
+        let result =
+            crate::portfolio::performance::PerformanceService::compute_account_performance(
+                &valuations,
+                Some(crate::accounts::TrackingMode::Holdings),
+                Some(start),
+                true,
+            )
+            .expect("performance should compute");
+
+        // Only price movement counts: 10 sh x (105 - 100) + 10 new sh x
+        // (105 - 102) = 80. The 1,320 deposit-buy plus 300 cash deposit
+        // (inferred flow 1,320 at the 06-04 quote) is excluded.
+        assert_eq!(result.summary.amount, Some(dec!(80)));
+        // Chained daily returns: 1.02 x (2400 / 2340) - 1.
+        assert_eq!(
+            result.returns.value_return.unwrap().round_dp(4),
+            dec!(0.0462)
+        );
+        // Headline percent equals the chart's final point.
+        let last_series_point = result.series.last().expect("series should be present");
+        assert_eq!(
+            last_series_point.value.round_dp(4),
+            result.returns.value_return.unwrap().round_dp(4)
+        );
+    }
+
+    #[test]
+    fn holdings_split_transition_infers_no_flow_for_any_snapshot_delay() {
+        // The split invariant must hold wherever the split falls relative to
+        // the next snapshot: recorded the same day or days late. Sweeping the
+        // gap guards the whole input space, not one sampled scenario.
+        for gap_days in 0..=3u32 {
+            let start = date("2026-06-01");
+            let end = date("2026-06-08");
+            let snapshot_date = format!("2026-06-{:02}", 4 + gap_days);
+            let mut first = snapshot_with_position("2026-06-01", "AAPL", dec!(10));
+            first.source = SnapshotSource::ManualEntry;
+            let mut second = snapshot_with_position(&snapshot_date, "AAPL", dec!(20));
+            second.source = SnapshotSource::ManualEntry;
+            let timeline =
+                HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+            let account = holdings_prepared_account(timeline);
+
+            let quote_facts = [("2026-06-01", dec!(50)), ("2026-06-03", dec!(51))]
+                .into_iter()
+                .map(|(quote_date, close)| ValuationQuoteFact {
+                    timestamp: activity_time(quote_date),
+                    close,
+                    currency: "USD".to_string(),
+                })
+                .collect();
+            let facts = SharedValuationFacts {
+                quotes_by_asset: HashMap::from([("AAPL".to_string(), quote_facts)]),
+                assets_with_quotes: HashSet::from(["AAPL".to_string()]),
+                split_events: vec![QuoteAdjustedSplitEvent {
+                    asset_id: "AAPL".to_string(),
+                    split_date: date("2026-06-04"),
+                    ratio: dec!(2),
+                }],
+                fx_rates_by_pair: BTreeMap::new(),
+            };
+
+            let valuations = ValuationService::calculate_prepared_valuation_account_from_facts(
+                account,
+                &facts,
+                Some(&HashMap::new()),
+            )
+            .expect("valuation should succeed")
+            .valuations;
+
+            let transition = valuations
+                .iter()
+                .find(|valuation| valuation.valuation_date == date(&snapshot_date))
+                .expect("transition day should be present");
+            assert_eq!(
+                transition.external_inflow_base,
+                Decimal::ZERO,
+                "no inflow for split-to-snapshot gap of {gap_days} day(s)"
+            );
+            assert_eq!(
+                transition.external_outflow_base,
+                Decimal::ZERO,
+                "no outflow for split-to-snapshot gap of {gap_days} day(s)"
+            );
+            assert_eq!(
+                transition.external_flow_source,
+                ExternalFlowSource::NoFlow,
+                "no flow source for split-to-snapshot gap of {gap_days} day(s)"
+            );
+        }
+    }
+
+    #[test]
     fn calculated_keyframe_transitions_do_not_infer_flows() {
         // Transactions-mode keyframes (source Calculated) must never receive
         // inferred flows: their flows come from activities.

@@ -3343,8 +3343,10 @@ impl PerformanceService {
     /// # Precondition
     /// `full_history.len() >= 2`. Callers check this first so they can respond
     /// differently to insufficient history (empty response vs. error).
+    /// Crate-visible so valuation tests can drive the full
+    /// keyframes -> daily valuations -> performance pipeline end to end.
     #[cfg(test)]
-    fn compute_account_performance(
+    pub(crate) fn compute_account_performance(
         full_history: &[DailyAccountValuation],
         tracking_mode: Option<TrackingMode>,
         start_date_opt: Option<NaiveDate>,
