@@ -295,11 +295,11 @@
     "as_of": "截至：",
     "refreshing_quotes": "正在刷新报价……",
     "refresh_quotes": "刷新报价",
-    "hide_activity_markers": "隐藏活动标记",
-    "show_activity_markers": "显示活动标记",
+    "hide_activity_markers": "隐藏活动标记和平均成本线",
+    "show_activity_markers": "显示活动标记和平均成本线",
     "hide": "隐藏",
     "show": "显示",
-    "activity_markers_suffix": "活动标记"
+    "activity_markers_suffix": "活动标记和平均成本线"
   },
   "lots": {
     "lots_by_account": "按账户列示的批次",

@@ -295,11 +295,11 @@
     "as_of": "A fecha de:",
     "refreshing_quotes": "Actualizando cotizaciones...",
     "refresh_quotes": "Actualizar cotizaciones",
-    "hide_activity_markers": "Ocultar marcadores de actividad",
-    "show_activity_markers": "Mostrar marcadores de actividad",
+    "hide_activity_markers": "Ocultar marcadores de actividad y línea de coste medio",
+    "show_activity_markers": "Mostrar marcadores de actividad y línea de coste medio",
     "hide": "Ocultar",
     "show": "Mostrar",
-    "activity_markers_suffix": "marcadores de actividad"
+    "activity_markers_suffix": "marcadores de actividad y línea de coste medio"
   },
   "lots": {
     "lots_by_account": "Lotes por cuenta",

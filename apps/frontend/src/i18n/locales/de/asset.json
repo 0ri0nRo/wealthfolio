@@ -295,11 +295,11 @@
     "as_of": "Stand:",
     "refreshing_quotes": "Kurse werden aktualisiert...",
     "refresh_quotes": "Kurse aktualisieren",
-    "hide_activity_markers": "Aktivitätsmarkierungen ausblenden",
-    "show_activity_markers": "Aktivitätsmarkierungen anzeigen",
+    "hide_activity_markers": "Aktivitätsmarkierungen und Durchschnittskostenlinie ausblenden",
+    "show_activity_markers": "Aktivitätsmarkierungen und Durchschnittskostenlinie anzeigen",
     "hide": "Ausblenden",
     "show": "Anzeigen",
-    "activity_markers_suffix": "Aktivitätsmarkierungen"
+    "activity_markers_suffix": "Aktivitätsmarkierungen und Durchschnittskostenlinie"
   },
   "lots": {
     "lots_by_account": "Lose nach Konto",
