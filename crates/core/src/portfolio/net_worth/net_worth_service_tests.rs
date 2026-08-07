@@ -293,17 +293,6 @@ impl SnapshotRepositoryTrait for MockSnapshotRepository {
         unimplemented!()
     }
 
-    fn get_non_calculated_snapshot_count(&self, _account_id: &str) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn get_earliest_non_calculated_snapshot(
-        &self,
-        _account_id: &str,
-    ) -> Result<Option<AccountStateSnapshot>> {
-        Ok(None)
-    }
-
     fn get_snapshot_positions(&self, _snapshot_id: &str) -> Result<HashMap<String, Position>> {
         Ok(HashMap::new())
     }

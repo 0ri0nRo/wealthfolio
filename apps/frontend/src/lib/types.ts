@@ -2299,8 +2299,10 @@ export interface HealthConfig {
 export interface SnapshotInfo {
   /** Snapshot ID */
   id: string;
-  /** Date of the snapshot (YYYY-MM-DD) */
+  /** Stored snapshot date (normally YYYY-MM-DD; raw when malformed) */
   snapshotDate: string;
+  /** Whether the stored snapshot date is a valid YYYY-MM-DD date */
+  isDateValid: boolean;
   /** Source of the snapshot (MANUAL_ENTRY, CSV_IMPORT, BROKER_IMPORTED) */
   source: string;
   /** Number of positions in this snapshot */
@@ -2333,6 +2335,8 @@ export interface HoldingsPositionInput {
   quoteCcy?: string;
   /** Instrument type resolved during asset review/search (e.g., EQUITY, CRYPTO). */
   instrumentType?: string;
+  /** Quote mode selected during asset review (MARKET or MANUAL). */
+  quoteMode?: string;
   /** Market data provider that resolved this position, if selected. */
   providerId?: string;
   /** Provider-native symbol/code selected by search/import. */
@@ -2387,6 +2391,10 @@ export interface CheckHoldingsImportResult {
   symbols: SymbolCheckResult[];
   /** Validation errors found in the import data */
   validationErrors: string[];
+  /** Snapshot dates whose complete groups passed validation */
+  validSnapshotDates: string[];
+  /** Snapshot dates whose complete groups failed validation */
+  invalidSnapshotDates: string[];
 }
 
 // ─── Planning DTOs (backend-computed overviews) ──────────────────

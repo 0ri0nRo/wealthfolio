@@ -23,6 +23,7 @@ import {
 } from "@/lib/query-invalidation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -31,6 +32,7 @@ const TOAST_IDS = {
   marketSyncError: "market-sync-error",
   portfolioUpdateStart: "portfolio-update-start",
   portfolioUpdateError: "portfolio-update-error",
+  portfolioInvalidSnapshotError: "portfolio-invalid-snapshot-error",
 
   brokerSyncStart: "broker-sync-start",
 } as const;
@@ -55,6 +57,7 @@ function getSyncSkips(payload?: MarketSyncCompletePayload | null): [string, stri
 }
 
 const useGlobalEventListener = () => {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [areListenersReady, setAreListenersReady] = useState(false);
@@ -68,6 +71,7 @@ const useGlobalEventListener = () => {
   const syncContextRef = useRef(syncContext);
   const queryClientRef = useRef(queryClient);
   const navigateRef = useRef(navigate);
+  const translationRef = useRef(t);
 
   // Keep refs up to date
   useEffect(() => {
@@ -75,6 +79,7 @@ const useGlobalEventListener = () => {
     syncContextRef.current = syncContext;
     queryClientRef.current = queryClient;
     navigateRef.current = navigate;
+    translationRef.current = t;
   });
 
   useEffect(() => {
@@ -157,19 +162,60 @@ const useGlobalEventListener = () => {
       }
     };
 
-    const handlePortfolioUpdateError = (error: string) => {
+    const handlePortfolioUpdateError = (error: unknown) => {
+      const errorMessage =
+        typeof error === "string"
+          ? error
+          : error && typeof error === "object" && "message" in error
+            ? String(error.message)
+            : "Unknown portfolio update error";
+      const errorCode =
+        error && typeof error === "object" && "code" in error ? String(error.code) : undefined;
+      const invalidSnapshotDate =
+        errorCode === "INVALID_SNAPSHOT_DATE" || errorMessage.includes("INVALID_SNAPSHOT_DATE");
       if (isMobileViewportRef.current && syncContextRef.current) {
         syncContextRef.current.setIdle();
       } else {
         toast.dismiss(TOAST_IDS.portfolioUpdateStart);
       }
-      toast.error("Portfolio Update Failed", {
-        id: TOAST_IDS.portfolioUpdateError,
-        description:
-          "There was an error updating your portfolio. Please try again or contact support if the issue persists.",
-        duration: 5000,
-      });
-      logger.error("Portfolio Update Error: " + error);
+      toast.error(
+        invalidSnapshotDate
+          ? translationRef.current("account:snapshot.invalid_date_update_failed")
+          : "Portfolio Update Failed",
+        {
+          id: invalidSnapshotDate
+            ? TOAST_IDS.portfolioInvalidSnapshotError
+            : TOAST_IDS.portfolioUpdateError,
+          description: invalidSnapshotDate
+            ? translationRef.current("account:snapshot.invalid_date_update_desc")
+            : "There was an error updating your portfolio. Please try again or contact support if the issue persists.",
+          action: invalidSnapshotDate
+            ? {
+                label: translationRef.current("account:snapshot.review_health"),
+                onClick: () => navigateRef.current("/health"),
+              }
+            : undefined,
+          style: invalidSnapshotDate
+            ? {
+                display: "grid",
+                gridTemplateColumns: "16px minmax(0, 1fr)",
+                alignItems: "start",
+                columnGap: "12px",
+                rowGap: "12px",
+              }
+            : undefined,
+          actionButtonStyle: invalidSnapshotDate
+            ? {
+                gridColumn: 2,
+                gridRow: 2,
+                margin: 0,
+                marginLeft: "auto",
+              }
+            : undefined,
+          duration: invalidSnapshotDate ? 10000 : 5000,
+        },
+      );
+      logger.error("Portfolio Update Error: " + errorMessage);
     };
 
     const handlePortfolioUpdateComplete = () => {
@@ -306,7 +352,7 @@ const useGlobalEventListener = () => {
         [
           "portfolio-update-error",
           listenPortfolioUpdateError((event) => {
-            handlePortfolioUpdateError(event.payload as string);
+            handlePortfolioUpdateError(event.payload);
           }),
         ],
         ["market-sync-start", listenMarketSyncStart(handleMarketSyncStart)],

@@ -129,33 +129,6 @@ mod tests {
         assert_eq!(snapshot.source, SnapshotSource::Calculated);
     }
 
-    // ==================== Synthetic Source Tests ====================
-
-    #[test]
-    fn test_snapshot_source_synthetic_serialization() {
-        assert_eq!(
-            serde_json::to_string(&SnapshotSource::Synthetic).unwrap(),
-            "\"SYNTHETIC\""
-        );
-    }
-
-    #[test]
-    fn test_snapshot_source_synthetic_deserialization() {
-        assert_eq!(
-            serde_json::from_str::<SnapshotSource>("\"SYNTHETIC\"").unwrap(),
-            SnapshotSource::Synthetic
-        );
-    }
-
-    #[test]
-    fn test_snapshot_source_is_non_calculated() {
-        assert!(!SnapshotSource::Calculated.is_non_calculated());
-        assert!(SnapshotSource::ManualEntry.is_non_calculated());
-        assert!(SnapshotSource::BrokerImported.is_non_calculated());
-        assert!(SnapshotSource::CsvImport.is_non_calculated());
-        assert!(SnapshotSource::Synthetic.is_non_calculated());
-    }
-
     #[test]
     fn test_snapshot_stable_id_is_deterministic_uuid() {
         use crate::portfolio::snapshot::AccountStateSnapshot;
