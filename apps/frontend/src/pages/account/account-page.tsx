@@ -273,9 +273,14 @@ const AccountPage = () => {
     return tabs;
   }, [account, hasNonCashHoldings, isCashOnlyAccount, shouldShowSnapshotHistory, t]);
 
+  // When the preferred tab isn't available (e.g. no "holdings" tab on a
+  // cash-only HOLDINGS-mode account), default to snapshots over activities:
+  // snapshots are the primary record for holdings-tracked accounts.
   const activeAccountDetailTab = accountDetailTabs.some((tab) => tab.value === accountDetailTab)
     ? accountDetailTab
-    : (accountDetailTabs[0]?.value ?? "activities");
+    : shouldShowSnapshotHistory
+      ? "snapshots"
+      : (accountDetailTabs[0]?.value ?? "activities");
 
   const isAccountActivitiesTabActive = activeAccountDetailTab === "activities";
   const accountActivityAccountIds = useMemo(
