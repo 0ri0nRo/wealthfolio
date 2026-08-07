@@ -937,7 +937,13 @@ impl ValuationService {
                 })
                 .collect();
             let fx_today = facts.fx_rates_for_date(&account.required_fx_pairs, curr_date);
-            let split_factors = Self::split_price_factors_for_date(curr_date, &facts.split_events);
+            // The old keyframe's quantities are stated as of the PREVIOUS
+            // row's date, so bridge any splits between the two rows: factors
+            // for prev_date compose the quantity restatement for splits in
+            // (prev, curr] with the quote un-adjustment for splits after curr.
+            // Using curr_date factors here would misprice the old keyframe
+            // across a split and fabricate a flow.
+            let split_factors = Self::split_price_factors_for_date(prev_date, &facts.split_events);
             let Ok(prev_at_curr) = calculate_valuation_with_price_factors(
                 prev_keyframe,
                 &quotes_today,
@@ -3766,6 +3772,65 @@ mod tests {
             .iter()
             .find(|valuation| valuation.valuation_date == date("2026-06-04"))
             .expect("transition day should be present");
+        assert_eq!(transition.external_inflow_base, Decimal::ZERO);
+        assert_eq!(transition.external_outflow_base, Decimal::ZERO);
+        assert_eq!(transition.external_flow_source, ExternalFlowSource::NoFlow);
+    }
+
+    #[test]
+    fn holdings_keyframe_transition_across_split_infers_no_flow() {
+        // 2:1 split effective on the transition day: the user's next snapshot
+        // records 20 (post-split) shares where the previous one had 10. The
+        // holdings are economically unchanged, so no flow may be inferred.
+        // Quotes are provider back-adjusted (post-split terms throughout).
+        let start = date("2026-06-01");
+        let end = date("2026-06-06");
+        let mut first = snapshot_with_position("2026-06-01", "AAPL", dec!(10));
+        first.source = SnapshotSource::ManualEntry;
+        let mut second = snapshot_with_position("2026-06-04", "AAPL", dec!(20));
+        second.source = SnapshotSource::ManualEntry;
+        let timeline = HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+        let account = holdings_prepared_account(timeline);
+
+        let quote_facts = [("2026-06-01", dec!(50)), ("2026-06-03", dec!(51))]
+            .into_iter()
+            .map(|(quote_date, close)| ValuationQuoteFact {
+                timestamp: activity_time(quote_date),
+                close,
+                currency: "USD".to_string(),
+            })
+            .collect();
+        let facts = SharedValuationFacts {
+            quotes_by_asset: HashMap::from([("AAPL".to_string(), quote_facts)]),
+            assets_with_quotes: HashSet::from(["AAPL".to_string()]),
+            split_events: vec![QuoteAdjustedSplitEvent {
+                asset_id: "AAPL".to_string(),
+                split_date: date("2026-06-04"),
+                ratio: dec!(2),
+            }],
+            fx_rates_by_pair: BTreeMap::new(),
+        };
+
+        let valuations = ValuationService::calculate_prepared_valuation_account_from_facts(
+            account,
+            &facts,
+            Some(&HashMap::new()),
+        )
+        .expect("valuation should succeed")
+        .valuations;
+
+        // Series is smooth across the split: 10 x 51 x 2 = 20 x 51 = 1020.
+        let pre_split = valuations
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-03"))
+            .expect("pre-split day should be present");
+        assert_eq!(pre_split.total_value_base, dec!(1020));
+        let transition = valuations
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-04"))
+            .expect("transition day should be present");
+        assert_eq!(transition.total_value_base, dec!(1020));
+        // Old keyframe priced with prev-day split factors: no fabricated flow.
         assert_eq!(transition.external_inflow_base, Decimal::ZERO);
         assert_eq!(transition.external_outflow_base, Decimal::ZERO);
         assert_eq!(transition.external_flow_source, ExternalFlowSource::NoFlow);
