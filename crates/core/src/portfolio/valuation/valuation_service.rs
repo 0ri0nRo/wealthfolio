@@ -937,14 +937,18 @@ impl ValuationService {
                 })
                 .collect();
             let fx_today = facts.fx_rates_for_date(&account.required_fx_pairs, curr_date);
-            // The old keyframe's quantities are stated as of the PREVIOUS
-            // row's date, so bridge any splits between the two rows: factors
-            // for prev_date compose the quantity restatement for splits in
-            // (prev, curr] with the quote un-adjustment for splits after curr.
-            // Using curr_date factors here would misprice the old keyframe
-            // across a split and fabricate a flow.
-            let split_factors = Self::split_price_factors_for_date(prev_date, &facts.split_events);
-            let Ok(prev_at_curr) = calculate_valuation_with_price_factors(
+            // The old keyframe's quantities are stated as of ITS OWN snapshot
+            // date, so bridge every split after that: factors for the keyframe
+            // date compose the quantity restatement for splits in
+            // (snapshot_date, curr] with the quote un-adjustment for splits
+            // after curr. Anchoring on the previous ROW date instead would
+            // miss a split that happened before a delayed snapshot and
+            // fabricate a flow.
+            let split_factors = Self::split_price_factors_for_date(
+                prev_keyframe.snapshot_date,
+                &facts.split_events,
+            );
+            let priced_prev = calculate_valuation_with_price_factors(
                 prev_keyframe,
                 &quotes_today,
                 &fx_today,
@@ -952,8 +956,25 @@ impl ValuationService {
                 curr_date,
                 &account.base_currency,
                 &split_factors,
-            ) else {
-                continue;
+            );
+            // Inference is only trustworthy when both sides are fully priced:
+            // comparing a partially priced valuation would classify an
+            // unpriced position's cost as a flow and its later quote arrival
+            // as gain. Mark the transition Unknown so period performance is
+            // reported as unavailable instead of wrong.
+            let prev_at_curr = match priced_prev {
+                Ok(prev_at_curr)
+                    if prev_at_curr.value_status == ValuationStatus::Complete
+                        && valuations[index].value_status == ValuationStatus::Complete =>
+                {
+                    prev_at_curr
+                }
+                _ => {
+                    valuations[index].external_inflow_base = Decimal::ZERO;
+                    valuations[index].external_outflow_base = Decimal::ZERO;
+                    valuations[index].external_flow_source = ExternalFlowSource::Unknown;
+                    continue;
+                }
             };
             let flow_base = valuations[index].total_value_base - prev_at_curr.total_value_base;
             if flow_base.is_zero() {
@@ -2349,8 +2370,6 @@ impl ValuationService {
             )));
         }
 
-        Self::apply_inferred_holdings_external_flows(&mut valuations, &account, facts);
-
         if let Some(flows) = flows {
             Self::set_external_flows_from_activity_map_or_net_contribution_base(
                 &mut valuations,
@@ -2359,6 +2378,10 @@ impl ValuationService {
         } else {
             Self::set_external_flows_from_net_contribution_base(&mut valuations);
         }
+        // After generic flow stamping so inferred transitions (including the
+        // Unknown marker for unpriceable ones) are authoritative on holdings
+        // rows and can't be relabeled by the fallback pass.
+        Self::apply_inferred_holdings_external_flows(&mut valuations, &account, facts);
         if let Some(anchor_date) = account.incremental_anchor_date {
             valuations.retain(|valuation| valuation.valuation_date != anchor_date);
         }
@@ -2497,8 +2520,6 @@ impl ValuationService {
             )));
         }
 
-        Self::apply_inferred_holdings_external_flows(&mut valuations, &account, facts);
-
         if let Some(flows) = flows {
             Self::set_external_flows_from_activity_map_or_net_contribution_base(
                 &mut valuations,
@@ -2507,6 +2528,10 @@ impl ValuationService {
         } else {
             Self::set_external_flows_from_net_contribution_base(&mut valuations);
         }
+        // After generic flow stamping so inferred transitions (including the
+        // Unknown marker for unpriceable ones) are authoritative on holdings
+        // rows and can't be relabeled by the fallback pass.
+        Self::apply_inferred_holdings_external_flows(&mut valuations, &account, facts);
         if let Some(anchor_date) = account.incremental_anchor_date {
             valuations.retain(|valuation| valuation.valuation_date != anchor_date);
         }
@@ -3834,6 +3859,109 @@ mod tests {
         assert_eq!(transition.external_inflow_base, Decimal::ZERO);
         assert_eq!(transition.external_outflow_base, Decimal::ZERO);
         assert_eq!(transition.external_flow_source, ExternalFlowSource::NoFlow);
+    }
+
+    #[test]
+    fn holdings_keyframe_delayed_after_split_infers_no_flow() {
+        // Split on 06-04, but the user's next snapshot lands on 06-06. The
+        // old keyframe's quantities are stated as of ITS snapshot date
+        // (06-01), so the split must still be bridged even though the
+        // previous valuation row (06-05) is already past the split date.
+        let start = date("2026-06-01");
+        let end = date("2026-06-08");
+        let mut first = snapshot_with_position("2026-06-01", "AAPL", dec!(10));
+        first.source = SnapshotSource::ManualEntry;
+        let mut second = snapshot_with_position("2026-06-06", "AAPL", dec!(20));
+        second.source = SnapshotSource::ManualEntry;
+        let timeline = HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+        let account = holdings_prepared_account(timeline);
+
+        let quote_facts = [("2026-06-01", dec!(50)), ("2026-06-05", dec!(51))]
+            .into_iter()
+            .map(|(quote_date, close)| ValuationQuoteFact {
+                timestamp: activity_time(quote_date),
+                close,
+                currency: "USD".to_string(),
+            })
+            .collect();
+        let facts = SharedValuationFacts {
+            quotes_by_asset: HashMap::from([("AAPL".to_string(), quote_facts)]),
+            assets_with_quotes: HashSet::from(["AAPL".to_string()]),
+            split_events: vec![QuoteAdjustedSplitEvent {
+                asset_id: "AAPL".to_string(),
+                split_date: date("2026-06-04"),
+                ratio: dec!(2),
+            }],
+            fx_rates_by_pair: BTreeMap::new(),
+        };
+
+        let valuations = ValuationService::calculate_prepared_valuation_account_from_facts(
+            account,
+            &facts,
+            Some(&HashMap::new()),
+        )
+        .expect("valuation should succeed")
+        .valuations;
+
+        // Old keyframe at 06-06: 10 x 51 x 2 = new keyframe 20 x 51 = 1020.
+        let transition = valuations
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-06"))
+            .expect("transition day should be present");
+        assert_eq!(transition.total_value_base, dec!(1020));
+        assert_eq!(transition.external_inflow_base, Decimal::ZERO);
+        assert_eq!(transition.external_outflow_base, Decimal::ZERO);
+        assert_eq!(transition.external_flow_source, ExternalFlowSource::NoFlow);
+    }
+
+    #[test]
+    fn holdings_keyframe_transition_with_unpriced_position_marks_flow_unknown() {
+        // 06-04 snapshot buys an asset that has no quotes at all with existing
+        // cash. Neither side of the transition can be fully priced, so no
+        // explicit flow may be inferred: the cash-funded buy must not read as
+        // a withdrawal (and the asset's later quote arrival as gain). The
+        // transition is marked Unknown so period performance reports as
+        // unavailable instead.
+        let start = date("2026-06-01");
+        let end = date("2026-06-06");
+        let mut first = snapshot_with_position("2026-06-01", "AAPL", dec!(10));
+        first.source = SnapshotSource::ManualEntry;
+        first.cash_balances = HashMap::from([("USD".to_string(), dec!(500))]);
+        let mut second = snapshot_with_position("2026-06-04", "AAPL", dec!(10));
+        second.source = SnapshotSource::ManualEntry;
+        second.positions.insert(
+            "PRIVATE-CO".to_string(),
+            Position {
+                id: "POS-PRIVATE-CO-account-1".to_string(),
+                account_id: "account-1".to_string(),
+                asset_id: "PRIVATE-CO".to_string(),
+                quantity: dec!(5),
+                average_cost: dec!(100),
+                total_cost_basis: dec!(500),
+                currency: "USD".to_string(),
+                inception_date: activity_time("2026-06-04"),
+                ..Position::default()
+            },
+        );
+        let timeline = HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+        let account = holdings_prepared_account(timeline);
+        let facts = holdings_quote_facts();
+
+        let valuations = ValuationService::calculate_prepared_valuation_account_from_facts(
+            account,
+            &facts,
+            Some(&HashMap::new()),
+        )
+        .expect("valuation should succeed")
+        .valuations;
+
+        let transition = valuations
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-04"))
+            .expect("transition day should be present");
+        assert_eq!(transition.external_inflow_base, Decimal::ZERO);
+        assert_eq!(transition.external_outflow_base, Decimal::ZERO);
+        assert_eq!(transition.external_flow_source, ExternalFlowSource::Unknown);
     }
 
     #[test]
