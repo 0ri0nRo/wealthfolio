@@ -3038,7 +3038,7 @@ mod tests {
     // provenance must remain at least as unavailable/degraded. Otherwise the
     // downstream TWR/IRR availability gates can be silently bypassed.
 
-    const ALL_FLOW_SOURCES: [ExternalFlowSource; 12] = [
+    const ALL_FLOW_SOURCES: [ExternalFlowSource; 13] = [
         ExternalFlowSource::NoFlow,
         ExternalFlowSource::Unknown,
         ExternalFlowSource::CashAmount,
@@ -3047,6 +3047,7 @@ mod tests {
         ExternalFlowSource::RemovedLotBasisFallback,
         ExternalFlowSource::LegacyActivityAmountFallback,
         ExternalFlowSource::UnknownBoundaryTransfer,
+        ExternalFlowSource::UnpricedHoldingsTransition,
         ExternalFlowSource::ActivityDerived,
         ExternalFlowSource::StoredGross,
         ExternalFlowSource::NetContributionFallback,

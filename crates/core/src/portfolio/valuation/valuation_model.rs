@@ -176,7 +176,7 @@ mod tests {
 }
 
 impl ExternalFlowSource {
-    pub const ALL: [ExternalFlowSource; 12] = [
+    pub const ALL: [ExternalFlowSource; 13] = [
         ExternalFlowSource::NoFlow,
         ExternalFlowSource::Unknown,
         ExternalFlowSource::CashAmount,
@@ -185,6 +185,7 @@ impl ExternalFlowSource {
         ExternalFlowSource::RemovedLotBasisFallback,
         ExternalFlowSource::LegacyActivityAmountFallback,
         ExternalFlowSource::UnknownBoundaryTransfer,
+        ExternalFlowSource::UnpricedHoldingsTransition,
         ExternalFlowSource::ActivityDerived,
         ExternalFlowSource::StoredGross,
         ExternalFlowSource::NetContributionFallback,
