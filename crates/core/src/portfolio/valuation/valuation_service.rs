@@ -2347,7 +2347,10 @@ impl ValuationService {
                 if !quotable_positions.is_empty()
                     && missing_quotes.len() == quotable_positions.len()
                 {
-                    return None;
+                    debug!(
+                        "No quotes available on or before {} for any quotable position in account '{}'; emitting an unavailable valuation row.",
+                        day.date, account.account_id
+                    );
                 }
 
                 let fx_today = facts.fx_rates_for_date(&account.required_fx_pairs, day.date);
@@ -2501,7 +2504,10 @@ impl ValuationService {
                     .filter(|asset_id| !quotes_today.contains_key(*asset_id))
                     .count();
                 if !quotable_positions.is_empty() && missing_quotes == quotable_positions.len() {
-                    return None;
+                    debug!(
+                        "No quotes available on or before {} for any quotable position in account '{}'; emitting an unavailable valuation row.",
+                        date, account.account_id
+                    );
                 }
 
                 let fx_today = facts.fx_rates_for_date(&account.required_fx_pairs, *date);
@@ -3711,6 +3717,140 @@ mod tests {
                 .expect("flow day should be present")
                 .external_inflow_base,
             dec!(250)
+        );
+    }
+
+    #[test]
+    fn full_quote_gap_emits_current_snapshot_values_for_scoped_aggregation() {
+        let start = date("2026-06-01");
+        let end = date("2026-06-03");
+        let first = snapshot_with_position("2026-06-01", "OLD", dec!(10));
+        let mut second = snapshot_with_position("2026-06-02", "NEW", dec!(5));
+        second.cash_balances = HashMap::from([("USD".to_string(), dec!(100))]);
+        second.net_contribution = dec!(100);
+        second.net_contribution_base = dec!(100);
+        let timeline = HoldingsTimeline::new(Some(start), end, vec![first, second], None, false);
+        let account = PreparedValuationAccount {
+            account_id: "account-1".to_string(),
+            timeline,
+            incremental_anchor_date: None,
+            replace_since_date: None,
+            required_asset_ids: HashSet::from(["OLD".to_string(), "NEW".to_string()]),
+            required_fx_pairs: HashSet::new(),
+            acquisition_fx_requests: HashSet::new(),
+            base_currency: "USD".to_string(),
+            account_currency: "USD".to_string(),
+        };
+        let facts = SharedValuationFacts {
+            quotes_by_asset: HashMap::from([
+                (
+                    "OLD".to_string(),
+                    vec![ValuationQuoteFact {
+                        timestamp: activity_time("2026-06-01"),
+                        close: dec!(10),
+                        currency: "USD".to_string(),
+                    }],
+                ),
+                (
+                    "NEW".to_string(),
+                    vec![ValuationQuoteFact {
+                        timestamp: activity_time("2026-06-03"),
+                        close: dec!(20),
+                        currency: "USD".to_string(),
+                    }],
+                ),
+            ]),
+            assets_with_quotes: HashSet::from(["OLD".to_string(), "NEW".to_string()]),
+            split_events: Vec::new(),
+            fx_rates_by_pair: BTreeMap::new(),
+        };
+        let flows = HashMap::from([(
+            date("2026-06-02"),
+            DailyFlowAmounts {
+                inflow: dec!(100),
+                outflow: Decimal::ZERO,
+                source: ExternalFlowSource::CashAmount,
+            },
+        )]);
+
+        let mut interval = ValuationService::calculate_prepared_valuation_account_from_facts(
+            account.clone(),
+            &facts,
+            Some(&flows),
+        )
+        .expect("interval valuation should retain the unpriced day")
+        .valuations;
+        let mut dense = ValuationService::calculate_prepared_valuation_account_dense_reference(
+            account,
+            &facts,
+            Some(&flows),
+        )
+        .expect("dense valuation should retain the unpriced day")
+        .valuations;
+        let stable_calculated_at = DateTime::<Utc>::from_timestamp(0, 0).unwrap();
+        for valuation in interval.iter_mut().chain(dense.iter_mut()) {
+            valuation.calculated_at = stable_calculated_at;
+        }
+        assert_eq!(interval, dense);
+        assert_eq!(interval.len(), 3);
+
+        let gap_day = interval
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-02"))
+            .expect("the full quote-gap day should be represented");
+        assert_eq!(gap_day.cash_balance_base, dec!(100));
+        assert_eq!(gap_day.total_value_base, dec!(100));
+        assert_eq!(gap_day.net_contribution_base, dec!(100));
+        assert_eq!(gap_day.external_inflow_base, dec!(100));
+        assert_eq!(gap_day.external_outflow_base, Decimal::ZERO);
+        assert_eq!(gap_day.external_flow_source, ExternalFlowSource::CashAmount);
+        assert_eq!(gap_day.value_status, ValuationStatus::PartialUnpriced);
+
+        let other_history = vec![
+            valuation(
+                "account-2",
+                "2026-06-01",
+                dec!(50),
+                dec!(50),
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            valuation(
+                "account-2",
+                "2026-06-02",
+                dec!(50),
+                dec!(50),
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            valuation(
+                "account-2",
+                "2026-06-03",
+                dec!(50),
+                dec!(50),
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+        ];
+        let aggregate = ValuationService::aggregate_scoped_valuations(
+            "accounts:test",
+            &["account-1".to_string(), "account-2".to_string()],
+            "USD",
+            vec![interval, other_history],
+            Some(&flows),
+            None,
+        )
+        .expect("the scoped history should not contain an interior gap");
+        let aggregate_gap_day = aggregate
+            .iter()
+            .find(|valuation| valuation.valuation_date == date("2026-06-02"))
+            .expect("the aggregate should contain the full quote-gap day");
+        assert_eq!(aggregate_gap_day.total_value_base, dec!(150));
+        assert_eq!(aggregate_gap_day.net_contribution_base, dec!(150));
+        assert_eq!(aggregate_gap_day.external_inflow_base, dec!(100));
+        assert_eq!(
+            aggregate_gap_day.value_status,
+            ValuationStatus::PartialUnpriced
         );
     }
 
