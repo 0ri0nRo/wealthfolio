@@ -1249,13 +1249,23 @@ impl RebalanceOptimizer for DriftPriorityOptimizer {
             let entry = after_values.entry(cat.category_id.clone()).or_default();
             *entry = (*entry - net_cash_change).max(Decimal::ZERO);
         }
-        let max_drift_after = Self::max_drift_bps(&after_values, &categories, planning_total);
+        // After-metrics basis. planning_total assumes available_cash fully
+        // deploys, but min_trade_amount / whole-share constraints can drop
+        // buys; when scope cash is external, only the cash actually deployed
+        // by kept trades enters the classified universe.
+        let reporting_total =
+            if total_includes_cash || matches!(scenario_mode, ScenarioMode::SellToRebalance) {
+                total_value
+            } else {
+                total_value + cash_used - sell_proceeds
+            };
+        let max_drift_after = Self::max_drift_bps(&after_values, &categories, reporting_total);
 
-        let after_bps_by_category: HashMap<String, i32> = if planning_total > Decimal::ZERO {
+        let after_bps_by_category: HashMap<String, i32> = if reporting_total > Decimal::ZERO {
             after_values
                 .iter()
                 .map(|(cat_id, val)| {
-                    let bps: i32 = (*val / planning_total * scale)
+                    let bps: i32 = (*val / reporting_total * scale)
                         .round()
                         .to_string()
                         .parse()
@@ -1830,6 +1840,25 @@ mod tests {
         assert_eq!(plan.after_bps_by_category.get("a").copied(), Some(4000));
         assert_eq!(plan.after_bps_by_category.get("b").copied(), Some(6000));
         assert_eq!(plan.max_drift_bps_after, 0);
+    }
+
+    #[test]
+    fn after_weights_reflect_only_deployed_cash_when_buys_filtered_out() {
+        // min_trade_amount above the sole $1000 buy drops every trade; the
+        // after-metrics must then describe the unchanged portfolio (80/20 of
+        // total_value), not a phantom post-deployment basis.
+        let mut input = make_cash_outside_total_input();
+        input.profile.min_trade_amount = dec!(1001);
+
+        let optimizer = DriftPriorityOptimizer;
+        let plan = optimizer.plan(input).unwrap();
+
+        assert!(plan.trades.is_empty(), "trades: {:?}", plan.trades);
+        assert_eq!(plan.cash_used, Decimal::ZERO);
+        assert_eq!(plan.cash_remaining, dec!(1000));
+        assert_eq!(plan.after_bps_by_category.get("a").copied(), Some(8000));
+        assert_eq!(plan.after_bps_by_category.get("b").copied(), Some(2000));
+        assert_eq!(plan.max_drift_bps_after, plan.max_drift_bps_before);
     }
 
     #[test]
