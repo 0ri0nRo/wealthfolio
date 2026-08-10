@@ -7,7 +7,9 @@ use anyhow::Result;
 use async_trait::async_trait;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::db::{get_connection, DbPool, WriteHandle};
@@ -18,7 +20,7 @@ use crate::sync::OutboxWriteRequest;
 use wealthfolio_core::sync::{SyncEntity, SyncOperation};
 use wealthfolio_spending::categorization_rules::{
     CategorizationRule, CategorizationRulesRepositoryTrait, NewCategorizationRule,
-    PresetImportCounts, RuleMatchType, UpdateCategorizationRule,
+    PresetImportCounts, RuleAmountOp, RuleMatchType, UpdateCategorizationRule,
 };
 
 #[derive(Queryable, Identifiable, Selectable, Serialize, Deserialize, Debug, Clone)]
@@ -42,6 +44,9 @@ pub struct CategorizationRuleDB {
     pub preset_modified: i32,
     pub created_at: String,
     pub updated_at: String,
+    pub amount_op: Option<String>,
+    pub amount_value: Option<String>,
+    pub amount_value2: Option<String>,
 }
 
 #[derive(Insertable, AsChangeset, Serialize, Deserialize, Debug, Clone)]
@@ -63,6 +68,9 @@ pub struct NewCategorizationRuleDB {
     pub preset_modified: i32,
     pub created_at: String,
     pub updated_at: String,
+    pub amount_op: Option<String>,
+    pub amount_value: Option<String>,
+    pub amount_value2: Option<String>,
 }
 
 #[derive(Queryable, Selectable, Insertable, Serialize, Deserialize, Debug, Clone)]
@@ -127,6 +135,16 @@ fn upsert_preset_rule_deletion(
     Ok(row)
 }
 
+fn parse_db_decimal(value: &Option<String>, rule_id: &str, column: &str) -> Option<Decimal> {
+    value.as_deref().and_then(|s| match Decimal::from_str(s) {
+        Ok(d) => Some(d),
+        Err(err) => {
+            log::warn!("Categorization rule {rule_id} has invalid {column} '{s}': {err}");
+            None
+        }
+    })
+}
+
 fn parse_dt(s: &str) -> NaiveDateTime {
     chrono::DateTime::parse_from_rfc3339(s)
         .map(|dt| dt.naive_utc())
@@ -135,7 +153,17 @@ fn parse_dt(s: &str) -> NaiveDateTime {
 
 impl From<CategorizationRuleDB> for CategorizationRule {
     fn from(db: CategorizationRuleDB) -> Self {
+        let amount_op = db.amount_op.as_deref().and_then(|s| {
+            let op = RuleAmountOp::try_parse(s);
+            if op.is_none() {
+                log::warn!("Categorization rule {} has unknown amount_op '{s}'", db.id);
+            }
+            op
+        });
         Self {
+            amount_op,
+            amount_value: parse_db_decimal(&db.amount_value, &db.id, "amount_value"),
+            amount_value2: parse_db_decimal(&db.amount_value2, &db.id, "amount_value2"),
             id: db.id,
             name: db.name,
             pattern: db.pattern,
@@ -176,6 +204,9 @@ fn new_rule_db(new_rule: NewCategorizationRule, now: &str) -> NewCategorizationR
         taxonomy_id,
         category_id,
         activity_type,
+        amount_op,
+        amount_value,
+        amount_value2,
         priority,
         is_global,
         account_id,
@@ -209,6 +240,9 @@ fn new_rule_db(new_rule: NewCategorizationRule, now: &str) -> NewCategorizationR
         preset_modified: 0,
         created_at: now.to_string(),
         updated_at: now.to_string(),
+        amount_op: amount_op.map(|op| op.as_str().to_string()),
+        amount_value: amount_value.map(|d| d.to_string()),
+        amount_value2: amount_value2.map(|d| d.to_string()),
     }
 }
 
@@ -287,6 +321,15 @@ impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
                 if let Some(v) = patch.activity_type {
                     existing.activity_type = v;
                 }
+                if let Some(v) = patch.amount_op {
+                    existing.amount_op = v.map(|op| op.as_str().to_string());
+                }
+                if let Some(v) = patch.amount_value {
+                    existing.amount_value = v.map(|d| d.to_string());
+                }
+                if let Some(v) = patch.amount_value2 {
+                    existing.amount_value2 = v.map(|d| d.to_string());
+                }
                 if let Some(v) = patch.priority {
                     existing.priority = v;
                 }
@@ -311,6 +354,9 @@ impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
                         spending_categorization_rules::taxonomy_id.eq(&existing.taxonomy_id),
                         spending_categorization_rules::category_id.eq(&existing.category_id),
                         spending_categorization_rules::activity_type.eq(&existing.activity_type),
+                        spending_categorization_rules::amount_op.eq(&existing.amount_op),
+                        spending_categorization_rules::amount_value.eq(&existing.amount_value),
+                        spending_categorization_rules::amount_value2.eq(&existing.amount_value2),
                         spending_categorization_rules::priority.eq(existing.priority),
                         spending_categorization_rules::is_global.eq(existing.is_global),
                         spending_categorization_rules::account_id.eq(&existing.account_id),
@@ -380,6 +426,9 @@ impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
                         existing.taxonomy_id = rule.taxonomy_id;
                         existing.category_id = rule.category_id;
                         existing.activity_type = rule.activity_type;
+                        existing.amount_op = rule.amount_op.map(|op| op.as_str().to_string());
+                        existing.amount_value = rule.amount_value.map(|d| d.to_string());
+                        existing.amount_value2 = rule.amount_value2.map(|d| d.to_string());
                         existing.priority = rule.priority;
                         existing.is_global = if rule.is_global { 1 } else { 0 };
                         existing.account_id = rule.account_id;
@@ -400,6 +449,11 @@ impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
                                     .eq(&existing.category_id),
                                 spending_categorization_rules::activity_type
                                     .eq(&existing.activity_type),
+                                spending_categorization_rules::amount_op.eq(&existing.amount_op),
+                                spending_categorization_rules::amount_value
+                                    .eq(&existing.amount_value),
+                                spending_categorization_rules::amount_value2
+                                    .eq(&existing.amount_value2),
                                 spending_categorization_rules::priority.eq(existing.priority),
                                 spending_categorization_rules::is_global.eq(existing.is_global),
                                 spending_categorization_rules::account_id.eq(&existing.account_id),
@@ -628,6 +682,9 @@ mod tests {
             taxonomy_id: None,
             category_id: None,
             activity_type: None,
+            amount_op: None,
+            amount_value: None,
+            amount_value2: None,
             priority: 0,
             is_global: true,
             account_id: None,
@@ -683,6 +740,89 @@ mod tests {
                 .expect("count tombstones")
         };
         assert_eq!(tombstone_count, 0);
+    }
+
+    #[tokio::test]
+    async fn amount_condition_round_trips_and_updates() {
+        use wealthfolio_spending::categorization_rules::RuleAmountOp;
+
+        let repo = setup_repo();
+        let mut new_rule = preset_rule();
+        new_rule.id = Some("rule-amount".to_string());
+        new_rule.preset_id = None;
+        new_rule.preset_rule_key = None;
+        new_rule.preset_version = None;
+        new_rule.amount_op = Some(RuleAmountOp::Between);
+        new_rule.amount_value = Some("45.50".parse().unwrap());
+        new_rule.amount_value2 = Some("55".parse().unwrap());
+
+        let created = repo.create(new_rule).await.expect("create rule");
+        assert_eq!(created.amount_op, Some(RuleAmountOp::Between));
+        assert_eq!(created.amount_value, Some("45.50".parse().unwrap()));
+        assert_eq!(created.amount_value2, Some("55".parse().unwrap()));
+
+        let fetched = repo.get("rule-amount").await.expect("get").expect("some");
+        assert_eq!(fetched.amount_op, Some(RuleAmountOp::Between));
+        assert_eq!(fetched.amount_value, Some("45.50".parse().unwrap()));
+        assert_eq!(fetched.amount_value2, Some("55".parse().unwrap()));
+
+        // Patch to a single-value operator: upper value cleared explicitly.
+        let updated = repo
+            .update(
+                "rule-amount",
+                UpdateCategorizationRule {
+                    amount_op: Some(Some(RuleAmountOp::Gte)),
+                    amount_value: Some(Some("100".parse().unwrap())),
+                    amount_value2: Some(None),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("update rule");
+        assert_eq!(updated.amount_op, Some(RuleAmountOp::Gte));
+        assert_eq!(updated.amount_value, Some("100".parse().unwrap()));
+        assert_eq!(updated.amount_value2, None);
+
+        // Patch that omits the amount fields leaves the condition untouched.
+        let untouched = repo
+            .update(
+                "rule-amount",
+                UpdateCategorizationRule {
+                    name: Some("renamed".to_string()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("update rule");
+        assert_eq!(untouched.name, "renamed");
+        assert_eq!(untouched.amount_op, Some(RuleAmountOp::Gte));
+        assert_eq!(untouched.amount_value, Some("100".parse().unwrap()));
+
+        // Clearing the whole condition round-trips to NULLs.
+        let cleared = repo
+            .update(
+                "rule-amount",
+                UpdateCategorizationRule {
+                    amount_op: Some(None),
+                    amount_value: Some(None),
+                    amount_value2: Some(None),
+                    ..Default::default()
+                },
+            )
+            .await
+            .expect("update rule");
+        assert_eq!(cleared.amount_op, None);
+        assert_eq!(cleared.amount_value, None);
+        assert_eq!(cleared.amount_value2, None);
+    }
+
+    #[tokio::test]
+    async fn rule_without_amount_condition_round_trips_nulls() {
+        let repo = setup_repo();
+        let created = repo.create(preset_rule()).await.expect("create rule");
+        assert_eq!(created.amount_op, None);
+        assert_eq!(created.amount_value, None);
+        assert_eq!(created.amount_value2, None);
     }
 
     #[test]
