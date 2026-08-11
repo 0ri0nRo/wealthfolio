@@ -1,6 +1,6 @@
 import { TimePeriod } from "@/lib/types";
 import { formatDate } from "@/lib/utils";
-import { formatAmount } from "@wealthfolio/ui";
+import { formatPrice } from "@wealthfolio/ui";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
@@ -8,6 +8,7 @@ import {
   Area,
   AreaChart,
   ReferenceDot,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -65,6 +66,7 @@ export default function HistoryChart({
   interval,
   activityMarkers = [],
   onActivityMarkerClick,
+  averageCost,
   height = 350,
 }: {
   data: HistoryChartData[];
@@ -72,6 +74,7 @@ export default function HistoryChart({
   height?: number;
   activityMarkers?: HistoryChartActivityMarker[];
   onActivityMarkerClick?: (marker: HistoryChartActivityMarker) => void;
+  averageCost?: number;
 }) {
   const [hoveredMarker, setHoveredMarker] = useState(false);
   const markerByTimestamp = useMemo(() => {
@@ -142,6 +145,21 @@ export default function HistoryChart({
               fillOpacity={1}
               fill="url(#colorUv)"
             />
+            {averageCost != null && averageCost > 0 && (
+              <ReferenceLine
+                y={averageCost}
+                stroke="var(--foreground)"
+                strokeDasharray="4 3"
+                strokeWidth={1}
+                ifOverflow="extendDomain"
+                label={{
+                  value: formatPrice(averageCost, data[0]?.currency ?? "", false),
+                  position: "insideBottomLeft",
+                  fill: "var(--foreground)",
+                  fontSize: 11,
+                }}
+              />
+            )}
             {activityMarkers.map((marker) => {
               return (
                 <ReferenceDot
@@ -177,7 +195,7 @@ function SymbolToolTip({ active, payload }: SymbolTooltipProps) {
     <div className="bg-popover pointer-events-none grid grid-cols-1 gap-1.5 rounded-md border p-2 shadow-md">
       <p className="text-muted-foreground text-xs">{formatDate(data.timestamp)}</p>
 
-      <p className="text-base font-bold">{formatAmount(payload[0].value, data.currency, false)}</p>
+      <p className="text-base font-bold">{formatPrice(payload[0].value, data.currency, false)}</p>
 
       {data.activities && data.activities.length > 0 && (
         <>
@@ -202,7 +220,7 @@ function SymbolToolTip({ active, payload }: SymbolTooltipProps) {
                 {hasPriceDetails && (
                   <span className="text-muted-foreground text-sm tabular-nums">
                     {parseFloat(act.quantity || "0")} at{" "}
-                    {formatAmount(parseFloat(act.unitPrice || "0"), data.currency, false)}
+                    {formatPrice(parseFloat(act.unitPrice || "0"), data.currency, false)}
                   </span>
                 )}
               </div>

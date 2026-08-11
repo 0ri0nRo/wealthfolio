@@ -157,7 +157,7 @@
   },
   "profile": {
     "overview": "Aperçu",
-    "quotes": "Cotations",
+    "quotes": "Historique des cours",
     "history": "Valeurs",
     "about": "À propos",
     "holdings": "Positions",
@@ -295,11 +295,11 @@
     "as_of": "Au :",
     "refreshing_quotes": "Actualisation des cotations...",
     "refresh_quotes": "Actualiser les cotations",
-    "hide_activity_markers": "Masquer les marqueurs d'activité",
-    "show_activity_markers": "Afficher les marqueurs d'activité",
+    "hide_activity_markers": "Masquer les marqueurs d'activité et la ligne de coût moyen",
+    "show_activity_markers": "Afficher les marqueurs d'activité et la ligne de coût moyen",
     "hide": "Masquer",
     "show": "Afficher",
-    "activity_markers_suffix": "les marqueurs d'activité"
+    "activity_markers_suffix": "les marqueurs d'activité et la ligne de coût moyen"
   },
   "lots": {
     "lots_by_account": "Lots par compte",

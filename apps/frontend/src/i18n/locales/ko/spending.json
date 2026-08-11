@@ -94,7 +94,11 @@
     "priorityLabel": "우선순위",
     "priorityHint": "우선순위가 높은 규칙이 먼저 검사됩니다 (0-100).",
     "updateRule": "규칙 업데이트",
-    "createRule": "규칙 생성"
+    "createRule": "규칙 생성",
+    "scopeLabel": "적용 대상",
+    "scopeHint": "이 규칙을 하나의 계좌로 제한하거나 추적 중인 모든 지출 계좌에 적용하세요.",
+    "scopedToAccount": "{{name}}에만 적용",
+    "unknownAccount": "알 수 없는 계좌"
   },
   "transactions": {
     "deleteTitle_one": "거래 삭제",

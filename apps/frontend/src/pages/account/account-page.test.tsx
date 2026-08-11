@@ -254,6 +254,7 @@ vi.mock("@wealthfolio/ui/components/ui/sheet", () => ({
 
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  const react = await vi.importActual<typeof import("react")>("react");
   return {
     ...actual,
     Link: ({
@@ -270,6 +271,15 @@ vi.mock("react-router-dom", async () => {
     ),
     useNavigate: () => vi.fn(),
     useParams: () => ({ id: "account-1" }),
+    useSearchParams: () => {
+      const [params, setParams] = react.useState(() => new URLSearchParams());
+      const setSearchParams: import("react-router-dom").SetURLSearchParams = (nextInit) => {
+        setParams((current) =>
+          actual.createSearchParams(typeof nextInit === "function" ? nextInit(current) : nextInit),
+        );
+      };
+      return [params, setSearchParams] as const;
+    },
   };
 });
 
@@ -459,6 +469,31 @@ describe("AccountPage", () => {
       "href",
       "/activities?account=account-1",
     );
+  });
+
+  it("defaults to the snapshots tab for holdings-mode accounts without a holdings tab", () => {
+    mockUseAccounts.mockReturnValue({
+      accounts: [{ ...createAccount(), trackingMode: "HOLDINGS" }],
+      isLoading: false,
+    } as unknown as ReturnType<typeof useAccounts>);
+    mockUseValuationHistory.mockReturnValue({
+      valuationHistory: [createHistoricalValuation({ totalValue: 100 })],
+      isLoading: false,
+      error: null,
+    } as unknown as ReturnType<typeof useValuationHistory>);
+    mockUseCurrentValuation.mockReturnValue({
+      currentValuation: {
+        summary: createCurrentSummary({ totalValueBase: 125 }),
+        accounts: [createCurrentAccountValuation({ totalValue: 125 })],
+      },
+      isLoading: false,
+      isFetching: false,
+      error: null,
+    } as unknown as ReturnType<typeof useCurrentValuation>);
+
+    render(<AccountPage />);
+
+    expect(screen.getByText("snapshot-history")).toBeInTheDocument();
   });
 });
 

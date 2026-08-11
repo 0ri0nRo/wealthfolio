@@ -293,17 +293,6 @@ impl SnapshotRepositoryTrait for MockSnapshotRepository {
         unimplemented!()
     }
 
-    fn get_non_calculated_snapshot_count(&self, _account_id: &str) -> Result<usize> {
-        Ok(0)
-    }
-
-    fn get_earliest_non_calculated_snapshot(
-        &self,
-        _account_id: &str,
-    ) -> Result<Option<AccountStateSnapshot>> {
-        Ok(None)
-    }
-
     fn get_snapshot_positions(&self, _snapshot_id: &str) -> Result<HashMap<String, Position>> {
         Ok(HashMap::new())
     }
@@ -364,6 +353,16 @@ impl QuoteServiceTrait for MockMarketDataRepository {
         _as_of: chrono::NaiveDate,
     ) -> Result<HashMap<String, Quote>> {
         Ok(HashMap::new())
+    }
+
+    fn get_sparse_asset_market_facts(
+        &self,
+        _requests: &[(String, NaiveDate)],
+    ) -> Result<crate::quotes::SparseAssetMarketFacts> {
+        Err(crate::errors::Error::Unexpected(
+            "MockMarketDataRepository::get_sparse_asset_market_facts should not be called"
+                .to_string(),
+        ))
     }
 
     fn get_latest_quotes_snapshot(
@@ -921,6 +920,8 @@ fn create_test_position(
         last_updated: Utc::now(),
         is_alternative: false,
         contract_multiplier: Decimal::ONE,
+        cost_basis_account: None,
+        cost_basis_base: None,
     }
 }
 

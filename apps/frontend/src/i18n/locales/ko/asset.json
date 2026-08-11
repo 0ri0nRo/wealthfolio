@@ -157,7 +157,7 @@
   },
   "profile": {
     "overview": "개요",
-    "quotes": "시세",
+    "quotes": "가격 이력",
     "history": "가치 추이",
     "about": "정보",
     "holdings": "보유 종목",
@@ -295,11 +295,11 @@
     "as_of": "기준일:",
     "refreshing_quotes": "시세를 새로고침하는 중...",
     "refresh_quotes": "시세 새로고침",
-    "hide_activity_markers": "활동 마커 숨기기",
-    "show_activity_markers": "활동 마커 표시",
+    "hide_activity_markers": "활동 마커와 평균 매입가 선 숨기기",
+    "show_activity_markers": "활동 마커와 평균 매입가 선 표시",
     "hide": "숨기기",
     "show": "표시",
-    "activity_markers_suffix": "활동 마커"
+    "activity_markers_suffix": "활동 마커와 평균 매입가 선"
   },
   "lots": {
     "lots_by_account": "계좌별 로트",

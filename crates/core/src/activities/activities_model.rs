@@ -15,10 +15,54 @@ use crate::assets::NewAsset;
 use crate::Result;
 use crate::{activities::activities_errors::ActivityError, QuoteMode};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
+use chrono_tz::Tz;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::str::FromStr;
+
+pub(crate) fn validate_activity_date(
+    activity_date: &str,
+) -> std::result::Result<NaiveDate, ActivityError> {
+    let date = DateTime::parse_from_rfc3339(activity_date)
+        .map(|date| date.date_naive())
+        .or_else(|_| NaiveDate::parse_from_str(activity_date, "%Y-%m-%d"))
+        .map_err(|_| {
+            ActivityError::InvalidData(
+                "Invalid date format. Expected ISO 8601/RFC3339 or YYYY-MM-DD".to_string(),
+            )
+        })?;
+    let min_date = crate::portfolio::snapshot::min_supported_snapshot_date();
+    if date < min_date {
+        return Err(ActivityError::InvalidData(format!(
+            "Activity date {} isn't supported. Use a date on or after {}.",
+            date, min_date
+        )));
+    }
+    Ok(date)
+}
+
+pub(crate) fn validate_activity_date_in_timezone(
+    activity_date: &str,
+    timezone: Tz,
+) -> std::result::Result<NaiveDate, ActivityError> {
+    let date = DateTime::parse_from_rfc3339(activity_date)
+        .map(|date| date.with_timezone(&timezone).date_naive())
+        .or_else(|_| NaiveDate::parse_from_str(activity_date, "%Y-%m-%d"))
+        .map_err(|_| {
+            ActivityError::InvalidData(
+                "Invalid date format. Expected ISO 8601/RFC3339 or YYYY-MM-DD".to_string(),
+            )
+        })?;
+    let min_date = crate::portfolio::snapshot::min_supported_snapshot_date();
+    if date < min_date {
+        return Err(ActivityError::InvalidData(format!(
+            "Activity date {} isn't supported. Use a date on or after {}.",
+            date, min_date
+        )));
+    }
+    Ok(date)
+}
 
 /// Discriminator values for `import_account_templates.context_kind`.
 pub mod import_type {
@@ -475,14 +519,7 @@ impl NewActivity {
             ));
         }
 
-        // Validate date format
-        if DateTime::parse_from_rfc3339(&self.activity_date).is_err()
-            && NaiveDate::parse_from_str(&self.activity_date, "%Y-%m-%d").is_err()
-        {
-            return Err(crate::activities::ActivityError::InvalidData(
-                "Invalid date format. Expected ISO 8601/RFC3339 or YYYY-MM-DD".to_string(),
-            ));
-        }
+        validate_activity_date(&self.activity_date)?;
 
         Self::validate_asset_backed_income_values(
             &self.activity_type,
@@ -621,6 +658,7 @@ impl ActivityUpdate {
             )
             .into());
         }
+        validate_activity_date(&self.activity_date)?;
         Ok(())
     }
 
@@ -1794,6 +1832,10 @@ pub struct BulkUpsertResult {
     pub updated: usize,
     /// Number of activities skipped (e.g., user-modified)
     pub skipped: usize,
+    /// Asset ids of pre-existing SPLIT rows that were overwritten, so callers can
+    /// emit asset-level split events even when the incoming row is no longer a SPLIT
+    #[serde(skip)]
+    pub updated_split_asset_ids: Vec<String>,
 }
 
 /// Activity ready for persistence

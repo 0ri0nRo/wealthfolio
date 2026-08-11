@@ -636,10 +636,15 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       break;
     }
     case "delete_snapshot": {
-      const { accountId, date } = payload as { accountId: string; date: string };
+      const { accountId, date, snapshotId } = payload as {
+        accountId: string;
+        date: string;
+        snapshotId?: string;
+      };
       const params = new URLSearchParams();
       params.set("accountId", accountId);
       params.set("date", date);
+      if (snapshotId) params.set("snapshotId", snapshotId);
       url += `?${params.toString()}`;
       break;
     }

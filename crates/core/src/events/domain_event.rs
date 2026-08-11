@@ -1,6 +1,6 @@
 //! Domain event types.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::accounts::TrackingMode;
@@ -24,10 +24,19 @@ pub enum DomainEvent {
         earliest_activity_at_utc: Option<DateTime<Utc>>,
     },
 
+    /// Account-level split activities changed. Since split price adjustments are shared by
+    /// asset, every account valuation may need to be rebuilt.
+    AssetSplitActivitiesChanged {
+        asset_ids: Vec<String>,
+        earliest_activity_at_utc: Option<DateTime<Utc>>,
+    },
+
     /// Holdings snapshots were created or updated.
     HoldingsChanged {
         account_ids: Vec<String>,
         asset_ids: Vec<String>,
+        /// Earliest holdings snapshot date affected by this change.
+        earliest_snapshot_date: NaiveDate,
     },
 
     /// Accounts were created, updated, or deleted.
@@ -68,10 +77,6 @@ pub enum DomainEvent {
         is_connected: bool,
     },
 
-    /// Manual snapshot was saved (manual entry, CSV import, broker import).
-    /// Triggers portfolio recalculation for the affected account.
-    ManualSnapshotSaved { account_id: String },
-
     /// Device sync pulled changes from another device.
     /// Triggers full portfolio recalculation for all accounts.
     DeviceSyncPullComplete,
@@ -101,11 +106,26 @@ impl DomainEvent {
         }
     }
 
+    pub fn asset_split_activities_changed(
+        asset_ids: Vec<String>,
+        earliest_activity_at_utc: Option<DateTime<Utc>>,
+    ) -> Self {
+        Self::AssetSplitActivitiesChanged {
+            asset_ids,
+            earliest_activity_at_utc,
+        }
+    }
+
     /// Creates a HoldingsChanged event.
-    pub fn holdings_changed(account_ids: Vec<String>, asset_ids: Vec<String>) -> Self {
+    pub fn holdings_changed(
+        account_ids: Vec<String>,
+        asset_ids: Vec<String>,
+        earliest_snapshot_date: NaiveDate,
+    ) -> Self {
         Self::HoldingsChanged {
             account_ids,
             asset_ids,
+            earliest_snapshot_date,
         }
     }
 
@@ -163,11 +183,6 @@ impl DomainEvent {
             new_mode,
             is_connected,
         }
-    }
-
-    /// Creates a ManualSnapshotSaved event.
-    pub fn manual_snapshot_saved(account_id: String) -> Self {
-        Self::ManualSnapshotSaved { account_id }
     }
 
     /// Creates a DeviceSyncPullComplete event.

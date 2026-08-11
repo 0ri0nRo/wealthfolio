@@ -143,8 +143,8 @@
       "projected_balance_is": "예상 은퇴 자산은",
       "vs_required_capital_of": "이며, 필요 자본",
       "at_age": "({{age}}세 기준) 대비 비교됩니다.",
-      "the_plan_funds": "이 계획으로 충당 가능한 지출은",
-      "per_yr_expenses_to_age": "/년로, {{age}}세까지입니다.",
+      "the_plan_funds": "이 계획은 연간",
+      "per_yr_expenses_to_age": "의 지출을 {{age}}세까지 충당합니다.",
       "youre_short": "부족한 금액은"
     },
     "progress": {

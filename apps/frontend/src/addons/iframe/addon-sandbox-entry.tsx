@@ -1,3 +1,4 @@
+import "./addon-sandbox.css";
 import "@/globals.css";
 
 import * as React from "react";
@@ -8,13 +9,15 @@ import {
   clearAddonStyles,
   createCssModuleSource,
   installAddonCssFiles,
-  installAddonStyle,
   isCssFile,
   type SandboxAddonFile,
 } from "./addon-sandbox-styles";
+import { SandboxAddonAssetRegistry, type SandboxAddonAsset } from "./addon-sandbox-asset-registry";
 import { applyHostTheme, type AddonThemeSnapshot } from "./addon-sandbox-theme";
+import { rewriteModuleSpecifiers } from "./addon-module-rewriter";
 
 const CHANNEL = "wealthfolio:addon-sandbox:v1";
+const RUNTIME_PROTOCOL_VERSION = 1;
 
 interface PendingCall {
   resolve: (value: unknown) => void;
@@ -50,6 +53,7 @@ interface SandboxMessage {
   requestId?: string;
   code?: string;
   files?: SandboxAddonFile[];
+  assets?: SandboxAddonAsset[];
   routeId?: string;
   location?: RouteLocation;
   ok?: boolean;
@@ -61,11 +65,11 @@ interface SandboxMessage {
 }
 
 type RouteRenderer = (context: RouteRenderContext) => Promise<void> | void;
-type ModuleSpecifierResolver = (importerPath: string, specifier: string) => string;
 
-const init = new URLSearchParams(window.location.hash.slice(1));
+const init = new URLSearchParams(window.name);
 const ADDON_ID = init.get("addonId") ?? "";
 const NONCE = init.get("nonce") ?? "";
+const HOST_BASE_URL = init.get("hostBaseUrl") ?? "";
 const rootElement = document.getElementById("addon-root");
 const routes = new Map<string, RouteRenderer>();
 const pending = new Map<string, PendingCall>();
@@ -75,9 +79,10 @@ let addonDisable: (() => Promise<void> | void) | undefined;
 let addonCodeUrl: string | undefined;
 let addonQueryClient: QueryClient | undefined;
 let addonModuleUrls = new Map<string, string>();
+let addonAssetRegistry: SandboxAddonAssetRegistry;
 let reactRouteRoot: ReactDOMClient.Root | undefined;
 
-if (!ADDON_ID || !NONCE || !rootElement) {
+if (!ADDON_ID || !NONCE || !HOST_BASE_URL || !rootElement) {
   throw new Error("Invalid addon sandbox bootstrap parameters");
 }
 
@@ -94,6 +99,18 @@ function callHost(type: string, payload: Record<string, unknown> = {}) {
     post(type, { requestId, ...payload });
   });
 }
+
+globalThis.__wealthfolioRequestTickerLogo = (symbol: string) =>
+  callHost("hostAssetRequest", { kind: "tickerLogo", symbol }) as Promise<Blob | null>;
+
+function createAddonAssetRegistry(assets: SandboxAddonAsset[] = []) {
+  return new SandboxAddonAssetRegistry(
+    assets,
+    (assetId) => callHost("addonAssetRequest", { assetId }) as Promise<Blob>,
+  );
+}
+
+addonAssetRegistry = createAddonAssetRegistry();
 
 function formatError(error: unknown) {
   return error instanceof Error ? error.message : String(error);
@@ -230,9 +247,7 @@ function createAddonModuleRegistry(code: string, files: SandboxAddonFile[] = [])
       let cssModuleUrl = objectUrls.get(cssUrlKey);
       if (!cssModuleUrl) {
         cssModuleUrl = URL.createObjectURL(
-          new Blob([createCssModuleSource(cssEntry.path, cssEntry.source)], {
-            type: "text/javascript",
-          }),
+          new Blob([createCssModuleSource(cssEntry.source)], { type: "text/javascript" }),
         );
         objectUrls.set(cssUrlKey, cssModuleUrl);
       }
@@ -249,7 +264,14 @@ function createAddonModuleRegistry(code: string, files: SandboxAddonFile[] = [])
     if (!moduleUrl) {
       moduleUrl = URL.createObjectURL(
         new Blob(
-          [rewriteModuleSpecifiers(moduleEntry.path, moduleEntry.source, resolveModuleSpecifier)],
+          [
+            rewriteModuleSpecifiers(
+              moduleEntry.path,
+              moduleEntry.source,
+              resolveModuleSpecifier,
+              (specifier) => isHostDependencySpecifier(specifier) || specifier.startsWith("."),
+            ),
+          ],
           {
             type: "text/javascript",
           },
@@ -266,7 +288,6 @@ function createAddonModuleRegistry(code: string, files: SandboxAddonFile[] = [])
 
   Object.assign(globalThis, {
     __wealthfolioImport: importModule,
-    __wealthfolioInstallAddonStyle: installAddonStyle,
   });
 
   return {
@@ -274,46 +295,6 @@ function createAddonModuleRegistry(code: string, files: SandboxAddonFile[] = [])
     mainUrl: resolveModuleSpecifier(mainPath, mainPath),
     objectUrls,
   };
-}
-
-function rewriteStaticImportSpecifiers(
-  importerPath: string,
-  code: string,
-  resolveSpecifier: ModuleSpecifierResolver,
-) {
-  const rewrite = (match: string, prefix: string, quote: string, specifier: string) => {
-    if (!isHostDependencySpecifier(specifier) && !specifier.startsWith(".")) {
-      return match;
-    }
-    return `${prefix}${quote}${resolveSpecifier(importerPath, specifier)}${quote}`;
-  };
-
-  const withFromImports = code.replace(
-    /(\b(?:import|export)\s*[^'"]*?\bfrom\s*)(["'])([^"']+)\2/g,
-    (match, prefix: string, quote: string, specifier: string) => {
-      return rewrite(match, prefix, quote, specifier);
-    },
-  );
-
-  return withFromImports.replace(
-    /(\bimport\s*)(["'])([^"']+)\2/g,
-    (match, prefix: string, quote: string, specifier: string) => {
-      return rewrite(match, prefix, quote, specifier);
-    },
-  );
-}
-
-function rewriteModuleSpecifiers(
-  importerPath: string,
-  code: string,
-  resolveSpecifier: ModuleSpecifierResolver,
-) {
-  const withStaticImports = rewriteStaticImportSpecifiers(importerPath, code, resolveSpecifier);
-
-  return withStaticImports.replace(
-    /\bimport\s*\(/g,
-    `globalThis.__wealthfolioImport(${JSON.stringify(importerPath)}, `,
-  );
 }
 
 function findAnchor(target: EventTarget | null) {
@@ -328,9 +309,9 @@ function toInternalRoute(rawHref: string) {
     return null;
   }
 
-  const currentUrl = new URL(window.location.href);
-  const targetUrl = new URL(rawHref, currentUrl);
-  if (targetUrl.origin !== currentUrl.origin) {
+  const hostBaseUrl = new URL(HOST_BASE_URL);
+  const targetUrl = new URL(rawHref, hostBaseUrl);
+  if (targetUrl.origin !== hostBaseUrl.origin) {
     return null;
   }
 
@@ -576,6 +557,12 @@ function createContext() {
         });
       },
     },
+    assets: {
+      list: () => addonAssetRegistry.list(),
+      has: (path: string) => addonAssetRegistry.has(path),
+      getBlob: (path: string) => addonAssetRegistry.getBlob(path),
+      getUrl: (path: string) => addonAssetRegistry.getUrl(path),
+    },
     onDisable(callback: unknown) {
       if (typeof callback === "function") {
         disableCallbacks.add(callback as () => Promise<void> | void);
@@ -606,9 +593,15 @@ function resolveEnable(mod: Record<string, unknown>) {
   return null;
 }
 
-async function loadAddon(code: string, files: SandboxAddonFile[] = []) {
+async function loadAddon(
+  code: string,
+  files: SandboxAddonFile[] = [],
+  assets: SandboxAddonAsset[] = [],
+) {
+  addonAssetRegistry.clear();
+  addonAssetRegistry = createAddonAssetRegistry(assets);
   reportLoadPhase("installing addon styles");
-  installAddonCssFiles(files);
+  await installAddonCssFiles(files, (path) => addonAssetRegistry.getUrl(path));
   reportLoadPhase("creating addon module registry");
   const moduleRegistry = createAddonModuleRegistry(code, files);
   addonModuleUrls = moduleRegistry.objectUrls;
@@ -674,6 +667,7 @@ async function disableAddon() {
     }
   }
   addonModuleUrls.clear();
+  addonAssetRegistry.clear();
   clearAddonStyles();
   root.replaceChildren();
 }
@@ -688,7 +682,12 @@ window.addEventListener("unhandledrejection", (event) => {
 
 window.addEventListener("message", (event: MessageEvent<SandboxMessage>) => {
   const message = event.data;
-  if (message?.channel !== CHANNEL || message.addonId !== ADDON_ID || message.nonce !== NONCE) {
+  if (
+    event.source !== parent ||
+    message?.channel !== CHANNEL ||
+    message.addonId !== ADDON_ID ||
+    message.nonce !== NONCE
+  ) {
     return;
   }
 
@@ -732,7 +731,7 @@ window.addEventListener("message", (event: MessageEvent<SandboxMessage>) => {
         }
       } else if (message.type === "loadAddon" && typeof message.code === "string") {
         applyHostTheme(message.theme);
-        await loadAddon(message.code, message.files);
+        await loadAddon(message.code, message.files, message.assets);
         post("loaded");
       } else if (message.type === "renderRoute" && message.routeId && message.location) {
         await renderRoute(message.routeId, message.location);
@@ -754,4 +753,4 @@ window.addEventListener("message", (event: MessageEvent<SandboxMessage>) => {
   })();
 });
 
-post("ready");
+post("ready", { runtimeProtocolVersion: RUNTIME_PROTOCOL_VERSION });

@@ -1,5 +1,9 @@
 # Migration Guide: Wealthfolio Addons v3.5 to v3.6
 
+> Migrating beyond v3.6? Continue with the
+> [v3.6 to v3.7 guide](./addon-migration-guide-v3.6-to-v3.7.md) for packaged
+> assets and development-server compatibility.
+
 Wealthfolio 3.6 runs every addon inside an **isolated sandbox iframe**
 (`sandbox="allow-scripts"`, opaque origin) instead of in the main app runtime.
 The iframe boundary cannot pass live functions or React elements across it, so
@@ -282,6 +286,7 @@ const hostProvidedDependencies = [
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
+    target: ["chrome107", "edge107", "firefox104", "safari16"],
     lib: {
       entry: "src/addon.tsx",
       fileName: () => "addon.js",
@@ -353,6 +358,11 @@ const res = await ctx.api.network.request({
 
 Store the token once with `ctx.api.secrets.set('example-api-key', token)`; the
 broker reads it by `secretKey` so the raw token never enters addon code paths.
+
+`auth.type` accepts `"bearer"` (injects `Authorization: Bearer <secret>`) or
+`"basic"` (injects `Authorization: Basic <secret>`). For `"basic"`, store the
+already base64-encoded `user:pass` string as the secret — the broker only
+prefixes the scheme.
 
 ---
 

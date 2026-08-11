@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 use log::{debug, info, warn};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use super::mapping;
 use super::models::{
@@ -40,7 +40,7 @@ use wealthfolio_core::portfolio::snapshot::{
 use wealthfolio_core::quotes::constants::DATA_SOURCE_BROKER;
 use wealthfolio_core::quotes::model::Quote;
 use wealthfolio_core::quotes::store::QuoteStore;
-use wealthfolio_core::utils::time_utils::valuation_date_today;
+use wealthfolio_core::utils::time_utils::{parse_user_timezone_or_default, user_today};
 
 const DEFAULT_BROKERAGE_PROVIDER: &str = "snaptrade";
 /// Precision used for holdings normalization/diff comparisons.
@@ -78,6 +78,7 @@ pub struct BrokerSyncService {
     snapshot_service: Option<Arc<dyn SnapshotServiceTrait>>,
     quote_store: Option<Arc<dyn QuoteStore>>,
     event_sink: Arc<dyn DomainEventSink>,
+    timezone: Arc<RwLock<String>>,
 }
 
 impl BrokerSyncService {
@@ -104,6 +105,7 @@ impl BrokerSyncService {
             snapshot_service: None,
             quote_store: None,
             event_sink: Arc::new(NoOpDomainEventSink),
+            timezone: Arc::new(RwLock::new(String::new())),
         }
     }
 
@@ -126,6 +128,17 @@ impl BrokerSyncService {
     pub fn with_event_sink(mut self, event_sink: Arc<dyn DomainEventSink>) -> Self {
         self.event_sink = event_sink;
         self
+    }
+
+    pub fn with_timezone(mut self, timezone: Arc<RwLock<String>>) -> Self {
+        self.timezone = timezone;
+        self
+    }
+
+    fn user_today(&self) -> NaiveDate {
+        user_today(parse_user_timezone_or_default(
+            &self.timezone.read().unwrap(),
+        ))
     }
 }
 
@@ -307,7 +320,7 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
     }
 
     fn has_broker_imported_holdings_snapshot(&self, account_id: &str) -> Result<bool> {
-        let tomorrow = valuation_date_today() + chrono::Days::new(1);
+        let tomorrow = self.user_today() + chrono::Days::new(1);
         Ok(self
             .snapshot_repository
             .get_latest_snapshot_before_date(account_id, tomorrow)?
@@ -664,7 +677,7 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
         let account = self.account_service.get_account(&account_id)?;
         let account_currency = account.currency.clone();
 
-        let today = valuation_date_today();
+        let today = self.user_today();
         let now = chrono::Utc::now();
 
         // Build cash balances HashMap
@@ -1042,6 +1055,8 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 last_updated: now,
                 is_alternative: false,
                 contract_multiplier,
+                cost_basis_account: None,
+                cost_basis_base: None,
             };
 
             // Brokers (e.g. Fidelity via SnapTrade) can report multiple position rows for the
@@ -1120,6 +1135,7 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
             self.event_sink.emit(DomainEvent::HoldingsChanged {
                 account_ids: vec![account_id.clone()],
                 asset_ids: new_asset_ids.clone(),
+                earliest_snapshot_date: today,
             });
         }
 
@@ -1547,6 +1563,8 @@ mod tests {
             last_updated: now,
             is_alternative: false,
             contract_multiplier: Decimal::ONE,
+            cost_basis_account: None,
+            cost_basis_base: None,
         }
     }
 

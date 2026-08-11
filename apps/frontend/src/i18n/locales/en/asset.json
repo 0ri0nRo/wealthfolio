@@ -157,7 +157,7 @@
   },
   "profile": {
     "overview": "Overview",
-    "quotes": "Quotes",
+    "quotes": "Price History",
     "history": "Values",
     "about": "About",
     "holdings": "Holdings",
@@ -295,11 +295,11 @@
     "as_of": "As of:",
     "refreshing_quotes": "Refreshing quotes...",
     "refresh_quotes": "Refresh Quotes",
-    "hide_activity_markers": "Hide activity markers",
-    "show_activity_markers": "Show activity markers",
+    "hide_activity_markers": "Hide activity markers and average cost line",
+    "show_activity_markers": "Show activity markers and average cost line",
     "hide": "Hide",
     "show": "Show",
-    "activity_markers_suffix": "activity markers"
+    "activity_markers_suffix": "activity markers and average cost line"
   },
   "lots": {
     "lots_by_account": "Lots by account",
