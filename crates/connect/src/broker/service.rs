@@ -7,8 +7,8 @@ use std::sync::{Arc, RwLock};
 use super::mapping;
 use super::models::{
     AccountUniversalActivity, BrokerAccount, BrokerConnection, HoldingsBalance, HoldingsDiff,
-    HoldingsOptionPosition, HoldingsPosition, NewAccountInfo, SyncAccountsResponse,
-    SyncConnectionsResponse,
+    HoldingsOptionPosition, HoldingsOptionSymbol, HoldingsPosition, NewAccountInfo,
+    SyncAccountsResponse, SyncConnectionsResponse,
 };
 use super::traits::{BrokerSyncServiceTrait, PlatformRepositoryTrait};
 use crate::broker_ingest::{
@@ -28,8 +28,8 @@ use wealthfolio_core::activities::{
     NewActivity, ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_SELL,
 };
 use wealthfolio_core::assets::{
-    build_option_metadata, parse_crypto_pair_symbol, parse_symbol_with_exchange_suffix,
-    AssetServiceTrait, AssetSpec, InstrumentType,
+    build_option_metadata, parse_crypto_pair_symbol, parse_symbol_with_exchange_suffix, Asset,
+    AssetServiceTrait, AssetSpec, InstrumentType, OptionSpec, CONTRACT_MULTIPLIER_METADATA_KEY,
 };
 use wealthfolio_core::errors::Result;
 use wealthfolio_core::events::{DomainEvent, DomainEventSink, NoOpDomainEventSink};
@@ -55,6 +55,162 @@ fn normalize_holdings_money(amount: Decimal, currency: &str) -> (Decimal, String
     )
 }
 
+fn exact_positive_contract_multiplier(value: Option<f64>) -> Option<Decimal> {
+    value
+        .and_then(Decimal::from_f64)
+        .filter(|multiplier| *multiplier > Decimal::ZERO)
+}
+
+fn positive_contract_multiplier(value: Option<f64>, fallback: Decimal) -> Decimal {
+    exact_positive_contract_multiplier(value).unwrap_or(fallback)
+}
+
+fn normalize_regular_average_cost(
+    amount: Decimal,
+    currency: &str,
+    contract_multiplier: Decimal,
+) -> Decimal {
+    let normalized = normalize_holdings_money(amount, currency).0;
+    (normalized * contract_multiplier).round_dp(HOLDINGS_DECIMAL_PRECISION)
+}
+
+fn option_contract_multiplier(option: &HoldingsOptionSymbol) -> Decimal {
+    let legacy_fallback = if option.is_mini_option.unwrap_or(false) {
+        Decimal::from(10)
+    } else {
+        Decimal::from(100)
+    };
+    positive_contract_multiplier(option.multiplier, legacy_fallback)
+}
+
+fn structured_holdings_option_metadata(
+    option: &HoldingsOptionSymbol,
+    multiplier: Decimal,
+) -> Option<serde_json::Value> {
+    // Non-OCC brokerage identifiers are still valid holdings. Build the option metadata from the
+    // structured contract fields so the position remains correctly valued and visible for review.
+    let underlying = option.underlying_symbol.as_ref()?.symbol.as_deref()?.trim();
+    if underlying.is_empty() {
+        return None;
+    }
+    let expiration =
+        NaiveDate::parse_from_str(option.expiration_date.as_deref()?, "%Y-%m-%d").ok()?;
+    let right = match option.option_type.as_deref()?.to_ascii_uppercase().as_str() {
+        "CALL" => "CALL",
+        "PUT" => "PUT",
+        _ => return None,
+    };
+    let strike = option
+        .strike_price
+        .and_then(Decimal::from_f64)
+        .filter(|value| *value > Decimal::ZERO)?;
+
+    Some(serde_json::json!({
+        "option": OptionSpec {
+            underlying_asset_id: underlying.to_uppercase(),
+            expiration,
+            right: right.to_string(),
+            strike,
+            multiplier,
+            occ_symbol: None,
+        }
+    }))
+}
+
+fn holdings_option_metadata(
+    option: &HoldingsOptionSymbol,
+    ticker: &str,
+    multiplier: Decimal,
+) -> serde_json::Value {
+    build_option_metadata(ticker, multiplier)
+        .or_else(|| structured_holdings_option_metadata(option, multiplier))
+        .unwrap_or_else(|| top_level_contract_multiplier_metadata(multiplier))
+}
+
+fn top_level_contract_multiplier_metadata(multiplier: Decimal) -> serde_json::Value {
+    let mut metadata = serde_json::Map::new();
+    metadata.insert(
+        CONTRACT_MULTIPLIER_METADATA_KEY.to_string(),
+        serde_json::json!(multiplier),
+    );
+    serde_json::Value::Object(metadata)
+}
+
+fn regular_contract_multiplier_metadata(multiplier: Option<Decimal>) -> Option<serde_json::Value> {
+    multiplier
+        .filter(|multiplier| *multiplier != Decimal::ONE)
+        .map(top_level_contract_multiplier_metadata)
+}
+
+fn record_authoritative_multiplier(
+    multipliers: &mut HashMap<String, Decimal>,
+    spec_key: &str,
+    multiplier: Option<Decimal>,
+) -> bool {
+    let Some(multiplier) = multiplier else {
+        return false;
+    };
+    match multipliers.entry(spec_key.to_string()) {
+        Entry::Vacant(entry) => {
+            entry.insert(multiplier);
+            true
+        }
+        Entry::Occupied(entry) => {
+            if *entry.get() != multiplier {
+                warn!(
+                    "Broker returned inconsistent contract multipliers for {}; retaining the first",
+                    spec_key
+                );
+            }
+            false
+        }
+    }
+}
+
+fn contract_multiplier_metadata_update(
+    asset: &Asset,
+    incoming: Option<&serde_json::Value>,
+    multiplier: Decimal,
+) -> Option<serde_json::Value> {
+    if asset.contract_multiplier() == multiplier {
+        return None;
+    }
+
+    let mut metadata = asset
+        .metadata
+        .as_ref()
+        .and_then(serde_json::Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(incoming) = incoming.and_then(serde_json::Value::as_object) {
+        metadata.extend(incoming.clone());
+    }
+
+    if asset.is_option() {
+        if let Some(option) = metadata
+            .get_mut("option")
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            option.insert("multiplier".to_string(), serde_json::json!(multiplier));
+            metadata.remove(CONTRACT_MULTIPLIER_METADATA_KEY);
+        } else {
+            metadata.insert(
+                CONTRACT_MULTIPLIER_METADATA_KEY.to_string(),
+                serde_json::json!(multiplier),
+            );
+        }
+    } else if multiplier == Decimal::ONE {
+        metadata.remove(CONTRACT_MULTIPLIER_METADATA_KEY);
+    } else {
+        metadata.insert(
+            CONTRACT_MULTIPLIER_METADATA_KEY.to_string(),
+            serde_json::json!(multiplier),
+        );
+    }
+
+    Some(serde_json::Value::Object(metadata))
+}
+
 #[derive(Debug, Clone)]
 struct HoldingsPositionData {
     spec_key: String,
@@ -63,6 +219,8 @@ struct HoldingsPositionData {
     quote_currency: String,
     average_cost: Option<Decimal>,
     position_currency: String,
+    contract_multiplier: Decimal,
+    rescale_average_cost_with_multiplier: bool,
 }
 
 /// Service for syncing broker data to the local database
@@ -694,8 +852,9 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
 
         // 1. Build AssetSpecs and position data from broker positions
         let mut asset_specs: Vec<AssetSpec> = Vec::new();
-        // Keyed by (symbol, currency) → index into asset_specs
+        // Canonical instrument key → index into asset_specs
         let mut spec_key_to_idx: HashMap<String, usize> = HashMap::new();
+        let mut authoritative_multipliers: HashMap<String, Decimal> = HashMap::new();
         let mut position_data: Vec<HoldingsPositionData> = Vec::new();
 
         for pos in &positions {
@@ -754,11 +913,14 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
 
             let instrument_type =
                 map_broker_symbol_type(symbol_type_code.as_deref(), is_crypto_asset);
+            let exact_multiplier = exact_positive_contract_multiplier(pos.contract_multiplier);
+            let contract_multiplier = exact_multiplier.unwrap_or(Decimal::ONE);
 
             let asset_name = symbol_info.and_then(|s| s.name.clone().or(s.description.clone()));
 
             let spec = AssetSpec {
                 name: asset_name,
+                metadata: regular_contract_multiplier_metadata(exact_multiplier),
                 ..AssetSpec::market_instrument(
                     symbol.clone(),
                     symbol.clone(),
@@ -777,6 +939,16 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 )
             });
 
+            if record_authoritative_multiplier(
+                &mut authoritative_multipliers,
+                &spec_key,
+                exact_multiplier,
+            ) {
+                if let Some(existing_idx) = spec_key_to_idx.get(&spec_key) {
+                    asset_specs[*existing_idx].metadata = spec.metadata.clone();
+                }
+            }
+
             if !spec_key_to_idx.contains_key(&spec_key) {
                 let idx = asset_specs.len();
                 asset_specs.push(spec);
@@ -788,10 +960,14 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 .round_dp(HOLDINGS_DECIMAL_PRECISION);
             let raw_price = Decimal::from_f64(pos.price.unwrap_or(0.0)).unwrap_or(Decimal::ZERO);
             let quote_price = raw_price.round_dp(HOLDINGS_DECIMAL_PRECISION);
+            // SnapTrade reports regular-position average cost per underlying unit. Store it per
+            // broker position unit so quantity * average_cost remains the complete cost basis.
             let avg_cost = pos
                 .average_purchase_price
                 .and_then(Decimal::from_f64)
-                .map(|value| normalize_holdings_money(value, &raw_quote_currency).0);
+                .map(|value| {
+                    normalize_regular_average_cost(value, &raw_quote_currency, contract_multiplier)
+                });
 
             position_data.push(HoldingsPositionData {
                 spec_key,
@@ -800,6 +976,8 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 quote_currency: raw_quote_currency,
                 average_cost: avg_cost,
                 position_currency,
+                contract_multiplier,
+                rescale_average_cost_with_multiplier: true,
             });
         }
 
@@ -843,12 +1021,9 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 .unwrap_or_else(|| account_currency.clone());
             let position_currency = normalize_currency_code(&raw_quote_currency).to_string();
 
-            let multiplier = if option_symbol.is_mini_option.unwrap_or(false) {
-                Decimal::from(10)
-            } else {
-                Decimal::from(100)
-            };
-            let metadata = build_option_metadata(&normalized_ticker, multiplier);
+            let exact_multiplier = exact_positive_contract_multiplier(option_symbol.multiplier);
+            let multiplier = option_contract_multiplier(option_symbol);
+            let metadata = holdings_option_metadata(option_symbol, &normalized_ticker, multiplier);
 
             let asset_name = option_symbol
                 .underlying_symbol
@@ -857,7 +1032,7 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
 
             let spec = AssetSpec {
                 name: asset_name,
-                metadata,
+                metadata: Some(metadata),
                 ..AssetSpec::market_instrument(
                     normalized_ticker.clone(),
                     normalized_ticker.clone(),
@@ -871,6 +1046,16 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 .instrument_key()
                 .unwrap_or_else(|| format!("OPTION:{}", normalized_ticker.to_uppercase()));
 
+            if record_authoritative_multiplier(
+                &mut authoritative_multipliers,
+                &spec_key,
+                exact_multiplier,
+            ) {
+                if let Some(existing_idx) = spec_key_to_idx.get(&spec_key) {
+                    asset_specs[*existing_idx].metadata = spec.metadata.clone();
+                }
+            }
+
             if !spec_key_to_idx.contains_key(&spec_key) {
                 let idx = asset_specs.len();
                 asset_specs.push(spec);
@@ -883,6 +1068,8 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
             let raw_price =
                 Decimal::from_f64(opt_pos.price.unwrap_or(0.0)).unwrap_or(Decimal::ZERO);
             let quote_price = raw_price.round_dp(HOLDINGS_DECIMAL_PRECISION);
+            // The holdings aggregation API already reports option average cost per contract.
+            // Unlike regular contracts, applying the multiplier again would double-scale it.
             let avg_cost = opt_pos
                 .average_purchase_price
                 .and_then(Decimal::from_f64)
@@ -895,6 +1082,8 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 quote_currency: raw_quote_currency,
                 average_cost: avg_cost,
                 position_currency,
+                contract_multiplier: multiplier,
+                rescale_average_cost_with_multiplier: false,
             });
         }
 
@@ -936,6 +1125,38 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 if let Some(asset_id) = key_to_asset_id.get(id) {
                     spec_key_to_asset_id.insert(spec_key.clone(), asset_id.clone());
                 }
+            }
+        }
+
+        // Broker multipliers are asset economics shared by every account. New assets already carry
+        // this metadata through AssetSpec; existing assets are updated only when the resolved value
+        // changes. A failed backfill is best-effort and will be retried by the next holdings sync.
+        for (spec_key, multiplier) in &authoritative_multipliers {
+            let Some(asset_id) = spec_key_to_asset_id.get(spec_key) else {
+                continue;
+            };
+            let Some(asset) = ensure_result.assets.get(asset_id) else {
+                continue;
+            };
+            let incoming_metadata = spec_key_to_idx
+                .get(spec_key)
+                .and_then(|idx| asset_specs.get(*idx))
+                .and_then(|spec| spec.metadata.as_ref());
+            let Some(metadata) =
+                contract_multiplier_metadata_update(asset, incoming_metadata, *multiplier)
+            else {
+                continue;
+            };
+
+            if let Err(error) = self
+                .asset_service
+                .update_asset_metadata(asset_id, metadata)
+                .await
+            {
+                warn!(
+                    "Could not persist broker contract multiplier for asset {}: {}",
+                    asset_id, error
+                );
             }
         }
 
@@ -1016,13 +1237,6 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 }
             };
 
-            // Determine contract multiplier from the asset spec metadata
-            let contract_multiplier = spec_key_to_idx
-                .get(&position.spec_key)
-                .and_then(|idx| asset_specs.get(*idx))
-                .and_then(|spec| spec.option_multiplier())
-                .unwrap_or(Decimal::ONE);
-
             // Resolve cost against the combined quantity (all split rows for this asset) so the
             // prior-cost fallback works even when the broker splits the holding into rows.
             let combined_quantity = combined_quantities
@@ -1036,6 +1250,8 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                     .and_then(|snapshot| snapshot.positions.get(&asset_id)),
                 combined_quantity,
                 &position.position_currency,
+                position.contract_multiplier,
+                position.rescale_average_cost_with_multiplier,
             );
             let position_cost_basis =
                 (position.quantity * avg_cost).round_dp(HOLDINGS_DECIMAL_PRECISION);
@@ -1054,7 +1270,7 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 created_at: now,
                 last_updated: now,
                 is_alternative: false,
-                contract_multiplier,
+                contract_multiplier: position.contract_multiplier,
                 cost_basis_account: None,
                 cost_basis_base: None,
             };
@@ -1191,6 +1407,8 @@ impl BrokerSyncService {
         latest_position: Option<&Position>,
         quantity: Decimal,
         currency: &str,
+        contract_multiplier: Decimal,
+        rescale_with_multiplier: bool,
     ) -> Decimal {
         if let Some(avg_cost) = broker_average_cost {
             return avg_cost.round_dp(HOLDINGS_DECIMAL_PRECISION);
@@ -1200,7 +1418,17 @@ impl BrokerSyncService {
             let same_quantity = previous.quantity.round_dp(HOLDINGS_DECIMAL_PRECISION)
                 == quantity.round_dp(HOLDINGS_DECIMAL_PRECISION);
             if same_quantity && previous.currency == currency {
-                return previous.average_cost.round_dp(HOLDINGS_DECIMAL_PRECISION);
+                let previous_average_cost = previous.average_cost;
+                if rescale_with_multiplier {
+                    let previous_multiplier = if previous.contract_multiplier > Decimal::ZERO {
+                        previous.contract_multiplier
+                    } else {
+                        Decimal::ONE
+                    };
+                    return (previous_average_cost * contract_multiplier / previous_multiplier)
+                        .round_dp(HOLDINGS_DECIMAL_PRECISION);
+                }
+                return previous_average_cost.round_dp(HOLDINGS_DECIMAL_PRECISION);
             }
         }
 
@@ -1214,6 +1442,18 @@ impl BrokerSyncService {
     /// cost basis are summed and the average cost is recomputed as a quantity-weighted average so
     /// the merged holding reflects the full position rather than a single lot.
     fn merge_broker_position(existing: &mut Position, incoming: Position) {
+        if existing
+            .contract_multiplier
+            .round_dp(HOLDINGS_DECIMAL_PRECISION)
+            != incoming
+                .contract_multiplier
+                .round_dp(HOLDINGS_DECIMAL_PRECISION)
+        {
+            warn!(
+                "Broker returned inconsistent contract multipliers for asset {}; retaining the first",
+                existing.asset_id
+            );
+        }
         let combined_quantity =
             (existing.quantity + incoming.quantity).round_dp(HOLDINGS_DECIMAL_PRECISION);
         let combined_cost_basis = (existing.total_cost_basis + incoming.total_cost_basis)
@@ -1275,6 +1515,8 @@ impl BrokerSyncService {
             && a.total_cost_basis.round_dp(HOLDINGS_DECIMAL_PRECISION)
                 == b.total_cost_basis.round_dp(HOLDINGS_DECIMAL_PRECISION)
             && a.currency == b.currency
+            && a.contract_multiplier.round_dp(HOLDINGS_DECIMAL_PRECISION)
+                == b.contract_multiplier.round_dp(HOLDINGS_DECIMAL_PRECISION)
     }
 
     fn normalize_holdings_symbol(
@@ -1482,10 +1724,18 @@ mod tests {
     use wealthfolio_core::portfolio::snapshot::{AccountStateSnapshot, Position, SnapshotSource};
 
     use super::{
-        default_tracking_mode_for_broker_account_type, normalize_holdings_money, BrokerSyncService,
+        contract_multiplier_metadata_update, default_tracking_mode_for_broker_account_type,
+        holdings_option_metadata, normalize_holdings_money, normalize_regular_average_cost,
+        option_contract_multiplier, positive_contract_multiplier,
+        regular_contract_multiplier_metadata, BrokerSyncService,
+    };
+    use crate::broker::models::{
+        HoldingsOptionPosition, HoldingsOptionSymbol, HoldingsPosition, HoldingsUnderlyingSymbol,
     };
     use wealthfolio_core::accounts::{account_types, TrackingMode};
-    use wealthfolio_core::assets::{AssetSpec, InstrumentType};
+    use wealthfolio_core::assets::{
+        Asset, AssetSpec, InstrumentType, OptionSpec, CONTRACT_MULTIPLIER_METADATA_KEY,
+    };
 
     fn decimal(value: &str) -> Decimal {
         Decimal::from_str(value).expect("valid decimal")
@@ -1532,12 +1782,182 @@ mod tests {
             quote_currency: raw_quote_currency,
             average_cost: Some(normalize_holdings_money(decimal("82.5"), "GBp").0),
             position_currency,
+            contract_multiplier: Decimal::ONE,
+            rescale_average_cost_with_multiplier: true,
         };
 
         assert_eq!(position.quote_price, decimal("85"));
         assert_eq!(position.quote_currency, "GBp");
         assert_eq!(position.average_cost, Some(decimal("0.825")));
         assert_eq!(position.position_currency, "GBP");
+    }
+
+    #[test]
+    fn regular_contract_average_cost_is_stored_per_position_unit() {
+        assert_eq!(
+            normalize_regular_average_cost(decimal("12.5"), "USD", decimal("50")),
+            decimal("625")
+        );
+        assert_eq!(
+            normalize_regular_average_cost(decimal("82.5"), "GBp", decimal("10")),
+            decimal("8.25")
+        );
+    }
+
+    #[test]
+    fn regular_asset_metadata_stores_only_non_default_multiplier() {
+        assert!(regular_contract_multiplier_metadata(None).is_none());
+        assert!(regular_contract_multiplier_metadata(Some(Decimal::ONE)).is_none());
+
+        let metadata = regular_contract_multiplier_metadata(Some(decimal("50")))
+            .expect("non-default multiplier metadata");
+        let asset = Asset {
+            instrument_type: Some(InstrumentType::Equity),
+            metadata: Some(metadata),
+            ..Default::default()
+        };
+
+        assert_eq!(asset.contract_multiplier(), decimal("50"));
+    }
+
+    #[test]
+    fn asset_multiplier_update_compares_resolved_value() {
+        let asset = Asset {
+            instrument_type: Some(InstrumentType::Equity),
+            metadata: Some(serde_json::json!({
+                "contractMultiplier": "50",
+                "identifiers": { "isin": "US0378331005" }
+            })),
+            ..Default::default()
+        };
+
+        assert!(contract_multiplier_metadata_update(&asset, None, decimal("50")).is_none());
+
+        let updated = contract_multiplier_metadata_update(&asset, None, Decimal::ONE)
+            .expect("changed multiplier");
+        assert!(updated.get(CONTRACT_MULTIPLIER_METADATA_KEY).is_none());
+        assert_eq!(
+            updated["identifiers"],
+            asset.metadata.unwrap()["identifiers"]
+        );
+    }
+
+    #[test]
+    fn fractional_asset_multiplier_is_value_stable() {
+        let asset = Asset {
+            instrument_type: Some(InstrumentType::Equity),
+            metadata: Some(serde_json::json!({ "contractMultiplier": 0.1 })),
+            ..Default::default()
+        };
+
+        assert_eq!(asset.contract_multiplier(), decimal("0.1"));
+        assert!(contract_multiplier_metadata_update(&asset, None, decimal("0.1")).is_none());
+    }
+
+    #[test]
+    fn option_multiplier_update_changes_nested_spec() {
+        let asset = Asset {
+            instrument_type: Some(InstrumentType::Option),
+            metadata: Some(serde_json::json!({
+                "option": {
+                    "underlyingAssetId": "AAPL",
+                    "expiration": "2026-12-18",
+                    "right": "CALL",
+                    "strike": "150",
+                    "multiplier": "100"
+                },
+                "identifiers": { "occ": "AAPL  261218C00150000" }
+            })),
+            ..Default::default()
+        };
+
+        let updated = contract_multiplier_metadata_update(&asset, None, decimal("50"))
+            .expect("changed multiplier");
+        let spec: OptionSpec =
+            serde_json::from_value(updated["option"].clone()).expect("valid option spec");
+
+        assert_eq!(spec.multiplier, decimal("50"));
+        assert_eq!(
+            updated["identifiers"],
+            asset.metadata.unwrap()["identifiers"]
+        );
+        assert!(updated.get(CONTRACT_MULTIPLIER_METADATA_KEY).is_none());
+    }
+
+    #[test]
+    fn holdings_contract_multiplier_prefers_exact_value_with_safe_defaults() {
+        assert_eq!(
+            positive_contract_multiplier(Some(50.0), Decimal::ONE),
+            decimal("50")
+        );
+        assert_eq!(
+            positive_contract_multiplier(Some(0.0), Decimal::ONE),
+            Decimal::ONE
+        );
+
+        let adjusted = HoldingsOptionSymbol {
+            multiplier: Some(50.0),
+            ..Default::default()
+        };
+        let legacy_mini = HoldingsOptionSymbol {
+            is_mini_option: Some(true),
+            ..Default::default()
+        };
+        let standard = HoldingsOptionSymbol::default();
+
+        assert_eq!(option_contract_multiplier(&adjusted), decimal("50"));
+        assert_eq!(option_contract_multiplier(&legacy_mini), decimal("10"));
+        assert_eq!(option_contract_multiplier(&standard), decimal("100"));
+    }
+
+    #[test]
+    fn holdings_contract_deserializes_exact_multipliers() {
+        let position: HoldingsPosition = serde_json::from_value(serde_json::json!({
+            "contract_multiplier": 50
+        }))
+        .expect("regular holding");
+        let option: HoldingsOptionPosition = serde_json::from_value(serde_json::json!({
+            "symbol": {
+                "option_symbol": {
+                    "ticker": "AAPL  261218C00100000",
+                    "multiplier": 25,
+                    "is_mini_option": false
+                }
+            }
+        }))
+        .expect("option holding");
+
+        assert_eq!(position.contract_multiplier, Some(50.0));
+        assert_eq!(
+            option
+                .resolved_option_symbol()
+                .and_then(|value| value.multiplier),
+            Some(25.0)
+        );
+    }
+
+    #[test]
+    fn non_occ_option_uses_structured_metadata_and_exact_multiplier() {
+        let option = HoldingsOptionSymbol {
+            ticker: Some("BROKER-ADJUSTED-OPTION".to_string()),
+            option_type: Some("CALL".to_string()),
+            strike_price: Some(100.0),
+            expiration_date: Some("2026-12-18".to_string()),
+            multiplier: Some(50.0),
+            underlying_symbol: Some(HoldingsUnderlyingSymbol {
+                symbol: Some("AAPL".to_string()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let metadata = holdings_option_metadata(&option, "BROKER-ADJUSTED-OPTION", decimal("50"));
+        let spec: OptionSpec =
+            serde_json::from_value(metadata["option"].clone()).expect("valid option spec");
+
+        assert_eq!(spec.underlying_asset_id, "AAPL");
+        assert_eq!(spec.multiplier, decimal("50"));
+        assert_eq!(spec.occ_symbol, None);
     }
 
     fn position(
@@ -1766,6 +2186,8 @@ mod tests {
             Some(&latest),
             decimal("10"),
             "USD",
+            decimal("50"),
+            true,
         );
 
         assert_eq!(resolved, decimal("125.50"));
@@ -1780,6 +2202,8 @@ mod tests {
             Some(&latest),
             decimal("10.0000000000004"),
             "USD",
+            Decimal::ONE,
+            true,
         );
 
         assert_eq!(resolved, decimal("100.25"));
@@ -1794,19 +2218,62 @@ mod tests {
             Some(&latest),
             decimal("11"),
             "USD",
+            Decimal::ONE,
+            true,
         );
         let currency_changed = BrokerSyncService::resolve_position_average_cost(
             None,
             Some(&latest),
             decimal("10"),
             "CAD",
+            Decimal::ONE,
+            true,
         );
-        let missing =
-            BrokerSyncService::resolve_position_average_cost(None, None, decimal("10"), "USD");
+        let missing = BrokerSyncService::resolve_position_average_cost(
+            None,
+            None,
+            decimal("10"),
+            "USD",
+            Decimal::ONE,
+            true,
+        );
 
         assert_eq!(quantity_changed, Decimal::ZERO);
         assert_eq!(currency_changed, Decimal::ZERO);
         assert_eq!(missing, Decimal::ZERO);
+    }
+
+    #[test]
+    fn resolve_position_average_cost_rescales_regular_cost_when_multiplier_changes() {
+        let latest = position("acc-1", "future", "2", "12.5", "25", "USD");
+
+        let resolved = BrokerSyncService::resolve_position_average_cost(
+            None,
+            Some(&latest),
+            decimal("2"),
+            "USD",
+            decimal("50"),
+            true,
+        );
+
+        assert_eq!(resolved, decimal("625"));
+    }
+
+    #[test]
+    fn resolve_position_average_cost_does_not_rescale_option_contract_cost() {
+        let mut latest = position("acc-1", "option", "2", "5000", "10000", "USD");
+        latest.contract_multiplier = decimal("100");
+
+        let resolved = BrokerSyncService::resolve_position_average_cost(
+            None,
+            Some(&latest),
+            decimal("2"),
+            "USD",
+            decimal("50"),
+            false,
+        );
+
+        assert_eq!(resolved, decimal("5000"));
     }
 
     #[test]
@@ -1902,6 +2369,8 @@ mod tests {
             quote_currency: "USD".to_string(),
             average_cost: None,
             position_currency: "USD".to_string(),
+            contract_multiplier: Decimal::ONE,
+            rescale_average_cost_with_multiplier: true,
         };
         let position_data = vec![
             row("EQUITY:VTI", "32.005"),
@@ -1931,12 +2400,16 @@ mod tests {
             Some(&latest),
             decimal("50.428"),
             "USD",
+            Decimal::ONE,
+            true,
         );
         let single_row = BrokerSyncService::resolve_position_average_cost(
             None,
             Some(&latest),
             decimal("32.005"),
             "USD",
+            Decimal::ONE,
+            true,
         );
 
         assert_eq!(combined, decimal("300"));
