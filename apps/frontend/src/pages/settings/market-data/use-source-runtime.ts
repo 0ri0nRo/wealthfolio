@@ -129,15 +129,17 @@ export function useSourceRuntime({
   }, []);
 
   const urlTemplate = form.watch(`${prefix}.url`) ?? "";
+  const bodyTemplate = form.watch(`${prefix}.body`) ?? "";
+  const method = form.watch(`${prefix}.method`) ?? "GET";
 
-  const extraPlaceholders = useMemo(
-    () => ({
-      isin: urlTemplate.includes("{ISIN}"),
-      mic: urlTemplate.includes("{MIC}"),
-      currency: urlTemplate.includes("{CURRENCY}") || urlTemplate.includes("{currency}"),
-    }),
-    [urlTemplate],
-  );
+  const extraPlaceholders = useMemo(() => {
+    const templates = `${urlTemplate}\n${method === "POST" ? bodyTemplate : ""}`;
+    return {
+      isin: templates.includes("{ISIN}"),
+      mic: templates.includes("{MIC}"),
+      currency: templates.includes("{CURRENCY}") || templates.includes("{currency}"),
+    };
+  }, [urlTemplate, bodyTemplate, method]);
 
   const expandTestUrl = useCallback(
     (url: string) => {
@@ -179,7 +181,6 @@ export function useSourceRuntime({
     const symbol = inputsState.symbol;
     if (!rawUrl || !symbol) return;
     const format = form.getValues(`${prefix}.format`) ?? "json";
-    const url = expandTestUrl(rawUrl);
     const headers = form.getValues(`${prefix}.headers`);
     const pricePathCurrent = form.getValues(`${prefix}.pricePath`);
     const method = form.getValues(`${prefix}.method`) ?? "GET";
@@ -193,7 +194,7 @@ export function useSourceRuntime({
     testSource(
       {
         format,
-        url,
+        url: rawUrl,
         pricePath: dummyPath,
         symbol,
         currency: normalizedCurrencyInput(inputsState.currency),
@@ -202,6 +203,8 @@ export function useSourceRuntime({
         headers: headers || undefined,
         method,
         body: body || undefined,
+        isin: inputsState.isin || undefined,
+        mic: inputsState.mic || undefined,
       },
       {
         onSuccess: (result) => {
@@ -257,7 +260,7 @@ export function useSourceRuntime({
         },
       },
     );
-  }, [form, prefix, inputsState, expandTestUrl, testSource, isHistorical, onAdvancedOpen]);
+  }, [form, prefix, inputsState, testSource, isHistorical, onAdvancedOpen]);
 
   const scheduleVerify = useCallback(
     (path: string) => {
@@ -274,12 +277,11 @@ export function useSourceRuntime({
         const rawUrl = form.getValues(`${prefix}.url`);
         const symbol = inputsState.symbol;
         if (!rawUrl || !symbol) return;
-        const url = expandTestUrl(rawUrl);
         const values = form.getValues(prefix);
         testSource(
           {
             format: values?.format ?? "json",
-            url,
+            url: rawUrl,
             pricePath: path,
             datePath: values?.datePath || undefined,
             dateFormat: values?.dateFormat || undefined,
@@ -290,6 +292,8 @@ export function useSourceRuntime({
             headers: values?.headers || undefined,
             method: values?.method ?? "GET",
             body: values?.body || undefined,
+            isin: inputsState.isin || undefined,
+            mic: inputsState.mic || undefined,
             openPath: values?.openPath || undefined,
             highPath: values?.highPath || undefined,
             lowPath: values?.lowPath || undefined,
@@ -313,7 +317,6 @@ export function useSourceRuntime({
       detectedElements,
       detectedTables,
       inputsState,
-      expandTestUrl,
       testSource,
       isHistorical,
     ],

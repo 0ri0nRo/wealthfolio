@@ -28,8 +28,6 @@ import type { FormValues, SourceKey } from "./custom-provider-form";
 import { LATEST_TEMPLATES, HISTORICAL_TEMPLATES } from "./provider-templates";
 import type { MappingField, SourceRuntime } from "./use-source-runtime";
 
-const DEFAULT_POST_HEADERS = { "Content-Type": "application/json" };
-
 interface SourceConfigPanelProps {
   form: UseFormReturn<FormValues>;
   prefix: SourceKey;
@@ -313,40 +311,6 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
   const lowPath = form.watch(`${prefix}.lowPath`);
   const volumePath = form.watch(`${prefix}.volumePath`);
   const method = form.watch(`${prefix}.method`) ?? "GET";
-
-  // Keep the default Content-Type header in sync with the HTTP method:
-  // add it for POST, and drop it again when switching back to GET.
-  useEffect(() => {
-    const currentHeaders = form.getValues(`${prefix}.headers`);
-    let headersObj: Record<string, string> = {};
-    if (currentHeaders?.trim()) {
-      try {
-        headersObj = JSON.parse(currentHeaders);
-      } catch {
-        // Ignore parse errors, treat as empty
-      }
-    }
-    const contentTypeKey = Object.keys(headersObj).find((k) => k.toLowerCase() === "content-type");
-
-    if (method === "POST") {
-      // Only add default if not already present (case-insensitive)
-      if (!contentTypeKey) {
-        const mergedHeaders = { ...DEFAULT_POST_HEADERS, ...headersObj };
-        form.setValue(`${prefix}.headers`, JSON.stringify(mergedHeaders, null, 2));
-      }
-    } else if (
-      contentTypeKey &&
-      headersObj[contentTypeKey] === DEFAULT_POST_HEADERS["Content-Type"]
-    ) {
-      // Switching back to GET: remove the Content-Type we auto-added,
-      // leaving any user-customized value untouched.
-      delete headersObj[contentTypeKey];
-      form.setValue(
-        `${prefix}.headers`,
-        Object.keys(headersObj).length ? JSON.stringify(headersObj, null, 2) : "",
-      );
-    }
-  }, [method, prefix, form]);
 
   // POST is only supported for the JSON API source type. Switching to any other
   // format falls back to GET so stale POST config can't linger and trip the

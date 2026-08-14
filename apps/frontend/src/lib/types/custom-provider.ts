@@ -89,6 +89,8 @@ export interface TestSourceRequest {
   /** Request body for POST requests (JSON string) */
   body?: string;
   symbol: string;
+  isin?: string;
+  mic?: string;
   currency?: string;
   from?: string;
   to?: string;
