@@ -326,7 +326,7 @@ SELECT
         WHEN symbol LIKE '%.MI' THEN 'XMIL'
         WHEN symbol LIKE '%.MU' THEN 'XMUN'
         WHEN symbol LIKE '%.MX' THEN 'XMEX'
-        WHEN symbol LIKE '%.NE' THEN 'NEOE'
+        WHEN symbol LIKE '%.NE' THEN 'XNEO'
         WHEN symbol LIKE '%.NS' THEN 'XNSE'
         WHEN symbol LIKE '%.NZ' THEN 'XNZE'
         WHEN symbol LIKE '%.OL' THEN 'XOSL'
