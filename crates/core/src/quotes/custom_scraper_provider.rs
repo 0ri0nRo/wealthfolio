@@ -9,8 +9,8 @@ use log::debug;
 use rust_decimal::Decimal;
 
 use crate::custom_provider::model::{
-    build_browser_like_headers, expand_template, extract_html_value, validate_url, TemplateContext,
-    CUSTOM_PROVIDER_USER_AGENT, MAX_RESPONSE_BYTES,
+    expand_template, extract_html_value, prepare_custom_provider_request, validate_url,
+    PreparedCustomProviderRequest, TemplateContext, CUSTOM_PROVIDER_USER_AGENT, MAX_RESPONSE_BYTES,
 };
 use crate::custom_provider::service::{
     detect_html_locale, parse_csv_records, parse_number_string, resolve_csv_column,
@@ -51,17 +51,8 @@ impl CustomScraperProvider {
         }
     }
 
-    /// Expand URL template variables using the shared template engine.
-    fn expand_url(
-        url: &str,
-        symbol: &str,
-        context: Option<&QuoteContext>,
-        from: Option<&str>,
-        to: Option<&str>,
-    ) -> String {
-        let isin_owned: Option<String> = context.and_then(|ctx| {
-            // Prefer explicit identifiers so equity ISINs can be used without changing the
-            // canonical instrument; bonds fall back to their instrument ISIN.
+    fn template_identifiers(context: Option<&QuoteContext>) -> (Option<String>, Option<String>) {
+        let isin = context.and_then(|ctx| {
             ctx.identifiers
                 .isin
                 .as_deref()
@@ -73,13 +64,25 @@ impl CustomScraperProvider {
                     _ => None,
                 })
         });
-
-        let mic_owned: Option<String> = context.and_then(|ctx| match &ctx.instrument {
+        let mic = context.and_then(|ctx| match &ctx.instrument {
             wealthfolio_market_data::InstrumentId::Equity { mic, .. } => {
-                mic.as_ref().map(|m| m.as_ref().to_string())
+                mic.as_ref().map(|mic| mic.as_ref().to_string())
             }
             _ => None,
         });
+        (isin, mic)
+    }
+
+    /// Expand URL template variables using the shared template engine.
+    #[cfg(test)]
+    fn expand_url(
+        url: &str,
+        symbol: &str,
+        context: Option<&QuoteContext>,
+        from: Option<&str>,
+        to: Option<&str>,
+    ) -> String {
+        let (isin_owned, mic_owned) = Self::template_identifiers(context);
 
         let currency = context
             .and_then(|ctx| ctx.currency_hint.as_deref())
@@ -97,70 +100,33 @@ impl CustomScraperProvider {
         expand_template(url, &tctx)
     }
 
-    fn source_url_has_identity_placeholder(url: &str) -> bool {
-        url.contains("{SYMBOL}") || url.contains("{ISIN}")
-    }
-
-    /// Build HTTP headers from source config, resolving secrets.
-    fn build_headers(
-        &self,
-        source: &CustomProviderSource,
-        url: &str,
-    ) -> Result<reqwest::header::HeaderMap, MarketDataError> {
-        let mut headers = build_browser_like_headers(&source.format, url);
-        if let Some(headers_json) = &source.headers {
-            if let Ok(map) =
-                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(headers_json)
-            {
-                for (k, v) in map {
-                    if let Some(val_str) = v.as_str() {
-                        let resolved = self.resolve_secret(val_str)?;
-                        if let (Ok(name), Ok(value)) = (
-                            reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-                            reqwest::header::HeaderValue::from_str(&resolved),
-                        ) {
-                            headers.insert(name, value);
-                        }
-                    }
-                }
-            }
-        }
-        Ok(headers)
+    fn source_has_identity_placeholder(source: &CustomProviderSource) -> bool {
+        let has_identity =
+            |template: &str| template.contains("{SYMBOL}") || template.contains("{ISIN}");
+        has_identity(&source.url)
+            || (matches!(source.method, crate::custom_provider::HttpMethod::Post)
+                && source.body.as_deref().is_some_and(has_identity))
     }
 
     /// Fetch body from URL with simple 1-retry on 5xx/network errors.
     async fn fetch_body(
         &self,
-        source: &CustomProviderSource,
-        url: &str,
-        headers: reqwest::header::HeaderMap,
-        tctx: &TemplateContext<'_>,
+        request: &PreparedCustomProviderRequest,
     ) -> Result<String, MarketDataError> {
-        let method = source.method.as_str();
+        let url = &request.url;
+        let do_fetch = || request.request_builder(&self.client).send();
 
-        let do_fetch = |hdrs: reqwest::header::HeaderMap| match method {
-            "POST" => {
-                let body = source.body.as_deref().map(|b| expand_template(b, tctx));
-                if let Some(body_str) = body {
-                    self.client.post(url).headers(hdrs).body(body_str).send()
-                } else {
-                    self.client.post(url).headers(hdrs).send()
-                }
-            }
-            _ => self.client.get(url).headers(hdrs).send(),
-        };
-
-        let response = match do_fetch(headers.clone()).await {
+        let response = match do_fetch().await {
             Ok(resp) if resp.status().is_server_error() => {
                 debug!("CustomScraper: 5xx from {}, retrying once", url);
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                do_fetch(headers).await.map_err(MarketDataError::Network)?
+                do_fetch().await.map_err(MarketDataError::Network)?
             }
             Ok(resp) => resp,
             Err(_e) => {
                 debug!("CustomScraper: network error from {}, retrying once", url);
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                do_fetch(headers).await.map_err(MarketDataError::Network)?
+                do_fetch().await.map_err(MarketDataError::Network)?
             }
         };
 
@@ -308,26 +274,7 @@ impl CustomScraperProvider {
             });
         }
 
-        let url = Self::expand_url(&source.url, symbol, context, from, to);
-
-        validate_url(&url).map_err(|e| MarketDataError::ProviderError {
-            provider: DATA_SOURCE_CUSTOM_SCRAPER.to_string(),
-            message: e.to_string(),
-        })?;
-
-        let headers = self.build_headers(source, &url)?;
-
-        debug!("CustomScraper: fetching {} for symbol '{}'", url, symbol);
-
-        let isin = context
-            .and_then(|ctx| ctx.identifiers.isin.as_deref())
-            .map(str::to_string);
-        let mic = context.and_then(|ctx| match &ctx.instrument {
-            wealthfolio_market_data::InstrumentId::Equity { mic, .. } => {
-                mic.as_ref().map(|m| m.as_ref().to_string())
-            }
-            _ => None,
-        });
+        let (isin, mic) = Self::template_identifiers(context);
         let tctx = TemplateContext {
             symbol,
             currency: currency_hint.unwrap_or("USD"),
@@ -337,7 +284,27 @@ impl CustomScraperProvider {
             to,
         };
 
-        let body = match self.fetch_body(source, &url, headers, &tctx).await {
+        let request = prepare_custom_provider_request(
+            &source.method,
+            &source.format,
+            &source.url,
+            source.headers.as_deref(),
+            source.body.as_deref(),
+            &tctx,
+            |value| self.resolve_secret(value),
+        )?;
+
+        validate_url(&request.url).map_err(|e| MarketDataError::ProviderError {
+            provider: DATA_SOURCE_CUSTOM_SCRAPER.to_string(),
+            message: e.to_string(),
+        })?;
+
+        debug!(
+            "CustomScraper: fetching {} for symbol '{}'",
+            request.url, symbol
+        );
+
+        let body = match self.fetch_body(&request).await {
             Ok(b) => b,
             Err(e) => {
                 // Fall back to default_price on fetch failure
@@ -679,8 +646,8 @@ impl CustomScraperProvider {
             return Ok(vec![source]);
         }
 
-        // No explicit code — collect general-purpose sources (URL contains an identity placeholder)
-        // from all enabled custom providers, tried in priority order.
+        // No explicit code — collect general-purpose sources whose URL or body contains an
+        // identity placeholder from all enabled custom providers, tried in priority order.
         let providers = self
             .repo
             .get_all()
@@ -693,7 +660,7 @@ impl CustomScraperProvider {
             .into_iter()
             .filter(|p| p.enabled)
             .flat_map(|p| p.sources.into_iter().filter(|s| s.kind == kind))
-            .filter(|s| Self::source_url_has_identity_placeholder(&s.url))
+            .filter(Self::source_has_identity_placeholder)
             .collect();
 
         if sources.is_empty() {
@@ -1443,6 +1410,44 @@ mod tests {
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0].provider_id, "isin-source");
         assert_eq!(sources[0].url, "https://example.test/quotes/{ISIN}");
+    }
+
+    #[test]
+    fn find_sources_includes_body_only_identity_sources() {
+        let mut body_source =
+            source_with_url("body-source", "latest", "https://example.test/quotes");
+        body_source.method = crate::custom_provider::HttpMethod::Post;
+        body_source.body = Some(r#"{"isin":"{ISIN}"}"#.to_string());
+        let repo = Arc::new(MockCustomProviderRepository {
+            providers: vec![crate::custom_provider::CustomProviderWithSources {
+                id: "body-source".to_string(),
+                name: "Body Source".to_string(),
+                description: String::new(),
+                enabled: true,
+                priority: 1,
+                sources: vec![body_source],
+            }],
+        });
+        let provider = CustomScraperProvider::new(repo, Arc::new(MockSecretStore));
+        let context = QuoteContext {
+            instrument: InstrumentId::Equity {
+                ticker: Arc::from("LKPG"),
+                mic: None,
+            },
+            identifiers: QuoteIdentifiers {
+                isin: Some(Cow::Borrowed("SI0031101346")),
+            },
+            overrides: None,
+            currency_hint: Some(Cow::Borrowed("EUR")),
+            preferred_provider: None,
+            bond_metadata: None,
+            custom_provider_code: None,
+        };
+
+        let sources = provider.find_sources(&context, "latest").unwrap();
+
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0].provider_id, "body-source");
     }
 
     #[test]

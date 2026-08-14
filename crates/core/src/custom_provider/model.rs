@@ -26,6 +26,29 @@ impl HttpMethod {
     }
 }
 
+/// Fully expanded request data shared by custom-provider testing and runtime fetching.
+pub(crate) struct PreparedCustomProviderRequest {
+    pub(crate) url: String,
+    method: HttpMethod,
+    headers: reqwest::header::HeaderMap,
+    body: Option<String>,
+}
+
+impl PreparedCustomProviderRequest {
+    pub(crate) fn request_builder(&self, client: &reqwest::Client) -> reqwest::RequestBuilder {
+        match self.method {
+            HttpMethod::Post => {
+                let builder = client.post(&self.url).headers(self.headers.clone());
+                match &self.body {
+                    Some(body) => builder.body(body.clone()),
+                    None => builder,
+                }
+            }
+            HttpMethod::Get => client.get(&self.url).headers(self.headers.clone()),
+        }
+    }
+}
+
 /// Cached regex for formatted date templates: `{DATE:...}`, `{FROM:...}`,
 /// `{TO:...}`, `{TODAY:...}`.
 pub static DATE_TEMPLATE_RE: std::sync::LazyLock<regex::Regex> =
@@ -172,6 +195,55 @@ pub fn build_browser_like_headers(format: &str, url: &str) -> reqwest::header::H
     headers
 }
 
+/// Expand templates and prepare a custom-provider HTTP request.
+///
+/// User headers override defaults. POST requests receive a JSON content type only
+/// when the user did not configure one explicitly.
+pub(crate) fn prepare_custom_provider_request<E>(
+    method: &HttpMethod,
+    format: &str,
+    url_template: &str,
+    headers_json: Option<&str>,
+    body_template: Option<&str>,
+    ctx: &TemplateContext<'_>,
+    resolve_header_value: impl Fn(&str) -> Result<String, E>,
+) -> Result<PreparedCustomProviderRequest, E> {
+    let url = expand_template(url_template, ctx);
+    let mut headers = build_browser_like_headers(format, &url);
+
+    if matches!(method, HttpMethod::Post) {
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            reqwest::header::HeaderValue::from_static("application/json"),
+        );
+    }
+
+    if let Some(headers_json) = headers_json {
+        if let Ok(map) =
+            serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(headers_json)
+        {
+            for (key, value) in map {
+                if let Some(value) = value.as_str() {
+                    let resolved = resolve_header_value(value)?;
+                    if let (Ok(name), Ok(value)) = (
+                        reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                        reqwest::header::HeaderValue::from_str(&resolved),
+                    ) {
+                        headers.insert(name, value);
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(PreparedCustomProviderRequest {
+        url,
+        method: method.clone(),
+        headers,
+        body: body_template.map(|body| expand_template(body, ctx)),
+    })
+}
+
 /// Extract a numeric value from HTML using a CSS selector.
 ///
 /// Shared between `custom_provider::service` (test_source) and
@@ -309,6 +381,12 @@ pub struct TestSourceRequest {
     pub body: Option<String>,
     /// Symbol to substitute in template variables
     pub symbol: String,
+    /// ISIN to substitute in template variables.
+    #[serde(default)]
+    pub isin: Option<String>,
+    /// MIC to substitute in template variables.
+    #[serde(default)]
+    pub mic: Option<String>,
     /// Currency for {currency}/{CURRENCY} placeholders (defaults to "usd")
     pub currency: Option<String>,
     /// Start date for {FROM} placeholders while testing historical sources.
@@ -474,5 +552,76 @@ mod tests {
             out,
             r#"{"symbol":"AAPL","from":"2024-01-01","to":"20240630"}"#
         );
+    }
+
+    #[test]
+    fn prepares_post_with_expanded_identity_body_and_default_content_type() {
+        let context = TemplateContext {
+            symbol: "AAPL",
+            currency: "usd",
+            isin: Some("US0378331005"),
+            mic: Some("XNAS"),
+            from: Some("2024-01-01"),
+            to: Some("2024-06-30"),
+        };
+        let prepared = prepare_custom_provider_request(
+            &HttpMethod::Post,
+            "json",
+            "https://example.test/quotes",
+            None,
+            Some(r#"{"symbol":"{SYMBOL}","isin":"{ISIN}","mic":"{MIC}","currency":"{CURRENCY}","from":"{FROM}","to":"{TO}"}"#),
+            &context,
+            |value| Ok::<_, ()>(value.to_string()),
+        )
+        .unwrap();
+        let request = prepared
+            .request_builder(&reqwest::Client::new())
+            .build()
+            .unwrap();
+
+        assert_eq!(request.method(), reqwest::Method::POST);
+        assert_eq!(
+            request
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .unwrap(),
+            "application/json"
+        );
+        assert_eq!(
+            request.body().and_then(|body| body.as_bytes()),
+            Some(
+                br#"{"symbol":"AAPL","isin":"US0378331005","mic":"XNAS","currency":"USD","from":"2024-01-01","to":"2024-06-30"}"#
+                    .as_slice()
+            )
+        );
+    }
+
+    #[test]
+    fn prepared_request_preserves_explicit_content_type_for_post_and_get() {
+        let headers = Some(r#"{"Content-Type":"application/vnd.test+json"}"#);
+        for method in [HttpMethod::Post, HttpMethod::Get] {
+            let prepared = prepare_custom_provider_request(
+                &method,
+                "json",
+                "https://example.test/quotes/{SYMBOL}",
+                headers,
+                None,
+                &ctx(None, None),
+                |value| Ok::<_, ()>(value.to_string()),
+            )
+            .unwrap();
+            let request = prepared
+                .request_builder(&reqwest::Client::new())
+                .build()
+                .unwrap();
+
+            assert_eq!(
+                request
+                    .headers()
+                    .get(reqwest::header::CONTENT_TYPE)
+                    .unwrap(),
+                "application/vnd.test+json"
+            );
+        }
     }
 }

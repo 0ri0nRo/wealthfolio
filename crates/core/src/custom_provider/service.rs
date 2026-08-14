@@ -129,14 +129,11 @@ impl CustomProviderService {
         let tctx = TemplateContext {
             symbol: &payload.symbol,
             currency,
-            isin: None,
-            mic: None,
+            isin: payload.isin.as_deref(),
+            mic: payload.mic.as_deref(),
             from: payload.from.as_deref(),
             to: payload.to.as_deref(),
         };
-        let url = expand_template(&payload.url, &tctx);
-
-        validate_url(&url).map_err(|e| crate::Error::Unexpected(e.to_string()))?;
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(15))
@@ -145,54 +142,31 @@ impl CustomProviderService {
             .build()
             .map_err(|e| crate::Error::Unexpected(format!("HTTP client error: {}", e)))?;
 
-        // Default browser-like headers. Many data APIs sit behind bot-protection
-        // (Akamai/Cloudflare) that serves placebo responses to clients lacking the
-        // typical browser header set. User-supplied headers below override these.
-        let mut headers = build_browser_like_headers(&payload.format, &url);
-
-        if let Some(headers_json) = &payload.headers {
-            if let Ok(map) =
-                serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(headers_json)
-            {
-                for (k, v) in map {
-                    if let Some(val_str) = v.as_str() {
-                        let resolved = if let Some(key) = val_str.strip_prefix("__SECRET__") {
-                            self.secret_store
-                                .get_secret(key)
-                                .ok()
-                                .flatten()
-                                .ok_or_else(|| {
-                                    crate::Error::Unexpected(format!("Secret '{}' not found", key))
-                                })?
-                        } else {
-                            val_str.to_string()
-                        };
-                        if let (Ok(name), Ok(value)) = (
-                            reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-                            reqwest::header::HeaderValue::from_str(&resolved),
-                        ) {
-                            headers.insert(name, value);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Build request based on HTTP method
-        let method = payload.method.as_str();
-        let request_builder = match method {
-            "POST" => {
-                let body = payload.body.as_deref().map(|b| expand_template(b, &tctx));
-                if let Some(body_str) = body {
-                    client.post(&url).headers(headers).body(body_str)
+        let request = prepare_custom_provider_request(
+            &payload.method,
+            &payload.format,
+            &payload.url,
+            payload.headers.as_deref(),
+            payload.body.as_deref(),
+            &tctx,
+            |value| {
+                if let Some(key) = value.strip_prefix("__SECRET__") {
+                    self.secret_store
+                        .get_secret(key)
+                        .ok()
+                        .flatten()
+                        .ok_or_else(|| {
+                            crate::Error::Unexpected(format!("Secret '{}' not found", key))
+                        })
                 } else {
-                    client.post(&url).headers(headers)
+                    Ok(value.to_string())
                 }
-            }
-            _ => client.get(&url).headers(headers),
-        };
+            },
+        )?;
 
-        let response = match request_builder.send().await {
+        validate_url(&request.url).map_err(|e| crate::Error::Unexpected(e.to_string()))?;
+
+        let response = match request.request_builder(&client).send().await {
             Ok(resp) => resp,
             Err(e) => {
                 return Ok(TestSourceResult {
