@@ -3490,7 +3490,7 @@ mod tests {
         // `.F` is not a venue.
         let service = test_asset_service(Vec::new(), TestQuoteService::default());
         let mut input = import_input("ZAAA.F", "CAD");
-        input.exchange_mic = Some("XNEO".to_string());
+        input.exchange_mic = Some("NEOE".to_string());
 
         let output = service
             .resolve_import_asset_inputs(vec![input])
@@ -3500,10 +3500,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(output.canonical_symbol.as_deref(), Some("ZAAA.F"));
-        assert_eq!(output.exchange_mic.as_deref(), Some("XNEO"));
+        assert_eq!(output.exchange_mic.as_deref(), Some("NEOE"));
         let draft = output.draft.expect("draft for an unseen instrument");
         assert_eq!(draft.instrument_symbol.as_deref(), Some("ZAAA.F"));
-        assert_eq!(draft.instrument_exchange_mic.as_deref(), Some("XNEO"));
+        assert_eq!(draft.instrument_exchange_mic.as_deref(), Some("NEOE"));
     }
 
     #[tokio::test]

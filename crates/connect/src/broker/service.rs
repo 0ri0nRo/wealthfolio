@@ -28,8 +28,8 @@ use wealthfolio_core::activities::{
     NewActivity, ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_SELL,
 };
 use wealthfolio_core::assets::{
-    build_option_metadata, parse_crypto_pair_symbol, parse_symbol_with_exchange_suffix, Asset,
-    AssetServiceTrait, AssetSpec, InstrumentType, OptionSpec, CONTRACT_MULTIPLIER_METADATA_KEY,
+    build_option_metadata, Asset, AssetServiceTrait, AssetSpec, InstrumentType, OptionSpec,
+    CONTRACT_MULTIPLIER_METADATA_KEY,
 };
 use wealthfolio_core::errors::Result;
 use wealthfolio_core::events::{DomainEvent, DomainEventSink, NoOpDomainEventSink};
@@ -871,13 +871,21 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 .and_then(|s| s.symbol.clone())
                 .filter(|s| !s.trim().is_empty());
 
-            let normalized_symbol = Self::normalize_holdings_symbol(
-                raw_symbol.as_deref(),
+            // Same normalization as the activity path, so a position and a trade in
+            // the same instrument resolve to one asset. See `normalize_broker_symbol`.
+            let normalized_symbol = mapping::normalize_broker_symbol(
                 api_symbol.as_deref(),
+                raw_symbol.as_deref(),
+                symbol_info
+                    .and_then(|s| s.exchange.as_ref())
+                    .and_then(|e| {
+                        mapping::broker_exchange_mic(e.mic_code.as_deref(), e.code.as_deref())
+                    })
+                    .as_deref(),
                 is_crypto_asset,
             );
-            let (symbol, mut exchange_mic) = match normalized_symbol {
-                Some(pair) => pair,
+            let (symbol, exchange_mic) = match normalized_symbol {
+                Some(normalized) => (normalized.symbol, normalized.exchange_mic),
                 None if is_crypto_asset => {
                     debug!("Skipping crypto position without symbol");
                     continue;
@@ -887,16 +895,6 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                     continue;
                 }
             };
-
-            // Fallback: use exchange MIC from broker API data when suffix parsing didn't yield one
-            if exchange_mic.is_none() && !is_crypto_asset {
-                exchange_mic = symbol_info.and_then(|s| s.exchange.as_ref()).and_then(|e| {
-                    e.mic_code
-                        .clone()
-                        .filter(|c| !c.trim().is_empty())
-                        .or_else(|| e.code.clone().filter(|c| !c.trim().is_empty()))
-                });
-            }
 
             let units = pos.units.unwrap_or(0.0);
             if units == 0.0 {
@@ -1519,60 +1517,6 @@ impl BrokerSyncService {
                 == b.contract_multiplier.round_dp(HOLDINGS_DECIMAL_PRECISION)
     }
 
-    fn normalize_holdings_symbol(
-        raw_symbol: Option<&str>,
-        api_symbol: Option<&str>,
-        is_crypto: bool,
-    ) -> Option<(String, Option<String>)> {
-        let raw_symbol = raw_symbol.map(str::trim).filter(|s| !s.is_empty());
-        let api_symbol = api_symbol.map(str::trim).filter(|s| !s.is_empty());
-
-        if is_crypto {
-            let symbol = raw_symbol.map(str::to_string).or_else(|| {
-                api_symbol.map(|sym| {
-                    parse_crypto_pair_symbol(sym)
-                        .map(|(base, _)| base)
-                        .unwrap_or_else(|| sym.to_string())
-                })
-            })?;
-            return Some((symbol, None));
-        }
-
-        let raw_parsed = raw_symbol.map(|sym| {
-            let (base, mic) = parse_symbol_with_exchange_suffix(sym);
-            (base.to_string(), mic.map(|m| m.to_string()))
-        });
-        let api_parsed = api_symbol.map(|sym| {
-            let (base, mic) = parse_symbol_with_exchange_suffix(sym);
-            (base.to_string(), mic.map(|m| m.to_string()))
-        });
-
-        // The API symbol decides the ticker, for the same reason it decides the
-        // MIC: it is the decorated form, so stripping one known suffix from it
-        // leaves the ticker itself intact. Stripping the raw ticker instead
-        // cannot tell an exchange suffix from a ticker that merely ends in one —
-        // `ZAAA.F` on NEO would be filed as `ZAAA`, while the activity path keeps
-        // the raw ticker verbatim and files `ZAAA.F`, splitting the instrument.
-        // `VOD.L` still resolves to `VOD`, because the API form `VOD` carries no
-        // suffix to strip.
-        let symbol = api_parsed
-            .as_ref()
-            .map(|(base, _)| base.clone())
-            .or_else(|| raw_parsed.as_ref().map(|(base, _)| base.clone()))?;
-        // The API symbol is asked first: it is the field the provider decorates
-        // with the exchange suffix, whereas a dot in the raw ticker is usually
-        // part of the ticker (`ZAAA.F`, whose `.F` would resolve to Frankfurt).
-        // Brokers that put the suffix on the raw ticker (`VOD.L`) keep working
-        // through the fallback. Mirrors the activity path in `mapping.rs`, so one
-        // instrument cannot land under two asset identities.
-        let exchange_mic = api_parsed
-            .as_ref()
-            .and_then(|(_, mic)| mic.clone())
-            .or_else(|| raw_parsed.as_ref().and_then(|(_, mic)| mic.clone()));
-
-        Some((symbol, exchange_mic))
-    }
-
     /// Find the platform ID for a broker account using institution/broker metadata.
     fn find_platform_for_account(&self, broker_account: &BrokerAccount) -> Result<Option<String>> {
         let platforms = self.platform_repository.list()?;
@@ -2046,61 +1990,6 @@ mod tests {
             default_tracking_mode_for_broker_account_type(account_types::SECURITIES),
             TrackingMode::Holdings
         );
-    }
-
-    #[test]
-    fn normalize_holdings_symbol_uses_api_suffix_when_raw_has_no_suffix() {
-        let normalized =
-            BrokerSyncService::normalize_holdings_symbol(Some("SHOP"), Some("SHOP.TO"), false)
-                .unwrap();
-
-        assert_eq!(normalized.0, "SHOP");
-        assert_eq!(normalized.1.as_deref(), Some("XTSE"));
-    }
-
-    #[test]
-    fn normalize_holdings_symbol_parses_suffix_from_raw_symbol() {
-        let normalized =
-            BrokerSyncService::normalize_holdings_symbol(Some("VOD.L"), Some("VOD"), false)
-                .unwrap();
-
-        assert_eq!(normalized.0, "VOD");
-        assert_eq!(normalized.1.as_deref(), Some("XLON"));
-    }
-
-    /// The API symbol names the venue; a dot in the raw ticker does not. `ZAAA.F`
-    /// on NEO must not be read as Frankfurt because Yahoo spells Frankfurt `.F`.
-    #[test]
-    fn normalize_holdings_symbol_prefers_api_suffix_over_a_ticker_dot() {
-        let normalized =
-            BrokerSyncService::normalize_holdings_symbol(Some("ZAAA.F"), Some("ZAAA.F.NE"), false)
-                .unwrap();
-
-        // Both halves matter: the `.F` is part of the ticker and must survive,
-        // and the venue is NEO rather than the Frankfurt that `.F` would name.
-        // The activity path stores `ZAAA.F` for the same instrument.
-        assert_eq!(normalized.0, "ZAAA.F");
-        assert_eq!(normalized.1.as_deref(), Some("XNEO"));
-    }
-
-    /// A share-class dot is not an exchange suffix either, and there is no
-    /// decorated form to fall back on when the broker sends the same string twice.
-    #[test]
-    fn normalize_holdings_symbol_keeps_share_class_suffix() {
-        let normalized =
-            BrokerSyncService::normalize_holdings_symbol(Some("BRK.B"), Some("BRK.B"), false)
-                .unwrap();
-
-        assert_eq!(normalized.0, "BRK.B");
-    }
-
-    #[test]
-    fn normalize_holdings_symbol_normalizes_crypto_pairs() {
-        let normalized =
-            BrokerSyncService::normalize_holdings_symbol(None, Some("BTC-USD"), true).unwrap();
-
-        assert_eq!(normalized.0, "BTC");
-        assert_eq!(normalized.1, None);
     }
 
     #[test]

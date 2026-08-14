@@ -1343,12 +1343,12 @@ mod tests {
         let result = canonicalize_market_identity(
             Some(InstrumentType::Equity),
             Some("ZAAA.F"),
-            Some("XNEO"),
+            Some("NEOE"),
             None,
         );
 
         assert_eq!(result.instrument_symbol.as_deref(), Some("ZAAA.F"));
-        assert_eq!(result.instrument_exchange_mic.as_deref(), Some("XNEO"));
+        assert_eq!(result.instrument_exchange_mic.as_deref(), Some("NEOE"));
         assert_eq!(result.display_code.as_deref(), Some("ZAAA.F"));
     }
 

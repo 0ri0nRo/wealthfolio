@@ -5291,16 +5291,16 @@ mod tests {
 
         account_service.add_account(create_test_account("acc-1", "CAD"));
         asset_service.add_asset(create_test_asset_with_instrument(
-            "SEC:ZAAA.F:XNEO",
+            "SEC:ZAAA.F:NEOE",
             "ZAAA.F",
-            Some("XNEO"),
+            Some("NEOE"),
             Some(InstrumentType::Equity),
             "CAD",
         ));
         asset_service.add_asset(create_test_asset_with_instrument(
-            "SEC:ZAAA:XNEO",
+            "SEC:ZAAA:NEOE",
             "ZAAA",
-            Some("XNEO"),
+            Some("NEOE"),
             Some(InstrumentType::Equity),
             "CAD",
         ));
@@ -5319,7 +5319,7 @@ mod tests {
             account_id: "acc-1".to_string(),
             asset: Some(AssetResolutionInput {
                 symbol: Some("ZAAA.F".to_string()),
-                exchange_mic: Some("XNEO".to_string()),
+                exchange_mic: Some("NEOE".to_string()),
                 quote_ccy: Some("CAD".to_string()),
                 instrument_type: Some("EQUITY".to_string()),
                 ..Default::default()
@@ -5350,7 +5350,7 @@ mod tests {
             .await
             .expect("hedged unit class should save");
 
-        assert_eq!(created.asset_id.as_deref(), Some("SEC:ZAAA.F:XNEO"));
+        assert_eq!(created.asset_id.as_deref(), Some("SEC:ZAAA.F:NEOE"));
     }
 
     /// The same path, on the venue the suffix agrees with: `SHOP.TO` with XTSE is an

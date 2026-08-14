@@ -58,7 +58,7 @@ pub fn parse_symbol_with_exchange_suffix(symbol: &str) -> (&str, Option<&'static
 /// and a suffix that names a market the instrument cannot be trading on was never
 /// a venue marker.
 ///
-/// `ZAAA.F` on `XNEO` is the case that motivated this: BMO's currency-hedged unit
+/// `ZAAA.F` on `NEOE` is the case that motivated this: BMO's currency-hedged unit
 /// class on Cboe Canada, where `.F` is Yahoo's Frankfurt suffix. Stripping it files
 /// the holding under `ZAAA` — the *unhedged* listing, a real security quoting ~4%
 /// away — and nothing downstream can notice, because the shortened ticker resolves
@@ -68,10 +68,10 @@ pub fn parse_symbol_with_exchange_suffix(symbol: &str) -> (&str, Option<&'static
 /// A merely *different* MIC is not enough to rule a suffix out, so two guards keep
 /// the rule narrow:
 ///
-/// - **The known venue must be a MIC the registry recognises.** Brokers send codes
-///   that are not MICs at all — the same payload that motivated this one calls Cboe
-///   Canada `NEOE` — and the holdings path copies a broker's raw exchange `code`
-///   through when the symbol has no suffix. Junk must not silence a good suffix.
+/// - **The known venue must be a MIC the registry recognises.** Brokers send
+///   exchange labels that are not MICs at all (`NEO`, `NMS`), and the sync paths
+///   pass one through as the venue when the symbol has no suffix to read. Junk must
+///   not silence a good suffix.
 /// - **The two venues must trade in different currencies.** `XETR` (`.DE`) and
 ///   `XFRA` (`.F`) are separate registry entries for the same German listing, and a
 ///   caller naming one while the symbol carries the other is choosing a venue, not
@@ -281,14 +281,14 @@ mod tests {
 
     #[test]
     fn test_parse_symbol_with_known_exchange_keeps_a_suffix_from_another_currency() {
-        // `.F` is Frankfurt (EUR); Cboe Canada trades in CAD. BMO's `ZAAA.F` is the
-        // hedged unit class, so the suffix belongs to the ticker.
+        // `.F` is Frankfurt (EUR); Cboe Canada (NEOE) trades in CAD. BMO's `ZAAA.F`
+        // is the hedged unit class, so the suffix belongs to the ticker.
         assert_eq!(
-            parse_symbol_with_known_exchange("ZAAA.F", Some("XNEO")),
+            parse_symbol_with_known_exchange("ZAAA.F", Some("NEOE")),
             ("ZAAA.F", None)
         );
         assert_eq!(
-            parse_symbol_with_known_exchange("  ZAAA.F  ", Some("xneo")),
+            parse_symbol_with_known_exchange("  ZAAA.F  ", Some("neoe")),
             ("ZAAA.F", None)
         );
     }
@@ -316,10 +316,10 @@ mod tests {
 
     #[test]
     fn test_parse_symbol_with_known_exchange_ignores_a_venue_that_is_not_a_mic() {
-        // The payload that motivated this rule labels Cboe Canada `NEOE`, which is
-        // not an ISO MIC, and the holdings path passes a broker's raw exchange code
-        // through unchanged. Neither may silence a suffix that does resolve.
-        for junk in ["NEOE", "NEO", "TSX", "NASDAQ", "not-a-mic"] {
+        // Brokers label exchanges with their own abbreviations (`NEO` for Cboe
+        // Canada, whose MIC is NEOE), and the sync paths pass one through as the
+        // venue. None of them may silence a suffix that does resolve.
+        for junk in ["NEO", "TSX", "NASDAQ", "not-a-mic"] {
             assert_eq!(
                 parse_symbol_with_known_exchange("SHOP.TO", Some(junk)),
                 ("SHOP", Some("XTSE")),
@@ -332,7 +332,7 @@ mod tests {
     fn test_parse_symbol_with_known_exchange_leaves_unsuffixed_symbols_alone() {
         // No suffix to argue about, whatever the venue says.
         assert_eq!(
-            parse_symbol_with_known_exchange("AAPL", Some("XNEO")),
+            parse_symbol_with_known_exchange("AAPL", Some("NEOE")),
             ("AAPL", None)
         );
         // `.B` is not in the Yahoo suffix table, so no rule reaches it.

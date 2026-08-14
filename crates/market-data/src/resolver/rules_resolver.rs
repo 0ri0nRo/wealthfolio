@@ -356,6 +356,27 @@ mod tests {
         }
     }
 
+    /// Cboe Canada is NEOE in ISO 10383 and `.NE` at Yahoo. Pinned because the
+    /// registry used to spell the venue `XNEO`, which is not a MIC at all, so a
+    /// broker reporting the real one resolved nothing.
+    #[test]
+    fn test_resolve_cboe_canada_equity_yahoo() {
+        let resolver = RulesResolver::new();
+        let context = make_equity_context("ZAAA.F", Some("NEOE"));
+
+        let result = resolver.resolve(&"YAHOO".into(), &context);
+
+        assert!(result.is_some());
+        let resolved = result.unwrap().unwrap();
+
+        match resolved.instrument {
+            ProviderInstrument::EquitySymbol { symbol } => {
+                assert_eq!(symbol.as_ref(), "ZAAA-F.NE");
+            }
+            _ => panic!("Expected EquitySymbol"),
+        }
+    }
+
     #[test]
     fn test_resolve_yahoo_share_class_uses_provider_hyphen() {
         let resolver = RulesResolver::new();
