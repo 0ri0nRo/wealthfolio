@@ -8870,6 +8870,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "log",
+ "proptest",
  "regex",
  "rust_decimal",
  "serde",
