@@ -118,15 +118,17 @@ fn normalize_source_system(value: Option<&str>) -> Option<String> {
 pub fn build_activity_metadata(activity: &AccountUniversalActivity) -> Option<String> {
     let mut metadata = serde_json::Map::new();
 
-    // Add flow.is_external for transfers
+    // Preserve an explicit performance-boundary classification from the provider.
     if let Some(ref mapping_meta) = activity.mapping_metadata {
         if let Some(ref flow) = mapping_meta.flow {
-            metadata.insert(
-                "flow".to_string(),
-                serde_json::json!({
-                    "is_external": flow.is_external
-                }),
-            );
+            if let Some(is_external) = flow.is_external {
+                metadata.insert(
+                    "flow".to_string(),
+                    serde_json::json!({
+                        "is_external": is_external
+                    }),
+                );
+            }
         }
 
         // Add confidence score
@@ -667,7 +669,7 @@ mod tests {
     use crate::broker::models::{
         AccountUniversalActivityCurrency, AccountUniversalActivityExchange,
         AccountUniversalActivityOptionSymbol, AccountUniversalActivitySymbol,
-        AccountUniversalActivitySymbolType, AccountUniversalActivityUnderlyingSymbol,
+        AccountUniversalActivitySymbolType, AccountUniversalActivityUnderlyingSymbol, FlowMetadata,
         MappingMetadata,
     };
 
@@ -691,6 +693,10 @@ mod tests {
         }
     }
 
+    fn map_test_activity(activity: &AccountUniversalActivity) -> NewActivity {
+        map_broker_activity(activity, "acct-1", Some("USD"), Some("USD")).unwrap()
+    }
+
     #[test]
     fn test_needs_review_unknown_type() {
         let activity = AccountUniversalActivity {
@@ -698,6 +704,33 @@ mod tests {
             ..Default::default()
         };
         assert!(needs_review(&activity));
+    }
+
+    #[test]
+    fn preserves_only_explicit_provider_flow_metadata() {
+        for is_external in [Some(true), Some(false), None] {
+            let activity = AccountUniversalActivity {
+                id: Some(format!("activity-{is_external:?}")),
+                activity_type: Some(activities::ACTIVITY_TYPE_CREDIT.to_string()),
+                subtype: Some(activities::ACTIVITY_SUBTYPE_REFUND.to_string()),
+                amount: Some(100.0),
+                mapping_metadata: Some(MappingMetadata {
+                    flow: Some(FlowMetadata { is_external }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            let mapped = map_test_activity(&activity);
+            match is_external {
+                Some(expected) => {
+                    let metadata: serde_json::Value =
+                        serde_json::from_str(mapped.metadata.as_deref().unwrap()).unwrap();
+                    assert_eq!(metadata["flow"]["is_external"], expected);
+                }
+                None => assert_eq!(mapped.metadata, None),
+            }
+        }
     }
 
     #[test]
@@ -747,7 +780,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
 
         assert_eq!(mapped.source_system.as_deref(), Some("SNAPTRADE"));
         assert_eq!(mapped.source_record_id.as_deref(), Some("ext-123"));
@@ -771,7 +804,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
 
         assert_eq!(mapped.amount.unwrap().round_dp(4), decimal("997.6000"));
         assert_eq!(mapped.fee.unwrap().round_dp(4), decimal("4.9000"));
@@ -790,7 +823,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
 
         assert_eq!(mapped.amount.unwrap().round_dp(2), decimal("990.00"));
         let asset = mapped.asset.expect("bond activity should produce an asset");
@@ -813,7 +846,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
 
         assert_eq!(mapped.amount.unwrap().round_dp(2), decimal("600.00"));
     }
@@ -827,7 +860,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
 
         assert_eq!(mapped.amount.unwrap().round_dp(2), decimal("12.34"));
     }
@@ -852,7 +885,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
         let symbol = mapped
             .asset
             .expect("option activities should produce symbol");
@@ -1093,7 +1126,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
 
         assert_eq!(mapped.activity_type, activities::ACTIVITY_TYPE_SELL);
         assert_eq!(mapped.subtype.as_deref(), Some("POSITION_OPEN"));
@@ -1115,7 +1148,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
 
         assert_eq!(mapped.activity_type, activities::ACTIVITY_TYPE_SELL);
         assert_eq!(mapped.subtype.as_deref(), Some("POSITION_OPEN"));
@@ -1136,7 +1169,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
 
         assert_eq!(mapped.activity_type, activities::ACTIVITY_TYPE_BUY);
         assert_eq!(mapped.subtype.as_deref(), Some("POSITION_CLOSE"));
@@ -1156,7 +1189,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
         let symbol = mapped.asset.expect("equity activity should produce symbol");
 
         assert_eq!(symbol.symbol.as_deref(), Some("AAPL"));
@@ -1177,8 +1210,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mapped =
-                map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+            let mapped = map_test_activity(&activity);
             assert!(
                 mapped.asset.is_none(),
                 "expected no asset for never-asset type {}",
@@ -1200,7 +1232,7 @@ mod tests {
             ..Default::default()
         };
 
-        let mapped = map_broker_activity(&activity, "acct-1", Some("USD"), Some("USD")).unwrap();
+        let mapped = map_test_activity(&activity);
         assert_eq!(
             mapped.asset.and_then(|s| s.symbol),
             Some("AAPL".to_string())
