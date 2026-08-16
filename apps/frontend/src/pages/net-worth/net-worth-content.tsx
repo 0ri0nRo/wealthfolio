@@ -159,7 +159,7 @@ export function NetWorthContent() {
 
   const currency = netWorthData?.currency || settings?.baseCurrency || "USD";
   const hasStaleValuations = netWorthData && netWorthData.staleAssets.length > 0;
-  const periodLabel = periodCode;
+  const periodLabel = t(`ui:interval.${periodCode}`);
 
   // Breakdown row → detail drawer. Investments open the existing asset-class
   // allocation sheet; every other row opens the category detail sheet.
@@ -354,6 +354,7 @@ export function NetWorthContent() {
                   trailingYearMonthly={trailingYearMonthly}
                   currency={currency}
                   periodLabel={periodLabel}
+                  periodCode={periodCode}
                 />
               )}
 
