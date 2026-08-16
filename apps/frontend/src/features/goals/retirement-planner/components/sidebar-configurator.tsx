@@ -565,8 +565,24 @@ export function SidebarConfigurator({
             <ConfigRow label={t("goals:sidebar.plan.current_age")}>
               {draft.personal.currentAge}
             </ConfigRow>
-            <ConfigRow label={draftMode === "fire" ? t("goals:sidebar.plan.desired_retirement_age") : t("goals:sidebar.plan.retirement_age")}>{draft.personal.targetRetirementAge}</ConfigRow>
-            <ConfigRow label={draftMode === "fire" ? t("goals:sidebar.plan.horizon_age_fire") : t("goals:sidebar.plan.horizon_age_traditional")}>{draft.personal.planningHorizonAge}</ConfigRow>
+            <ConfigRow
+              label={
+                draftMode === "fire"
+                  ? t("goals:sidebar.plan.desired_retirement_age")
+                  : t("goals:sidebar.plan.retirement_age")
+              }
+            >
+              {draft.personal.targetRetirementAge}
+            </ConfigRow>
+            <ConfigRow
+              label={
+                draftMode === "fire"
+                  ? t("goals:sidebar.plan.horizon_age_fire")
+                  : t("goals:sidebar.plan.horizon_age_traditional")
+              }
+            >
+              {draft.personal.planningHorizonAge}
+            </ConfigRow>
             <ConfigRow label={t("goals:sidebar.plan.monthly_contribution_until_retirement")}>
               {formatAmount(draft.investment.monthlyContribution, currency)}
             </ConfigRow>
@@ -658,7 +674,11 @@ export function SidebarConfigurator({
               format={(v) => String(Math.round(v))}
             />
             <LeverRow
-              label={draftMode === "fire" ? t("goals:sidebar.plan.horizon_age_fire") : t("goals:sidebar.plan.horizon_age_traditional")}
+              label={
+                draftMode === "fire"
+                  ? t("goals:sidebar.plan.horizon_age_fire")
+                  : t("goals:sidebar.plan.horizon_age_traditional")
+              }
               hint={t("goals:sidebar.plan.horizon_hint")}
               value={draft.personal.planningHorizonAge}
               onChange={(v) =>
