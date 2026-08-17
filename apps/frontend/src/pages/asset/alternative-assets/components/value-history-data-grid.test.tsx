@@ -61,7 +61,7 @@ const renderGrid = ({
   onDeleteQuote = vi.fn().mockResolvedValue(undefined),
   onPersistComplete = vi.fn().mockResolvedValue(undefined),
 }: RenderGridOptions = {}) => {
-  render(
+  return render(
     <ValueHistoryDataGrid
       data={data}
       assetId={assetId}
@@ -155,6 +155,32 @@ describe("ValueHistoryDataGrid mobile", () => {
     expect(screen.getByRole("textbox", { name: "Balance" })).toHaveValue("510,000.00");
   });
 
+  it("preserves an open draft when external data refreshes", () => {
+    const onSaveQuote = vi.fn().mockResolvedValue(undefined);
+    const onDeleteQuote = vi.fn().mockResolvedValue(undefined);
+    const onPersistComplete = vi.fn().mockResolvedValue(undefined);
+    const view = renderGrid({ onSaveQuote, onDeleteQuote, onPersistComplete });
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit 2026-08-17, $495,000.00" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Balance" }), {
+      target: { value: "510000" },
+    });
+
+    view.rerender(
+      <ValueHistoryDataGrid
+        data={[createQuote("2026-08-17", 500_000)]}
+        assetId={assetId}
+        currency="USD"
+        isLiability
+        onSaveQuote={onSaveQuote}
+        onDeleteQuote={onDeleteQuote}
+        onPersistComplete={onPersistComplete}
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Balance" })).toHaveValue("510,000.00");
+  });
+
   it("keeps the row and confirmation open when deletion fails", async () => {
     const onDeleteQuote = vi.fn().mockRejectedValue(new Error("delete failed"));
     renderGrid({ onDeleteQuote });
@@ -234,6 +260,33 @@ describe("ValueHistoryDataGrid desktop persistence", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Save Changes" })).toBeEnabled());
     expect(onPersistComplete).not.toHaveBeenCalled();
     expect(screen.getByText("2 modified")).toBeInTheDocument();
+  });
+
+  it("preserves unsaved edits when external data refreshes", () => {
+    const onSaveQuote = vi.fn().mockResolvedValue(undefined);
+    const onDeleteQuote = vi.fn().mockResolvedValue(undefined);
+    const onPersistComplete = vi.fn().mockResolvedValue(undefined);
+    const view = renderGrid({ onSaveQuote, onDeleteQuote, onPersistComplete });
+
+    const grid = getDataGridOptions();
+    act(() => {
+      grid.onDataChange(grid.data.map((entry) => ({ ...entry, value: 490_000 })));
+    });
+
+    view.rerender(
+      <ValueHistoryDataGrid
+        data={[createQuote("2026-08-17", 500_000)]}
+        assetId={assetId}
+        currency="USD"
+        isLiability
+        onSaveQuote={onSaveQuote}
+        onDeleteQuote={onDeleteQuote}
+        onPersistComplete={onPersistComplete}
+      />,
+    );
+
+    expect(getDataGridOptions().data[0].value).toBe(490_000);
+    expect(screen.getByText("1 modified")).toBeInTheDocument();
   });
 
   it("makes the data grid read-only while the saved snapshot is in flight", async () => {

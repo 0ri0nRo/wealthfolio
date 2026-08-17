@@ -320,6 +320,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   // History tab
   return (
     <ValueHistoryDataGrid
+      key={assetId}
       data={quoteHistory}
       assetId={assetId}
       currency={holding.currency}

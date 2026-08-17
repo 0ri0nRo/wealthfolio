@@ -20,7 +20,7 @@ import {
   Textarea,
   useDataGrid,
 } from "@wealthfolio/ui";
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { Quote } from "@/lib/types";
@@ -169,18 +169,20 @@ export function ValueHistoryDataGrid({
   const [mobileDeleteEntry, setMobileDeleteEntry] = useState<ValueHistoryEntry | null>(null);
   const [isPersisting, setIsPersisting] = useState(false);
   const mobileNotesId = useId();
-
-  // Sync with external data changes
-  useEffect(() => {
-    setLocalEntries(initialEntries);
-    setDirtyIds(new Set());
-    setDeletedIds(new Set());
-    setMobileDraft(null);
-    setMobileDeleteEntry(null);
-  }, [initialEntries]);
+  const lastSyncedEntriesRef = useRef(initialEntries);
 
   // Track if there are unsaved changes
   const hasUnsavedChanges = dirtyIds.size > 0 || deletedIds.size > 0;
+  const hasPendingEdits = hasUnsavedChanges || mobileDraft !== null;
+
+  // Sync with external data changes
+  useEffect(() => {
+    if (initialEntries === lastSyncedEntriesRef.current) return;
+    if (isPersisting || hasPendingEdits) return;
+    setLocalEntries(initialEntries);
+    setMobileDeleteEntry(null);
+    lastSyncedEntriesRef.current = initialEntries;
+  }, [hasPendingEdits, initialEntries, isPersisting]);
 
   // Column definitions
   const columnHelper = createColumnHelper<ValueHistoryEntry>();
