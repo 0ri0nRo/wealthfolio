@@ -56,7 +56,11 @@ export function GoalLeverRow({
   warning,
 }: GoalLeverRowProps) {
   const inputScale = suffix === "%" ? 100 : 1;
-  const inputUpperBound = inputMax ?? max;
+  // Money fields have no natural hard cap (currencies vary by orders of
+  // magnitude, e.g. IDR vs USD), so typed amounts stay unclamped unless the
+  // caller passes an explicit inputMax. The slider itself stays bounded to a
+  // practical, value-relative range via `max`.
+  const inputUpperBound = inputMax ?? (kind === "money" ? Number.MAX_SAFE_INTEGER : max);
   // Sliders use a practical range; text inputs can allow a higher hard cap.
   const sliderUpperBound = Math.min(max, inputUpperBound);
   const clampedValue = Math.min(sliderUpperBound, Math.max(min, value));

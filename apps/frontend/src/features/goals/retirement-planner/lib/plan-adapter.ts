@@ -61,6 +61,31 @@ export function normalizeDashboardRetirementPlan(plan: RetirementPlan): Retireme
   return normalizeRetirementPlan(plan);
 }
 
+/**
+ * DEFAULT_RETIREMENT_PLAN's money fields (contribution, expense presets) are
+ * USD-scale figures. When seeding a new plan in a different base currency,
+ * scale them by a USD -> target-currency rate so e.g. IDR users see the IDR
+ * equivalent of $1,000/mo rather than the raw "1000" relabeled as IDR.
+ */
+export function scaleRetirementPlanAmounts(
+  plan: RetirementPlan,
+  usdToTargetRate: number,
+): RetirementPlan {
+  return {
+    ...plan,
+    investment: {
+      ...plan.investment,
+      monthlyContribution: Math.round(plan.investment.monthlyContribution * usdToTargetRate),
+    },
+    expenses: {
+      items: plan.expenses.items.map((item) => ({
+        ...item,
+        monthlyAmount: Math.round(item.monthlyAmount * usdToTargetRate),
+      })),
+    },
+  };
+}
+
 export const DEFAULT_RETIREMENT_PLAN: RetirementPlan = {
   version: "v3",
   personal: {
