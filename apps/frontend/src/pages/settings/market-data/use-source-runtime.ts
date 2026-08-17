@@ -10,6 +10,7 @@ import type {
 
 import type { FormValues, SourceKey } from "./custom-provider-form";
 import type { ProviderTemplate } from "./provider-templates";
+import { expandTemplatePlaceholders } from "./template-placeholders";
 
 export type MappingField =
   | "pricePath"
@@ -141,31 +142,18 @@ export function useSourceRuntime({
     };
   }, [urlTemplate, bodyTemplate, method]);
 
-  const expandTestUrl = useCallback(
-    (url: string) => {
-      let expanded = url;
-      if (extraPlaceholders.isin) expanded = expanded.replaceAll("{ISIN}", inputsState.isin);
-      if (extraPlaceholders.mic) expanded = expanded.replaceAll("{MIC}", inputsState.mic);
-      if (extraPlaceholders.currency) {
-        const currency = normalizedCurrencyInput(inputsState.currency);
-        expanded = expanded.replaceAll("{currency}", currency.toLowerCase());
-        expanded = expanded.replaceAll("{CURRENCY}", currency.toUpperCase());
-      }
-      return expanded;
-    },
-    [extraPlaceholders, inputsState.isin, inputsState.mic, inputsState.currency],
-  );
-
   const expandedUrl = useMemo(() => {
-    let u = urlTemplate.replaceAll("{SYMBOL}", inputsState.symbol || "{SYMBOL}");
-    u = expandTestUrl(u);
-    const today = todayDateString();
-    u = u
-      .replaceAll("{TODAY}", today)
-      .replaceAll("{FROM}", inputsState.from)
-      .replaceAll("{TO}", inputsState.to);
-    return u;
-  }, [urlTemplate, expandTestUrl, inputsState.symbol, inputsState.from, inputsState.to]);
+    return expandTemplatePlaceholders(urlTemplate, {
+      SYMBOL: inputsState.symbol || "{SYMBOL}",
+      ISIN: inputsState.isin,
+      MIC: inputsState.mic,
+      CURRENCY: normalizedCurrencyInput(inputsState.currency).toUpperCase(),
+      currency: normalizedCurrencyInput(inputsState.currency).toLowerCase(),
+      TODAY: todayDateString(),
+      FROM: inputsState.from,
+      TO: inputsState.to,
+    });
+  }, [urlTemplate, inputsState]);
 
   const resetFetchState = useCallback(() => {
     setRawResponse(null);
@@ -392,6 +380,8 @@ export function useSourceRuntime({
       form.setValue(`${prefix}.lowPath`, t.lowPath ?? "");
       form.setValue(`${prefix}.volumePath`, t.volumePath ?? "");
       form.setValue(`${prefix}.headers`, t.headers ?? "");
+      form.setValue(`${prefix}.method`, "GET");
+      form.setValue(`${prefix}.body`, "");
       form.setValue(`${prefix}.currencyPath`, t.currencyPath ?? "");
       form.setValue(`${prefix}.locale`, "");
       form.setValue(`${prefix}.factor`, undefined);

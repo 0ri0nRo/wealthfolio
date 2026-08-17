@@ -19,6 +19,11 @@ import { cn } from "@/lib/utils";
 import { useNumberFormatting, type FormattingApi } from "@wealthfolio/ui";
 import type { FormValues, SourceKey } from "./custom-provider-form";
 import { RawResponseViewer } from "./response-preview";
+import {
+  expandTemplatePlaceholders,
+  resolveTemplatePlaceholder,
+  type TemplatePlaceholderValues,
+} from "./template-placeholders";
 import type { MappingField, SourceRuntime } from "./use-source-runtime";
 
 interface LivePreviewPaneProps {
@@ -85,22 +90,23 @@ function PreviewUrl({
   placeholder,
 }: {
   template: string;
-  values: Record<string, string>;
+  values: TemplatePlaceholderValues;
   multiline?: boolean;
   placeholder?: string;
 }) {
   const { t } = useTranslation();
   const segments = useMemo(() => {
     if (!template) return [];
-    const re = /\{([A-Za-z:%\-_]+)\}/g;
+    const re = /\{([A-Za-z]+)(?::([^}]+))?\}/g;
     const out: { kind: "text" | "chip"; text: string; value?: string }[] = [];
     let last = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(template))) {
       if (m.index > last) out.push({ kind: "text", text: template.slice(last, m.index) });
       const key = m[1];
-      const value = values[key] || values[key.toUpperCase()];
-      out.push({ kind: "chip", text: key, value });
+      const format = m[2];
+      const value = resolveTemplatePlaceholder(key, format, values);
+      out.push({ kind: "chip", text: format ? `${key}:${format}` : key, value });
       last = m.index + m[0].length;
     }
     if (last < template.length) out.push({ kind: "text", text: template.slice(last) });
@@ -673,7 +679,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
   const { inputs, setInputs, extraPlaceholders, isHistorical } = runtime;
   const previewCurrency = inputs.currency.trim() || "USD";
 
-  const previewValues: Record<string, string> = {
+  const previewValues: TemplatePlaceholderValues = {
     SYMBOL: inputs.symbol,
     ISIN: inputs.isin,
     MIC: inputs.mic,
@@ -686,10 +692,7 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
 
   const method = form.watch(`${prefix}.method`) ?? "GET";
   const bodyTemplate = form.watch(`${prefix}.body`) ?? "";
-  const expandedBody = bodyTemplate.replace(
-    /\{([A-Za-z:%\-_]+)\}/g,
-    (m, k) => previewValues[k] ?? previewValues[k.toUpperCase()] ?? m,
-  );
+  const expandedBody = expandTemplatePlaceholders(bodyTemplate, previewValues);
 
   const missingRange = isHistorical && (!inputs.from || !inputs.to);
   const fetchDisabled =
@@ -740,14 +743,14 @@ export function LivePreviewPane({ form, prefix, runtime }: LivePreviewPaneProps)
       {method === "POST" && (
         <section className="space-y-2">
           <Label className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
-            Request body (preview)
+            {t("settings:market_data_page.request_body_preview")}
           </Label>
           <div className="bg-background relative min-h-[40px] rounded-lg border px-3 py-2 pr-10">
             <PreviewUrl
               template={bodyTemplate}
               values={previewValues}
               multiline
-              placeholder="Enter a request body to preview…"
+              placeholder={t("settings:market_data_page.enter_body_to_preview")}
             />
             <CopyButton text={expandedBody} disabled={!bodyTemplate} />
           </div>
