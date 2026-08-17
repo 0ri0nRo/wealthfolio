@@ -128,4 +128,34 @@ describe("CustomProviderForm", () => {
       expect.any(Object),
     );
   });
+
+  it("resets POST state when applying a quick-start template", async () => {
+    const user = userEvent.setup();
+
+    render(<CustomProviderForm open onOpenChange={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText(/http method/i), "POST");
+    setInputValue(screen.getByLabelText(/request body/i), '{"symbol":"{SYMBOL}"}');
+
+    await user.click(screen.getByRole("button", { name: /coingecko/i }));
+
+    expect(screen.getByLabelText(/http method/i)).toHaveValue("GET");
+    expect(screen.queryByLabelText(/request body/i)).not.toBeInTheDocument();
+  });
+
+  it("clears the request body when switching between GET and POST", async () => {
+    const user = userEvent.setup();
+
+    render(<CustomProviderForm open onOpenChange={vi.fn()} />);
+
+    const method = screen.getByLabelText(/http method/i);
+    await user.selectOptions(method, "POST");
+    setInputValue(screen.getByLabelText(/request body/i), '{"symbol":"{SYMBOL}"}');
+
+    await user.selectOptions(method, "GET");
+    expect(screen.queryByLabelText(/request body/i)).not.toBeInTheDocument();
+
+    await user.selectOptions(method, "POST");
+    expect(screen.getByLabelText(/request body/i)).toHaveValue("");
+  });
 });

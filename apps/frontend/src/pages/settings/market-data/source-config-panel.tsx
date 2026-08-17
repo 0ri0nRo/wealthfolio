@@ -318,6 +318,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
   useEffect(() => {
     if (format !== "json" && method === "POST") {
       form.setValue(`${prefix}.method`, "GET");
+      form.setValue(`${prefix}.body`, "");
     }
   }, [format, method, prefix, form]);
 
@@ -516,7 +517,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
-                      HTTP method
+                      {t("settings:market_data_page.http_method")}
                     </FormLabel>
                     <FormControl>
                       <select
@@ -524,6 +525,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                         {...field}
                         onChange={(e) => {
                           field.onChange(e.target.value as "GET" | "POST");
+                          form.setValue(`${prefix}.body`, "");
                         }}
                       >
                         <option value="GET">GET</option>
@@ -543,7 +545,7 @@ export function SourceConfigPanel({ form, prefix, runtime, onUrlChange }: Source
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel className="text-muted-foreground text-[11px] font-medium uppercase tracking-wide">
-                        Request body (JSON)
+                        {t("settings:market_data_page.request_body_json")}
                       </FormLabel>
                       <FormControl>
                         <Textarea
