@@ -318,10 +318,11 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   return (
     <ValueHistoryDataGrid
       data={quoteHistory}
+      assetId={assetId}
       currency={holding.currency}
       isLiability={isLiability}
-      onSaveQuote={(quote: Quote) => saveQuoteMutation.mutate(quote)}
-      onDeleteQuote={(id: string) => deleteQuoteMutation.mutate(id)}
+      onSaveQuote={(quote: Quote) => saveQuoteMutation.mutateAsync(quote)}
+      onDeleteQuote={(id: string) => deleteQuoteMutation.mutateAsync(id)}
     />
   );
 };

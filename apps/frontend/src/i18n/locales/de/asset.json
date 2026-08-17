@@ -666,7 +666,11 @@
     "date": "Datum",
     "balance": "Saldo",
     "value": "Wert",
-    "notes": "Notizen"
+    "notes": "Notizen",
+    "edit_entry_aria": "Eintrag vom {{date}} bearbeiten, {{value}}",
+    "delete_entry_aria": "Eintrag vom {{date}} löschen, {{value}}",
+    "delete_title": "Verlaufseintrag löschen?",
+    "delete_description": "Dieser Verlaufseintrag wird dauerhaft gelöscht."
   },
   "valueToolbar": {
     "add_balance": "Saldo hinzufügen",

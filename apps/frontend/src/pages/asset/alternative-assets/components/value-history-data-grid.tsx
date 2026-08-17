@@ -1,13 +1,36 @@
-import { Button, DataGrid, Icons, useDataGrid } from "@wealthfolio/ui";
-import { useCallback, useMemo, useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  Button,
+  DataGrid,
+  DatePickerInput,
+  formatAmount,
+  formatCurrencySymbol,
+  Icons,
+  InputGroup,
+  InputGroupAddon,
+  InputGroupText,
+  MoneyInput,
+  Textarea,
+  useDataGrid,
+} from "@wealthfolio/ui";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { Quote } from "@/lib/types";
+import { useIsMobileViewport } from "@/hooks/use-platform";
 import { ValueHistoryToolbar } from "./value-history-toolbar";
 import { format } from "date-fns";
 
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const UTC_MIDNIGHT_REGEX = /^\d{4}-\d{2}-\d{2}T00:00:00(?:\.\d+)?Z$/;
+const MOBILE_PAGE_SIZE = 20;
 
 // Parse YYYY-MM-DD as local midnight to avoid timezone shifts in date-only values.
 const parseLocalDate = (dateOnly: string): Date => new Date(dateOnly + "T00:00:00");
@@ -47,14 +70,16 @@ export interface ValueHistoryEntry {
 interface ValueHistoryDataGridProps {
   /** Quote data from the backend */
   data: Quote[];
+  /** Asset identifier used for canonical manual quote IDs */
+  assetId: string;
   /** Currency for the asset */
   currency: string;
   /** Whether this is a liability (changes "Value" to "Balance" label) */
   isLiability?: boolean;
   /** Callback to save a quote */
-  onSaveQuote: (quote: Quote) => void;
+  onSaveQuote: (quote: Quote) => Promise<void>;
   /** Callback to delete a quote */
-  onDeleteQuote: (quoteId: string) => void;
+  onDeleteQuote: (quoteId: string) => Promise<void>;
 }
 
 // Generate a temporary ID for new entries
@@ -71,14 +96,14 @@ const toValueHistoryEntry = (quote: Quote): ValueHistoryEntry => ({
 });
 
 // Convert ValueHistoryEntry back to Quote for saving
-const toQuote = (entry: ValueHistoryEntry, symbol: string): Quote => {
-  const datePart = format(entry.date, "yyyy-MM-dd").replace(/-/g, "");
+const toQuote = (entry: ValueHistoryEntry, assetId: string): Quote => {
+  const datePart = format(entry.date, "yyyy-MM-dd");
   return {
-    id: entry.id.startsWith("temp-") ? `${datePart}_${symbol.toUpperCase()}` : entry.id,
+    id: `${assetId}_${datePart}_MANUAL`,
     createdAt: new Date().toISOString(),
     dataSource: "MANUAL",
     timestamp: format(entry.date, "yyyy-MM-dd'T'00:00:00'Z'"),
-    assetId: symbol,
+    assetId,
     open: entry.value,
     high: entry.value,
     low: entry.value,
@@ -102,12 +127,14 @@ const createDraftEntry = (currency: string): ValueHistoryEntry => ({
 
 export function ValueHistoryDataGrid({
   data,
+  assetId,
   currency,
   isLiability = false,
   onSaveQuote,
   onDeleteQuote,
 }: ValueHistoryDataGridProps) {
   const { t } = useTranslation();
+  const isMobile = useIsMobileViewport();
   // Convert quotes to local entries
   const initialEntries = useMemo(
     () => data.map(toValueHistoryEntry).sort((a, b) => b.date.getTime() - a.date.getTime()),
@@ -117,19 +144,23 @@ export function ValueHistoryDataGrid({
   const [localEntries, setLocalEntries] = useState<ValueHistoryEntry[]>(initialEntries);
   const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
+  const [mobilePage, setMobilePage] = useState(0);
+  const [mobileDraft, setMobileDraft] = useState<ValueHistoryEntry | null>(null);
+  const [mobileDeleteEntry, setMobileDeleteEntry] = useState<ValueHistoryEntry | null>(null);
+  const [isPersisting, setIsPersisting] = useState(false);
+  const mobileNotesId = useId();
 
   // Sync with external data changes
-  useMemo(() => {
+  useEffect(() => {
     setLocalEntries(initialEntries);
     setDirtyIds(new Set());
     setDeletedIds(new Set());
+    setMobileDraft(null);
+    setMobileDeleteEntry(null);
   }, [initialEntries]);
 
   // Track if there are unsaved changes
   const hasUnsavedChanges = dirtyIds.size > 0 || deletedIds.size > 0;
-
-  // Get assetId from first quote or use empty string
-  const symbol = data[0]?.assetId ?? "";
 
   // Column definitions
   const columnHelper = createColumnHelper<ValueHistoryEntry>();
@@ -318,26 +349,28 @@ export function ValueHistoryDataGrid({
   }, [dataGrid.table, onRowsDelete]);
 
   // Save all changes
-  const handleSave = useCallback(() => {
-    // Save dirty entries
-    for (const entry of localEntries) {
-      if (dirtyIds.has(entry.id)) {
-        const quote = toQuote(entry, symbol);
-        onSaveQuote(quote);
-      }
-    }
+  const handleSave = useCallback(async () => {
+    if (isPersisting) return;
 
-    // Delete marked entries
-    for (const id of deletedIds) {
-      if (!id.startsWith("temp-")) {
-        onDeleteQuote(id);
-      }
-    }
+    const quotesToSave = localEntries
+      .filter((entry) => dirtyIds.has(entry.id))
+      .map((entry) => toQuote(entry, assetId));
+    const idsToDelete = [...deletedIds].filter((id) => !id.startsWith("temp-"));
 
-    // Reset state
-    setDirtyIds(new Set());
-    setDeletedIds(new Set());
-  }, [localEntries, dirtyIds, deletedIds, symbol, onSaveQuote, onDeleteQuote]);
+    setIsPersisting(true);
+    try {
+      await Promise.all([
+        ...quotesToSave.map((quote) => onSaveQuote(quote)),
+        ...idsToDelete.map((id) => onDeleteQuote(id)),
+      ]);
+      setDirtyIds(new Set());
+      setDeletedIds(new Set());
+    } catch {
+      // Mutation callbacks surface their own error notifications. Keep edits for retry.
+    } finally {
+      setIsPersisting(false);
+    }
+  }, [assetId, deletedIds, dirtyIds, isPersisting, localEntries, onDeleteQuote, onSaveQuote]);
 
   // Cancel changes
   const handleCancel = useCallback(() => {
@@ -346,6 +379,299 @@ export function ValueHistoryDataGrid({
     setDeletedIds(new Set());
     dataGrid.table.resetRowSelection();
   }, [initialEntries, dataGrid.table]);
+
+  const sortedEntries = useMemo(
+    () => [...localEntries].sort((a, b) => b.date.getTime() - a.date.getTime()),
+    [localEntries],
+  );
+  const mobilePageCount = Math.max(1, Math.ceil(sortedEntries.length / MOBILE_PAGE_SIZE));
+  const mobilePageEntries = sortedEntries.slice(
+    mobilePage * MOBILE_PAGE_SIZE,
+    (mobilePage + 1) * MOBILE_PAGE_SIZE,
+  );
+
+  useEffect(() => {
+    setMobilePage((page) => Math.min(page, mobilePageCount - 1));
+  }, [mobilePageCount]);
+
+  const handleMobileAdd = useCallback(() => {
+    setMobilePage(0);
+    setMobileDraft(createDraftEntry(currency));
+  }, [currency]);
+
+  const handleMobileFieldChange = useCallback(
+    (field: "date" | "value" | "notes", value: Date | number | string) => {
+      setMobileDraft((draft) => (draft ? { ...draft, [field]: value } : draft));
+    },
+    [],
+  );
+
+  const handleMobileEdit = useCallback((entry: ValueHistoryEntry) => {
+    setMobileDraft({ ...entry, date: new Date(entry.date) });
+  }, []);
+
+  const handleMobileSave = useCallback(async () => {
+    if (!mobileDraft || isPersisting) return;
+
+    const quote = toQuote(mobileDraft, assetId);
+    const savedEntry: ValueHistoryEntry = {
+      ...mobileDraft,
+      id: quote.id,
+      isNew: false,
+    };
+
+    setIsPersisting(true);
+    try {
+      await onSaveQuote(quote);
+      const savedDay = format(savedEntry.date, "yyyy-MM-dd");
+      setLocalEntries((prev) => [
+        savedEntry,
+        ...prev.filter(
+          (entry) => entry.id !== mobileDraft.id && format(entry.date, "yyyy-MM-dd") !== savedDay,
+        ),
+      ]);
+      setMobileDraft(null);
+    } catch {
+      // Mutation callback surfaces the error. Keep the draft open for retry.
+    } finally {
+      setIsPersisting(false);
+    }
+  }, [assetId, isPersisting, mobileDraft, onSaveQuote]);
+
+  const handleMobileDelete = useCallback(async () => {
+    if (!mobileDeleteEntry || isPersisting) return;
+
+    const entryToDelete = mobileDeleteEntry;
+    setIsPersisting(true);
+    try {
+      await onDeleteQuote(entryToDelete.id);
+      setLocalEntries((prev) => prev.filter((entry) => entry.id !== entryToDelete.id));
+      setMobileDraft((draft) => (draft?.id === entryToDelete.id ? null : draft));
+      setMobileDeleteEntry(null);
+    } catch {
+      // Mutation callback surfaces the error. Keep the dialog open for retry.
+    } finally {
+      setIsPersisting(false);
+    }
+  }, [isPersisting, mobileDeleteEntry, onDeleteQuote]);
+
+  if (isMobile) {
+    const valueLabel = isLiability
+      ? t("asset:valueHistory.balance")
+      : t("asset:valueHistory.value");
+    const mobileEntries = mobileDraft?.isNew
+      ? [mobileDraft, ...mobilePageEntries]
+      : mobilePageEntries;
+
+    return (
+      <div className="flex flex-col space-y-3">
+        <div>
+          <Button
+            className="h-11"
+            onClick={handleMobileAdd}
+            disabled={mobileDraft !== null || isPersisting}
+          >
+            <Icons.Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+            {isLiability ? t("asset:valueToolbar.add_balance") : t("asset:valueToolbar.add_value")}
+          </Button>
+        </div>
+
+        <div className="bg-background isolate divide-y overflow-hidden rounded-xl border">
+          {mobileEntries.length === 0 ? (
+            <p className="text-muted-foreground p-6 text-center text-sm">
+              {t("asset:altContent.no_valuation_data")}
+            </p>
+          ) : (
+            mobileEntries.map((entry) => {
+              const isEditing = mobileDraft?.id === entry.id;
+
+              if (isEditing && mobileDraft) {
+                const draft = mobileDraft;
+
+                return (
+                  <div key={draft.id} className="bg-background w-full space-y-3 p-3">
+                    <div>
+                      <span className="text-xs font-medium uppercase tracking-wide">
+                        {draft.isNew
+                          ? isLiability
+                            ? t("asset:valueToolbar.add_balance")
+                            : t("asset:valueToolbar.add_value")
+                          : t("common:edit")}
+                      </span>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      <div>
+                        <label className="text-muted-foreground mb-1 block text-xs">
+                          {t("asset:valueHistory.date")}
+                        </label>
+                        <DatePickerInput
+                          value={draft.date}
+                          disabled={isPersisting}
+                          onChange={(date) => date && handleMobileFieldChange("date", date)}
+                        />
+                      </div>
+                      <div>
+                        <label className="text-muted-foreground mb-1 block text-xs">
+                          {valueLabel}
+                        </label>
+                        <InputGroup className="bg-input-bg h-10 rounded-md">
+                          <InputGroupAddon align="inline-start">
+                            <InputGroupText>{formatCurrencySymbol(draft.currency)}</InputGroupText>
+                          </InputGroupAddon>
+                          <MoneyInput
+                            data-slot="input-group-control"
+                            className="min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none ring-0 focus-visible:ring-0"
+                            value={draft.value}
+                            maxDecimalPlaces={2}
+                            fixedDecimalScale
+                            thousandSeparator
+                            disabled={isPersisting}
+                            aria-label={valueLabel}
+                            onValueChange={(value) => handleMobileFieldChange("value", value ?? 0)}
+                          />
+                        </InputGroup>
+                      </div>
+                      <div>
+                        <label
+                          htmlFor={mobileNotesId}
+                          className="text-muted-foreground mb-1 block text-xs"
+                        >
+                          {t("asset:valueHistory.notes")}
+                        </label>
+                        <Textarea
+                          id={mobileNotesId}
+                          rows={2}
+                          className="min-h-16 resize-none"
+                          value={draft.notes}
+                          disabled={isPersisting}
+                          onChange={(event) => handleMobileFieldChange("notes", event.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-1">
+                      <Button
+                        variant="outline"
+                        className="h-11"
+                        disabled={isPersisting}
+                        onClick={() => setMobileDraft(null)}
+                      >
+                        {t("common:cancel")}
+                      </Button>
+                      <Button className="h-11" disabled={isPersisting} onClick={handleMobileSave}>
+                        <Icons.Save className="mr-2 h-4 w-4" aria-hidden="true" />
+                        {t("common:save")}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div key={entry.id} className="flex items-center p-1.5">
+                  <button
+                    type="button"
+                    className="active:bg-muted/40 grid min-h-11 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 rounded-md px-1.5 py-2 text-left disabled:opacity-50"
+                    aria-label={t("asset:valueHistory.edit_entry_aria", {
+                      date: format(entry.date, "yyyy-MM-dd"),
+                      value: formatAmount(entry.value, entry.currency),
+                    })}
+                    disabled={isPersisting}
+                    onClick={() => handleMobileEdit(entry)}
+                  >
+                    <span className="text-muted-foreground truncate text-sm">
+                      {format(entry.date, "yyyy-MM-dd")}
+                    </span>
+                    <span className="text-foreground text-base font-semibold tabular-nums">
+                      {formatAmount(entry.value, entry.currency)}
+                    </span>
+                    <Icons.Pencil className="text-muted-foreground h-4 w-4" aria-hidden="true" />
+                    {entry.notes && (
+                      <span className="text-muted-foreground col-span-3 mt-1 line-clamp-2 text-xs">
+                        {entry.notes}
+                      </span>
+                    )}
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-muted-foreground hover:text-destructive h-11 w-11 shrink-0"
+                    aria-label={t("asset:valueHistory.delete_entry_aria", {
+                      date: format(entry.date, "yyyy-MM-dd"),
+                      value: formatAmount(entry.value, entry.currency),
+                    })}
+                    disabled={isPersisting}
+                    onClick={() => setMobileDeleteEntry(entry)}
+                  >
+                    <Icons.Trash className="h-4 w-4" aria-hidden="true" />
+                  </Button>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {mobilePageCount > 1 && (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">
+              {t("asset:quoteGrid.page_of", {
+                page: mobilePage + 1,
+                total: mobilePageCount,
+              })}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11"
+                onClick={() => setMobilePage((page) => page - 1)}
+                disabled={mobilePage === 0 || mobileDraft !== null || isPersisting}
+              >
+                {t("common:previous")}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-11"
+                onClick={() => setMobilePage((page) => page + 1)}
+                disabled={mobilePage >= mobilePageCount - 1 || mobileDraft !== null || isPersisting}
+              >
+                {t("common:next")}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <AlertDialog
+          open={mobileDeleteEntry !== null}
+          onOpenChange={(open) => !open && !isPersisting && setMobileDeleteEntry(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("asset:valueHistory.delete_title")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("asset:valueHistory.delete_description")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isPersisting}>{t("common:cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={isPersisting}
+                onClick={(event) => {
+                  event.preventDefault();
+                  void handleMobileDelete();
+                }}
+              >
+                {t("common:delete")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col space-y-3">
@@ -358,6 +684,7 @@ export function ValueHistoryDataGrid({
         onDeleteSelected={handleDeleteSelected}
         onSave={handleSave}
         onCancel={handleCancel}
+        isSaving={isPersisting}
         isLiability={isLiability}
       />
 
