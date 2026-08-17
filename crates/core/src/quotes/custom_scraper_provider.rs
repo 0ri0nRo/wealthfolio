@@ -97,7 +97,7 @@ impl CustomScraperProvider {
             to,
         };
 
-        expand_template(url, &tctx)
+        expand_template(url, &tctx).expect("test URL template should be valid")
     }
 
     fn source_has_identity_placeholder(source: &CustomProviderSource) -> bool {
@@ -292,7 +292,15 @@ impl CustomScraperProvider {
             source.body.as_deref(),
             &tctx,
             |value| self.resolve_secret(value),
-        )?;
+        )
+        .map_err(|error| match error {
+            crate::custom_provider::model::PrepareRequestError::Template(error) => {
+                MarketDataError::ValidationFailed {
+                    message: error.to_string(),
+                }
+            }
+            crate::custom_provider::model::PrepareRequestError::Header(error) => error,
+        })?;
 
         validate_url(&request.url).map_err(|e| MarketDataError::ProviderError {
             provider: DATA_SOURCE_CUSTOM_SCRAPER.to_string(),
@@ -318,7 +326,7 @@ impl CustomScraperProvider {
             }
         };
 
-        let currency = resolve_currency(source, symbol, currency_hint, &body, from, to);
+        let currency = resolve_currency(source, symbol, currency_hint, &body, from, to)?;
 
         // Auto-detect locale from HTML lang if not explicitly set
         let locale = source.locale.as_deref().map(|s| s.to_string()).or_else(|| {
@@ -356,7 +364,7 @@ impl CustomScraperProvider {
             }
             "json" => {
                 let rows =
-                    extract_json_rows(&body, source, symbol, currency_hint, locale_ref, from, to);
+                    extract_json_rows(&body, source, symbol, currency_hint, locale_ref, from, to)?;
                 if rows.is_empty() {
                     return Err(MarketDataError::ProviderError {
                         provider: DATA_SOURCE_CUSTOM_SCRAPER.to_string(),
@@ -734,7 +742,7 @@ fn resolve_currency(
     body: &str,
     from: Option<&str>,
     to: Option<&str>,
-) -> String {
+) -> Result<String, MarketDataError> {
     if source.format == "json" {
         let currency = currency_hint.unwrap_or("USD");
         let tctx = TemplateContext {
@@ -745,19 +753,23 @@ fn resolve_currency(
             from,
             to,
         };
-        source
+        let extracted = source
             .currency_path
             .as_ref()
-            .and_then(|cp| {
-                let cp = expand_template(cp, &tctx);
-                extract_json_string(body, &cp)
+            .map(|cp| {
+                expand_template(cp, &tctx).map_err(|error| MarketDataError::ValidationFailed {
+                    message: error.to_string(),
+                })
             })
+            .transpose()?
+            .and_then(|cp| extract_json_string(body, &cp));
+        Ok(extracted
             .or_else(|| currency_hint.map(|s| s.to_string()))
-            .unwrap_or_else(|| "USD".to_string())
+            .unwrap_or_else(|| "USD".to_string()))
     } else {
-        currency_hint
+        Ok(currency_hint
             .map(|s| s.to_string())
-            .unwrap_or_else(|| "USD".to_string())
+            .unwrap_or_else(|| "USD".to_string()))
     }
 }
 
@@ -1079,12 +1091,12 @@ fn extract_json_rows(
     locale: Option<&str>,
     from: Option<&str>,
     to: Option<&str>,
-) -> Vec<ExtractedRow> {
+) -> Result<Vec<ExtractedRow>, MarketDataError> {
     use jsonpath_rust::JsonPathQuery;
 
     let json: serde_json::Value = match serde_json::from_str(body) {
         Ok(j) => j,
-        Err(_) => return Vec::new(),
+        Err(_) => return Ok(Vec::new()),
     };
 
     let currency = currency_hint.unwrap_or("USD");
@@ -1096,35 +1108,46 @@ fn extract_json_rows(
         from,
         to,
     };
-    let expand_path = |p: &str| -> String { expand_template(p, &tctx) };
+    let expand_path = |p: &str| {
+        expand_template(p, &tctx).map_err(|error| MarketDataError::ValidationFailed {
+            message: error.to_string(),
+        })
+    };
 
     const MAX_JSON_ROWS: usize = 10_000;
 
-    let price_path = expand_path(&source.price_path);
+    let price_path = expand_path(&source.price_path)?;
     let prices: Vec<serde_json::Value> = match json.clone().path(&price_path) {
         Ok(serde_json::Value::Array(arr)) => arr.into_iter().take(MAX_JSON_ROWS).collect(),
         Ok(val) => vec![val],
-        Err(_) => return Vec::new(),
+        Err(_) => return Ok(Vec::new()),
     };
 
     let dates: Vec<Option<String>> = source
         .date_path
         .as_ref()
-        .and_then(|dp| {
-            let dp = expand_path(dp);
-            json.clone().path(&dp).ok().map(|v| match v {
-                serde_json::Value::Array(arr) => {
-                    arr.into_iter().map(|v| json_val_to_string(&v)).collect()
-                }
-                other => vec![json_val_to_string(&other)],
-            })
+        .map(|dp| {
+            let dp = expand_path(dp)?;
+            Ok::<Vec<Option<String>>, MarketDataError>(
+                json.clone()
+                    .path(&dp)
+                    .ok()
+                    .map(|v| match v {
+                        serde_json::Value::Array(arr) => {
+                            arr.into_iter().map(|v| json_val_to_string(&v)).collect()
+                        }
+                        other => vec![json_val_to_string(&other)],
+                    })
+                    .unwrap_or_default(),
+            )
         })
+        .transpose()?
         .unwrap_or_default();
 
-    let open_path = source.open_path.as_deref().map(expand_path);
-    let high_path = source.high_path.as_deref().map(expand_path);
-    let low_path = source.low_path.as_deref().map(expand_path);
-    let volume_path = source.volume_path.as_deref().map(expand_path);
+    let open_path = source.open_path.as_deref().map(expand_path).transpose()?;
+    let high_path = source.high_path.as_deref().map(expand_path).transpose()?;
+    let low_path = source.low_path.as_deref().map(expand_path).transpose()?;
+    let volume_path = source.volume_path.as_deref().map(expand_path).transpose()?;
     let opens = extract_json_f64_array(&json, open_path.as_deref(), locale);
     let highs = extract_json_f64_array(&json, high_path.as_deref(), locale);
     let lows = extract_json_f64_array(&json, low_path.as_deref(), locale);
@@ -1141,7 +1164,7 @@ fn extract_json_rows(
         source.date_path,
     );
 
-    prices
+    Ok(prices
         .into_iter()
         .enumerate()
         .filter_map(|(i, val)| {
@@ -1159,7 +1182,7 @@ fn extract_json_rows(
                 volume: volumes.get(i).copied().flatten(),
             })
         })
-        .collect()
+        .collect::<Vec<_>>())
 }
 
 fn extract_json_f64_array(
@@ -1524,7 +1547,8 @@ mod tests {
             None,
             Some("2026-01-01"),
             Some("2026-02-01"),
-        );
+        )
+        .unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].date, Some(ymd(2026, 2, 1)));
         assert_eq!(rows[0].close, 12.5);
@@ -1537,7 +1561,8 @@ mod tests {
             body,
             Some("2026-01-01"),
             Some("2026-02-01"),
-        );
+        )
+        .unwrap();
         assert_eq!(currency, "CAD");
     }
 
@@ -1550,7 +1575,8 @@ mod tests {
         let mut source = json_source(r#"$[*]["单位净值"]"#);
         source.date_path = Some(r#"$[*]["净值日期"]"#.to_string());
 
-        let rows = extract_json_rows(body, &source, "001097", Some("CNY"), None, None, None);
+        let rows =
+            extract_json_rows(body, &source, "001097", Some("CNY"), None, None, None).unwrap();
 
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].date, Some(ymd(2026, 7, 10)));

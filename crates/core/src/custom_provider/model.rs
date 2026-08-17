@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// Valid source kinds.
 pub const VALID_SOURCE_KINDS: &[&str] = &["latest", "historical"];
@@ -72,12 +73,52 @@ pub struct TemplateContext<'a> {
     pub to: Option<&'a str>,
 }
 
+#[derive(Debug, Error)]
+#[error("Invalid date format '{format}' in {{{variable}:{format}}}")]
+pub struct TemplateExpansionError {
+    variable: String,
+    format: String,
+}
+
+fn has_unsupported_date_directive(format: &str) -> bool {
+    let mut chars = format.chars();
+    while let Some(character) = chars.next() {
+        if character == '%' && !matches!(chars.next(), Some('Y' | 'm' | 'd')) {
+            return true;
+        }
+    }
+    false
+}
+
+#[derive(Debug)]
+pub(crate) enum PrepareRequestError<E> {
+    Template(TemplateExpansionError),
+    Header(E),
+}
+
 /// Expand template variables in a string (URL or path).
 ///
 /// Supported variables: `{SYMBOL}`, `{currency}`, `{CURRENCY}`, `{TODAY}`,
 /// `{FROM}`, `{TO}`, `{ISIN}`, `{MIC}`, `{DATE:format}`,
-/// `{FROM:format}`, `{TO:format}`, `{TODAY:format}`.
-pub fn expand_template(template: &str, ctx: &TemplateContext<'_>) -> String {
+/// `{FROM:format}`, `{TO:format}`, `{TODAY:format}`. Formatted dates support
+/// only the `%Y`, `%m`, and `%d` directives.
+pub fn expand_template(
+    template: &str,
+    ctx: &TemplateContext<'_>,
+) -> Result<String, TemplateExpansionError> {
+    for captures in DATE_TEMPLATE_RE.captures_iter(template) {
+        let format = &captures[2];
+        if has_unsupported_date_directive(format)
+            || chrono::format::StrftimeItems::new(format)
+                .any(|item| matches!(item, chrono::format::Item::Error))
+        {
+            return Err(TemplateExpansionError {
+                variable: captures[1].to_string(),
+                format: format.to_string(),
+            });
+        }
+    }
+
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     let mut out = template
         .replace("{SYMBOL}", ctx.symbol)
@@ -94,7 +135,7 @@ pub fn expand_template(template: &str, ctx: &TemplateContext<'_>) -> String {
         out = out.replace("{MIC}", ctx.mic.unwrap_or(""));
     }
     // Formatted date templates:
-    //   {DATE:format}                 - current date/time (supports time components)
+    //   {DATE:format}                 - current date (supports %Y, %m, and %d)
     //   {FROM/TO/TODAY:format}        - the corresponding date, reformatted
     if out.contains("{DATE:")
         || out.contains("{FROM:")
@@ -122,7 +163,7 @@ pub fn expand_template(template: &str, ctx: &TemplateContext<'_>) -> String {
             })
             .to_string();
     }
-    out
+    Ok(out)
 }
 
 /// Validate that a URL parses and uses an http(s) scheme.
@@ -207,8 +248,8 @@ pub(crate) fn prepare_custom_provider_request<E>(
     body_template: Option<&str>,
     ctx: &TemplateContext<'_>,
     resolve_header_value: impl Fn(&str) -> Result<String, E>,
-) -> Result<PreparedCustomProviderRequest, E> {
-    let url = expand_template(url_template, ctx);
+) -> Result<PreparedCustomProviderRequest, PrepareRequestError<E>> {
+    let url = expand_template(url_template, ctx).map_err(PrepareRequestError::Template)?;
     let mut headers = build_browser_like_headers(format, &url);
 
     if matches!(method, HttpMethod::Post) {
@@ -224,7 +265,8 @@ pub(crate) fn prepare_custom_provider_request<E>(
         {
             for (key, value) in map {
                 if let Some(value) = value.as_str() {
-                    let resolved = resolve_header_value(value)?;
+                    let resolved =
+                        resolve_header_value(value).map_err(PrepareRequestError::Header)?;
                     if let (Ok(name), Ok(value)) = (
                         reqwest::header::HeaderName::from_bytes(key.as_bytes()),
                         reqwest::header::HeaderValue::from_str(&resolved),
@@ -240,7 +282,10 @@ pub(crate) fn prepare_custom_provider_request<E>(
         url,
         method: method.clone(),
         headers,
-        body: body_template.map(|body| expand_template(body, ctx)),
+        body: body_template
+            .map(|body| expand_template(body, ctx))
+            .transpose()
+            .map_err(PrepareRequestError::Template)?,
     })
 }
 
@@ -497,7 +542,8 @@ mod tests {
         let out = expand_template(
             "https://x.test/{SYMBOL}?ccy={currency}&CCY={CURRENCY}&from={FROM}&to={TO}",
             &c,
-        );
+        )
+        .unwrap();
         assert_eq!(
             out,
             "https://x.test/AAPL?ccy=usd&CCY=USD&from=2024-01-01&to=2024-12-31"
@@ -507,14 +553,14 @@ mod tests {
     #[test]
     fn from_to_fall_back_to_today_when_absent() {
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
-        let out = expand_template("{FROM}..{TO}", &ctx(None, None));
+        let out = expand_template("{FROM}..{TO}", &ctx(None, None)).unwrap();
         assert_eq!(out, format!("{today}..{today}"));
     }
 
     #[test]
     fn expands_formatted_from_and_to() {
         let c = ctx(Some("2024-01-02"), Some("2024-03-04"));
-        let out = expand_template("{FROM:%Y%m%d}-{TO:%d/%m/%Y}", &c);
+        let out = expand_template("{FROM:%Y%m%d}-{TO:%d/%m/%Y}", &c).unwrap();
         assert_eq!(out, "20240102-04/03/2024");
     }
 
@@ -522,14 +568,14 @@ mod tests {
     fn formatted_date_falls_back_on_unparseable_input() {
         // A non-ISO {FROM} value can't be reparsed, so the raw string is kept.
         let c = ctx(Some("not-a-date"), None);
-        let out = expand_template("{FROM:%Y}", &c);
+        let out = expand_template("{FROM:%Y}", &c).unwrap();
         assert_eq!(out, "not-a-date");
     }
 
     #[test]
     fn today_formatted_uses_current_date() {
         let expected = chrono::Utc::now().format("%Y/%m/%d").to_string();
-        let out = expand_template("{TODAY:%Y/%m/%d}", &ctx(None, None));
+        let out = expand_template("{TODAY:%Y/%m/%d}", &ctx(None, None)).unwrap();
         assert_eq!(out, expected);
     }
 
@@ -538,7 +584,7 @@ mod tests {
         // `{TODAY}` and `{TODAY:...}` must both expand independently.
         let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
         let year = chrono::Utc::now().format("%Y").to_string();
-        let out = expand_template("{TODAY} / {TODAY:%Y}", &ctx(None, None));
+        let out = expand_template("{TODAY} / {TODAY:%Y}", &ctx(None, None)).unwrap();
         assert_eq!(out, format!("{today} / {year}"));
     }
 
@@ -547,11 +593,36 @@ mod tests {
         // POST bodies go through the same expander as URLs.
         let c = ctx(Some("2024-01-01"), Some("2024-06-30"));
         let body = r#"{"symbol":"{SYMBOL}","from":"{FROM}","to":"{TO:%Y%m%d}"}"#;
-        let out = expand_template(body, &c);
+        let out = expand_template(body, &c).unwrap();
         assert_eq!(
             out,
             r#"{"symbol":"AAPL","from":"2024-01-01","to":"20240630"}"#
         );
+    }
+
+    #[test]
+    fn rejects_invalid_formatted_date_without_panicking() {
+        let error = expand_template("https://example.test/{FROM:%Q}", &ctx(None, None))
+            .expect_err("invalid chrono directives should be rejected");
+        assert!(error.to_string().contains("%Q"));
+
+        let prepared = prepare_custom_provider_request(
+            &HttpMethod::Post,
+            "json",
+            "https://example.test/quotes",
+            None,
+            Some(r#"{"from":"{FROM:%Q}"}"#),
+            &ctx(None, None),
+            |value| Ok::<_, ()>(value.to_string()),
+        );
+        assert!(prepared.is_err());
+    }
+
+    #[test]
+    fn rejects_unsupported_formatted_date_directive() {
+        let error = expand_template("https://example.test/{FROM:%H}", &ctx(None, None))
+            .expect_err("time directives should be rejected");
+        assert!(error.to_string().contains("%H"));
     }
 
     #[test]

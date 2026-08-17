@@ -162,7 +162,13 @@ impl CustomProviderService {
                     Ok(value.to_string())
                 }
             },
-        )?;
+        )
+        .map_err(|error| match error {
+            PrepareRequestError::Template(error) => {
+                crate::Error::Validation(ValidationError::InvalidInput(error.to_string()))
+            }
+            PrepareRequestError::Header(error) => error,
+        })?;
 
         validate_url(&request.url).map_err(|e| crate::Error::Unexpected(e.to_string()))?;
 
@@ -255,44 +261,54 @@ impl CustomProviderService {
             });
         }
 
-        let expand_path = |p: &str| -> String { expand_template(p, &tctx) };
+        let expand_path = |p: &str| {
+            expand_template(p, &tctx).map_err(|error| {
+                crate::Error::Validation(ValidationError::InvalidInput(error.to_string()))
+            })
+        };
 
         match payload.format.as_str() {
             "json" => {
-                let price_path = expand_path(&payload.price_path);
+                let price_path = expand_path(&payload.price_path)?;
                 let price = extract_json_value(&body, &price_path);
                 let currency = payload
                     .currency_path
                     .as_ref()
                     .map(|cp| expand_path(cp))
+                    .transpose()?
                     .and_then(|cp| extract_json_string(&body, &cp));
                 let date = payload
                     .date_path
                     .as_ref()
                     .map(|dp| expand_path(dp))
+                    .transpose()?
                     .and_then(|dp| extract_json_string(&body, &dp));
                 let open = payload
                     .open_path
                     .as_ref()
                     .map(|op| expand_path(op))
+                    .transpose()?
                     .and_then(|op| extract_json_value(&body, &op))
                     .map(|v| apply_test_factor_invert(v, &payload));
                 let high = payload
                     .high_path
                     .as_ref()
                     .map(|hp| expand_path(hp))
+                    .transpose()?
                     .and_then(|hp| extract_json_value(&body, &hp))
                     .map(|v| apply_test_factor_invert(v, &payload));
                 let low = payload
                     .low_path
                     .as_ref()
                     .map(|lp| expand_path(lp))
+                    .transpose()?
                     .and_then(|lp| extract_json_value(&body, &lp))
                     .map(|v| apply_test_factor_invert(v, &payload));
                 let volume = payload
                     .volume_path
                     .as_ref()
                     .map(|vp| expand_path(vp))
+                    .transpose()?
                     .and_then(|vp| extract_json_value(&body, &vp));
 
                 match price {
