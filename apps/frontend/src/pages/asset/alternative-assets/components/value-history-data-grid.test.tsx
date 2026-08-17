@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { format } from "date-fns";
+import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useDataGrid } from "@wealthfolio/ui";
 
@@ -79,6 +80,10 @@ interface CapturedDataGridOptions {
   onDataChange: (entries: ValueHistoryEntry[]) => void;
   onRowAdd: () => unknown;
   onRowsDelete: (rows: ValueHistoryEntry[], rowIndices: number[]) => void;
+  columns: {
+    id?: string;
+    cell?: (context: unknown) => ReactNode;
+  }[];
 }
 
 const getDataGridOptions = (): CapturedDataGridOptions => {
@@ -249,6 +254,16 @@ describe("ValueHistoryDataGrid desktop persistence", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
     await waitFor(() => expect(getDataGridOptions().readOnly).toBe(true));
+    const lockedGrid = getDataGridOptions();
+    const actionsColumn = lockedGrid.columns.find((column) => column.id === "actions");
+    if (typeof actionsColumn?.cell !== "function") {
+      throw new Error("actions column was not configured");
+    }
+    const actionCell = actionsColumn.cell({ row: { original: lockedGrid.data[0] } });
+    const action = render(<>{actionCell}</>);
+    expect(within(action.container).getByRole("button")).toBeDisabled();
+    action.unmount();
+
     act(() => resolveSave?.());
     await waitFor(() => expect(onPersistComplete).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(getDataGridOptions().readOnly).toBe(false));
