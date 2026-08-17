@@ -128,6 +128,7 @@
   "qty": "数量",
   "contracts": "份合约",
   "bonds": "份债券",
+  "units": "份",
   "avg_price": "平均价格",
   "total_pnl": "总盈亏",
   "total_return": "总回报",
