@@ -25,14 +25,13 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { useCreateGoalFlow } from "../hooks/use-create-goal-flow";
 import { useGoals } from "../hooks/use-goals";
-import { useUsdToCurrencyRate } from "../hooks/use-usd-to-currency-rate";
 import { toast } from "sonner";
 import {
   DEFAULT_RETIREMENT_PLAN,
   ageFromBirthYearMonth,
+  createDefaultRetirementPlan,
   inferBirthYearMonthFromAge,
   normalizeRetirementPlan,
-  scaleRetirementPlanAmounts,
 } from "@/features/goals/retirement-planner/lib/plan-adapter";
 
 const DEFAULT_RETIREMENT_CURRENT_AGE = 30;
@@ -132,11 +131,6 @@ export default function GoalNewPage() {
   const template = goalTemplates.find((tmpl) => tmpl.type === selectedType);
   const isRetirement = selectedType === "retirement";
   const baseCurrency = settings?.baseCurrency ?? "USD";
-
-  // DEFAULT_RETIREMENT_PLAN's contribution/expense amounts are USD-scale.
-  // When the base currency isn't USD, convert them using an already-tracked
-  // exchange rate so the seeded plan reflects real amounts in that currency.
-  const usdToBaseCurrencyRate = useUsdToCurrencyRate(baseCurrency);
   const trimmedTitle = title.trim();
   const trimmedDescription = description.trim();
   const retirementBirthAge = ageFromBirthYearMonth(retirementBirthYearMonth);
@@ -189,19 +183,13 @@ export default function GoalNewPage() {
       targetDate: !isRetirement && targetDate ? targetDate : undefined,
     };
 
-    const defaultRetirementPlan =
-      usdToBaseCurrencyRate !== undefined
-        ? scaleRetirementPlanAmounts(DEFAULT_RETIREMENT_PLAN, usdToBaseCurrencyRate)
-        : DEFAULT_RETIREMENT_PLAN;
-
     const initialPlan = isRetirement
       ? {
           planKind: "retirement" as const,
           plannerMode,
           settingsJson: JSON.stringify(
             normalizeRetirementPlan({
-              ...defaultRetirementPlan,
-              currency: baseCurrency,
+              ...createDefaultRetirementPlan(baseCurrency),
               personal: {
                 ...DEFAULT_RETIREMENT_PLAN.personal,
                 birthYearMonth: retirementBirthYearMonthForCreate,

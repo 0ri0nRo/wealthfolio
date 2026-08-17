@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RETIREMENT_PLAN,
+  createDefaultRetirementPlan,
   normalizeDashboardRetirementPlan,
   parseSettingsJson,
-  scaleRetirementPlanAmounts,
 } from "./plan-adapter";
 
 describe("retirement plan adapter", () => {
@@ -45,39 +45,14 @@ describe("retirement plan adapter", () => {
   });
 });
 
-describe("scaleRetirementPlanAmounts", () => {
-  it("scales monthly contribution and expense items by the given rate", () => {
-    const scaled = scaleRetirementPlanAmounts(DEFAULT_RETIREMENT_PLAN, 15000);
+describe("createDefaultRetirementPlan", () => {
+  it("sets the currency to the given base currency without altering amounts", () => {
+    const plan = createDefaultRetirementPlan("IDR");
 
-    expect(scaled.investment.monthlyContribution).toBe(
-      DEFAULT_RETIREMENT_PLAN.investment.monthlyContribution * 15000,
+    expect(plan.currency).toBe("IDR");
+    expect(plan.investment.monthlyContribution).toBe(
+      DEFAULT_RETIREMENT_PLAN.investment.monthlyContribution,
     );
-    expect(scaled.expenses.items.map((item) => item.monthlyAmount)).toEqual(
-      DEFAULT_RETIREMENT_PLAN.expenses.items.map((item) => item.monthlyAmount * 15000),
-    );
-  });
-
-  it("rounds scaled amounts to the nearest whole number", () => {
-    const plan = {
-      ...DEFAULT_RETIREMENT_PLAN,
-      investment: { ...DEFAULT_RETIREMENT_PLAN.investment, monthlyContribution: 3 },
-      expenses: { items: [{ id: "living", label: "Living", monthlyAmount: 3, essential: true }] },
-    };
-
-    const scaled = scaleRetirementPlanAmounts(plan, 1.5);
-
-    expect(scaled.investment.monthlyContribution).toBe(5);
-    expect(scaled.expenses.items[0].monthlyAmount).toBe(5);
-  });
-
-  it("leaves non-monetary fields and the original plan untouched", () => {
-    const scaled = scaleRetirementPlanAmounts(DEFAULT_RETIREMENT_PLAN, 15000);
-
-    expect(scaled.personal).toEqual(DEFAULT_RETIREMENT_PLAN.personal);
-    expect(scaled.investment.preRetirementAnnualReturn).toBe(
-      DEFAULT_RETIREMENT_PLAN.investment.preRetirementAnnualReturn,
-    );
-    expect(scaled.expenses.items[0].label).toBe(DEFAULT_RETIREMENT_PLAN.expenses.items[0].label);
-    expect(DEFAULT_RETIREMENT_PLAN.investment.monthlyContribution).toBe(1000);
+    expect(plan.expenses.items).toEqual(DEFAULT_RETIREMENT_PLAN.expenses.items);
   });
 });

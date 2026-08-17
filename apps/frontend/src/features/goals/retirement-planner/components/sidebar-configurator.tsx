@@ -27,10 +27,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/compone
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
-import {
-  useUsdToCurrencyRate,
-  usdEquivalent,
-} from "@/features/goals/hooks/use-usd-to-currency-rate";
 import { DEFAULT_DC_PAYOUT_ESTIMATE_RATE } from "../lib/constants";
 import { incomeStreamMonthlyAmount, type PlannerMode } from "../lib/dashboard-math";
 import {
@@ -394,16 +390,6 @@ export function SidebarConfigurator({
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null);
   const [expandedIncomeId, setExpandedIncomeId] = useState<string | null>(null);
   const moneyPrefix = formatCurrencySymbol(currency);
-  // Money field ranges below are defined in USD-scale base amounts; scale
-  // them via an already-tracked rate so both the slider range and its hard
-  // cap reflect real amounts in other currencies (e.g. IDR), not raw USD
-  // numbers relabeled. Falls back to the raw USD amount when no rate is
-  // tracked yet, since we can't guess an appropriate scale otherwise.
-  const usdToCurrencyRate = useUsdToCurrencyRate(currency);
-  const scaleUsd = useCallback(
-    (usdAmount: number) => usdEquivalent(usdAmount, usdToCurrencyRate) ?? usdAmount,
-    [usdToCurrencyRate],
-  );
 
   const update = useCallback((updater: (d: RetirementPlan) => RetirementPlan) => {
     setDraft((prev) => updater(prev));
@@ -713,14 +699,11 @@ export function SidebarConfigurator({
               value={draft.investment.monthlyContribution}
               onChange={(v) => setInvestment("monthlyContribution", v)}
               min={0}
-              max={sliderMaxFor(
-                draft.investment.monthlyContribution,
-                scaleUsd(20000),
-                scaleUsd(5000),
-              )}
+              max={sliderMaxFor(draft.investment.monthlyContribution, 20000, 5000)}
               step={100}
               prefix={moneyPrefix}
               format={(v) => String(Math.round(v))}
+              inputWidthClassName="w-56"
             />
             <LeverRow
               label={t("goals:sidebar.assumptions.return_before_retirement")}
@@ -926,7 +909,7 @@ export function SidebarConfigurator({
                         value={item.monthlyAmount}
                         onChange={(v) => updateExpenseItem(item.id, { monthlyAmount: v })}
                         min={0}
-                        max={sliderMaxFor(item.monthlyAmount, scaleUsd(20000), scaleUsd(5000))}
+                        max={sliderMaxFor(item.monthlyAmount, 20000, 5000)}
                         step={100}
                         prefix={moneyPrefix}
                         suffix="/mo"
@@ -1221,7 +1204,7 @@ export function SidebarConfigurator({
                             value={s.monthlyAmount ?? 0}
                             onChange={(v) => updateStream(s.id, { monthlyAmount: v })}
                             min={0}
-                            max={sliderMaxFor(amount, scaleUsd(10000), scaleUsd(2500))}
+                            max={sliderMaxFor(amount, 10000, 2500)}
                             step={50}
                             prefix={moneyPrefix}
                             suffix="/mo"
@@ -1236,11 +1219,7 @@ export function SidebarConfigurator({
                               value={s.currentValue ?? 0}
                               onChange={(v) => updateStream(s.id, { currentValue: v })}
                               min={0}
-                              max={sliderMaxFor(
-                                s.currentValue ?? 0,
-                                scaleUsd(2_000_000),
-                                scaleUsd(250_000),
-                              )}
+                              max={sliderMaxFor(s.currentValue ?? 0, 2_000_000, 250_000)}
                               step={1000}
                               prefix={moneyPrefix}
                               format={(v) => String(Math.round(v))}
@@ -1251,11 +1230,7 @@ export function SidebarConfigurator({
                               value={s.monthlyContribution ?? 0}
                               onChange={(v) => updateStream(s.id, { monthlyContribution: v })}
                               min={0}
-                              max={sliderMaxFor(
-                                s.monthlyContribution ?? 0,
-                                scaleUsd(10000),
-                                scaleUsd(2500),
-                              )}
+                              max={sliderMaxFor(s.monthlyContribution ?? 0, 10000, 2500)}
                               step={50}
                               prefix={moneyPrefix}
                               suffix="/mo"
@@ -1289,11 +1264,7 @@ export function SidebarConfigurator({
                                 value={s.monthlyAmount ?? amount}
                                 onChange={(v) => updateStream(s.id, { monthlyAmount: v })}
                                 min={0}
-                                max={sliderMaxFor(
-                                  s.monthlyAmount ?? amount,
-                                  scaleUsd(10000),
-                                  scaleUsd(2500),
-                                )}
+                                max={sliderMaxFor(s.monthlyAmount ?? amount, 10000, 2500)}
                                 step={50}
                                 prefix={moneyPrefix}
                                 suffix="/mo"
