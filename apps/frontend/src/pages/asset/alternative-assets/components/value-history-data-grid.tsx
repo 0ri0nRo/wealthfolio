@@ -25,6 +25,7 @@ import { useTranslation } from "react-i18next";
 import { createColumnHelper } from "@tanstack/react-table";
 import type { Quote } from "@/lib/types";
 import { useIsMobileViewport } from "@/hooks/use-platform";
+import { toast } from "@wealthfolio/ui/components/ui/use-toast";
 import { ValueHistoryToolbar } from "./value-history-toolbar";
 import { format } from "date-fns";
 
@@ -80,6 +81,8 @@ interface ValueHistoryDataGridProps {
   onSaveQuote: (quote: Quote) => Promise<void>;
   /** Callback to delete a quote */
   onDeleteQuote: (quoteId: string) => Promise<void>;
+  /** Refresh quote-dependent queries after a complete persistence operation */
+  onPersistComplete: () => Promise<void>;
 }
 
 // Generate a temporary ID for new entries
@@ -95,11 +98,17 @@ const toValueHistoryEntry = (quote: Quote): ValueHistoryEntry => ({
   isNew: false,
 });
 
+const canonicalQuoteId = (entry: ValueHistoryEntry, assetId: string): string => {
+  const datePart = format(entry.date, "yyyy-MM-dd");
+  return `${assetId}_${datePart}_MANUAL`;
+};
+
 // Convert ValueHistoryEntry back to Quote for saving
 const toQuote = (entry: ValueHistoryEntry, assetId: string): Quote => {
-  const datePart = format(entry.date, "yyyy-MM-dd");
+  const id =
+    entry.isNew || entry.id.startsWith("temp-") ? canonicalQuoteId(entry, assetId) : entry.id;
   return {
-    id: `${assetId}_${datePart}_MANUAL`,
+    id,
     createdAt: new Date().toISOString(),
     dataSource: "MANUAL",
     timestamp: format(entry.date, "yyyy-MM-dd'T'00:00:00'Z'"),
@@ -113,6 +122,16 @@ const toQuote = (entry: ValueHistoryEntry, assetId: string): Quote => {
     currency: entry.currency,
     notes: entry.notes || undefined,
   };
+};
+
+const hasDuplicateDates = (entries: ValueHistoryEntry[]): boolean => {
+  const dates = new Set<string>();
+  return entries.some((entry) => {
+    const date = format(entry.date, "yyyy-MM-dd");
+    if (dates.has(date)) return true;
+    dates.add(date);
+    return false;
+  });
 };
 
 // Create draft entry
@@ -132,6 +151,7 @@ export function ValueHistoryDataGrid({
   isLiability = false,
   onSaveQuote,
   onDeleteQuote,
+  onPersistComplete,
 }: ValueHistoryDataGridProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobileViewport();
@@ -166,21 +186,26 @@ export function ValueHistoryDataGrid({
   const columnHelper = createColumnHelper<ValueHistoryEntry>();
 
   // Delete a single row
-  const handleDeleteRow = useCallback((entry: ValueHistoryEntry) => {
-    if (entry.isNew) {
-      // Remove new entries immediately
-      setLocalEntries((prev) => prev.filter((e) => e.id !== entry.id));
-      setDirtyIds((prev) => {
-        const next = new Set(prev);
-        next.delete(entry.id);
-        return next;
-      });
-    } else {
-      // Mark existing entries for deletion
-      setDeletedIds((prev) => new Set(prev).add(entry.id));
-      setLocalEntries((prev) => prev.filter((e) => e.id !== entry.id));
-    }
-  }, []);
+  const handleDeleteRow = useCallback(
+    (entry: ValueHistoryEntry) => {
+      if (isPersisting) return;
+
+      if (entry.isNew) {
+        // Remove new entries immediately
+        setLocalEntries((prev) => prev.filter((e) => e.id !== entry.id));
+        setDirtyIds((prev) => {
+          const next = new Set(prev);
+          next.delete(entry.id);
+          return next;
+        });
+      } else {
+        // Mark existing entries for deletion
+        setDeletedIds((prev) => new Set(prev).add(entry.id));
+        setLocalEntries((prev) => prev.filter((e) => e.id !== entry.id));
+      }
+    },
+    [isPersisting],
+  );
 
   const columns = useMemo(
     () => [
@@ -213,6 +238,7 @@ export function ValueHistoryDataGrid({
               variant="ghost"
               size="icon"
               className="text-muted-foreground hover:text-destructive h-7 w-7"
+              disabled={isPersisting}
               onClick={() => handleDeleteRow(row.original)}
             >
               <Icons.X className="h-4 w-4" />
@@ -221,7 +247,7 @@ export function ValueHistoryDataGrid({
         ),
       }),
     ],
-    [columnHelper, isLiability, handleDeleteRow, t],
+    [columnHelper, isLiability, handleDeleteRow, isPersisting, t],
   );
 
   // Handle data changes from the grid
@@ -329,6 +355,7 @@ export function ValueHistoryDataGrid({
     enableSorting: true,
     enableSearch: true,
     enablePaste: true,
+    readOnly: isPersisting,
     onDataChange,
     onRowAdd,
     onRowsAdd,
@@ -351,26 +378,68 @@ export function ValueHistoryDataGrid({
   // Save all changes
   const handleSave = useCallback(async () => {
     if (isPersisting) return;
+    if (hasDuplicateDates(localEntries)) {
+      toast({
+        title: t("asset:valueHistory.duplicate_date_error"),
+        variant: "destructive",
+      });
+      return;
+    }
 
-    const quotesToSave = localEntries
-      .filter((entry) => dirtyIds.has(entry.id))
-      .map((entry) => toQuote(entry, assetId));
-    const idsToDelete = [...deletedIds].filter((id) => !id.startsWith("temp-"));
+    const dirtyIdsSnapshot = new Set(dirtyIds);
+    const deletedIdsSnapshot = new Set(deletedIds);
+    const entriesToSave = localEntries.filter((entry) => dirtyIdsSnapshot.has(entry.id));
+    const quotesToSave = entriesToSave.map((entry) => toQuote(entry, assetId));
+    const idsToDelete = [...deletedIdsSnapshot].filter((id) => !id.startsWith("temp-"));
 
     setIsPersisting(true);
     try {
-      await Promise.all([
-        ...quotesToSave.map((quote) => onSaveQuote(quote)),
-        ...idsToDelete.map((id) => onDeleteQuote(id)),
-      ]);
-      setDirtyIds(new Set());
-      setDeletedIds(new Set());
+      // Delete first so a same-day replacement cannot be removed after it is saved.
+      for (const id of idsToDelete) {
+        await onDeleteQuote(id);
+      }
+      for (const quote of quotesToSave) {
+        await onSaveQuote(quote);
+      }
+
+      const savedEntries = new Map(
+        entriesToSave.map((entry) => [
+          entry.id,
+          { ...entry, id: canonicalQuoteId(entry, assetId), isNew: false },
+        ]),
+      );
+      setLocalEntries((current) => current.map((entry) => savedEntries.get(entry.id) ?? entry));
+      setDirtyIds((current) => {
+        const next = new Set(current);
+        dirtyIdsSnapshot.forEach((id) => next.delete(id));
+        return next;
+      });
+      setDeletedIds((current) => {
+        const next = new Set(current);
+        deletedIdsSnapshot.forEach((id) => next.delete(id));
+        return next;
+      });
+      try {
+        await onPersistComplete();
+      } catch {
+        // Persistence succeeded; a later query refresh can recover from a transient refetch error.
+      }
     } catch {
       // Mutation callbacks surface their own error notifications. Keep edits for retry.
     } finally {
       setIsPersisting(false);
     }
-  }, [assetId, deletedIds, dirtyIds, isPersisting, localEntries, onDeleteQuote, onSaveQuote]);
+  }, [
+    assetId,
+    deletedIds,
+    dirtyIds,
+    isPersisting,
+    localEntries,
+    onDeleteQuote,
+    onPersistComplete,
+    onSaveQuote,
+    t,
+  ]);
 
   // Cancel changes
   const handleCancel = useCallback(() => {
@@ -416,7 +485,7 @@ export function ValueHistoryDataGrid({
     const quote = toQuote(mobileDraft, assetId);
     const savedEntry: ValueHistoryEntry = {
       ...mobileDraft,
-      id: quote.id,
+      id: canonicalQuoteId(mobileDraft, assetId),
       isNew: false,
     };
 
@@ -431,12 +500,17 @@ export function ValueHistoryDataGrid({
         ),
       ]);
       setMobileDraft(null);
+      try {
+        await onPersistComplete();
+      } catch {
+        // Persistence succeeded; a later query refresh can recover from a transient refetch error.
+      }
     } catch {
       // Mutation callback surfaces the error. Keep the draft open for retry.
     } finally {
       setIsPersisting(false);
     }
-  }, [assetId, isPersisting, mobileDraft, onSaveQuote]);
+  }, [assetId, isPersisting, mobileDraft, onPersistComplete, onSaveQuote]);
 
   const handleMobileDelete = useCallback(async () => {
     if (!mobileDeleteEntry || isPersisting) return;
@@ -448,12 +522,17 @@ export function ValueHistoryDataGrid({
       setLocalEntries((prev) => prev.filter((entry) => entry.id !== entryToDelete.id));
       setMobileDraft((draft) => (draft?.id === entryToDelete.id ? null : draft));
       setMobileDeleteEntry(null);
+      try {
+        await onPersistComplete();
+      } catch {
+        // Persistence succeeded; a later query refresh can recover from a transient refetch error.
+      }
     } catch {
       // Mutation callback surfaces the error. Keep the dialog open for retry.
     } finally {
       setIsPersisting(false);
     }
-  }, [isPersisting, mobileDeleteEntry, onDeleteQuote]);
+  }, [isPersisting, mobileDeleteEntry, onDeleteQuote, onPersistComplete]);
 
   if (isMobile) {
     const valueLabel = isLiability

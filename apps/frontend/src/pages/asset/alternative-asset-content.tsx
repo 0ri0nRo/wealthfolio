@@ -83,7 +83,10 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
   }, [holding.linkedAssetId, allHoldings]);
 
   // Quote mutations for history grid
-  const { saveQuoteMutation, deleteQuoteMutation } = useQuoteMutations(assetId);
+  const { saveQuoteMutation, deleteQuoteMutation, invalidateQuoteQueries } = useQuoteMutations(
+    assetId,
+    { invalidateOnSuccess: false },
+  );
 
   // Filter chart data by date range
   const filteredChartData = useMemo(() => {
@@ -323,6 +326,7 @@ export const AlternativeAssetContent: React.FC<AlternativeAssetContentProps> = (
       isLiability={isLiability}
       onSaveQuote={(quote: Quote) => saveQuoteMutation.mutateAsync(quote)}
       onDeleteQuote={(id: string) => deleteQuoteMutation.mutateAsync(id)}
+      onPersistComplete={invalidateQuoteQueries}
     />
   );
 };
