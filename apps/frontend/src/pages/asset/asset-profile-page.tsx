@@ -196,6 +196,7 @@ function AssetHealthBanner({
   onClear: () => void;
 }) {
   const formatting = useDateFormatting();
+  const { t } = useTranslation();
   if (!context) return null;
 
   const dateLabel = formatHealthDate(date, formatting);
@@ -203,26 +204,29 @@ function AssetHealthBanner({
     context === "price"
       ? isManualPricingMode
         ? {
-            title: dateLabel ? `Add a price for ${dateLabel}` : "Manual prices need review",
+            title: dateLabel
+              ? t("asset:profile.health.add_price_for_date", { date: dateLabel })
+              : t("asset:profile.health.manual_prices_need_review"),
             description: dateLabel
-              ? "Wealthfolio is carrying forward the last price. Add this date only if it needs its own value."
-              : "Review the missing dates. Add prices that need their own value; carried-forward prices are still used between entries.",
+              ? t("asset:profile.health.carrying_forward_add_date")
+              : t("asset:profile.health.review_missing_dates"),
           }
         : {
-            title: dateLabel ? `Price missing for ${dateLabel}` : "Price history needs review",
+            title: dateLabel
+              ? t("asset:profile.health.price_missing_for_date", { date: dateLabel })
+              : t("asset:profile.health.price_history_needs_review"),
             description: dateLabel
-              ? "Wealthfolio is carrying forward the last available price. Refetch prices if this was a trading day."
-              : "Refetch provider history to restore missing or stale prices. Carried-forward prices are used until exact prices are available.",
+              ? t("asset:profile.health.carrying_forward_refetch")
+              : t("asset:profile.health.refetch_history"),
           }
       : context === "basis"
         ? {
-            title: "Cost basis needs review",
-            description:
-              "Update what you paid for this holding so Wealthfolio can calculate gain/loss.",
+            title: t("asset:profile.health.cost_basis_needs_review"),
+            description: t("asset:profile.health.cost_basis_description"),
           }
         : {
-            title: "Transactions need review",
-            description: "Review the transactions Health Center flagged for this investment.",
+            title: t("asset:profile.health.transactions_need_review"),
+            description: t("asset:profile.health.transactions_description"),
           };
 
   return (
@@ -249,11 +253,11 @@ function AssetHealthBanner({
               ) : (
                 <Icons.Refresh className="mr-2 h-4 w-4" />
               )}
-              Refetch Prices
+              {t("asset:profile.health.refetch_prices")}
             </Button>
           )}
           <Button type="button" variant="ghost" size="sm" onClick={onClear}>
-            Clear
+            {t("common:clear")}
           </Button>
         </div>
       </div>

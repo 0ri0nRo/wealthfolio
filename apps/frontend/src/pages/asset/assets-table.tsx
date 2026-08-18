@@ -64,6 +64,8 @@ export function AssetsTable({
   isRefetchingQuotes,
 }: AssetsTableProps) {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
@@ -96,8 +98,6 @@ export function AssetsTable({
         size: 220,
         maxSize: 260,
         cell: ({ row }) => {
-          const numberFormatting = useNumberFormatting();
-          const dateFormatting = useDateFormatting();
           const asset = row.original;
           const rawSymbol = asset.displayCode ?? "";
           const parsedOption = parseOccSymbol(rawSymbol);
@@ -225,7 +225,6 @@ export function AssetsTable({
         ),
         size: 130,
         cell: ({ row }) => {
-          const dateFormatting = useDateFormatting();
           const asset = row.original;
           const snapshot = latestQuotes[asset.id];
           const quote = snapshot?.quote;
@@ -333,6 +332,7 @@ export function AssetsTable({
     ],
     [
       baseCurrency,
+      dateFormatting,
       formatting,
       latestQuotes,
       onDelete,
@@ -342,6 +342,7 @@ export function AssetsTable({
       isRefetchingQuotes,
       isUpdatingQuotes,
       navigate,
+      numberFormatting,
       t,
     ],
   );

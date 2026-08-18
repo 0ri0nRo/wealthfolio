@@ -457,10 +457,10 @@ export const HoldingsPage = () => {
         <div className="border-border bg-muted/30 mb-4 flex items-center justify-between gap-3 rounded-md border px-3 py-2">
           <div className="flex min-w-0 items-center gap-2">
             <Icons.Info className="text-muted-foreground h-4 w-4 shrink-0" />
-            <p className="text-sm">Showing holdings flagged by Health Center</p>
+            <p className="text-sm">{t("holdings:health_filter_active")}</p>
           </div>
           <Button variant="ghost" size="sm" onClick={clearHealthContext}>
-            Clear
+            {t("common:clear")}
           </Button>
         </div>
       )}

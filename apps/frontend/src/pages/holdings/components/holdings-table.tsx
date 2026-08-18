@@ -32,7 +32,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/compone
 import type { TFunction } from "i18next";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { HoldingsVisibilityFacet } from "./holdings-visibility-filter";
 import { isCashHolding, isClosedPosition } from "./holdings-visibility";
 import type { HoldingsVisibilityFilter } from "./holdings-visibility";
@@ -93,6 +93,8 @@ export const HoldingsTable = ({
 }) => {
   const { t } = useTranslation();
   const formatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
+  const navigate = useNavigate();
   const { isBalanceHidden } = useBalancePrivacy();
   const { settings } = useSettingsContext();
   const [showConvertedValues, setShowConvertedValues] = useState(false);
@@ -143,7 +145,15 @@ export const HoldingsTable = ({
     <div className="flex h-full flex-col">
       <DataTable
         data={holdings}
-        columns={getColumns(t, isBalanceHidden, showConvertedValues, formatting, onClassify)}
+        columns={getColumns(
+          t,
+          isBalanceHidden,
+          showConvertedValues,
+          formatting,
+          dateFormatting,
+          navigate,
+          onClassify,
+        )}
         searchBy="symbol"
         filters={filters}
         showColumnToggle={true}
@@ -215,7 +225,9 @@ const getColumns = (
   t: TFunction,
   isHidden: boolean,
   showConvertedValues: boolean,
-  formatting: Pick<FormattingApi, "formatPercent">,
+  formatting: Pick<FormattingApi, "formatPercent" | "formatDecimal">,
+  dateFormatting: Pick<FormattingApi, "formatCalendarDate">,
+  navigate: NavigateFunction,
   onClassify?: (holding: Holding) => void,
 ): ColumnDef<Holding>[] => [
   {
@@ -228,9 +240,6 @@ const getColumns = (
       label: t("holdings:position"),
     },
     cell: ({ row }) => {
-      const numberFormatting = useNumberFormatting();
-      const dateFormatting = useDateFormatting();
-      const navigate = useNavigate();
       const holding = row.original;
       const symbol = holding.instrument?.symbol ?? holding.id;
       const isCash = holding.holdingType === HoldingType.CASH;
@@ -247,7 +256,7 @@ const getColumns = (
 
       // Option subtitle: "Mar 29 $150 CALL"
       const optionSubtitle = parsedOption
-        ? formatOptionSubtitle(parsedOption, { ...numberFormatting, ...dateFormatting })
+        ? formatOptionSubtitle(parsedOption, { ...formatting, ...dateFormatting })
         : null;
 
       const handleNavigate = () => {
@@ -809,7 +818,6 @@ const getColumns = (
     enableHiding: false,
     header: () => null,
     cell: ({ row }) => {
-      const navigate = useNavigate();
       const holding = row.original;
       const hasInstrument = holding.holdingType !== HoldingType.CASH && !!holding.instrument;
 

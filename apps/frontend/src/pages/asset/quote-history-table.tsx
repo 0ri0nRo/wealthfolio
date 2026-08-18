@@ -1,10 +1,8 @@
 import { Quote } from "@/lib/types";
-import { format } from "date-fns";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
-import {} from "@/lib/utils";
 import {
   createColumnHelper,
   flexRender,
@@ -17,6 +15,7 @@ import {
 } from "@tanstack/react-table";
 import {
   Button,
+  calendarDateFromLocalDate,
   DatePickerInput,
   Icons,
   Input,
@@ -39,7 +38,6 @@ import {
   TableRow,
   useAmountFormatting,
   useDateFormatting,
-  useLocalizationSettings,
   useNumberFormatting,
 } from "@wealthfolio/ui";
 
@@ -83,17 +81,9 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
   onDeleteQuote,
   onChangeDataSource,
 }) => {
-  const localizationSettings = useLocalizationSettings();
   const amountFormatting = useAmountFormatting();
-  const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
-
-  const formatting = {
-    ...localizationSettings,
-    ...amountFormatting,
-    ...numberFormatting,
-    ...dateFormatting,
-  };
+  const numberFormatting = useNumberFormatting();
 
   const { t } = useTranslation();
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -197,7 +187,9 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
               onChange={(date: Date | undefined) => date && handleInputChange("timestamp", date)}
             />
           ) : (
-            format(new Date(value), "yyyy-MM-dd")
+            dateFormatting.formatCalendarDate(calendarDateFromLocalDate(new Date(value)), {
+              dateStyle: "short",
+            })
           );
         },
         enableSorting: true,
@@ -350,17 +342,7 @@ export const QuoteHistoryTable: React.FC<QuoteHistoryTableProps> = ({
           ]
         : []),
     ],
-    [
-      columnHelper,
-      formatting,
-      isManualDataSource,
-      handleInputChange,
-      handleEdit,
-      handleSave,
-      handleCancel,
-      handleDelete,
-      t,
-    ],
+    [columnHelper, amountFormatting, dateFormatting, numberFormatting, isManualDataSource, t],
   );
 
   const table = useReactTable({

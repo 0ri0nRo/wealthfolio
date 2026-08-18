@@ -11,6 +11,7 @@ import {
   useAmountFormatting,
   type FormattingApi,
   useDateFormatting,
+  useNumberFormatting,
 } from "@wealthfolio/ui";
 import type { TFunction } from "i18next";
 import { useMemo } from "react";
@@ -101,12 +102,13 @@ function canNavigateToHolding(row: DriftHoldingRow): boolean {
 export function HoldingsTable({ report }: HoldingsTableProps) {
   const dateFormatting = useDateFormatting();
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { accounts } = useAccounts();
 
   const accountMap = useMemo(() => new Map(accounts.map((a) => [a.id, a.name])), [accounts]);
-  const updatedAt = useMemo(() => formatUpdatedAt(new Date(), dateFormatting), [formatting]);
+  const updatedAt = useMemo(() => formatUpdatedAt(new Date(), dateFormatting), [dateFormatting]);
 
   const showAccountCol = report.scopeType !== "account";
   const holdingsReport = report.holdings ?? null;
@@ -284,10 +286,12 @@ export function HoldingsTable({ report }: HoldingsTableProps) {
                       {formatting.formatAmount(row.value, baseCurrency)}
                     </td>
                     <td className="text-foreground pr-3 text-right font-medium tabular-nums">
-                      {row.currentPct.toFixed(2)}%
+                      {numberFormatting.formatPercent(row.currentPct / 100, { digits: 2 })}
                     </td>
                     <td className="text-muted-foreground pr-3 text-right tabular-nums">
-                      {row.targetPct != null ? `${row.targetPct.toFixed(2)}%` : "—"}
+                      {row.targetPct != null
+                        ? numberFormatting.formatPercent(row.targetPct / 100, { digits: 2 })
+                        : "—"}
                     </td>
                     <td
                       className={cn(

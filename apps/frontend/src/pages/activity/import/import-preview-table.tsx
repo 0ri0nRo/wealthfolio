@@ -94,6 +94,7 @@ export const ImportPreviewTable = ({
   accounts: Account[];
 }) => {
   const amountFormatting = useAmountFormatting();
+  const dateFormatting = useDateFormatting();
 
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
@@ -158,7 +159,7 @@ export const ImportPreviewTable = ({
 
   const table = useReactTable({
     data: activities,
-    columns: getColumns(t, accounts, baseCurrency, amountFormatting),
+    columns: getColumns(t, accounts, baseCurrency, amountFormatting, dateFormatting),
     state: {
       sorting,
       columnFilters,
@@ -292,6 +293,7 @@ function getColumns(
   accounts: Account[],
   baseCurrency: string,
   formatting: Pick<FormattingApi, "formatAmount">,
+  dateFormatting: Pick<FormattingApi, "formatDate" | "formatTime">,
 ): ColumnDef<ActivityImport>[] {
   const accountCurrencyLookup = new Map(accounts.map((account) => [account.id, account.currency]));
   return [
@@ -394,12 +396,7 @@ function getColumns(
         <DataTableColumnHeader column={column} title={t("activity:import.preview.date")} />
       ),
       cell: ({ row }) => {
-        const amountFormatting = useAmountFormatting();
-        const dateFormatting = useDateFormatting();
-        const formattedDate = formatDateTime(row.getValue("date"), {
-          ...amountFormatting,
-          ...dateFormatting,
-        });
+        const formattedDate = formatDateTime(row.getValue("date"), dateFormatting);
         const hasError = hasFieldError(row.original, "date");
         const errorMessages = getFieldErrorMessage(row.original, "date");
 

@@ -59,6 +59,8 @@ export const ActivityTableMobile = ({
   onClearFilters,
 }: ActivityTableMobileProps) => {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const appTimezone = settings?.timezone?.trim() || undefined;
@@ -100,8 +102,6 @@ export const ActivityTableMobile = ({
   return (
     <div className="min-h-0 flex-1 space-y-2 overflow-auto">
       {activities.map((activity) => {
-        const numberFormatting = useNumberFormatting();
-        const dateFormatting = useDateFormatting();
         const symbol = activity.assetSymbol;
         const activityType = activity.activityType;
         const isTransferActivity =

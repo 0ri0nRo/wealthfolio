@@ -85,6 +85,8 @@ export const ActivityTable = ({
   onClearFilters,
 }: ActivityTableProps) => {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
   const { t } = useTranslation();
   const { duplicateActivityMutation } = useActivityMutations();
   const { settings } = useSettingsContext();
@@ -171,7 +173,6 @@ export const ActivityTable = ({
           <DataTableColumnHeader column={column} title={t("activity:table_date")} />
         ),
         cell: ({ row }) => {
-          const dateFormatting = useDateFormatting();
           const dateVal = row.getValue("date");
           const formattedDate =
             typeof dateVal === "string" || dateVal instanceof Date
@@ -192,8 +193,6 @@ export const ActivityTable = ({
           <DataTableColumnHeader column={column} title={t("activity:table_symbol")} />
         ),
         cell: ({ row }) => {
-          const numberFormatting = useNumberFormatting();
-          const dateFormatting = useDateFormatting();
           const symbol = String(row.getValue("assetSymbol"));
           const assetId = row.original.assetId;
           const activityType = String(row.getValue("activityType"));
@@ -579,12 +578,14 @@ export const ActivityTable = ({
     ],
     [
       appTimezone,
+      dateFormatting,
       formatting,
       handleEdit,
       handleDelete,
       handleDuplicate,
       onLinkTransfer,
       onUnlinkTransfer,
+      numberFormatting,
       symbolExchangeCountMap,
       t,
     ],

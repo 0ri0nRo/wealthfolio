@@ -3,12 +3,14 @@ import type { Quote } from "@/lib/types";
 import { createColumnHelper } from "@tanstack/react-table";
 import {
   Button,
+  calendarDateFromLocalDate,
   DataGrid,
   DatePickerInput,
   Icons,
   Input,
   useAmountFormatting,
   useDataGrid,
+  useDateFormatting,
   useNumberFormatting,
 } from "@wealthfolio/ui";
 import { format } from "date-fns";
@@ -90,6 +92,7 @@ export function QuoteHistoryDataGrid({
   onChangeDataSource,
 }: QuoteHistoryDataGridProps) {
   const amountFormatting = useAmountFormatting();
+  const dateFormatting = useDateFormatting();
   const numberFormatting = useNumberFormatting();
 
   const renderPriceCellValue = useCallback(
@@ -567,7 +570,11 @@ export function QuoteHistoryDataGrid({
                   onClick={isManualDataSource ? () => setMobileEditingId(entry.id) : undefined}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{format(entry.date, "yyyy-MM-dd")}</span>
+                    <span className="text-sm font-medium">
+                      {dateFormatting.formatCalendarDate(calendarDateFromLocalDate(entry.date), {
+                        dateStyle: "short",
+                      })}
+                    </span>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold">
                         {amountFormatting.formatPrice(entry.close, entry.currency, false)}

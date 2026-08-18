@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@/test/render";
 import { format } from "date-fns";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,6 +31,13 @@ vi.mock("@wealthfolio/ui", async (importOriginal) => {
 const mockUseIsMobileViewport = vi.mocked(useIsMobileViewport);
 const mockUseDataGrid = vi.mocked(useDataGrid);
 const assetId = "asset-home-mortgage";
+const displayDate = (date: string) =>
+  new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T00:00:00Z`));
 
 const createQuote = (date: string, value: number, id = `${assetId}_${date}_MANUAL`): Quote => ({
   id,
@@ -105,13 +112,15 @@ describe("ValueHistoryDataGrid mobile", () => {
     renderGrid();
 
     expect(
-      screen.getByRole("button", { name: "Edit 2026-08-17, $495,000.00" }),
+      screen.getByRole("button", { name: `Edit ${displayDate("2026-08-17")}, $495,000.00` }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Delete 2026-08-17, $495,000.00" }),
+      screen.getByRole("button", { name: `Delete ${displayDate("2026-08-17")}, $495,000.00` }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit 2026-08-17, $495,000.00" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: `Edit ${displayDate("2026-08-17")}, $495,000.00` }),
+    );
 
     expect(screen.getByLabelText("Notes")).toBeInTheDocument();
   });
@@ -121,7 +130,9 @@ describe("ValueHistoryDataGrid mobile", () => {
     const onSaveQuote = vi.fn().mockResolvedValue(undefined);
     renderGrid({ data: [createQuote("2026-08-17", 495_000, existingId)], onSaveQuote });
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit 2026-08-17, $495,000.00" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: `Edit ${displayDate("2026-08-17")}, $495,000.00` }),
+    );
     fireEvent.change(screen.getByRole("textbox", { name: "Balance" }), {
       target: { value: "510000" },
     });
@@ -136,7 +147,9 @@ describe("ValueHistoryDataGrid mobile", () => {
       }),
     );
     expect(
-      await screen.findByRole("button", { name: "Edit 2026-08-17, $510,000.00" }),
+      await screen.findByRole("button", {
+        name: `Edit ${displayDate("2026-08-17")}, $510,000.00`,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -144,7 +157,9 @@ describe("ValueHistoryDataGrid mobile", () => {
     const onSaveQuote = vi.fn().mockRejectedValue(new Error("save failed"));
     renderGrid({ onSaveQuote });
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit 2026-08-17, $495,000.00" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: `Edit ${displayDate("2026-08-17")}, $495,000.00` }),
+    );
     fireEvent.change(screen.getByRole("textbox", { name: "Balance" }), {
       target: { value: "510000" },
     });
@@ -161,7 +176,9 @@ describe("ValueHistoryDataGrid mobile", () => {
     const onPersistComplete = vi.fn().mockResolvedValue(undefined);
     const view = renderGrid({ onSaveQuote, onDeleteQuote, onPersistComplete });
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit 2026-08-17, $495,000.00" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: `Edit ${displayDate("2026-08-17")}, $495,000.00` }),
+    );
     fireEvent.change(screen.getByRole("textbox", { name: "Balance" }), {
       target: { value: "510000" },
     });
@@ -185,7 +202,11 @@ describe("ValueHistoryDataGrid mobile", () => {
     const onDeleteQuote = vi.fn().mockRejectedValue(new Error("delete failed"));
     renderGrid({ onDeleteQuote });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete 2026-08-17, $495,000.00" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `Delete ${displayDate("2026-08-17")}, $495,000.00`,
+      }),
+    );
     const dialog = screen.getByRole("alertdialog", { name: "Delete history entry?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
 
@@ -194,7 +215,7 @@ describe("ValueHistoryDataGrid mobile", () => {
     expect(openDialog).toBeInTheDocument();
     fireEvent.click(within(openDialog).getByRole("button", { name: "Cancel" }));
     expect(
-      screen.getByRole("button", { name: "Edit 2026-08-17, $495,000.00" }),
+      screen.getByRole("button", { name: `Edit ${displayDate("2026-08-17")}, $495,000.00` }),
     ).toBeInTheDocument();
   });
 
@@ -227,9 +248,11 @@ describe("ValueHistoryDataGrid mobile", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(
-      await screen.findByRole("button", { name: `Edit ${today}, $490,000.00` }),
+      await screen.findByRole("button", { name: `Edit ${displayDate(today)}, $490,000.00` }),
     ).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: new RegExp(`^Edit ${today},`) })).toHaveLength(1);
+    expect(
+      screen.getAllByRole("button", { name: new RegExp(`^Edit ${displayDate(today)},`) }),
+    ).toHaveLength(1);
   });
 });
 

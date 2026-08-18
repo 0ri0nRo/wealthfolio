@@ -66,6 +66,8 @@ export function AssetsTableMobile({
   isRefetchingQuotes,
 }: AssetsTableMobileProps) {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
@@ -223,8 +225,6 @@ export function AssetsTableMobile({
                 className="hover:bg-muted/60 focus-visible:ring-ring flex flex-1 items-center gap-3 overflow-hidden rounded-md text-left transition"
               >
                 {(() => {
-                  const numberFormatting = useNumberFormatting();
-                  const dateFormatting = useDateFormatting();
                   const rawSymbol = asset.displayCode ?? "";
                   const parsedOption = parseOccSymbol(rawSymbol);
                   const displaySymbol = parsedOption
@@ -263,7 +263,6 @@ export function AssetsTableMobile({
                     const quote = snapshot?.quote;
 
                     if (quote) {
-                      const dateFormatting = useDateFormatting();
                       return (
                         <>
                           <div className="flex items-center justify-end gap-1 font-semibold">

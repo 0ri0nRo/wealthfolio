@@ -1,11 +1,6 @@
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import NumberFlow from "@number-flow/react";
-import {
-  useAmountFormatting,
-  useDateFormatting,
-  useLocalizationSettings,
-  useNumberFormatting,
-} from "@wealthfolio/ui";
+import { useAmountFormatting, useLocalizationSettings, useNumberFormatting } from "@wealthfolio/ui";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useMemo } from "react";
 
@@ -31,17 +26,9 @@ const Balance: React.FC<BalanceProps> = ({
   isLoading = false,
   isUnavailable = false,
 }) => {
-  const localizationSettings = useLocalizationSettings();
   const amountFormatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
-  const dateFormatting = useDateFormatting();
-
-  const formatting = {
-    ...localizationSettings,
-    ...amountFormatting,
-    ...numberFormatting,
-    ...dateFormatting,
-  };
+  const { locale } = useLocalizationSettings();
 
   const { isBalanceHidden } = useBalancePrivacy();
   const validCurrency = isValidCurrencyCode(currency);
@@ -49,7 +36,7 @@ const Balance: React.FC<BalanceProps> = ({
   const currencySymbol = useMemo(() => {
     if (!validCurrency) return currency;
     return amountFormatting.formatCurrencySymbol(currency);
-  }, [currency, formatting, validCurrency]);
+  }, [currency, amountFormatting, validCurrency]);
 
   const formattedValue = useMemo(() => {
     const useCurrencyStyle = displayCurrency && validCurrency;
@@ -62,7 +49,16 @@ const Balance: React.FC<BalanceProps> = ({
       minimumFractionDigits: compact ? 0 : displayDecimal ? 2 : 0,
       maximumFractionDigits: compact ? 1 : displayDecimal ? 2 : 0,
     });
-  }, [currency, formatting, validCurrency, displayCurrency, displayDecimal, compact, targetValue]);
+  }, [
+    currency,
+    amountFormatting,
+    numberFormatting,
+    validCurrency,
+    displayCurrency,
+    displayDecimal,
+    compact,
+    targetValue,
+  ]);
 
   if (isLoading) {
     return <Skeleton className="h-9 w-48" />;
@@ -92,6 +88,7 @@ const Balance: React.FC<BalanceProps> = ({
             className="muted-fraction"
             value={targetValue}
             isolate={false}
+            locales={locale}
             style={{
               // @ts-expect-error https://number-flow.barvian.me/ - but it's not in TS object
               "--number-flow-mask-height": "0px",
