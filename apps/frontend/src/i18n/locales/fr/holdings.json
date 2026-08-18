@@ -131,6 +131,7 @@
   "qty": "Qté",
   "contracts": "contrats",
   "bonds": "obligations",
+  "units": "parts",
   "avg_price": "Prix moyen",
   "total_pnl": "P&L total",
   "total_return": "Rendement total",

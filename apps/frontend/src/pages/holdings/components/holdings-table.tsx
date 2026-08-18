@@ -336,6 +336,7 @@ const getColumns = (
         assetTypeKey.startsWith("BOND_") ||
         assetTypeKey === "DEBT_SECURITY" ||
         assetTypeKey === "MONEY_MARKET_DEBT";
+      const isEtfOrFund = assetTypeKey === "ETF" || assetTypeKey === "FUND_MUTUAL";
       return (
         <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
           <QuantityDisplay value={holding.quantity} isHidden={isHidden} />
@@ -344,7 +345,9 @@ const getColumns = (
               ? t("holdings:contracts")
               : isBond
                 ? t("holdings:bonds")
-                : t("holdings:shares")}
+                : isEtfOrFund
+                  ? t("holdings:units")
+                  : t("holdings:shares")}
           </span>
         </div>
       );

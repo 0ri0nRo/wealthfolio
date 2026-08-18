@@ -131,6 +131,7 @@
   "qty": "수량",
   "contracts": "계약",
   "bonds": "채권",
+  "units": "좌",
   "avg_price": "평균가",
   "total_pnl": "총 손익",
   "total_return": "총 수익률",

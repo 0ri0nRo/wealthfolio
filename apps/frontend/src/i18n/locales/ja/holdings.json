@@ -131,6 +131,7 @@
   "qty": "数量",
   "contracts": "枚",
   "bonds": "口",
+  "units": "口",
   "avg_price": "平均単価",
   "total_pnl": "損益合計",
   "total_return": "トータルリターン",
