@@ -18,19 +18,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Skeleton } from "../ui/skeleton";
 import { Textarea } from "../ui/textarea";
 import { Icons } from "../ui/icons";
+import { fromDate, getLocalTimeZone, toCalendarDateTime } from "@internationalized/date";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useBadgeOverflow } from "../../hooks/use-badge-overflow";
 import { useDebouncedCallback } from "../../hooks/use-debounced-callback";
 import { quoteCurrencies } from "../../lib/currencies";
-import { calendarDateTimeFromLocalDate } from "../../lib/formatting";
 import { generateId } from "../../lib/id";
+import { parseDateTimeInTimezone } from "../../lib/formatting";
 import { cn } from "../../lib/utils";
 import { DataGridCellWrapper } from "./data-grid-cell-wrapper";
 import type { DataGridCellProps, FileCellData, SymbolSearchResult } from "./data-grid-types";
 import { getCellKey, getLineCount } from "./data-grid-utils";
-import { useDateFormatting, useNumberFormatting } from "../formatting-provider";
+import { useDateFormatting, useLocalizationSettings, useNumberFormatting } from "../formatting-provider";
 
 export function ShortTextCell<TData>({
   cell,
@@ -1626,16 +1627,17 @@ export function DateInputCell<TData>({
   );
 }
 
-function toDateTimeLocalString(date: Date | string | undefined): string {
+function toDateTimeLocalString(date: Date | string | undefined, timezone: string): string {
   if (!date) return "";
   const d = date instanceof Date ? date : new Date(date);
   if (Number.isNaN(d.getTime())) return "";
+  const local = toCalendarDateTime(fromDate(d, timezone));
   // Format: YYYY-MM-DDTHH:mm (required format for datetime-local input)
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const hours = String(d.getHours()).padStart(2, "0");
-  const minutes = String(d.getMinutes()).padStart(2, "0");
+  const year = local.year;
+  const month = String(local.month).padStart(2, "0");
+  const day = String(local.day).padStart(2, "0");
+  const hours = String(local.hour).padStart(2, "0");
+  const minutes = String(local.minute).padStart(2, "0");
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
@@ -1662,17 +1664,20 @@ export function DateTimeCell<TData>({
   cellState,
 }: DataGridCellProps<TData>) {
   const formatting = useDateFormatting();
+  const { timezone } = useLocalizationSettings();
+  const effectiveTimezone = timezone ?? getLocalTimeZone();
   const initialValue = cell.getValue() as Date | string | undefined;
-  const [value, setValue] = React.useState(() => toDateTimeLocalString(initialValue));
+  const [value, setValue] = React.useState(() => toDateTimeLocalString(initialValue, effectiveTimezone));
   const inputRef = React.useRef<HTMLInputElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
 
   // Compare by timestamp instead of reference for Date objects
-  const prevTimestampRef = React.useRef(getDateTimestamp(initialValue));
+  const prevTimestampRef = React.useRef(`${getDateTimestamp(initialValue) ?? ""}:${effectiveTimezone}`);
   const currentTimestamp = getDateTimestamp(initialValue);
-  if (currentTimestamp !== prevTimestampRef.current) {
-    prevTimestampRef.current = currentTimestamp;
-    setValue(toDateTimeLocalString(initialValue));
+  const currentValueKey = `${currentTimestamp ?? ""}:${effectiveTimezone}`;
+  if (currentValueKey !== prevTimestampRef.current) {
+    prevTimestampRef.current = currentValueKey;
+    setValue(toDateTimeLocalString(initialValue, effectiveTimezone));
   }
 
   const onBlur = React.useCallback(() => {
@@ -1680,7 +1685,7 @@ export function DateTimeCell<TData>({
       tableMeta?.onCellEditingStop?.();
       return;
     }
-    const date = value ? new Date(value) : undefined;
+    const date = value ? parseDateTimeInTimezone(value, effectiveTimezone) : undefined;
     const initialDate = initialValue
       ? initialValue instanceof Date
         ? initialValue
@@ -1692,7 +1697,7 @@ export function DateTimeCell<TData>({
       tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: date });
     }
     tableMeta?.onCellEditingStop?.();
-  }, [tableMeta, rowIndex, columnId, value, initialValue, readOnly]);
+  }, [tableMeta, rowIndex, columnId, value, initialValue, readOnly, effectiveTimezone]);
 
   const onChange = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setValue(event.target.value);
@@ -1707,11 +1712,11 @@ export function DateTimeCell<TData>({
     // When editing stops (transitions from true to false), save the value
     if (wasEditingRef.current && !isEditing) {
       const currentValue = valueRef.current;
-      const date = currentValue ? parseDateLocal(currentValue) : undefined;
+      const date = currentValue ? parseDateTimeInTimezone(currentValue, effectiveTimezone) : undefined;
       const initialDate = initialValue
         ? initialValue instanceof Date
           ? initialValue
-          : parseDateLocal(initialValue)
+          : new Date(initialValue)
         : undefined;
 
       if (!readOnly && date?.getTime() !== initialDate?.getTime()) {
@@ -1719,18 +1724,18 @@ export function DateTimeCell<TData>({
       }
     }
     wasEditingRef.current = isEditing;
-  }, [isEditing, initialValue, readOnly, tableMeta, rowIndex, columnId]);
+  }, [isEditing, initialValue, readOnly, tableMeta, rowIndex, columnId, effectiveTimezone]);
 
   const onWrapperKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
       if (isEditing) {
         if (event.key === "Enter") {
           event.preventDefault();
-          const date = value ? parseDateLocal(value) : undefined;
+          const date = value ? parseDateTimeInTimezone(value, effectiveTimezone) : undefined;
           const initialDate = initialValue
             ? initialValue instanceof Date
               ? initialValue
-              : parseDateLocal(initialValue)
+              : new Date(initialValue)
             : undefined;
           if (date?.getTime() !== initialDate?.getTime()) {
             tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: date });
@@ -1738,11 +1743,11 @@ export function DateTimeCell<TData>({
           tableMeta?.onCellEditingStop?.({ moveToNextRow: true });
         } else if (event.key === "Tab") {
           event.preventDefault();
-          const date = value ? parseDateLocal(value) : undefined;
+          const date = value ? parseDateTimeInTimezone(value, effectiveTimezone) : undefined;
           const initialDate = initialValue
             ? initialValue instanceof Date
               ? initialValue
-              : parseDateLocal(initialValue)
+              : new Date(initialValue)
             : undefined;
           if (date?.getTime() !== initialDate?.getTime()) {
             tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: date });
@@ -1752,7 +1757,7 @@ export function DateTimeCell<TData>({
           });
         } else if (event.key === "Escape") {
           event.preventDefault();
-          setValue(toDateTimeLocalString(initialValue));
+          setValue(toDateTimeLocalString(initialValue, effectiveTimezone));
           tableMeta?.onCellEditingStop?.();
         }
       } else if (isFocused && event.key === "Tab") {
@@ -1762,7 +1767,7 @@ export function DateTimeCell<TData>({
         });
       }
     },
-    [isEditing, isFocused, initialValue, tableMeta, rowIndex, columnId, value],
+    [isEditing, isFocused, initialValue, tableMeta, rowIndex, columnId, value, effectiveTimezone],
   );
 
   React.useEffect(() => {
@@ -1801,7 +1806,7 @@ export function DateTimeCell<TData>({
       ) : (
         <span data-slot="grid-cell-content">
           {value
-            ? formatting.formatCalendarDateTime(calendarDateTimeFromLocalDate(new Date(value)), {
+            ? formatting.formatDateTime(parseDateTimeInTimezone(value, effectiveTimezone) ?? "", {
                 dateStyle: "short",
                 timeStyle: "short",
               })

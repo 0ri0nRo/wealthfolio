@@ -40,9 +40,6 @@ impl SettingsRepositoryTrait for SettingsRepository {
                 "font" => settings.font = value,
                 "language" => settings.language = value,
                 "formatting_region" => settings.formatting_region = value,
-                "formatting_locale" if settings.formatting_region == "system" => {
-                    settings.formatting_region = value;
-                }
                 "base_currency" => settings.base_currency = value,
                 "timezone" => settings.timezone = value,
                 "onboarding_completed" => {

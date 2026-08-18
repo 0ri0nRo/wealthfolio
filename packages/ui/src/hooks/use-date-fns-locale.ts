@@ -38,6 +38,40 @@ const REGION_LOCALES: Record<string, Locale> = {
   KR: ko,
 };
 
+const generatedLocales = new Map<string, Locale>();
+
+function intlWidth(width: string | undefined) {
+  if (width === "narrow") return "narrow" as const;
+  if (width === "short" || width === "abbreviated") return "short" as const;
+  return "long" as const;
+}
+
+function createIntlLocale(locale: string, options: Locale["options"]): Locale {
+  const cached = generatedLocales.get(locale);
+  if (cached) return cached;
+
+  const generated: Locale = {
+    ...enUS,
+    code: locale,
+    options,
+    localize: {
+      ...enUS.localize,
+      month: (month, localizeOptions) =>
+        new Intl.DateTimeFormat(locale, {
+          month: intlWidth(localizeOptions?.width),
+          timeZone: "UTC",
+        }).format(new Date(Date.UTC(2020, Number(month), 1))),
+      day: (day, localizeOptions) =>
+        new Intl.DateTimeFormat(locale, {
+          weekday: intlWidth(localizeOptions?.width),
+          timeZone: "UTC",
+        }).format(new Date(Date.UTC(2020, 7, 2 + Number(day)))),
+    },
+  };
+  generatedLocales.set(locale, generated);
+  return generated;
+}
+
 export function dateFnsLocaleFor(locale: string | undefined): Locale {
   if (!locale) throw new Error("A resolved formatting locale is required for date-fns");
   const exact = DATE_FNS_LOCALES[locale];
@@ -45,15 +79,26 @@ export function dateFnsLocaleFor(locale: string | undefined): Locale {
 
   const resolved = new Intl.Locale(locale);
   const languageLocale = LANGUAGE_LOCALES[resolved.language];
-  if (!languageLocale)
-    throw new Error(`Unsupported UI language for date-fns: ${resolved.language}`);
   const regionLocale = resolved.region ? REGION_LOCALES[resolved.region] : undefined;
-  if (!regionLocale?.options) return languageLocale;
+  const localeWithWeekInfo = resolved as Intl.Locale & {
+    getWeekInfo?: () => { firstDay: number; minimalDays: number };
+    weekInfo?: { firstDay: number; minimalDays: number };
+  };
+  const weekInfo = localeWithWeekInfo.getWeekInfo?.() ?? localeWithWeekInfo.weekInfo;
+  const options: Locale["options"] = weekInfo
+    ? {
+        weekStartsOn: (weekInfo.firstDay % 7) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+        firstWeekContainsDate: weekInfo.minimalDays === 4 ? 4 : 1,
+      }
+    : regionLocale?.options;
+  if (!languageLocale) return createIntlLocale(locale, options);
+  if (!options) return languageLocale;
 
   // date-fns owns calendar text while the selected region owns week conventions.
-  return { ...languageLocale, code: locale, options: regionLocale.options };
+  return { ...languageLocale, code: locale, options };
 }
 
 export function useDateFnsLocale(): Locale {
-  return dateFnsLocaleFor(useLocalizationSettings().locale);
+  const { locale } = useLocalizationSettings();
+  return dateFnsLocaleFor(locale);
 }

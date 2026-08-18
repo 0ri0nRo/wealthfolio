@@ -12,13 +12,19 @@ import {
 
 export interface LocalizationSettings {
   locale: string;
+  uiLocale: string;
   timezone?: string;
 }
 
-const LocalizationSettingsContext = React.createContext<LocalizationSettings | undefined>(undefined);
-const AmountFormattingContext = React.createContext<AmountFormatting | undefined>(undefined);
-const NumberFormattingContext = React.createContext<NumberFormatting | undefined>(undefined);
-const DateFormattingContext = React.createContext<DateFormatting | undefined>(undefined);
+const DEFAULT_LOCALIZATION_SETTINGS: LocalizationSettings = { locale: "en-US", uiLocale: "en" };
+const DEFAULT_AMOUNT_FORMATTING = createAmountFormatting(DEFAULT_LOCALIZATION_SETTINGS.locale);
+const DEFAULT_NUMBER_FORMATTING = createNumberFormatting(DEFAULT_LOCALIZATION_SETTINGS.locale);
+const DEFAULT_DATE_FORMATTING = createDateFormatting(DEFAULT_LOCALIZATION_SETTINGS.locale);
+
+const LocalizationSettingsContext = React.createContext(DEFAULT_LOCALIZATION_SETTINGS);
+const AmountFormattingContext = React.createContext(DEFAULT_AMOUNT_FORMATTING);
+const NumberFormattingContext = React.createContext(DEFAULT_NUMBER_FORMATTING);
+const DateFormattingContext = React.createContext(DEFAULT_DATE_FORMATTING);
 
 const DECIMAL_FORMAT_OPTIONS: Intl.NumberFormatOptions = {};
 const AMOUNT_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
@@ -29,12 +35,6 @@ const QUANTITY_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
   maximumFractionDigits: 8,
   useGrouping: true,
 };
-
-function useRequiredContext<T>(context: React.Context<T | undefined>, hookName: string): T {
-  const value = React.useContext(context);
-  if (!value) throw new Error(`${hookName} must be used within a FormattingProvider`);
-  return value;
-}
 
 function FormattingRuntime({ settings, children }: { settings: LocalizationSettings; children: React.ReactNode }) {
   const decimal = useNumberFormatter(DECIMAL_FORMAT_OPTIONS);
@@ -93,7 +93,7 @@ function FormattingRuntime({ settings, children }: { settings: LocalizationSetti
 
 export function FormattingProvider({
   locale,
-  uiLocale,
+  uiLocale = "en",
   timezone,
   children,
 }: {
@@ -102,8 +102,11 @@ export function FormattingProvider({
   timezone?: string;
   children: React.ReactNode;
 }) {
-  const resolvedLocale = resolveFormattingLocale(locale, uiLocale);
-  const settings = React.useMemo(() => ({ locale: resolvedLocale, timezone }), [resolvedLocale, timezone]);
+  const resolvedLocale = resolveFormattingLocale(locale);
+  const settings = React.useMemo(
+    () => ({ locale: resolvedLocale, uiLocale, timezone }),
+    [resolvedLocale, uiLocale, timezone],
+  );
   return (
     <I18nProvider locale={resolvedLocale}>
       <LocalizationSettingsContext.Provider value={settings}>
@@ -114,17 +117,17 @@ export function FormattingProvider({
 }
 
 export function useLocalizationSettings(): LocalizationSettings {
-  return useRequiredContext(LocalizationSettingsContext, "useLocalizationSettings");
+  return React.useContext(LocalizationSettingsContext);
 }
 
 export function useAmountFormatting(): AmountFormatting {
-  return useRequiredContext(AmountFormattingContext, "useAmountFormatting");
+  return React.useContext(AmountFormattingContext);
 }
 
 export function useNumberFormatting(): NumberFormatting {
-  return useRequiredContext(NumberFormattingContext, "useNumberFormatting");
+  return React.useContext(NumberFormattingContext);
 }
 
 export function useDateFormatting(): DateFormatting {
-  return useRequiredContext(DateFormattingContext, "useDateFormatting");
+  return React.useContext(DateFormattingContext);
 }

@@ -1,10 +1,16 @@
 import {
   CalendarDate,
   CalendarDateTime,
+  createCalendar,
+  getLocalTimeZone,
+  GregorianCalendar,
   parseDate,
   parseDateTime,
   parseTime,
   Time,
+  toCalendar,
+  toZoned,
+  type CalendarIdentifier,
 } from "@internationalized/date";
 import { NumberParser } from "@internationalized/number";
 import { DECIMAL_PRECISION, DISPLAY_DECIMAL_PRECISION } from "./constants";
@@ -23,9 +29,24 @@ export const FORMATTING_REGIONS = [
   "ES",
   "MX",
   "CN",
+  "JP",
+  "KR",
 ] as const;
 
 export type FormattingRegionSetting = (typeof FORMATTING_REGIONS)[number];
+
+const FORMATTING_REGION_LOCALES: Record<Exclude<FormattingRegionSetting, "system">, string> = {
+  CA: "en-CA",
+  US: "en-US",
+  GB: "en-GB",
+  FR: "fr-FR",
+  DE: "de-DE",
+  ES: "es-ES",
+  MX: "es-MX",
+  CN: "zh-CN",
+  JP: "ja-JP",
+  KR: "ko-KR",
+};
 
 export interface PercentFormatOptions {
   digits?: number;
@@ -111,6 +132,22 @@ export function timeFromLocalDate(value: Date): TimeParts {
   };
 }
 
+export function parseDateTimeInTimezone(value: string, timezone?: string): Date | undefined {
+  const normalized = value.trim().replace(" ", "T");
+  if (!normalized) return undefined;
+
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(normalized)) {
+    const instant = new Date(normalized);
+    return Number.isFinite(instant.getTime()) ? instant : undefined;
+  }
+
+  try {
+    return toZoned(parseDateTime(normalized), timezone || getLocalTimeZone()).toDate();
+  } catch {
+    return undefined;
+  }
+}
+
 export interface FormattingApi {
   locale: string;
   timezone?: string;
@@ -139,6 +176,11 @@ export interface FormattingApi {
   formatDecimal: (value: number, options?: NumberDisplayOptions) => string;
   formatDate: (value: Date | string | number, options?: DateDisplayOptions) => string;
   formatCalendarDate: (value: CalendarDateValue, options?: DateDisplayOptions) => string;
+  formatCalendarDateRange: (
+    start: CalendarDateValue,
+    end: CalendarDateValue,
+    options?: DateDisplayOptions,
+  ) => string;
   formatCalendarDateTime: (value: CalendarDateTimeValue, options?: DateDisplayOptions) => string;
   formatTimeOfDay: (value: TimeValue, options?: DateDisplayOptions) => string;
   formatTime: (value: Date | string | number, options?: DateDisplayOptions) => string;
@@ -171,6 +213,7 @@ export type DateFormatting = Pick<
   FormattingApi,
   | "formatDate"
   | "formatCalendarDate"
+  | "formatCalendarDateRange"
   | "formatCalendarDateTime"
   | "formatTimeOfDay"
   | "formatTime"
@@ -180,7 +223,8 @@ export type DateFormatting = Pick<
 
 export function resolveFormattingLocale(
   setting: string | null | undefined,
-  uiLocale?: string | null,
+  /** @deprecated UI language no longer affects formatting. */
+  _uiLocale?: string | null,
 ): string {
   if (!setting) {
     throw new Error("A formatting locale is required");
@@ -193,20 +237,14 @@ export function resolveFormattingLocale(
     }
     setting = Intl.getCanonicalLocales(systemLocale)[0]!;
   }
-  const isRegion = /^[A-Za-z]{2}$/.test(setting);
-  if (isRegion && !uiLocale) {
-    throw new Error("A UI locale is required when resolving a formatting region");
-  }
   try {
-    const regionLocale = isRegion
-      ? new Intl.Locale("und", { region: setting.toUpperCase() })
-      : new Intl.Locale(Intl.getCanonicalLocales(setting)[0]);
-    if (!uiLocale) return regionLocale.toString();
-    const languageLocale = new Intl.Locale(Intl.getCanonicalLocales(uiLocale)[0]);
-    return new Intl.Locale(languageLocale.language, {
-      region: regionLocale.region,
-      script: languageLocale.script,
-    }).toString();
+    const region = setting.toUpperCase() as Exclude<FormattingRegionSetting, "system">;
+    if (/^[A-Za-z]{2}$/.test(setting)) {
+      const locale = FORMATTING_REGION_LOCALES[region];
+      if (!locale) throw new Error(`Unsupported formatting region: ${setting}`);
+      return locale;
+    }
+    return Intl.getCanonicalLocales(setting)[0]!;
   } catch {
     throw new Error(`Invalid formatting locale: ${setting}`);
   }
@@ -240,7 +278,7 @@ function separators(locale: string) {
 }
 
 function stripFinancialAffixes(value: string): string | null {
-  const affix = String.raw`(?:\p{Sc}|[A-Z]{3}|[A-Z]{1,3}\p{Sc})`;
+  const affix = String.raw`(?:\p{Sc}[A-Z]{0,3}|[A-Z]{1,3}\p{Sc}|[A-Z]{3}|[元圆圓円원])`;
   let result = value
     .replace(new RegExp(`^([+\\-−]?)\\s*${affix}\\s*`, "u"), "$1")
     .replace(new RegExp(`\\s*${affix}\\s*$`, "u"), "")
@@ -279,7 +317,12 @@ function hasValidGrouping(value: string, locale: string, parsed: number): boolea
 
 export function parseLocalizedNumber(value: string, locale: string): number | undefined {
   const resolvedLocale = locale && locale !== "system" ? locale : resolveFormattingLocale(locale);
-  const text = stripFinancialAffixes(value.trim().replace(/[\u061c\u200e\u200f]/gu, ""));
+  const text = stripFinancialAffixes(
+    value
+      .normalize("NFKC")
+      .trim()
+      .replace(/[\u061c\u200e\u200f]/gu, ""),
+  );
   if (!text) return undefined;
   const parser = new NumberParser(resolvedLocale, { style: "decimal" });
   const parsed = parser.parse(text);
@@ -288,8 +331,115 @@ export function parseLocalizedNumber(value: string, locale: string): number | un
     : undefined;
 }
 
+const localizedMonths = new Map<string, Map<string, number>>();
+const localizedNumberParsers = new Map<string, NumberParser>();
+
+function normalizeLocalizedDigits(value: string, locale: string): string {
+  let parser = localizedNumberParsers.get(locale);
+  if (!parser) {
+    parser = new NumberParser(locale, { style: "decimal" });
+    localizedNumberParsers.set(locale, parser);
+  }
+  return Array.from(value, (character) => {
+    const parsed = parser.parse(character);
+    return Number.isInteger(parsed) && parsed >= 0 && parsed <= 9 ? String(parsed) : character;
+  }).join("");
+}
+
+function dateFromLocalizedFields(
+  year: number,
+  month: number,
+  day: number,
+  locale: string,
+): Date | undefined {
+  try {
+    const calendarName = new Intl.DateTimeFormat(locale).resolvedOptions()
+      .calendar as CalendarIdentifier;
+    const calendar = createCalendar(calendarName);
+    const localized = new CalendarDate(calendar, year, month, day);
+    if (localized.year !== year || localized.month !== month || localized.day !== day) {
+      return undefined;
+    }
+    const gregorian = toCalendar(localized, new GregorianCalendar());
+    const result = new Date(gregorian.year, gregorian.month - 1, gregorian.day);
+    return result.getFullYear() === gregorian.year &&
+      result.getMonth() === gregorian.month - 1 &&
+      result.getDate() === gregorian.day
+      ? result
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizedDateTokens(value: string, locale: string): string[] {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase(locale)
+    .replace(/[\p{P}\p{Z}]+/gu, " ")
+    .trim()
+    .split(/\s+/u)
+    .filter(Boolean);
+}
+
+function monthTokens(locale: string): Map<string, number> {
+  const cached = localizedMonths.get(locale);
+  if (cached) return cached;
+
+  const tokens = new Map<string, number>();
+  const formatters = [
+    new Intl.DateTimeFormat(locale, { month: "long", timeZone: "UTC" }),
+    new Intl.DateTimeFormat(locale, { month: "short", timeZone: "UTC" }),
+  ];
+  const numericFormatter = new Intl.DateTimeFormat(locale, {
+    month: "numeric",
+    timeZone: "UTC",
+  });
+  const start = Date.UTC(2020, 0, 1);
+  const end = Date.UTC(2024, 0, 1);
+  for (let timestamp = start; timestamp < end; timestamp += 7 * 24 * 60 * 60 * 1000) {
+    const date = new Date(timestamp);
+    const numericMonth = numericFormatter
+      .formatToParts(date)
+      .find((part) => part.type === "month")?.value;
+    const month = Number(/\d+/u.exec(normalizeLocalizedDigits(numericMonth ?? "", locale))?.[0]);
+    if (!Number.isInteger(month) || month < 1) continue;
+    for (const formatter of formatters) {
+      const name = formatter.formatToParts(date).find((part) => part.type === "month")?.value;
+      if (!name) continue;
+      for (const token of normalizedDateTokens(name, locale)) tokens.set(token, month);
+    }
+  }
+  localizedMonths.set(locale, tokens);
+  return tokens;
+}
+
+function parseNamedMonthDate(value: string, locale: string): Date | undefined {
+  const tokens = normalizedDateTokens(value, locale);
+  const months = monthTokens(locale);
+  const month = tokens
+    .map((token) => months.get(token))
+    .find((candidate) => candidate !== undefined);
+  if (!month) return undefined;
+
+  const numbers = normalizeLocalizedDigits(value, locale).match(/\d+/g)?.map(Number);
+  if (numbers?.length !== 2) return undefined;
+  const year = numbers.find((candidate) => candidate >= 100);
+  const day = numbers.find((candidate) => candidate !== year && candidate >= 1 && candidate <= 31);
+  if (!year || !day) return undefined;
+
+  return dateFromLocalizedFields(year, month, day, locale);
+}
+
 export function parseLocalizedDate(value: string, locale: string): Date | undefined {
-  const text = value.trim();
+  const resolvedLocale = locale && locale !== "system" ? locale : resolveFormattingLocale(locale);
+  const text = normalizeLocalizedDigits(
+    value
+    .normalize("NFKC")
+    .trim()
+    .replace(/[\u061c\u200e\u200f]/gu, ""),
+    resolvedLocale,
+  );
   if (
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})?$/.test(text)
   ) {
@@ -306,8 +456,12 @@ export function parseLocalizedDate(value: string, locale: string): Date | undefi
       : undefined;
   }
   const numbers = text.match(/\d+/g)?.map(Number);
-  if (numbers?.length !== 3) return undefined;
-  const resolvedLocale = locale && locale !== "system" ? locale : resolveFormattingLocale(locale);
+  if (numbers?.length !== 3) {
+    const localized = parseNamedMonthDate(text, resolvedLocale);
+    if (localized) return localized;
+    const result = new Date(text);
+    return Number.isFinite(result.getTime()) ? result : undefined;
+  }
   const order = new Intl.DateTimeFormat(resolvedLocale, {
     year: "numeric",
     month: "numeric",
@@ -320,12 +474,7 @@ export function parseLocalizedDate(value: string, locale: string): Date | undefi
     string,
     number
   >;
-  const result = new Date(fields.year, fields.month - 1, fields.day);
-  return result.getFullYear() === fields.year &&
-    result.getMonth() === fields.month - 1 &&
-    result.getDate() === fields.day
-    ? result
-    : undefined;
+  return dateFromLocalizedFields(fields.year, fields.month, fields.day, resolvedLocale);
 }
 
 function toDate(value: Date | string | number): Date | null {
@@ -400,10 +549,40 @@ export function createAmountFormatting(
   const currencyFormatters = new Map<string, Intl.NumberFormat>();
   const roundedCurrencyFormatters = new Map<string, Intl.NumberFormat>();
   const currencySymbols = new Map<string, string>();
-  const currencyFractionDigits = new Map<string, number>();
+  const currencyFractionDigitsCache = new Map<string, number>();
+  const amountDecimalFormatters = new Map<number, Pick<Intl.NumberFormat, "format">>([
+    [2, amountFormatter],
+  ]);
   const compactFormatters = new Map<string, Intl.NumberFormat>();
   const priceDecimalFormatters = new Map<number, Intl.NumberFormat>();
   const priceCurrencyFormatters = new Map<string, Intl.NumberFormat>();
+  const getCurrencyFractionDigits = (currency: string) => {
+    const normalizedCurrency = currency?.toUpperCase?.() || "USD";
+    const cached = currencyFractionDigitsCache.get(normalizedCurrency);
+    if (cached !== undefined) return cached;
+    try {
+      const digits =
+        new Intl.NumberFormat(resolvedLocale, {
+          style: "currency",
+          currency: normalizedCurrency,
+        }).resolvedOptions().maximumFractionDigits ?? 2;
+      currencyFractionDigitsCache.set(normalizedCurrency, digits);
+      return digits;
+    } catch {
+      return 2;
+    }
+  };
+  const amountDecimalFormatter = (fractionDigits: number) => {
+    let formatter = amountDecimalFormatters.get(fractionDigits);
+    if (!formatter) {
+      formatter = new Intl.NumberFormat(resolvedLocale, {
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+      });
+      amountDecimalFormatters.set(fractionDigits, formatter);
+    }
+    return formatter;
+  };
   const priceDecimalFormatter = (maximumFractionDigits: number) => {
     let formatter = priceDecimalFormatters.get(maximumFractionDigits);
     if (!formatter) {
@@ -435,22 +614,25 @@ export function createAmountFormatting(
   ) => {
     const amount = numeric(value);
     if (amount == null) return "-";
-    const displayed = Math.abs(amount) < 0.005 ? 0 : amount;
     const quoteUnit = getQuoteUnitCurrency(currency);
     if (quoteUnit) {
+      const displayed = Math.abs(amount) < 0.005 ? 0 : amount;
       const result = amountFormatter.format(displayed);
       return displayCurrency ? `${result}${quoteUnit.symbol}` : result;
     }
+    const normalizedCurrency = currency?.toUpperCase?.() || "USD";
+    const fractionDigits = getCurrencyFractionDigits(normalizedCurrency);
+    const zeroThreshold = 0.5 * 10 ** -fractionDigits;
+    const displayed = Math.abs(amount) < zeroThreshold ? 0 : amount;
     try {
-      if (!displayCurrency) return amountFormatter.format(displayed);
-      const normalizedCurrency = currency?.toUpperCase?.() || "USD";
+      if (!displayCurrency) return amountDecimalFormatter(fractionDigits).format(displayed);
       let formatter = currencyFormatters.get(normalizedCurrency);
       if (!formatter) {
         formatter = new Intl.NumberFormat(resolvedLocale, {
           style: "currency",
           currency: normalizedCurrency,
-          minimumFractionDigits: 2,
-          maximumFractionDigits: 2,
+          minimumFractionDigits: fractionDigits,
+          maximumFractionDigits: fractionDigits,
         });
         currencyFormatters.set(normalizedCurrency, formatter);
       }
@@ -505,20 +687,7 @@ export function createAmountFormatting(
       }
     },
     currencyFractionDigits(currency) {
-      const normalizedCurrency = currency?.toUpperCase?.() || "USD";
-      const cached = currencyFractionDigits.get(normalizedCurrency);
-      if (cached !== undefined) return cached;
-      try {
-        const digits =
-          new Intl.NumberFormat(resolvedLocale, {
-            style: "currency",
-            currency: normalizedCurrency,
-          }).resolvedOptions().maximumFractionDigits ?? 2;
-        currencyFractionDigits.set(normalizedCurrency, digits);
-        return digits;
-      } catch {
-        return 2;
-      }
+      return getCurrencyFractionDigits(currency);
     },
     formatCompactAmount(value, currency, displayCurrency = true) {
       const amount = numeric(value);
@@ -652,7 +821,12 @@ export function createNumberFormatting(
       return options ? numberFormatter(options).format(value) : decimalFormatter.format(value);
     },
     parseNumber(value) {
-      const text = stripFinancialAffixes(value.trim().replace(/[\u061c\u200e\u200f]/gu, ""));
+      const text = stripFinancialAffixes(
+        value
+          .normalize("NFKC")
+          .trim()
+          .replace(/[\u061c\u200e\u200f]/gu, ""),
+      );
       if (!text) return undefined;
       const parsed = numberParser.parse(text);
       return Number.isFinite(parsed) && hasValidGrouping(text, resolvedLocale, parsed)
@@ -705,7 +879,7 @@ export function createDateFormatting(
     });
   const dateFormatters = new Map<string, Intl.DateTimeFormat>();
   const dateFormatter = (options: DateDisplayOptions, applyTimezone: boolean) => {
-    const effectiveTimezone = applyTimezone ? timezone : undefined;
+    const effectiveTimezone = options.timeZone ?? (applyTimezone ? timezone : undefined);
     const key = [
       options.dateStyle,
       options.timeStyle,
@@ -749,6 +923,15 @@ export function createDateFormatting(
           ? dateFormatter({ ...options, timeZone: "UTC" }, false).format(parsed.toDate("UTC"))
           : defaultCalendarDateFormatter.format(parsed.toDate("UTC"))
         : "-";
+    },
+    formatCalendarDateRange(start, end, options = {}) {
+      const parsedStart = toCalendarDate(start);
+      const parsedEnd = toCalendarDate(end);
+      if (!parsedStart || !parsedEnd) return "-";
+      const formatter = Object.keys(options).length
+        ? dateFormatter({ ...options, timeZone: "UTC" }, false)
+        : dateFormatter({ dateStyle: "medium", timeZone: "UTC" }, false);
+      return formatter.formatRange(parsedStart.toDate("UTC"), parsedEnd.toDate("UTC"));
     },
     formatCalendarDateTime(value, options = {}) {
       const parsed = toCalendarDateTime(value);

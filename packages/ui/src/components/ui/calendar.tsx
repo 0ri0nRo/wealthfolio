@@ -3,6 +3,7 @@
 import { format, type Locale } from "date-fns";
 import * as React from "react";
 import { DayButton, DayPicker, getDefaultClassNames } from "react-day-picker";
+import { useTranslation } from "react-i18next";
 
 import { useDateFnsLocale } from "../../hooks/use-date-fns-locale";
 import { cn } from "../../lib/utils";
@@ -17,6 +18,7 @@ function Calendar({
   captionLayout = "label",
   buttonVariant = "ghost",
   formatters,
+  labels,
   components,
   locale: localeProp,
   ...props
@@ -24,6 +26,7 @@ function Calendar({
   buttonVariant?: React.ComponentProps<typeof Button>["variant"];
 }) {
   const defaultClassNames = getDefaultClassNames();
+  const { t } = useTranslation();
   const fallbackLocale = useDateFnsLocale();
   const locale = localeProp ?? fallbackLocale;
 
@@ -41,6 +44,13 @@ function Calendar({
       formatters={{
         formatMonthDropdown: (date) => format(date, "LLL", { locale: locale as Locale }),
         ...formatters,
+      }}
+      labels={{
+        labelPrevious: () => t("ui:datePicker.previousMonth", "Previous month"),
+        labelNext: () => t("ui:datePicker.nextMonth", "Next month"),
+        labelMonthDropdown: () => t("ui:datePicker.chooseMonth", "Choose month"),
+        labelYearDropdown: () => t("ui:datePicker.chooseYear", "Choose year"),
+        ...labels,
       }}
       classNames={{
         root: cn("w-fit", defaultClassNames.root),

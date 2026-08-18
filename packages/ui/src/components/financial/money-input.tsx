@@ -88,9 +88,7 @@ const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
         fixedDecimalScale={fixedDecimalScale}
         thousandSeparator={thousandSeparator ? formatting.groupSeparator : false}
         decimalSeparator={formatting.decimalSeparator}
-        allowedDecimalSeparators={Array.from(
-          new Set([formatting.decimalSeparator, ".", ","]),
-        )}
+        allowedDecimalSeparators={Array.from(new Set([formatting.decimalSeparator, ".", ","]))}
         valueIsNumericString={false}
         value={numericValue}
         onValueChange={(values) => {

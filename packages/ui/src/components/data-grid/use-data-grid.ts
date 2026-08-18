@@ -40,7 +40,12 @@ import {
   parseCellKey,
   scrollCellIntoView,
 } from "./data-grid-utils";
-import { useDateFormatting, useNumberFormatting } from "../formatting-provider";
+import {
+  useDateFormatting,
+  useLocalizationSettings,
+  useNumberFormatting,
+} from "../formatting-provider";
+import { parseDateTimeInTimezone } from "../../lib/formatting";
 
 const DEFAULT_ROW_HEIGHT = "short";
 const OVERSCAN = 6;
@@ -156,6 +161,7 @@ function useDataGrid<TData>({
 }: UseDataGridProps<TData>) {
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
+  const { timezone } = useLocalizationSettings();
   const dir = useDirection(dirProp);
   const dataGridRef = React.useRef<HTMLDivElement>(null);
   const tableRef = React.useRef<ReturnType<typeof useReactTable<TData>>>(null);
@@ -827,12 +833,8 @@ function useDataGrid<TData>({
                 if (!trimmedClipboard) {
                   processedValue = null;
                 } else {
-                  const normalized =
-                    trimmedClipboard.includes(" ") && !trimmedClipboard.includes("T")
-                      ? trimmedClipboard.replace(" ", "T")
-                      : trimmedClipboard;
-                  const date = new Date(normalized);
-                  if (Number.isNaN(date.getTime())) shouldSkip = true;
+                  const date = parseDateTimeInTimezone(trimmedClipboard, timezone);
+                  if (!date) shouldSkip = true;
                   else processedValue = date;
                 }
                 break;
@@ -1016,12 +1018,8 @@ function useDataGrid<TData>({
                 if (!pastedValue) {
                   processedValue = null;
                 } else {
-                  const normalized =
-                    pastedValue.includes(" ") && !pastedValue.includes("T")
-                      ? pastedValue.replace(" ", "T")
-                      : pastedValue;
-                  const date = new Date(normalized);
-                  if (Number.isNaN(date.getTime())) shouldSkip = true;
+                  const date = parseDateTimeInTimezone(pastedValue, timezone);
+                  if (!date) shouldSkip = true;
                   else processedValue = date;
                 }
                 break;
@@ -1242,6 +1240,7 @@ function useDataGrid<TData>({
       restoreFocus,
       numberFormatting,
       dateFormatting,
+      timezone,
     ],
   );
 
