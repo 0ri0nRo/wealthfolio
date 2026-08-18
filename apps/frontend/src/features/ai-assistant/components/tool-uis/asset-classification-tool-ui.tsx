@@ -727,7 +727,6 @@ export function AssetClassificationToolUIContentImpl({
             </div>
             <div className="grid gap-2">
               {assetCandidates.map((candidate) => {
-                const numberFormatting = useNumberFormatting();
                 const isSelected = selectedAssetId === candidate.assetId;
                 const candidateAssignments =
                   candidateCurrentAssignments.find(

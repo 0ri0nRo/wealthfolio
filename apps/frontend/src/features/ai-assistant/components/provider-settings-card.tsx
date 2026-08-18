@@ -1004,12 +1004,15 @@ function AdvancedTuningSection({
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
 
-  const formatting = {
-    ...localizationSettings,
-    ...numberFormatting,
-    ...amountFormatting,
-    ...dateFormatting,
-  };
+  const formatting = useMemo<FormattingApi>(
+    () => ({
+      ...localizationSettings,
+      ...numberFormatting,
+      ...amountFormatting,
+      ...dateFormatting,
+    }),
+    [localizationSettings, numberFormatting, amountFormatting, dateFormatting],
+  );
 
   const [open, setOpen] = useState(false);
 
@@ -1085,7 +1088,16 @@ function AdvancedTuningSection({
     }
 
     return list;
-  }, [catalog, overrides, resolved, extraOverrides, supportsThinking, t, formatting]);
+  }, [
+    catalog,
+    overrides,
+    resolved,
+    extraOverrides,
+    supportsThinking,
+    t,
+    formatting,
+    numberFormatting,
+  ]);
 
   // Bucket by group and preserve insertion order inside each.
   const grouped = useMemo(() => {

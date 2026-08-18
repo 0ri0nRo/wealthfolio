@@ -10,9 +10,7 @@ import {
   CardHeader,
   CardTitle,
   Skeleton,
-  useAmountFormatting,
   useDateFormatting,
-  useLocalizationSettings,
   useNumberFormatting,
 } from "@wealthfolio/ui";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
@@ -131,17 +129,8 @@ type PerformanceToolUIContentProps = ToolCallMessagePartProps<
 >;
 
 function PerformanceToolUIContentImpl({ args, result, status }: PerformanceToolUIContentProps) {
-  const localizationSettings = useLocalizationSettings();
-  const amountFormatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
-
-  const formatting = {
-    ...localizationSettings,
-    ...amountFormatting,
-    ...numberFormatting,
-    ...dateFormatting,
-  };
 
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
@@ -172,7 +161,7 @@ function PerformanceToolUIContentImpl({ args, result, status }: PerformanceToolU
       formatPercentSigned: (value: number) =>
         numberFormatting.formatPercent(value, { signDisplay: "exceptZero" }),
     };
-  }, [parsed?.currency, isBalanceHidden, baseCurrency, formatting]);
+  }, [parsed?.currency, isBalanceHidden, baseCurrency, numberFormatting]);
 
   // Format date range
   const periodLabel = useMemo(() => {
@@ -192,7 +181,7 @@ function PerformanceToolUIContentImpl({ args, result, status }: PerformanceToolU
         })
       : t("ai:performance.today");
     return `${start} - ${end}`;
-  }, [parsed?.periodStartDate, parsed?.periodEndDate, formatting, t]);
+  }, [parsed?.periodStartDate, parsed?.periodEndDate, dateFormatting, t]);
 
   // Compact mode — just show a one-liner when used as a prerequisite
   if (args?.displayMode === "compact" && parsed && !isLoading) {

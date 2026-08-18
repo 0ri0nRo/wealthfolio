@@ -9,6 +9,7 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
+  parseDateTimeInTimezone,
   Progress,
   Skeleton,
   useAmountFormatting,
@@ -158,14 +159,18 @@ function normalizeGoalsResult(candidate: Record<string, unknown>): GetGoalsResul
  * Green if on track (>= 80% of expected progress), yellow if behind (50-80%), red if far behind (<50%).
  * If deadline is not available, we only use the raw progress percent.
  */
-function getProgressColor(progressPercent: number, deadline?: string | null): string {
+function getProgressColor(
+  progressPercent: number,
+  deadline?: string | null,
+  timezone?: string,
+): string {
   // If there's a deadline, calculate expected progress
   if (deadline) {
     const now = new Date();
-    const deadlineDate = new Date(deadline);
+    const deadlineDate = parseDateTimeInTimezone(`${deadline.slice(0, 10)}T23:59:59.999`, timezone);
     const startDate = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); // Assume 1 year goal if no start date
 
-    const totalDuration = deadlineDate.getTime() - startDate.getTime();
+    const totalDuration = (deadlineDate?.getTime() ?? 0) - startDate.getTime();
     const elapsed = now.getTime() - startDate.getTime();
 
     if (totalDuration > 0 && elapsed > 0) {
@@ -196,8 +201,15 @@ function getProgressColor(progressPercent: number, deadline?: string | null): st
 /**
  * Formats a date string for display.
  */
-function formatDate(dateStr: string, formatting: Pick<FormattingApi, "formatDate">): string {
-  return formatting.formatDate(dateStr, { year: "numeric", month: "short", day: "numeric" });
+function formatDate(
+  dateStr: string,
+  formatting: Pick<FormattingApi, "formatCalendarDate">,
+): string {
+  return formatting.formatCalendarDate(dateStr.slice(0, 10), {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 // ============================================================================
@@ -244,7 +256,7 @@ function GoalCard({
   isBalanceHidden: boolean;
 }) {
   const { t } = useTranslation();
-  const progressColor = getProgressColor(goal.progressPercent, goal.deadline);
+  const progressColor = getProgressColor(goal.progressPercent, goal.deadline, formatting.timezone);
 
   const formatValue = (value: number) => {
     if (isBalanceHidden) {

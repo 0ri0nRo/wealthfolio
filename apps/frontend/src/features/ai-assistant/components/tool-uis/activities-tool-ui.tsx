@@ -176,8 +176,6 @@ function ActivitiesContentImpl({ args, result, status }: ActivitiesContentProps)
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
 
-  const formatting = { ...numberFormatting, ...dateFormatting };
-
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
@@ -194,10 +192,13 @@ function ActivitiesContentImpl({ args, result, status }: ActivitiesContentProps)
     });
   }, [parsed?.activities]);
 
-  const formatter = useMemo(() => createActivityAmountFormatter(numberFormatting), [formatting]);
+  const formatter = useMemo(
+    () => createActivityAmountFormatter(numberFormatting),
+    [numberFormatting],
+  );
   const quantityFormatter = useMemo(
     () => createActivityQuantityFormatter(numberFormatting),
-    [formatting],
+    [numberFormatting],
   );
 
   const accountScope = parsed?.accountScope ?? args?.accountId ?? "all";

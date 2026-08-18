@@ -91,8 +91,6 @@ function CategorizationProposalsContentImpl({
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
 
-  const formatting = { ...numberFormatting, ...dateFormatting };
-
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
@@ -101,7 +99,7 @@ function CategorizationProposalsContentImpl({
   const threadId = runtime.currentThreadId;
   const amountFormatter = useMemo(
     () => createActivityAmountFormatter(numberFormatting),
-    [formatting],
+    [numberFormatting],
   );
   const bulkAssign = useBulkAssignCategories();
 
