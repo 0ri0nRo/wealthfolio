@@ -80,13 +80,16 @@ function MonthYearPicker({ value, onChange, minDate, maxDate, className }: Month
       Array.from({ length: 12 }, (_, index) => {
         const date = { year: 2020, month: index + 1, day: 1 };
         return {
-          short: formatting.formatCalendarDate(date, { month: "short" }),
-          long: formatting.formatCalendarDate(date, { month: "long" }),
+          short: formatting.formatCalendarDate(date, { calendar: "gregory", month: "short" }),
+          long: formatting.formatCalendarDate(date, { calendar: "gregory", month: "long" }),
         };
       }),
     [formatting],
   );
-  const yearLabel = formatting.formatCalendarDate({ year: viewYear, month: 1, day: 1 }, { year: "numeric" });
+  const yearLabel = formatting.formatCalendarDate(
+    { year: viewYear, month: 1, day: 1 },
+    { calendar: "gregory", year: "numeric" },
+  );
 
   const handlePrevYear = () => {
     if (canGoPrevYear) setViewYear((y) => y - 1);

@@ -58,6 +58,7 @@ function createIntlLocale(locale: string, options: Locale["options"]): Locale {
       ...enUS.localize,
       month: (month, localizeOptions) =>
         new Intl.DateTimeFormat(locale, {
+          calendar: "gregory",
           month: intlWidth(localizeOptions?.width),
           timeZone: "UTC",
         }).format(new Date(Date.UTC(2020, Number(month), 1))),

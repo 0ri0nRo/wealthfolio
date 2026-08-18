@@ -372,6 +372,26 @@ export function NumberCell<TData>({
   const step = numberCellOpts?.step;
   const valueType = numberCellOpts?.valueType ?? "number";
   const valueRenderer = numberCellOpts?.valueRenderer;
+  const initialComparable =
+    valueType === "number"
+      ? initialValue == null || initialValue === ""
+        ? null
+        : Number(initialValue)
+      : initialValue == null
+        ? null
+        : String(initialValue);
+
+  const parseCellValue = React.useCallback(
+    (rawValue: string) => {
+      const trimmed = rawValue.trim();
+      if (trimmed === "") return { valid: true, value: null } as const;
+      if (valueType !== "number") return { valid: true, value: trimmed } as const;
+
+      const parsed = formatting.parseNumber(trimmed);
+      return parsed === undefined ? ({ valid: false } as const) : ({ valid: true, value: parsed } as const);
+    },
+    [formatting, valueType],
+  );
 
   const prevInitialValueRef = React.useRef(initialValue);
   if (initialValue !== prevInitialValueRef.current) {
@@ -380,28 +400,14 @@ export function NumberCell<TData>({
   }
 
   const onBlur = React.useCallback(() => {
-    const trimmed = value.trim();
-    const nextValue =
-      trimmed === ""
-        ? null
-        : valueType === "number"
-          ? formatting.parseNumber(trimmed) !== undefined
-            ? formatting.parseNumber(trimmed)!
-            : null
-          : trimmed;
-    const initialComparable =
-      valueType === "number"
-        ? initialValue == null || initialValue === ""
-          ? null
-          : Number(initialValue)
-        : initialValue == null
-          ? null
-          : String(initialValue);
-    if (!readOnly && nextValue !== initialComparable) {
-      tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: nextValue });
+    const parsed = parseCellValue(value);
+    if (!parsed.valid) {
+      setValue(String(initialValue ?? ""));
+    } else if (!readOnly && parsed.value !== initialComparable) {
+      tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: parsed.value });
     }
     tableMeta?.onCellEditingStop?.();
-  }, [tableMeta, rowIndex, columnId, initialValue, value, readOnly, valueType, formatting]);
+  }, [tableMeta, rowIndex, columnId, initialValue, initialComparable, value, readOnly, parseCellValue]);
 
   const onChange = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     setValue(event.target.value);
@@ -412,48 +418,20 @@ export function NumberCell<TData>({
       if (isEditing) {
         if (event.key === "Enter") {
           event.preventDefault();
-          const trimmed = value.trim();
-          const nextValue =
-            trimmed === ""
-              ? null
-              : valueType === "number"
-                ? formatting.parseNumber(trimmed) !== undefined
-                  ? formatting.parseNumber(trimmed)!
-                  : null
-                : trimmed;
-          const initialComparable =
-            valueType === "number"
-              ? initialValue == null || initialValue === ""
-                ? null
-                : Number(initialValue)
-              : initialValue == null
-                ? null
-                : String(initialValue);
-          if (nextValue !== initialComparable) {
-            tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: nextValue });
+          const parsed = parseCellValue(value);
+          if (!parsed.valid) {
+            setValue(String(initialValue ?? ""));
+          } else if (parsed.value !== initialComparable) {
+            tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: parsed.value });
           }
           tableMeta?.onCellEditingStop?.({ moveToNextRow: true });
         } else if (event.key === "Tab") {
           event.preventDefault();
-          const trimmed = value.trim();
-          const nextValue =
-            trimmed === ""
-              ? null
-              : valueType === "number"
-                ? formatting.parseNumber(trimmed) !== undefined
-                  ? formatting.parseNumber(trimmed)!
-                  : null
-                : trimmed;
-          const initialComparable =
-            valueType === "number"
-              ? initialValue == null || initialValue === ""
-                ? null
-                : Number(initialValue)
-              : initialValue == null
-                ? null
-                : String(initialValue);
-          if (nextValue !== initialComparable) {
-            tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: nextValue });
+          const parsed = parseCellValue(value);
+          if (!parsed.valid) {
+            setValue(String(initialValue ?? ""));
+          } else if (parsed.value !== initialComparable) {
+            tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: parsed.value });
           }
           tableMeta?.onCellEditingStop?.({
             direction: event.shiftKey ? "left" : "right",
@@ -475,7 +453,7 @@ export function NumberCell<TData>({
         }
       }
     },
-    [isEditing, isFocused, initialValue, tableMeta, rowIndex, columnId, value, valueType, formatting],
+    [isEditing, isFocused, initialValue, initialComparable, tableMeta, rowIndex, columnId, value, parseCellValue],
   );
 
   // Track if editing was started by typing (vs double-click/Enter)
@@ -490,30 +468,16 @@ export function NumberCell<TData>({
     // When editing stops (transitions from true to false), save the value
     if (wasEditingRef.current && !isEditing) {
       const currentValue = valueRef.current;
-      const trimmed = currentValue.trim();
-      const nextValue =
-        trimmed === ""
-          ? null
-          : valueType === "number"
-            ? formatting.parseNumber(trimmed) !== undefined
-              ? formatting.parseNumber(trimmed)!
-              : null
-            : trimmed;
-      const initialComparable =
-        valueType === "number"
-          ? initialValue == null || initialValue === ""
-            ? null
-            : Number(initialValue)
-          : initialValue == null
-            ? null
-            : String(initialValue);
-      if (!readOnly && nextValue !== initialComparable) {
-        tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: nextValue });
+      const parsed = parseCellValue(currentValue);
+      if (!parsed.valid) {
+        setValue(String(initialValue ?? ""));
+      } else if (!readOnly && parsed.value !== initialComparable) {
+        tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: parsed.value });
       }
       startedByTypingRef.current = false;
     }
     wasEditingRef.current = isEditing;
-  }, [isEditing, initialValue, readOnly, tableMeta, rowIndex, columnId, valueType, formatting]);
+  }, [isEditing, initialValue, initialComparable, readOnly, tableMeta, rowIndex, columnId, parseCellValue]);
 
   React.useEffect(() => {
     if (isEditing && inputRef.current) {

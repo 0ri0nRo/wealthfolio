@@ -12,7 +12,7 @@ import {
   parseLocalizedNumber,
   resolveFormattingLocale,
 } from "@wealthfolio/ui";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { formatOptionSubtitle } from "./occ-symbol";
 
 describe("locale formatting", () => {
@@ -27,6 +27,18 @@ describe("locale formatting", () => {
     expect(resolveFormattingLocale("DE", "en")).toBe("de-DE");
     expect(resolveFormattingLocale("DE", "ja")).toBe("de-DE");
     expect(resolveFormattingLocale("en-US", "fr")).toBe("en-US");
+  });
+
+  it("preserves a language-only system locale", () => {
+    const languages = vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["en"]);
+
+    try {
+      const locale = resolveFormattingLocale("system");
+      expect(locale).toBe("en");
+      expect(resolveFormattingLocale(locale)).toBe("en");
+    } finally {
+      languages.mockRestore();
+    }
   });
 
   it("formats an English UI using the resolved Germany locale", () => {
@@ -54,11 +66,12 @@ describe("locale formatting", () => {
     expect(() => dateFnsLocaleFor(undefined)).toThrow("A resolved formatting locale is required");
   });
 
-  it.each(["it-IT", "pt-BR", "nl-NL", "ar-EG"])(
+  it.each(["it-IT", "pt-BR", "nl-NL", "ar-EG", "fa-IR"])(
     "supports the arbitrary system locale %s in date-fns calendars",
     (locale) => {
       const dateFnsLocale = dateFnsLocaleFor(locale);
       const expectedMonth = new Intl.DateTimeFormat(locale, {
+        calendar: "gregory",
         month: "long",
         timeZone: "UTC",
       }).format(new Date(Date.UTC(2020, 0, 1)));
@@ -70,6 +83,9 @@ describe("locale formatting", () => {
   it("parses locale-specific grouping and decimal separators", () => {
     expect(parseLocalizedNumber("$1,234.56", "en-US")).toBe(1234.56);
     expect(parseLocalizedNumber("1.234,56 €", "de-DE")).toBe(1234.56);
+    expect(parseLocalizedNumber("1234.56", "de-DE")).toBe(1234.56);
+    expect(parseLocalizedNumber("1,234.56", "de-DE")).toBe(1234.56);
+    expect(parseLocalizedNumber("1.234", "de-DE")).toBe(1234);
     expect(parseLocalizedNumber("1\u202f234,56 $", "fr-CA")).toBe(1234.56);
     expect(parseLocalizedNumber("1,234", "en-US")).toBe(1234);
     expect(parseLocalizedNumber("1,234", "de-DE")).toBe(1.234);
@@ -110,6 +126,7 @@ describe("locale formatting", () => {
 
   it("parses ISO before the selected locale date order", () => {
     expect(parseLocalizedDate("2026-07-10", "en-US")?.getDate()).toBe(10);
+    expect(parseLocalizedDate("2026/08/18", "en-US")).toEqual(new Date(2026, 7, 18));
     expect(parseLocalizedDate("07/10/2026", "en-US")?.getMonth()).toBe(6);
     expect(parseLocalizedDate("10/07/2026", "en-GB")?.getMonth()).toBe(6);
     expect(parseLocalizedDate("2026-07-10T00:00:00.000Z", "en-US")?.toISOString()).toBe(

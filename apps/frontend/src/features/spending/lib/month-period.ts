@@ -72,6 +72,7 @@ export function monthLabel(
   return formatting.formatCalendarDate(
     { year: parts.year, month: parts.month, day: 1 },
     {
+      calendar: "gregory",
       month: format,
       year: "numeric",
     },
@@ -87,8 +88,16 @@ export function compactMonthLabel(
   const month = formatting.formatCalendarDate(
     { year: parts.year, month: parts.month, day: 1 },
     {
+      calendar: "gregory",
       month: "short",
     },
   );
-  return `${month} '${String(parts.year).slice(2)}`;
+  const year = formatting.formatCalendarDate(
+    { year: parts.year, month: parts.month, day: 1 },
+    {
+      calendar: "gregory",
+      year: "2-digit",
+    },
+  );
+  return `${month} '${year}`;
 }

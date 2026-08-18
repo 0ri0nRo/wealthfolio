@@ -82,6 +82,7 @@ export type DateDisplayOptions = Pick<
   | "hourCycle"
   | "timeZoneName"
   | "timeZone"
+  | "calendar"
 >;
 
 export interface CalendarDateParts {
@@ -235,11 +236,15 @@ export function resolveFormattingLocale(
     if (!systemLocale) {
       throw new Error("The system formatting locale is unavailable; provide an explicit locale");
     }
-    setting = Intl.getCanonicalLocales(systemLocale)[0]!;
+    try {
+      return Intl.getCanonicalLocales(systemLocale)[0]!;
+    } catch {
+      throw new Error(`Invalid formatting locale: ${systemLocale}`);
+    }
   }
   try {
     const region = setting.toUpperCase() as Exclude<FormattingRegionSetting, "system">;
-    if (/^[A-Za-z]{2}$/.test(setting)) {
+    if (/^[A-Z]{2}$/.test(setting)) {
       const locale = FORMATTING_REGION_LOCALES[region];
       if (!locale) throw new Error(`Unsupported formatting region: ${setting}`);
       return locale;
@@ -315,6 +320,24 @@ function hasValidGrouping(value: string, locale: string, parsed: number): boolea
   );
 }
 
+const INVARIANT_NUMBER_PATTERN =
+  /^[+-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/;
+
+function parsePreparedNumber(
+  value: string,
+  locale: string,
+  parser: NumberParser,
+): number | undefined {
+  const localized = parser.parse(value);
+  if (Number.isFinite(localized) && hasValidGrouping(value, locale, localized)) {
+    return localized;
+  }
+  if (!INVARIANT_NUMBER_PATTERN.test(value)) return undefined;
+
+  const invariant = Number(value.replaceAll(",", ""));
+  return Number.isFinite(invariant) ? invariant : undefined;
+}
+
 export function parseLocalizedNumber(value: string, locale: string): number | undefined {
   const resolvedLocale = locale && locale !== "system" ? locale : resolveFormattingLocale(locale);
   const text = stripFinancialAffixes(
@@ -325,10 +348,7 @@ export function parseLocalizedNumber(value: string, locale: string): number | un
   );
   if (!text) return undefined;
   const parser = new NumberParser(resolvedLocale, { style: "decimal" });
-  const parsed = parser.parse(text);
-  return Number.isFinite(parsed) && hasValidGrouping(text, resolvedLocale, parsed)
-    ? parsed
-    : undefined;
+  return parsePreparedNumber(text, resolvedLocale, parser);
 }
 
 const localizedMonths = new Map<string, Map<string, number>>();
@@ -446,8 +466,13 @@ export function parseLocalizedDate(value: string, locale: string): Date | undefi
     const result = new Date(text);
     return Number.isFinite(result.getTime()) ? result : undefined;
   }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
-    const [year, month, day] = text.split("-").map(Number);
+  const yearFirstDate = /^(\d{4})([-/])(\d{1,2})\2(\d{1,2})$/.exec(text);
+  const calendar = new Intl.DateTimeFormat(resolvedLocale).resolvedOptions().calendar;
+  if (yearFirstDate && calendar === "gregory") {
+    const [, yearText, , monthText, dayText] = yearFirstDate;
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
     const result = new Date(year, month - 1, day);
     return result.getFullYear() === year &&
       result.getMonth() === month - 1 &&
@@ -828,10 +853,7 @@ export function createNumberFormatting(
           .replace(/[\u061c\u200e\u200f]/gu, ""),
       );
       if (!text) return undefined;
-      const parsed = numberParser.parse(text);
-      return Number.isFinite(parsed) && hasValidGrouping(text, resolvedLocale, parsed)
-        ? parsed
-        : undefined;
+      return parsePreparedNumber(text, resolvedLocale, numberParser);
     },
   };
 }
@@ -894,6 +916,7 @@ export function createDateFormatting(
       options.hourCycle,
       options.timeZoneName,
       options.timeZone,
+      options.calendar,
       effectiveTimezone,
     ].join(":");
     let formatter = dateFormatters.get(key);

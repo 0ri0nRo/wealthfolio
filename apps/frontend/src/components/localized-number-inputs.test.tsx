@@ -3,7 +3,7 @@ import { FormattingProvider, MoneyInput, QuantityInput } from "@wealthfolio/ui";
 import { describe, expect, it, vi } from "vitest";
 
 function paste(text: string) {
-  fireEvent.paste(screen.getByRole("textbox"), {
+  return fireEvent.paste(screen.getByRole("textbox"), {
     clipboardData: { getData: () => text },
   });
 }
@@ -31,6 +31,8 @@ describe("localized financial input paste", () => {
     ["1234,56", 1234.56],
     ["1.234,56", 1234.56],
     ["1.234,56 €", 1234.56],
+    ["1234.56", 1234.56],
+    ["1,234.56", 1234.56],
   ])("pastes %s using German formats", (clipboardValue, expected) => {
     const onValueChange = vi.fn();
     render(
@@ -52,8 +54,9 @@ describe("localized financial input paste", () => {
       </FormattingProvider>,
     );
 
-    paste("1.234,56");
+    const allowed = paste("1.234,56");
 
+    expect(allowed).toBe(true);
     expect(onValueChange).not.toHaveBeenCalled();
   });
 
@@ -66,6 +69,19 @@ describe("localized financial input paste", () => {
     );
 
     paste("1.234,56");
+
+    expect(onValueChange).toHaveBeenLastCalledWith(1234.56);
+  });
+
+  it("pastes invariant decimals into German quantities", () => {
+    const onValueChange = vi.fn();
+    render(
+      <FormattingProvider locale="de-DE">
+        <QuantityInput onValueChange={onValueChange} />
+      </FormattingProvider>,
+    );
+
+    paste("1234.56");
 
     expect(onValueChange).toHaveBeenLastCalledWith(1234.56);
   });

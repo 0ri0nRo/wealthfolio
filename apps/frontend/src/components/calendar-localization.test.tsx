@@ -15,6 +15,34 @@ describe("calendar localization policy", () => {
     expect(screen.queryByRole("button", { name: "Jan" })).not.toBeInTheDocument();
   });
 
+  it.each(["fa-IR", "th-TH"])(
+    "keeps Gregorian month picker state aligned with %s labels",
+    async (locale) => {
+      const user = userEvent.setup();
+      const onChange = vi.fn();
+      const january = new Intl.DateTimeFormat(locale, {
+        calendar: "gregory",
+        month: "long",
+        timeZone: "UTC",
+      }).format(new Date(Date.UTC(2020, 0, 1)));
+      const year = new Intl.DateTimeFormat(locale, {
+        calendar: "gregory",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(new Date(Date.UTC(2026, 0, 1)));
+
+      render(
+        <FormattingProvider locale={locale} uiLocale="en">
+          <MonthYearPicker value="2026-01" maxDate="2026-12" onChange={onChange} />
+        </FormattingProvider>,
+      );
+
+      expect(screen.getByText(year)).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: january }));
+      expect(onChange).toHaveBeenCalledWith("2026-01");
+    },
+  );
+
   it("uses UI-language labels for DayPicker controls", () => {
     render(
       <FormattingProvider locale="de-DE" uiLocale="en">
