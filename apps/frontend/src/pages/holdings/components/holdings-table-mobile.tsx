@@ -4,7 +4,14 @@ import { HoldingType } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import { Account, AccountScope, Holding } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { AmountDisplay, Badge, GainPercent, Input, Separator } from "@wealthfolio/ui";
+import {
+  AmountDisplay,
+  Badge,
+  formatPercent,
+  GainPercent,
+  Input,
+  Separator,
+} from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Card } from "@wealthfolio/ui/components/ui/card";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
@@ -241,6 +248,11 @@ export const HoldingsTableMobile = ({
                         isHidden={isBalanceHidden}
                         className="font-medium"
                       />
+                    )}
+                    {isCash && (
+                      <p className="text-muted-foreground text-xs">
+                        {t("holdings:weight")} {formatPercent(holding.weight ?? 0)}
+                      </p>
                     )}
                     {!isCash &&
                       (isClosed && performanceMode === "daily" ? (

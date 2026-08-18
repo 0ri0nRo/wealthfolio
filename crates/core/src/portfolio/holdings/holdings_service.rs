@@ -1,6 +1,6 @@
 use crate::activities::{
-    Activity, ActivityRepositoryTrait, ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_DIVIDEND,
-    ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL,
+    Activity, ActivityRepositoryTrait, ACTIVITY_SUBTYPE_OPTION_EXPIRY, ACTIVITY_TYPE_ADJUSTMENT,
+    ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL,
 };
 use crate::assets::{
     Asset, AssetClassificationService, AssetKind, AssetServiceTrait, InstrumentType,
@@ -777,7 +777,13 @@ impl HoldingsService {
                     .filter(|activity| activity.is_posted())
                     .filter(|activity| {
                         let activity_type = activity.effective_type();
-                        activity_type == ACTIVITY_TYPE_SELL || activity_type == ACTIVITY_TYPE_BUY
+                        let is_trade = activity_type == ACTIVITY_TYPE_SELL
+                            || activity_type == ACTIVITY_TYPE_BUY;
+                        let is_option_expiry = activity_type == ACTIVITY_TYPE_ADJUSTMENT
+                            && activity.subtype.as_deref().is_some_and(|subtype| {
+                                subtype.eq_ignore_ascii_case(ACTIVITY_SUBTYPE_OPTION_EXPIRY)
+                            });
+                        is_trade || is_option_expiry
                     })
                     .map(|activity| activity.id)
                     .collect(),
@@ -3620,6 +3626,69 @@ mod tests {
         assert_eq!(holding.return_basis.as_ref().unwrap().base, dec!(175));
         assert_eq!(holding.total_gain.as_ref().unwrap().base, dec!(60));
         assert_eq!(holding.total_gain_pct, Some(dec!(0.34285714)));
+    }
+
+    #[tokio::test]
+    async fn closed_option_realized_gain_includes_option_expiry_disposal() {
+        let account_id = "acc-1";
+        let asset_id = "AAPL260821C00200000";
+        let mut position = test_position(account_id, asset_id);
+        position.quantity = Decimal::ZERO;
+        position.average_cost = Decimal::ZERO;
+        position.total_cost_basis = Decimal::ZERO;
+
+        let snapshot = AccountStateSnapshot {
+            account_id: account_id.to_string(),
+            currency: "USD".to_string(),
+            positions: HashMap::from([(asset_id.to_string(), position)]),
+            ..Default::default()
+        };
+
+        let mut expiry_disposal = test_lot_disposal(
+            account_id,
+            asset_id,
+            dec!(100),
+            dec!(100),
+            dec!(-100),
+            dec!(-100),
+        );
+        expiry_disposal.id = "expiry-disposal".to_string();
+        expiry_disposal.disposal_activity_id = "expiry-1".to_string();
+
+        let activity_date = NaiveDate::from_ymd_opt(2026, 8, 21).unwrap();
+        let mut expiry_activity = test_income_activity(
+            "expiry-1",
+            account_id,
+            Some(asset_id),
+            ACTIVITY_TYPE_ADJUSTMENT,
+            Decimal::ZERO,
+            "USD",
+            activity_date,
+        );
+        expiry_activity.subtype = Some(ACTIVITY_SUBTYPE_OPTION_EXPIRY.to_string());
+
+        let mut service = test_service(
+            snapshot,
+            vec![test_asset(asset_id, asset_id, InstrumentType::Option)],
+            HashMap::from([(asset_id.to_string(), Decimal::ZERO)]),
+        )
+        .with_lot_repository(Arc::new(
+            MockLotRepository::new(Vec::new()).with_disposals(vec![expiry_disposal]),
+        ));
+        service.activity_repository =
+            Some(Arc::new(MockActivityRepository::new(vec![expiry_activity])));
+
+        let holdings = service
+            .get_holdings_with_options(account_id, "USD", true)
+            .await
+            .unwrap();
+
+        assert_eq!(holdings.len(), 1);
+        let holding = &holdings[0];
+        assert!(holding.is_closed);
+        assert_eq!(holding.realized_gain.as_ref().unwrap().base, dec!(-100));
+        assert_eq!(holding.realized_gain_pct, Some(dec!(-1)));
+        assert_eq!(holding.total_gain.as_ref().unwrap().base, dec!(-100));
     }
 
     #[tokio::test]

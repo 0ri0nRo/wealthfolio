@@ -385,6 +385,8 @@ export const HoldingsPage = () => {
   const hasNoInvestments = !isDataLoading && holdings.length === 0;
   const hasNoAssets = !isDataLoading && assetsHoldings.length === 0;
   const hasNoLiabilities = !isDataLoading && liabilitiesHoldings.length === 0;
+  const hasMobileInvestmentsToolbar =
+    isMobileViewport && currentTab === "investments" && !hasNoInvestments;
 
   // Action palette groups
   const actionPaletteGroups: ActionPaletteGroup[] = useMemo(
@@ -645,7 +647,7 @@ export const HoldingsPage = () => {
   const sharedActions = useMemo(
     () => (
       <>
-        {!(isMobileViewport && currentTab === "investments") && (
+        {!hasMobileInvestmentsToolbar && (
           <AccountScopeSelector value={accountFilter} onChange={handleAccountScopeChange} />
         )}
         {/* Show Update button for HOLDINGS-mode manual accounts (only on investments tab) */}
@@ -655,7 +657,7 @@ export const HoldingsPage = () => {
             {t("holdings:update")}
           </Button>
         )}
-        {!(isMobileViewport && currentTab === "investments") && (
+        {!hasMobileInvestmentsToolbar && (
           <ActionPalette
             open={isActionPaletteOpen}
             onOpenChange={setIsActionPaletteOpen}
@@ -665,7 +667,7 @@ export const HoldingsPage = () => {
       </>
     ),
     [
-      isMobileViewport,
+      hasMobileInvestmentsToolbar,
       accountFilter,
       handleAccountScopeChange,
       canEditHoldings,
