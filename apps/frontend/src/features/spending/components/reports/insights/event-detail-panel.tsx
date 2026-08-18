@@ -412,7 +412,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
                         {c.name}
                       </span>
                       <span className="text-muted-foreground/80 text-[11px] tabular-nums">
-                        {pct.toFixed(1)}%
+                        {numberFormatting.formatPercent(pct / 100, { digits: 1 })}
                       </span>
                       <span className="text-foreground/90 text-right text-[12px] font-medium tabular-nums">
                         <PrivacyAmount value={c.amount} currency={currency} />

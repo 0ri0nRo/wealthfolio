@@ -29,6 +29,7 @@ import {
   usePersistentState,
   type FormattingApi,
   useDateFormatting,
+  useNumberFormatting,
 } from "@wealthfolio/ui";
 
 import { useBudget } from "../hooks/use-budget";
@@ -301,6 +302,7 @@ function barKeyToRange(
 export default function SpendingTabContent() {
   const dateFormatting = useDateFormatting();
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const { settings } = useSettingsContext();
@@ -767,7 +769,11 @@ export default function SpendingTabContent() {
           <>
             {t("spending:tabContent.spendingAbovePrefix")}{" "}
             <span className="font-semibold">
-              {t("spending:tabContent.pctAbove", { pct: (deltaPct * 100).toFixed(0) })}
+              {t("spending:tabContent.pctAbove", {
+                pct: numberFormatting.formatDecimal(deltaPct * 100, {
+                  maximumFractionDigits: 0,
+                }),
+              })}
             </span>{" "}
             {t("spending:tabContent.thePriorPeriod")}
           </>
@@ -837,6 +843,7 @@ export default function SpendingTabContent() {
     categorizationRules,
     categorizationRulesLoading,
     formatting,
+    numberFormatting,
     theme.deep,
     t,
   ]);
@@ -1313,6 +1320,7 @@ function CategoryTreemapMono({
   savingsHref?: string;
 }) {
   const { t } = useTranslation();
+  const numberFormatting = useNumberFormatting();
   const navigate = useNavigate();
 
   if (rows.length === 0 || total <= 0) {
@@ -1385,7 +1393,8 @@ function CategoryTreemapMono({
                   <div className="bg-background rounded-md border px-3 py-2 text-xs shadow-sm">
                     <div className="text-foreground font-semibold">{p.name}</div>
                     <div className="text-muted-foreground tabular-nums">
-                      <PrivacyAmount value={p.amount} currency={currency} /> · {p.pct.toFixed(1)}%
+                      <PrivacyAmount value={p.amount} currency={currency} /> ·{" "}
+                      {numberFormatting.formatPercent(p.pct / 100, { digits: 1 })}
                     </div>
                   </div>
                 );
@@ -1414,6 +1423,7 @@ const CategoryTreemapNodeMono: FC<CategoryTreemapNodeMonoProps> = ({
   onActivate,
 }) => {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   if (depth === 0) return null;
@@ -1430,7 +1440,7 @@ const CategoryTreemapNodeMono: FC<CategoryTreemapNodeMonoProps> = ({
   const showDot = accent && width > 40 && height > 28;
 
   const amountText = isBalanceHidden ? "••••" : formatting.formatAmount(amount, currency);
-  const pctText = `${pct.toFixed(1)}%`;
+  const pctText = numberFormatting.formatPercent(pct / 100, { digits: 1 });
   const amountTextW = amountText.length * amountFontSize * 0.58;
   const pctTextW = pctText.length * pctFontSize * 0.6;
   const innerW = Math.max(0, width - padX * 2);
@@ -1542,6 +1552,7 @@ function CategoryRankedBar({
   savingsHref?: string;
 }) {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   // Memoize derivations so we don't rebuild the Map + reduce + slices on every
@@ -1599,7 +1610,7 @@ function CategoryRankedBar({
             }}
             title={`${s.name} — ${
               isBalanceHidden ? "••••" : formatting.formatAmount(s.amount, currency)
-            } (${share.toFixed(1)}%)`}
+            } (${numberFormatting.formatPercent(share / 100, { digits: 1 })})`}
           />
         );
       })}
@@ -1709,7 +1720,7 @@ function CategoryRankedBar({
                 {r.name}
               </span>
               <span className="text-muted-foreground/70 w-12 text-right text-[11px] tabular-nums">
-                {share.toFixed(1)}%
+                {numberFormatting.formatPercent(share / 100, { digits: 1 })}
               </span>
               <span className="text-foreground w-24 text-right text-xs font-semibold tabular-nums">
                 <PrivacyAmount value={r.amount} currency={currency} />
@@ -1727,7 +1738,7 @@ function CategoryRankedBar({
               {t("spending:tabContent.uncategorizedImprove")}
             </span>
             <span className="text-muted-foreground/70 w-12 text-right text-[11px] tabular-nums">
-              {uncategorizedShare.toFixed(1)}%
+              {numberFormatting.formatPercent(uncategorizedShare / 100, { digits: 1 })}
             </span>
             <span className="text-foreground w-24 text-right text-xs font-semibold tabular-nums">
               <PrivacyAmount value={uncategorizedAmount} currency={currency} />
@@ -1764,6 +1775,7 @@ function GroupedCategoryBlock({
   themeColor: string;
   savingsHref?: string;
 }) {
+  const numberFormatting = useNumberFormatting();
   const [expanded, setExpanded] = useState(false);
   const share = total > 0 ? (bucket.total / total) * 100 : 0;
   const accent = bucket.color ?? themeColor;
@@ -1801,7 +1813,7 @@ function GroupedCategoryBlock({
           {bucket.name}
         </span>
         <span className="text-muted-foreground/80 w-12 text-right text-[11px] font-medium tabular-nums">
-          {share.toFixed(1)}%
+          {numberFormatting.formatPercent(share / 100, { digits: 1 })}
         </span>
         <span className="text-foreground w-24 text-right text-xs font-semibold tabular-nums">
           <PrivacyAmount value={bucket.total} currency={currency} />
@@ -1833,7 +1845,7 @@ function GroupedCategoryBlock({
                   {cat.name}
                 </span>
                 <span className="text-muted-foreground/70 w-12 text-right text-[11px] tabular-nums">
-                  {catShare.toFixed(1)}%
+                  {numberFormatting.formatPercent(catShare / 100, { digits: 1 })}
                 </span>
                 <span className="text-foreground w-24 text-right text-xs font-medium tabular-nums">
                   <PrivacyAmount value={cat.amount} currency={currency} />
@@ -1864,6 +1876,7 @@ function SpendingDeltaLine({
   deltaPct: number | null;
 }) {
   const { t } = useTranslation();
+  const numberFormatting = useNumberFormatting();
   const isFlat = Math.abs(delta) < 1;
   const direction = delta < 0 ? t("spending:tabContent.down") : t("spending:tabContent.up");
   const tone = isFlat ? "text-muted-foreground" : delta < 0 ? "text-success" : "text-destructive";
@@ -1876,7 +1889,10 @@ function SpendingDeltaLine({
     );
   }
 
-  const pctSuffix = deltaPct !== null ? ` (${(Math.abs(deltaPct) * 100).toFixed(1)}%)` : "";
+  const pctSuffix =
+    deltaPct !== null
+      ? ` (${numberFormatting.formatPercent(Math.abs(deltaPct), { digits: 1 })})`
+      : "";
 
   return (
     <span className="lg:text-md text-sm font-light">

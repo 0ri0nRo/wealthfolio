@@ -123,6 +123,7 @@ export function WhatChangedStage({
         priorTotal,
         priorLabel: labels.prior,
         metaLabel: t("spending:whatChanged.headlineMeta", { label: labels.combined }),
+        t,
       }),
     [periodState, movers, currentTotal, priorTotal, labels, t],
   );
@@ -834,7 +835,9 @@ const ComparisonRow = memo(function ComparisonRow({
         )}
       </td>
       <td className="text-muted-foreground/90 hidden px-3 py-2.5 text-right text-xs tabular-nums md:table-cell">
-        {impactPct == null || impactPct === 0 ? "—" : `${impactPct}%`}
+        {impactPct == null || impactPct === 0
+          ? "—"
+          : formatPercentValue(impactPct, formatting, { digits: 0 })}
       </td>
       {!hidePct && (
         <td

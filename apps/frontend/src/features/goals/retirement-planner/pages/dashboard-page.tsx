@@ -8,6 +8,7 @@ import {
   CardTitle,
   Skeleton,
   useAmountFormatting,
+  useNumberFormatting,
 } from "@wealthfolio/ui";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
@@ -190,6 +191,7 @@ export default function DashboardPage({
   dcLinkedAccountIds,
 }: Props) {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const L = modeLabel(plannerMode);
   const isTraditionalMode = plannerMode === "traditional";
@@ -910,7 +912,10 @@ export default function DashboardPage({
                     <div className="text-muted-foreground mt-1 flex justify-between text-[10px]">
                       <span className="tabular-nums">
                         {t("goals:dashboard.progress.funded_pct", {
-                          pct: (progress * 100).toFixed(1),
+                          pct: numberFormatting.formatDecimal(progress * 100, {
+                            minimumFractionDigits: 1,
+                            maximumFractionDigits: 1,
+                          }),
                         })}
                       </span>
                       {!isTraditionalMode && (
@@ -1207,7 +1212,9 @@ export default function DashboardPage({
                           }}
                           title={t("goals:dashboard.coverage.stream_title", {
                             label: s.label,
-                            pct: pct.toFixed(0),
+                            pct: numberFormatting.formatDecimal(pct, {
+                              maximumFractionDigits: 0,
+                            }),
                           })}
                         />
                       );
@@ -1217,7 +1224,9 @@ export default function DashboardPage({
                         className="bg-success h-full transition-[width] duration-500"
                         style={{ width: `${coveragePortfolioPct}%` }}
                         title={t("goals:dashboard.coverage.portfolio_withdrawal_title", {
-                          pct: coveragePortfolioPct.toFixed(0),
+                          pct: numberFormatting.formatDecimal(coveragePortfolioPct, {
+                            maximumFractionDigits: 0,
+                          }),
                         })}
                       />
                     )}
@@ -1226,7 +1235,9 @@ export default function DashboardPage({
                         className="h-full bg-red-500/75 transition-[width] duration-500"
                         style={{ width: `${coverageShortfallPct}%` }}
                         title={t("goals:dashboard.coverage.unfunded_title", {
-                          pct: coverageShortfallPct.toFixed(0),
+                          pct: numberFormatting.formatDecimal(coverageShortfallPct, {
+                            maximumFractionDigits: 0,
+                          }),
                         })}
                       />
                     )}
@@ -1239,7 +1250,9 @@ export default function DashboardPage({
                           style={{ background: COVERAGE_COLORS.income }}
                         />
                         {t("goals:dashboard.coverage.income_pct", {
-                          pct: coverageIncomePct.toFixed(0),
+                          pct: numberFormatting.formatDecimal(coverageIncomePct, {
+                            maximumFractionDigits: 0,
+                          }),
                         })}
                       </span>
                     )}
@@ -1247,7 +1260,9 @@ export default function DashboardPage({
                       <span className="flex items-center gap-1.5">
                         <span className="bg-success inline-block h-2 w-2 rounded-sm" />
                         {t("goals:dashboard.coverage.portfolio_pct", {
-                          pct: coveragePortfolioPct.toFixed(0),
+                          pct: numberFormatting.formatDecimal(coveragePortfolioPct, {
+                            maximumFractionDigits: 0,
+                          }),
                         })}
                       </span>
                     )}
@@ -1255,7 +1270,9 @@ export default function DashboardPage({
                       <span className="flex items-center gap-1.5">
                         <span className="inline-block h-2 w-2 rounded-sm bg-red-500/75" />
                         {t("goals:dashboard.coverage.unfunded_pct", {
-                          pct: coverageShortfallPct.toFixed(0),
+                          pct: numberFormatting.formatDecimal(coverageShortfallPct, {
+                            maximumFractionDigits: 0,
+                          }),
                         })}
                       </span>
                     )}
@@ -1365,7 +1382,10 @@ export default function DashboardPage({
                                 })}{" "}
                                 {isActive && matchedBudgetStream ? (
                                   <span className="text-muted-foreground ml-1 text-[11px]">
-                                    {(matchedBudgetStream.percentageOfBudget * 100).toFixed(0)}%
+                                    {numberFormatting.formatPercent(
+                                      matchedBudgetStream.percentageOfBudget,
+                                      { digits: 0 },
+                                    )}
                                   </span>
                                 ) : null}
                               </span>
@@ -1391,7 +1411,13 @@ export default function DashboardPage({
                                     {t("goals:dashboard.coverage.draw_on_portfolio")}{" "}
                                     <span className="text-foreground tabular-nums">
                                       {t("goals:dashboard.coverage.draw_rate_per_yr", {
-                                        pct: (coveragePortfolioDrawRate * 100).toFixed(1),
+                                        pct: numberFormatting.formatDecimal(
+                                          coveragePortfolioDrawRate * 100,
+                                          {
+                                            minimumFractionDigits: 1,
+                                            maximumFractionDigits: 1,
+                                          },
+                                        ),
                                       })}
                                     </span>
                                     <Icons.Info className="size-3" />
@@ -1420,7 +1446,9 @@ export default function DashboardPage({
                                 ),
                               })}{" "}
                               <span className="text-muted-foreground ml-1 text-[11px]">
-                                {coveragePortfolioPct.toFixed(0)}%
+                                {numberFormatting.formatPercent(coveragePortfolioPct / 100, {
+                                  digits: 0,
+                                })}
                               </span>
                             </span>
                           </div>
@@ -1441,7 +1469,9 @@ export default function DashboardPage({
                                 ),
                               })}{" "}
                               <span className="text-muted-foreground ml-1 text-[11px]">
-                                {coverageShortfallPct.toFixed(0)}%
+                                {numberFormatting.formatPercent(coverageShortfallPct / 100, {
+                                  digits: 0,
+                                })}
                               </span>
                             </span>
                           </div>

@@ -39,7 +39,7 @@ export function AmountInput<TFieldValues extends FieldValues = FieldValues>({
   name,
   label,
   labelHelpText,
-  placeholder = "0.00",
+  placeholder,
   "data-testid": dataTestId,
   maxDecimalPlaces = 2,
   currency,

@@ -330,6 +330,12 @@ function getCurrencyAffixMatchers(locale: string): { prefix: RegExp; suffix: Reg
 function stripFinancialAffixes(value: string, locale: string): string | null {
   const affixMatchers = getCurrencyAffixMatchers(locale);
   let result = value.replace(affixMatchers.prefix, "$1").replace(affixMatchers.suffix, "").trim();
+  // A pasted machine-formatted value may carry a currency symbol from a
+  // different locale (for example "$1,234.56" in a French locale).
+  result = result
+    .replace(/^([+\-−]?)\s*\p{Sc}\s*/u, "$1")
+    .replace(/\s*\p{Sc}\s*$/u, "")
+    .trim();
   if (/\p{L}|\p{Sc}/u.test(result)) return null;
   result = result.replace(/^−/, "-");
   return result;
@@ -512,7 +518,10 @@ function monthTokens(locale: string): Map<string, number> {
     const month = Number(/\d+/u.exec(normalizeLocalizedDigits(numericMonth ?? "", locale))?.[0]);
     if (!Number.isInteger(month) || month < 1) continue;
     for (const formatter of formatters) {
-      const name = formatter.formatToParts(date).find((part) => part.type === "month")?.value;
+      // Keep adjacent locale literals such as Japanese `月`. The bare `month`
+      // part is only `7` in ja-JP, which would otherwise make an unrelated day
+      // token such as the `3` in "Jul 3, 2026" look like March.
+      const name = formatter.format(date);
       if (!name) continue;
       for (const token of normalizedDateTokens(name, locale)) tokens.set(token, month);
     }

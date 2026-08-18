@@ -145,8 +145,12 @@ function SidebarTotalRow({ amount, currency }: { amount: number; currency: strin
   );
 }
 
-function pctOfTotal(value: number, total: number) {
-  return total > 0 ? ((value / total) * 100).toFixed(0) + "%" : "0%";
+function pctOfTotal(
+  value: number,
+  total: number,
+  formatting: Pick<ReturnType<typeof useNumberFormatting>, "formatPercent">,
+) {
+  return formatting.formatPercent(total > 0 ? value / total : 0, { digits: 0 });
 }
 
 function highInflationWarning(value: number, t: TFunction) {
@@ -825,7 +829,10 @@ export function SidebarConfigurator({
                       : t("goals:sidebar.spending.flexible"),
                     it.inflationRate !== undefined
                       ? t("goals:sidebar.spending.inflation_meta", {
-                          pct: (it.inflationRate * 100).toFixed(1),
+                          pct: numberFormatting.formatDecimal(it.inflationRate * 100, {
+                            minimumFractionDigits: 1,
+                            maximumFractionDigits: 1,
+                          }),
                         })
                       : undefined,
                   ]
@@ -850,7 +857,10 @@ export function SidebarConfigurator({
                   : t("goals:sidebar.spending.flexible"),
                 item.inflationRate !== undefined
                   ? t("goals:sidebar.spending.inflation_meta", {
-                      pct: (item.inflationRate * 100).toFixed(1),
+                      pct: numberFormatting.formatDecimal(item.inflationRate * 100, {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1,
+                      }),
                     })
                   : undefined,
               ].join(" · ");
@@ -972,7 +982,10 @@ export function SidebarConfigurator({
                           <PercentOverrideInput
                             value={item.inflationRate}
                             placeholder={t("goals:sidebar.spending.plan_inflation_placeholder", {
-                              pct: (draft.investment.inflationRate * 100).toFixed(1),
+                              pct: numberFormatting.formatDecimal(
+                                draft.investment.inflationRate * 100,
+                                { minimumFractionDigits: 1, maximumFractionDigits: 1 },
+                              ),
                             })}
                             max={MAX_RETIREMENT_INFLATION}
                             onChange={(value) =>
@@ -1101,7 +1114,10 @@ export function SidebarConfigurator({
                   ? t("goals:sidebar.income.balance_derived_payout")
                   : s.annualGrowthRate !== undefined
                     ? t("goals:sidebar.income.growth_meta", {
-                        pct: (s.annualGrowthRate * 100).toFixed(1),
+                        pct: numberFormatting.formatDecimal(s.annualGrowthRate * 100, {
+                          minimumFractionDigits: 1,
+                          maximumFractionDigits: 1,
+                        }),
                       })
                     : s.adjustForInflation
                       ? t("goals:sidebar.income.inflation_indexed")
@@ -1277,7 +1293,10 @@ export function SidebarConfigurator({
                             )}
                             <p className="text-muted-foreground px-1 text-[11px] leading-relaxed">
                               {t("goals:sidebar.income.payout_estimate_note", {
-                                pct: (DEFAULT_DC_PAYOUT_ESTIMATE_RATE * 100).toFixed(1),
+                                pct: numberFormatting.formatDecimal(
+                                  DEFAULT_DC_PAYOUT_ESTIMATE_RATE * 100,
+                                  { minimumFractionDigits: 1, maximumFractionDigits: 1 },
+                                ),
                               })}
                             </p>
                           </>
@@ -1332,7 +1351,10 @@ export function SidebarConfigurator({
                             placeholder={
                               s.adjustForInflation
                                 ? t("goals:sidebar.income.growth_placeholder_inflation", {
-                                    pct: (draft.investment.inflationRate * 100).toFixed(1),
+                                    pct: numberFormatting.formatDecimal(
+                                      draft.investment.inflationRate * 100,
+                                      { minimumFractionDigits: 1, maximumFractionDigits: 1 },
+                                    ),
                                   })
                                 : t("goals:sidebar.income.growth_placeholder_fixed")
                             }
@@ -1597,7 +1619,7 @@ export function SidebarConfigurator({
                     </InfoLabel>
                   }
                 >
-                  {(averageWithdrawalTaxRate * 100).toFixed(1)}%
+                  {numberFormatting.formatPercent(averageWithdrawalTaxRate, { digits: 1 })}
                 </ConfigRow>
               )}
             </div>
@@ -1631,7 +1653,7 @@ export function SidebarConfigurator({
                   >
                     {amountFormatting.formatAmount(taxBucketBalances.taxable, currency)}{" "}
                     <span className="text-muted-foreground ml-1 font-normal">
-                      {pctOfTotal(taxBucketBalances.taxable, taxBucketTotal)}
+                      {pctOfTotal(taxBucketBalances.taxable, taxBucketTotal, numberFormatting)}
                     </span>
                   </ConfigRow>
                   <ConfigRow
@@ -1643,7 +1665,7 @@ export function SidebarConfigurator({
                   >
                     {amountFormatting.formatAmount(taxBucketBalances.taxDeferred, currency)}{" "}
                     <span className="text-muted-foreground ml-1 font-normal">
-                      {pctOfTotal(taxBucketBalances.taxDeferred, taxBucketTotal)}
+                      {pctOfTotal(taxBucketBalances.taxDeferred, taxBucketTotal, numberFormatting)}
                     </span>
                   </ConfigRow>
                   <ConfigRow
@@ -1655,7 +1677,7 @@ export function SidebarConfigurator({
                   >
                     {amountFormatting.formatAmount(taxBucketBalances.taxFree, currency)}{" "}
                     <span className="text-muted-foreground ml-1 font-normal">
-                      {pctOfTotal(taxBucketBalances.taxFree, taxBucketTotal)}
+                      {pctOfTotal(taxBucketBalances.taxFree, taxBucketTotal, numberFormatting)}
                     </span>
                   </ConfigRow>
                 </div>

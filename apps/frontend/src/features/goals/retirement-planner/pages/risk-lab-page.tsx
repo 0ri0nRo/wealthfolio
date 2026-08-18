@@ -78,8 +78,8 @@ function fmt(value: number, currency: string, formatting: Pick<FormattingApi, "f
   return formatting.formatAmount(value, currency);
 }
 
-function pct(value: number) {
-  return `${(value * 100).toFixed(0)}%`;
+function pct(value: number, formatting: Pick<FormattingApi, "formatPercent">) {
+  return formatting.formatPercent(value, { digits: 0 });
 }
 
 function moneyLastsDefinition(t: TFunction, plannerMode: PlannerMode, horizonAge: number) {
@@ -461,7 +461,7 @@ function PlanResilienceHero({
           />
           <HeroMetric
             label={t("goals:risk_lab.hero.money_lasts")}
-            value={mc ? pct(mc.successRate) : "—"}
+            value={mc ? pct(mc.successRate, numberFormatting) : "—"}
             detail={
               mc
                 ? t("goals:risk_lab.hero.paths_count", {
@@ -1064,7 +1064,7 @@ function MonteCarloDistributionSection({
             <div className="bg-muted/10 grid border-b md:grid-cols-5">
               <SimulationMetric
                 label={t("goals:risk_lab.montecarlo.money_lasts")}
-                value={pct(result.successRate)}
+                value={pct(result.successRate, numberFormatting)}
                 detail={moneyLastsDetail}
                 tone={result.successRate >= 0.9 ? "good" : "bad"}
               />
@@ -1503,6 +1503,7 @@ function WhatMovesThePlanSection({
   plannerMode?: PlannerMode;
 }) {
   const amountFormatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
 
   const { t } = useTranslation();
   const message = errorMessage(t, error);
@@ -1557,7 +1558,9 @@ function WhatMovesThePlanSection({
               <DecisionHeatmap
                 matrix={contributionReturn}
                 currency={plan.currency}
-                formatRow={(value, label) => label || `${(value * 100).toFixed(1)}%`}
+                formatRow={(value, label) =>
+                  label || numberFormatting.formatPercent(value, { digits: 1 })
+                }
                 formatColumn={(value) => axisMoney(value, plan.currency, amountFormatting)}
                 ageMetricLabel={
                   isFireMode

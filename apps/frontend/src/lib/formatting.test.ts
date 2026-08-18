@@ -85,6 +85,7 @@ describe("locale formatting", () => {
 
   it("parses locale-specific grouping and decimal separators", () => {
     expect(parseLocalizedNumber("$1,234.56", "en-US")).toBe(1234.56);
+    expect(parseLocalizedNumber("$1,234.56", "fr-FR")).toBe(1234.56);
     expect(parseLocalizedNumber("1.234,56 €", "de-DE")).toBe(1234.56);
     expect(parseLocalizedNumber("1234.56", "de-DE")).toBe(1234.56);
     expect(parseLocalizedNumber("1,234.56", "de-DE")).toBe(1234.56);
@@ -165,6 +166,15 @@ describe("locale formatting", () => {
     expect(parseLocalizedDate("Tue, 18 Aug 2026 00:00:00 GMT", "en-US")?.toISOString()).toBe(
       "2026-08-18T00:00:00.000Z",
     );
+  });
+
+  it.each([
+    ["Jul 3, 2026", new Date(2026, 6, 3)],
+    ["Jan 5, 2026", new Date(2026, 0, 5)],
+    ["Nov 9, 2026", new Date(2026, 10, 9)],
+    ["Jul 15, 2026", new Date(2026, 6, 15)],
+  ])("does not confuse the day with a Japanese month in %s", (value, expected) => {
+    expect(parseLocalizedDate(value, "ja-JP")).toEqual(expected);
   });
 
   it("parses localized month names and CJK full-width calendar dates", () => {

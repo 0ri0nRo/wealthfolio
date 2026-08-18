@@ -60,7 +60,7 @@ const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
       maxDecimalPlaces = DECIMAL_PRECISION,
       fixedDecimalScale = false,
       thousandSeparator = false,
-      placeholder = "0.00",
+      placeholder,
       className,
       name,
       disabled,
@@ -76,6 +76,13 @@ const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
     ref,
   ) => {
     const formatting = useNumberFormatting();
+    const resolvedPlaceholder =
+      placeholder ??
+      formatting.formatDecimal(0, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+        useGrouping: false,
+      });
     // Normalize value to number or empty string
     const numericValue = value === null || value === undefined || value === "" ? "" : Number(value);
 
@@ -85,7 +92,7 @@ const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
         getInputRef={ref}
         name={name}
         className={cn("text-right", className)}
-        placeholder={placeholder}
+        placeholder={resolvedPlaceholder}
         disabled={disabled}
         readOnly={readOnly}
         aria-label={ariaLabel}

@@ -274,8 +274,12 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
   const gapMetricValue = projectedGap === null ? remainingNow : Math.abs(projectedGap);
   const targetDateLabel = formatGoalDate(targetDate, dateFormatting);
   const savingsMilestones = useMemo(
-    () => buildSavingsMilestones(chartData, targetAmount, currentValue, t, dateFormatting),
-    [chartData, targetAmount, currentValue, t, dateFormatting],
+    () =>
+      buildSavingsMilestones(chartData, targetAmount, currentValue, t, {
+        ...dateFormatting,
+        ...numberFormatting,
+      }),
+    [chartData, targetAmount, currentValue, t, dateFormatting, numberFormatting],
   );
 
   return (
@@ -456,7 +460,7 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
                 </span>
               </SidebarRow>
               <SidebarRow label={t("goals:save_up.field_expected_return")}>
-                {(annualReturn * 100).toFixed(1)}%
+                {numberFormatting.formatPercent(annualReturn, { digits: 1 })}
               </SidebarRow>
             </div>
           }

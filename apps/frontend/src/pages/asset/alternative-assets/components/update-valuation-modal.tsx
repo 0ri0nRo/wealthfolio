@@ -147,7 +147,6 @@ export function UpdateValuationModal({
                         name={field.name}
                         value={field.value}
                         onValueChange={field.onChange}
-                        placeholder="0.00"
                       />
                     </FormControl>
                     <FormMessage />

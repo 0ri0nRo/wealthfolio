@@ -4,7 +4,7 @@ import { createContext, ReactNode, useContext, useEffect, useState } from "react
 
 import { useSettings } from "@/hooks/use-settings";
 import { useSettingsMutation } from "@/hooks/use-settings-mutation";
-import i18n from "@/i18n/i18n";
+import i18n, { LANGUAGE_STORAGE_KEY } from "@/i18n/i18n";
 import { DEFAULT_LOCALE } from "@/i18n/locales";
 import { Settings, SettingsContextType } from "@/lib/types";
 import { FormattingProvider, resolveFormattingLocale } from "@wealthfolio/ui";
@@ -186,9 +186,10 @@ const applySettingsToDocument = (newSettings: Settings) => {
   document.body.classList.remove("font-mono", "font-sans", "font-serif");
   document.body.classList.add(newSettings.font);
 
-  // Cache theme/font in localStorage for pre-auth usage (login screen)
+  // Cache pre-auth presentation settings so bootstrap UI does not flash defaults.
   try {
     localStorage.setItem("wealthfolio-theme", newSettings.theme);
+    localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
   } catch {
     // noop – localStorage may be unavailable
   }

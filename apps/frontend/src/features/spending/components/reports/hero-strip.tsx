@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import type { TaxonomyCategory } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { PrivacyAmount, Skeleton, useAmountFormatting } from "@wealthfolio/ui";
+import { PrivacyAmount, Skeleton, useAmountFormatting, useNumberFormatting } from "@wealthfolio/ui";
 
 import type { BudgetSnapshot } from "../../types/budget";
 import type { CategoryBreakdownRow, MonthBucket } from "../../types/report";
@@ -59,6 +59,7 @@ export const PeriodSummaryHero: FC<PeriodSummaryHeroProps> = ({
   isLoading,
 }) => {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const segments = useMemo<ShareSegment[]>(
     () => buildShareSegments(breakdown, taxonomyCategories, spent, t),
@@ -112,7 +113,7 @@ export const PeriodSummaryHero: FC<PeriodSummaryHeroProps> = ({
                 }}
                 title={`${s.name} · ${
                   isBalanceHidden ? "••••" : formatting.formatAmount(s.amount, currency)
-                } (${s.share.toFixed(1)}%)`}
+                } (${numberFormatting.formatPercent(s.share / 100, { digits: 1 })})`}
               />
             ))}
           </div>
@@ -125,7 +126,7 @@ export const PeriodSummaryHero: FC<PeriodSummaryHeroProps> = ({
                 />
                 <span className="text-muted-foreground/90">{s.name}</span>
                 <span className="text-muted-foreground/60 tabular-nums">
-                  {Math.round(s.share)}%
+                  {numberFormatting.formatPercent(s.share / 100, { digits: 0 })}
                 </span>
               </span>
             ))}
@@ -210,6 +211,7 @@ export const BudgetStatusHero: FC<BudgetStatusHeroProps> = ({
   isLoading,
 }) => {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const monthlyTarget = budget?.computed.totals.spendingPlanned ?? 0;
   const target = monthlyTarget * Math.max(1, monthsInRange);
@@ -283,7 +285,7 @@ export const BudgetStatusHero: FC<BudgetStatusHeroProps> = ({
     <HeroSection label={t("spending:hero.budgetStatusWith", { label: monthsLabel })}>
       <div className="flex items-baseline justify-between gap-2">
         <div className="text-foreground text-3xl font-bold tabular-nums tracking-tight">
-          {Math.round(pct * 100)}%
+          {numberFormatting.formatPercent(pct, { digits: 0 })}
         </div>
         <span
           className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
@@ -362,6 +364,7 @@ interface CashflowHeroProps {
 
 export const CashflowHero: FC<CashflowHeroProps> = ({ months, currency, isLoading }) => {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const totals = useMemo(() => {
@@ -413,7 +416,7 @@ export const CashflowHero: FC<CashflowHeroProps> = ({ months, currency, isLoadin
               totals.net >= 0 ? "bg-success/15 text-success" : "bg-destructive/15 text-destructive",
             )}
           >
-            {netLabel} {Math.round(Math.abs(totals.savingsRate) * 100)}%
+            {netLabel} {numberFormatting.formatPercent(Math.abs(totals.savingsRate), { digits: 0 })}
           </span>
         )}
       </div>

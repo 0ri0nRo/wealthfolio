@@ -37,7 +37,7 @@ export function buildSavingsMilestones(
   targetAmount: number,
   currentValue: number,
   t: TFn,
-  formatting: Pick<FormattingApi, "formatCalendarDate">,
+  formatting: Pick<FormattingApi, "formatCalendarDate" | "formatPercent">,
 ): SavingsMilestone[] {
   if (targetAmount <= 0 || data.length === 0) return [];
   return MILESTONE_RATIOS.map((ratio) => {
@@ -46,7 +46,7 @@ export function buildSavingsMilestones(
     const projected = reached ? null : data.find((p) => p.nominal >= amount);
     return {
       ratio,
-      label: `${Math.round(ratio * 100)}%`,
+      label: formatting.formatPercent(ratio, { digits: 0 }),
       amount,
       dateLabel: reached
         ? t("goals:milestones.reached")

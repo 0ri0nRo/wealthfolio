@@ -42,6 +42,7 @@ async function pasteIntoColumn(
   column: ColumnDef<TestRow>,
   focusColumn: keyof TestRow,
   clipboardText: string,
+  locale = "de-DE",
 ) {
   const onDataChange = vi.fn<(data: TestRow[]) => void>();
   Object.defineProperty(navigator, "clipboard", {
@@ -50,7 +51,7 @@ async function pasteIntoColumn(
   });
 
   render(
-    <FormattingProvider locale="de-DE">
+    <FormattingProvider locale={locale}>
       <GridHarness columns={[column]} focusColumn={focusColumn} onDataChange={onDataChange} />
     </FormattingProvider>,
   );
@@ -89,6 +90,20 @@ describe("data grid localized paste", () => {
     expect(data[0]?.inputDate?.getFullYear()).toBe(2026);
     expect(data[0]?.inputDate?.getMonth()).toBe(11);
     expect(data[0]?.inputDate?.getDate()).toBe(31);
+  });
+
+  it("preserves English month-name dates under a Japanese formatting locale", async () => {
+    const data = await pasteIntoColumn(
+      {
+        accessorKey: "calendarDate",
+        meta: { cell: { variant: "date" } },
+      },
+      "calendarDate",
+      "Jul 3, 2026",
+      "ja-JP",
+    );
+
+    expect(data[0]?.calendarDate).toBe("2026-07-03");
   });
 
   it("normalizes localized string-backed numbers without losing precision", async () => {

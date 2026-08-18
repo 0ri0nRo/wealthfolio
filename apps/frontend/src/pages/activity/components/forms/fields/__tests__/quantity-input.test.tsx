@@ -67,6 +67,15 @@ describe("activity QuantityInput field", () => {
     expect(input).toHaveAttribute("data-testid", "quantity-input");
   });
 
+  it("localizes its default placeholder", () => {
+    render(<TestForm locale="fr-FR" />);
+
+    expect(screen.getByRole("textbox", { name: "Quantity" })).toHaveAttribute(
+      "placeholder",
+      "0,00",
+    );
+  });
+
   it("forwards negative-value support and decimal precision", async () => {
     const user = userEvent.setup();
     render(

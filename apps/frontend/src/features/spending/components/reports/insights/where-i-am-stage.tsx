@@ -588,7 +588,7 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
                 }}
                 title={`${s.name} · ${
                   isBalanceHidden ? "••••" : formatting.formatAmount(s.amount, currency)
-                } (${s.share.toFixed(1)}%)`}
+                } (${formatPercentValue(s.share, numberFormatting, { digits: 1 })})`}
               />
             ))}
           </div>
@@ -601,7 +601,7 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
                 />
                 <span className="text-foreground/80">{s.name}</span>
                 <span className="text-muted-foreground/70 tabular-nums">
-                  {Math.round(s.share)}%
+                  {formatPercentValue(s.share, numberFormatting, { digits: 0 })}
                 </span>
               </span>
             ))}
@@ -919,6 +919,7 @@ interface CashflowGroupProps {
 
 function CashflowGroup({ label, sublabel, rows, currency }: CashflowGroupProps) {
   const { t } = useTranslation();
+  const numberFormatting = useNumberFormatting();
   const visibleRows = rows.slice(0, 4);
   const hiddenCount = Math.max(0, rows.length - visibleRows.length);
 
@@ -960,7 +961,7 @@ function CashflowGroup({ label, sublabel, rows, currency }: CashflowGroupProps) 
                   />
                 </div>
                 <span className="text-muted-foreground/70 w-9 text-right text-[11px] tabular-nums">
-                  {Math.round(row.share)}%
+                  {formatPercentValue(row.share, numberFormatting, { digits: 0 })}
                 </span>
               </div>
             )}

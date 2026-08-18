@@ -502,7 +502,6 @@ export const HoldingsEditMode = ({
                             onValueChange={(value) =>
                               handleAverageCostChange(holding.assetId, value)
                             }
-                            placeholder="0.00"
                             className="h-8 text-sm"
                           />
                         </div>
@@ -632,7 +631,6 @@ export const HoldingsEditMode = ({
                           }}
                           value={cash.amount}
                           onValueChange={(value) => handleCashAmountChange(cash.currency, value)}
-                          placeholder="0.00"
                           className="h-8 text-sm"
                         />
                       </div>

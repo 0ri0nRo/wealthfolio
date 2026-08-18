@@ -814,7 +814,6 @@ export function TransferForm({
                               name={field.name}
                               value={field.value}
                               onValueChange={handleSourceAmountChange}
-                              placeholder="0.00"
                               aria-label={t("activity:form.sent_amount")}
                               data-testid="sent-amount-input"
                             />
@@ -839,7 +838,6 @@ export function TransferForm({
                               name={field.name}
                               value={field.value}
                               onValueChange={handleDestinationAmountChange}
-                              placeholder="0.00"
                               aria-label={t("activity:form.received_amount")}
                               data-testid="received-amount-input"
                             />
@@ -862,7 +860,6 @@ export function TransferForm({
                             name={field.name}
                             value={field.value}
                             onValueChange={handleSourceAmountChange}
-                            placeholder="0.00"
                             aria-label={t("activity:form.label_amount")}
                             data-testid="input-amount"
                           />

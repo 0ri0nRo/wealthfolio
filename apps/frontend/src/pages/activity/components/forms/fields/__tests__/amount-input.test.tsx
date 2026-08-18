@@ -68,6 +68,22 @@ describe("activity AmountInput field", () => {
     expect(screen.getByText("EUR")).toBeInTheDocument();
   });
 
+  it("localizes its default placeholder and accepts common machine-formatted currency paste", async () => {
+    render(<TestForm locale="fr-FR" currency="CAD" />);
+
+    const input = screen.getByRole<HTMLInputElement>("textbox", { name: "Amount" });
+    expect(input).toHaveAttribute("placeholder", "0,00");
+
+    fireEvent.paste(input, {
+      clipboardData: { getData: () => "$1,234.56" },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("status", { name: "form value" })).toHaveTextContent("1234.56"),
+    );
+    expect(input).toHaveValue("1234,56");
+  });
+
   it("forwards custom labels, test IDs, and decimal precision", async () => {
     const user = userEvent.setup();
     render(<TestForm label="Unit price" dataTestId="custom-price" maxDecimalPlaces={3} />);

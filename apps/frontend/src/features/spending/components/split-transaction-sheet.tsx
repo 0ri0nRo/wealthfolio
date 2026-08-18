@@ -395,7 +395,6 @@ export function SplitTransactionSheet({
                         onValueChange={(value: number | undefined) =>
                           updateLine(line.id, { amount: value ?? undefined })
                         }
-                        placeholder="0.00"
                         className="bg-background hover:bg-muted !h-8 rounded-md px-2 pl-5 text-right text-sm shadow-none transition-colors focus-visible:ring-2 md:text-sm"
                       />
                     </div>
