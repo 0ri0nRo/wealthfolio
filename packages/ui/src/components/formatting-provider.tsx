@@ -1,5 +1,5 @@
 import * as React from "react";
-import { I18nProvider, useDateFormatter, useNumberFormatter } from "@react-aria/i18n";
+import { I18nProvider } from "@react-aria/i18n";
 import {
   createAmountFormatting,
   createDateFormatting,
@@ -26,60 +26,18 @@ const AmountFormattingContext = React.createContext(DEFAULT_AMOUNT_FORMATTING);
 const NumberFormattingContext = React.createContext(DEFAULT_NUMBER_FORMATTING);
 const DateFormattingContext = React.createContext(DEFAULT_DATE_FORMATTING);
 
-const DECIMAL_FORMAT_OPTIONS: Intl.NumberFormatOptions = {};
-const AMOUNT_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-};
-const QUANTITY_FORMAT_OPTIONS: Intl.NumberFormatOptions = {
-  maximumFractionDigits: 8,
-  useGrouping: true,
-};
-
 function FormattingRuntime({ settings, children }: { settings: LocalizationSettings; children: React.ReactNode }) {
-  const decimal = useNumberFormatter(DECIMAL_FORMAT_OPTIONS);
-  const amount = useNumberFormatter(AMOUNT_FORMAT_OPTIONS);
-  const quantity = useNumberFormatter(QUANTITY_FORMAT_OPTIONS);
-  const date = useDateFormatter({
-    dateStyle: "medium",
-    ...(settings.timezone ? { timeZone: settings.timezone } : {}),
-  });
-  const calendarDate = useDateFormatter({ dateStyle: "medium", timeZone: "UTC" });
-  const calendarDateTime = useDateFormatter({
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "UTC",
-  });
-  const timeOfDay = useDateFormatter({ timeStyle: "short", timeZone: "UTC" });
-  const time = useDateFormatter({
-    timeStyle: "short",
-    ...(settings.timezone ? { timeZone: settings.timezone } : {}),
-  });
-  const dateTime = useDateFormatter({
-    dateStyle: "medium",
-    timeStyle: "short",
-    ...(settings.timezone ? { timeZone: settings.timezone } : {}),
-  });
-
   const amountFormatting = React.useMemo<AmountFormatting>(
-    () => createAmountFormatting(settings.locale, { decimal, amount }),
-    [settings.locale, decimal, amount],
+    () => createAmountFormatting(settings.locale),
+    [settings.locale],
   );
   const numberFormatting = React.useMemo<NumberFormatting>(
-    () => createNumberFormatting(settings.locale, { decimal, quantity }),
-    [settings.locale, decimal, quantity],
+    () => createNumberFormatting(settings.locale),
+    [settings.locale],
   );
   const dateFormatting = React.useMemo<DateFormatting>(
-    () =>
-      createDateFormatting(settings.locale, settings.timezone, {
-        date,
-        calendarDate,
-        calendarDateTime,
-        timeOfDay,
-        time,
-        dateTime,
-      }),
-    [settings.locale, settings.timezone, date, calendarDate, calendarDateTime, timeOfDay, time, dateTime],
+    () => createDateFormatting(settings.locale, settings.timezone),
+    [settings.locale, settings.timezone],
   );
 
   return (
@@ -89,6 +47,15 @@ function FormattingRuntime({ settings, children }: { settings: LocalizationSetti
       </NumberFormattingContext.Provider>
     </AmountFormattingContext.Provider>
   );
+}
+
+function resolveInterfaceLocale(uiLocale: string, formattingLocale: string): string {
+  const formatting = new Intl.Locale(formattingLocale);
+  const options: Intl.LocaleOptions = {};
+  if (formatting.region) options.region = formatting.region;
+  if (formatting.calendar) options.calendar = formatting.calendar;
+  if (formatting.numberingSystem) options.numberingSystem = formatting.numberingSystem;
+  return new Intl.Locale(uiLocale, options).toString();
 }
 
 export function FormattingProvider({
@@ -103,12 +70,13 @@ export function FormattingProvider({
   children: React.ReactNode;
 }) {
   const resolvedLocale = resolveFormattingLocale(locale);
+  const interfaceLocale = resolveInterfaceLocale(uiLocale, resolvedLocale);
   const settings = React.useMemo(
     () => ({ locale: resolvedLocale, uiLocale, timezone }),
     [resolvedLocale, uiLocale, timezone],
   );
   return (
-    <I18nProvider locale={resolvedLocale}>
+    <I18nProvider locale={interfaceLocale}>
       <LocalizationSettingsContext.Provider value={settings}>
         <FormattingRuntime settings={settings}>{children}</FormattingRuntime>
       </LocalizationSettingsContext.Provider>

@@ -34,6 +34,12 @@ export interface QuantityInputProps {
   readOnly?: boolean;
   /** Aria label for accessibility */
   "aria-label"?: string;
+  /** ID used to associate the input with its form label */
+  id?: string;
+  /** IDs of elements describing the input */
+  "aria-describedby"?: string;
+  /** Whether the input currently has a validation error */
+  "aria-invalid"?: React.AriaAttributes["aria-invalid"];
   /** Test ID for e2e testing */
   "data-testid"?: string;
   /** Key down handler */
@@ -54,6 +60,9 @@ const QuantityInput = React.forwardRef<HTMLInputElement, QuantityInputProps>(
       disabled,
       readOnly,
       "aria-label": ariaLabel,
+      id,
+      "aria-describedby": ariaDescribedBy,
+      "aria-invalid": ariaInvalid,
       "data-testid": testId,
       onKeyDown,
     },
@@ -73,13 +82,16 @@ const QuantityInput = React.forwardRef<HTMLInputElement, QuantityInputProps>(
         disabled={disabled}
         readOnly={readOnly}
         aria-label={ariaLabel}
+        id={id}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
         data-testid={testId}
         onKeyDown={onKeyDown}
         allowNegative={allowNegative}
         decimalScale={maxDecimalPlaces}
         thousandSeparator={formatting.groupSeparator}
         decimalSeparator={formatting.decimalSeparator}
-        allowedDecimalSeparators={[formatting.decimalSeparator]}
+        allowedDecimalSeparators={Array.from(new Set([formatting.decimalSeparator, ".", ","]))}
         valueIsNumericString={false}
         value={numericValue}
         onValueChange={(values) => {

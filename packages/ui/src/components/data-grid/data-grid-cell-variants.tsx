@@ -26,7 +26,7 @@ import { useBadgeOverflow } from "../../hooks/use-badge-overflow";
 import { useDebouncedCallback } from "../../hooks/use-debounced-callback";
 import { quoteCurrencies } from "../../lib/currencies";
 import { generateId } from "../../lib/id";
-import { parseDateTimeInTimezone } from "../../lib/formatting";
+import { parseDateTimeInTimezone, parseLocalizedDecimalString } from "../../lib/formatting";
 import { cn } from "../../lib/utils";
 import { DataGridCellWrapper } from "./data-grid-cell-wrapper";
 import type { DataGridCellProps, FileCellData, SymbolSearchResult } from "./data-grid-types";
@@ -361,10 +361,13 @@ export function NumberCell<TData>({
   cellState,
 }: DataGridCellProps<TData>) {
   const formatting = useNumberFormatting();
+  const { locale } = useLocalizationSettings();
   const initialValue = cell.getValue() as number | string | null;
-  const [value, setValue] = React.useState(String(initialValue ?? ""));
+  const initialInputValue = String(initialValue ?? "");
+  const [value, setValue] = React.useState(initialInputValue);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const cancelEditRef = React.useRef(false);
   const cellOpts = cell.column.columnDef.meta?.cell;
   const numberCellOpts = cellOpts?.variant === "number" ? cellOpts : null;
   const min = numberCellOpts?.min;
@@ -383,14 +386,20 @@ export function NumberCell<TData>({
 
   const parseCellValue = React.useCallback(
     (rawValue: string) => {
+      if (rawValue === initialInputValue) {
+        return { valid: true, value: initialComparable } as const;
+      }
       const trimmed = rawValue.trim();
       if (trimmed === "") return { valid: true, value: null } as const;
-      if (valueType !== "number") return { valid: true, value: trimmed } as const;
+      if (valueType !== "number") {
+        const parsed = parseLocalizedDecimalString(trimmed, locale);
+        return parsed === undefined ? ({ valid: false } as const) : ({ valid: true, value: parsed } as const);
+      }
 
       const parsed = formatting.parseNumber(trimmed);
       return parsed === undefined ? ({ valid: false } as const) : ({ valid: true, value: parsed } as const);
     },
-    [formatting, valueType],
+    [formatting, initialComparable, initialInputValue, locale, valueType],
   );
 
   const prevInitialValueRef = React.useRef(initialValue);
@@ -400,6 +409,11 @@ export function NumberCell<TData>({
   }
 
   const onBlur = React.useCallback(() => {
+    if (cancelEditRef.current) {
+      setValue(String(initialValue ?? ""));
+      tableMeta?.onCellEditingStop?.();
+      return;
+    }
     const parsed = parseCellValue(value);
     if (!parsed.valid) {
       setValue(String(initialValue ?? ""));
@@ -438,6 +452,7 @@ export function NumberCell<TData>({
           });
         } else if (event.key === "Escape") {
           event.preventDefault();
+          cancelEditRef.current = true;
           setValue(String(initialValue ?? ""));
           inputRef.current?.blur();
         }
@@ -467,12 +482,17 @@ export function NumberCell<TData>({
   React.useEffect(() => {
     // When editing stops (transitions from true to false), save the value
     if (wasEditingRef.current && !isEditing) {
-      const currentValue = valueRef.current;
-      const parsed = parseCellValue(currentValue);
-      if (!parsed.valid) {
+      if (cancelEditRef.current) {
+        cancelEditRef.current = false;
         setValue(String(initialValue ?? ""));
-      } else if (!readOnly && parsed.value !== initialComparable) {
-        tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: parsed.value });
+      } else {
+        const currentValue = valueRef.current;
+        const parsed = parseCellValue(currentValue);
+        if (!parsed.valid) {
+          setValue(String(initialValue ?? ""));
+        } else if (!readOnly && parsed.value !== initialComparable) {
+          tableMeta?.onDataUpdate?.({ rowIndex, columnId, value: parsed.value });
+        }
       }
       startedByTypingRef.current = false;
     }
@@ -530,9 +550,9 @@ export function NumberCell<TData>({
         <span data-slot="grid-cell-content">
           {valueRenderer
             ? valueRenderer(initialValue, cell.row.original)
-            : value === "" || !Number.isFinite(Number(value))
+            : value === "" || formatting.parseNumber(value) === undefined
               ? value
-              : formatting.formatDecimal(Number(value), { maximumFractionDigits: 8 })}
+              : formatting.formatDecimal(value, { maximumFractionDigits: 8 })}
         </span>
       )}
     </DataGridCellWrapper>

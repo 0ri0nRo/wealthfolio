@@ -14,7 +14,7 @@ import {
 } from "@internationalized/date";
 import { NumberParser } from "@internationalized/number";
 import { DECIMAL_PRECISION, DISPLAY_DECIMAL_PRECISION } from "./constants";
-import { getQuoteUnitCurrency } from "./currencies";
+import { getQuoteUnitCurrency, quoteCurrencies } from "./currencies";
 
 /** Max fraction digits for a standard per-unit price (prices >= 0.01). */
 const STANDARD_PRICE_DECIMAL_PRECISION = 4;
@@ -174,7 +174,7 @@ export interface FormattingApi {
   currencyFractionDigits: (currency: string) => number;
   formatPercent: (value: number | null | undefined, options?: PercentFormatOptions) => string;
   formatQuantity: (value: number | string | null | undefined) => string;
-  formatDecimal: (value: number, options?: NumberDisplayOptions) => string;
+  formatDecimal: (value: number | string, options?: NumberDisplayOptions) => string;
   formatDate: (value: Date | string | number, options?: DateDisplayOptions) => string;
   formatCalendarDate: (value: CalendarDateValue, options?: DateDisplayOptions) => string;
   formatCalendarDateRange: (
@@ -282,12 +282,54 @@ function separators(locale: string) {
   };
 }
 
-function stripFinancialAffixes(value: string): string | null {
-  const affix = String.raw`(?:\p{Sc}[A-Z]{0,3}|[A-Z]{1,3}\p{Sc}|[A-Z]{3}|[元圆圓円원])`;
-  let result = value
-    .replace(new RegExp(`^([+\\-−]?)\\s*${affix}\\s*`, "u"), "$1")
-    .replace(new RegExp(`\\s*${affix}\\s*$`, "u"), "")
+const currencyAffixMatchers = new Map<string, { prefix: RegExp; suffix: RegExp }>();
+
+function normalizeCurrencyAffix(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u061c\u200e\u200f]/gu, "")
     .trim();
+}
+
+function getCurrencyAffixMatchers(locale: string): { prefix: RegExp; suffix: RegExp } {
+  const cached = currencyAffixMatchers.get(locale);
+  if (cached) return cached;
+
+  const affixes = new Set<string>();
+  for (const currency of quoteCurrencies) {
+    affixes.add(currency.value);
+    const quoteUnit = getQuoteUnitCurrency(currency.value);
+    if (quoteUnit) {
+      affixes.add(quoteUnit.symbol);
+      continue;
+    }
+
+    const symbol = new Intl.NumberFormat(locale, {
+      style: "currency",
+      currency: currency.value,
+    })
+      .formatToParts(0)
+      .find((part) => part.type === "currency")?.value;
+    if (symbol) affixes.add(symbol);
+  }
+
+  const alternatives = Array.from(affixes, normalizeCurrencyAffix)
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length)
+    .map((affix) => affix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("|");
+  const affix = `(?:${alternatives})`;
+  const matchers = {
+    prefix: new RegExp(`^([+\\-−]?)\\s*${affix}\\s*`, "u"),
+    suffix: new RegExp(`\\s*${affix}\\s*$`, "u"),
+  };
+  currencyAffixMatchers.set(locale, matchers);
+  return matchers;
+}
+
+function stripFinancialAffixes(value: string, locale: string): string | null {
+  const affixMatchers = getCurrencyAffixMatchers(locale);
+  let result = value.replace(affixMatchers.prefix, "$1").replace(affixMatchers.suffix, "").trim();
   if (/\p{L}|\p{Sc}/u.test(result)) return null;
   result = result.replace(/^−/, "-");
   return result;
@@ -338,6 +380,36 @@ function parsePreparedNumber(
   return Number.isFinite(invariant) ? invariant : undefined;
 }
 
+function normalizeInvariantNumberString(value: string): string {
+  const normalized = value.replaceAll(",", "").replace(/^\+/, "").replace("E", "e");
+  return normalized.endsWith(".") ? normalized.slice(0, -1) : normalized;
+}
+
+function localizedNumberToInvariant(value: string, locale: string): string | undefined {
+  const { decimal, group } = separators(locale);
+  let normalized = normalizeLocalizedDigits(value, locale);
+  if (/\s/u.test(group)) {
+    normalized = normalized.replace(/[\s\u00a0\u202f]/gu, group);
+  }
+  normalized = normalized.replaceAll(group, "");
+  if (decimal !== ".") normalized = normalized.replace(decimal, ".");
+  normalized = normalizeInvariantNumberString(normalized);
+  return INVARIANT_NUMBER_PATTERN.test(normalized) ? normalized : undefined;
+}
+
+function parsePreparedDecimalString(
+  value: string,
+  locale: string,
+  parser: NumberParser,
+): string | undefined {
+  const localized = parser.parse(value);
+  if (Number.isFinite(localized) && hasValidGrouping(value, locale, localized)) {
+    return localizedNumberToInvariant(value, locale);
+  }
+  if (!INVARIANT_NUMBER_PATTERN.test(value)) return undefined;
+  return normalizeInvariantNumberString(value);
+}
+
 export function parseLocalizedNumber(value: string, locale: string): number | undefined {
   const resolvedLocale = locale && locale !== "system" ? locale : resolveFormattingLocale(locale);
   const text = stripFinancialAffixes(
@@ -345,10 +417,25 @@ export function parseLocalizedNumber(value: string, locale: string): number | un
       .normalize("NFKC")
       .trim()
       .replace(/[\u061c\u200e\u200f]/gu, ""),
+    resolvedLocale,
   );
   if (!text) return undefined;
   const parser = new NumberParser(resolvedLocale, { style: "decimal" });
   return parsePreparedNumber(text, resolvedLocale, parser);
+}
+
+export function parseLocalizedDecimalString(value: string, locale: string): string | undefined {
+  const resolvedLocale = locale && locale !== "system" ? locale : resolveFormattingLocale(locale);
+  const text = stripFinancialAffixes(
+    value
+      .normalize("NFKC")
+      .trim()
+      .replace(/[\u061c\u200e\u200f]/gu, ""),
+    resolvedLocale,
+  );
+  if (!text) return undefined;
+  const parser = new NumberParser(resolvedLocale, { style: "decimal" });
+  return parsePreparedDecimalString(text, resolvedLocale, parser);
 }
 
 const localizedMonths = new Map<string, Map<string, number>>();
@@ -856,7 +943,9 @@ export function createNumberFormatting(
       return quantity == null ? "-" : quantityFormatter.format(quantity);
     },
     formatDecimal(value, options) {
-      return options ? numberFormatter(options).format(value) : decimalFormatter.format(value);
+      return options
+        ? numberFormatter(options).format(value as number)
+        : decimalFormatter.format(value as number);
     },
     parseNumber(value) {
       const text = stripFinancialAffixes(
@@ -864,6 +953,7 @@ export function createNumberFormatting(
           .normalize("NFKC")
           .trim()
           .replace(/[\u061c\u200e\u200f]/gu, ""),
+        resolvedLocale,
       );
       if (!text) return undefined;
       return parsePreparedNumber(text, resolvedLocale, numberParser);

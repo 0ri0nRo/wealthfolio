@@ -45,7 +45,11 @@ import {
   useLocalizationSettings,
   useNumberFormatting,
 } from "../formatting-provider";
-import { parseDateTimeInTimezone } from "../../lib/formatting";
+import {
+  calendarDateFromLocalDate,
+  parseDateTimeInTimezone,
+  parseLocalizedDecimalString,
+} from "../../lib/formatting";
 
 const DEFAULT_ROW_HEIGHT = "short";
 const OVERSCAN = 6;
@@ -61,6 +65,11 @@ const DOMAIN_REGEX = /^[\w.-]+\.[a-z]{2,}(\/\S*)?$/i;
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}.*)?$/;
 const TRUTHY_BOOLEANS = new Set(["true", "1", "yes", "checked"]);
 const VALID_BOOLEANS = new Set(["true", "false", "1", "0", "yes", "no", "checked", "unchecked"]);
+
+function toCalendarDateString(date: Date): string {
+  const { year, month, day } = calendarDateFromLocalDate(date);
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
 
 const useIsomorphicLayoutEffect =
   typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
@@ -161,7 +170,7 @@ function useDataGrid<TData>({
 }: UseDataGridProps<TData>) {
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
-  const { timezone } = useLocalizationSettings();
+  const { locale, timezone } = useLocalizationSettings();
   const dir = useDirection(dirProp);
   const dataGridRef = React.useRef<HTMLDivElement>(null);
   const tableRef = React.useRef<ReturnType<typeof useReactTable<TData>>>(null);
@@ -790,7 +799,10 @@ function useDataGrid<TData>({
                 if (!trimmedClipboard) {
                   processedValue = null;
                 } else {
-                  const num = numberFormatting.parseNumber(trimmedClipboard);
+                  const num =
+                    cellOpts?.variant === "number" && cellOpts.valueType === "string"
+                      ? parseLocalizedDecimalString(trimmedClipboard, locale)
+                      : numberFormatting.parseNumber(trimmedClipboard);
                   if (num === undefined) shouldSkip = true;
                   else processedValue = num;
                 }
@@ -815,7 +827,7 @@ function useDataGrid<TData>({
                 } else {
                   const date = dateFormatting.parseDate(trimmedClipboard);
                   if (!date) shouldSkip = true;
-                  else processedValue = date;
+                  else processedValue = toCalendarDateString(date);
                 }
                 break;
               }
@@ -973,7 +985,10 @@ function useDataGrid<TData>({
                 if (!pastedValue) {
                   processedValue = null;
                 } else {
-                  const num = numberFormatting.parseNumber(pastedValue);
+                  const num =
+                    cellOpts?.variant === "number" && cellOpts.valueType === "string"
+                      ? parseLocalizedDecimalString(pastedValue, locale)
+                      : numberFormatting.parseNumber(pastedValue);
                   if (num === undefined) shouldSkip = true;
                   else processedValue = num;
                 }
@@ -1000,7 +1015,7 @@ function useDataGrid<TData>({
                 } else {
                   const date = dateFormatting.parseDate(pastedValue);
                   if (!date) shouldSkip = true;
-                  else processedValue = date;
+                  else processedValue = toCalendarDateString(date);
                 }
                 break;
               }
@@ -1240,6 +1255,7 @@ function useDataGrid<TData>({
       restoreFocus,
       numberFormatting,
       dateFormatting,
+      locale,
       timezone,
     ],
   );

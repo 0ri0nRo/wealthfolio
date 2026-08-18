@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   AmountDisplay,
+  DatePickerInput,
   FormattingProvider,
   useAmountFormatting,
   useDateFormatting,
@@ -109,10 +110,19 @@ describe("FormattingProvider", () => {
     render(
       <FormattingProvider locale="DE" uiLocale="en">
         <UILocaleConsumer />
+        <RegionalNumber />
+        <DatePickerInput value="2026-08-18" onChange={() => undefined} />
       </FormattingProvider>,
     );
 
     expect(screen.getByText("en")).toBeInTheDocument();
+    expect(screen.getByText("1.234,56")).toBeInTheDocument();
+    expect(screen.getByRole("spinbutton", { name: /month/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("spinbutton").map((segment) => segment.dataset.type)).toEqual([
+      "day",
+      "month",
+      "year",
+    ]);
   });
 
   it("reuses the provider-owned finance service across consumers", () => {

@@ -37,6 +37,12 @@ export interface MoneyInputProps {
   readOnly?: boolean;
   /** Aria label for accessibility */
   "aria-label"?: string;
+  /** ID used to associate the input with its form label */
+  id?: string;
+  /** IDs of elements describing the input */
+  "aria-describedby"?: string;
+  /** Whether the input currently has a validation error */
+  "aria-invalid"?: React.AriaAttributes["aria-invalid"];
   /** Test ID for e2e testing */
   "data-testid"?: string;
   /** Auto focus on mount */
@@ -60,6 +66,9 @@ const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
       disabled,
       readOnly,
       "aria-label": ariaLabel,
+      id,
+      "aria-describedby": ariaDescribedBy,
+      "aria-invalid": ariaInvalid,
       "data-testid": testId,
       autoFocus,
       onKeyDown,
@@ -80,6 +89,9 @@ const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
         disabled={disabled}
         readOnly={readOnly}
         aria-label={ariaLabel}
+        id={id}
+        aria-describedby={ariaDescribedBy}
+        aria-invalid={ariaInvalid}
         data-testid={testId}
         autoFocus={autoFocus}
         onKeyDown={onKeyDown}

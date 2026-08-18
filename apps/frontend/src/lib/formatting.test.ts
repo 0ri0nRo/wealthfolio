@@ -8,6 +8,7 @@ import {
   formatPrice,
   formatQuantity,
   parseDateTimeInTimezone,
+  parseLocalizedDecimalString,
   parseLocalizedDate,
   parseLocalizedNumber,
   resolveFormattingLocale,
@@ -63,6 +64,8 @@ describe("locale formatting", () => {
     expect(locale.localize.month(0)).toBe("January");
     expect(locale.options?.weekStartsOn).toBe(1);
     expect(dateFnsLocaleFor("zh-HK").options?.weekStartsOn).toBe(0);
+    expect(dateFnsLocaleFor("es-MX").localize.month(0)).toBe("enero");
+    expect(dateFnsLocaleFor("es-MX").options?.weekStartsOn).toBe(0);
     expect(() => dateFnsLocaleFor(undefined)).toThrow("A resolved formatting locale is required");
   });
 
@@ -96,12 +99,27 @@ describe("locale formatting", () => {
     expect(parseLocalizedNumber("元\u00a01,234.56", "ja-JP")).toBe(1234.56);
   });
 
+  it("normalizes localized decimals as precision-preserving invariant strings", () => {
+    expect(parseLocalizedDecimalString("123456789012345678,12345678", "de-DE")).toBe(
+      "123456789012345678.12345678",
+    );
+    expect(parseLocalizedDecimalString("1234.56", "de-DE")).toBe("1234.56");
+    expect(parseLocalizedDecimalString("١٬٢٣٤٫٥٦", "ar-EG")).toBe("1234.56");
+    expect(parseLocalizedDecimalString("1,23", "en-US")).toBeUndefined();
+  });
+
   it.each([
     ["fr-FR", "USD"],
     ["fr-FR", "CAD"],
     ["ja-JP", "CNY"],
     ["zh-CN", "JPY"],
     ["ko-KR", "CNY"],
+    ["pl-PL", "PLN"],
+    ["sv-SE", "SEK"],
+    ["da-DK", "DKK"],
+    ["nb-NO", "NOK"],
+    ["ar-EG", "EGP"],
+    ["en-GB", "GBp"],
   ])("parses its own %s %s currency output", (locale, currency) => {
     const formatter = createFormatter(locale);
     expect(formatter.parseNumber(formatter.formatAmount(1234, currency))).toBe(1234);

@@ -263,5 +263,8 @@ function monthShortLabel(
   const year = Number(yearStr);
   const month = Number(monthStr) - 1;
   if (Number.isNaN(year) || Number.isNaN(month)) return monthKey;
-  return formatting.formatCalendarDate({ year, month: month + 1, day: 1 }, { month: "short" });
+  return formatting.formatCalendarDate(
+    { year, month: month + 1, day: 1 },
+    { calendar: "gregory", month: "short" },
+  );
 }

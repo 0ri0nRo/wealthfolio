@@ -9,7 +9,6 @@ const DATE_FNS_LOCALES: Record<string, Locale> = {
   "fr-FR": fr,
   "de-DE": de,
   "es-ES": es,
-  "es-MX": es,
   "zh-CN": zhCN,
   "ja-JP": ja,
   "ko-KR": ko,

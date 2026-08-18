@@ -166,6 +166,7 @@ export const IncomeHistoryChart: React.FC<IncomeHistoryChartProps> = ({
     tick: { fontSize: isMobile ? 11 : 12 },
     tickFormatter: (value: string) => {
       return dateFormatting.formatCalendarDate(`${value}-01`, {
+        calendar: "gregory",
         month: "short",
         ...(isMobile ? {} : { year: "2-digit" as const }),
       });
@@ -203,6 +204,7 @@ export const IncomeHistoryChart: React.FC<IncomeHistoryChartProps> = ({
   const tooltipLabelFormatter = (label: unknown) => {
     if (typeof label !== "string") return "";
     return dateFormatting.formatCalendarDate(`${label}-01`, {
+      calendar: "gregory",
       month: isMobile ? "short" : "long",
       year: "numeric",
     });

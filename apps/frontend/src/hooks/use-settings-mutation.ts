@@ -14,7 +14,7 @@ export function useSettingsMutation(
   const { t, i18n } = useTranslation();
   return useMutation({
     mutationFn: updateSettings,
-    onSuccess: (updatedSettings, variables) => {
+    onSuccess: async (updatedSettings, variables) => {
       queryClient.invalidateQueries({ queryKey: [QueryKeys.SETTINGS] });
       if (
         "baseCurrency" in variables ||
@@ -29,6 +29,11 @@ export function useSettingsMutation(
       const isOnboarding =
         "onboardingCompleted" in variables || !updatedSettings.onboardingCompleted;
       if (!isOnboarding) {
+        try {
+          await i18n.loadLanguages(updatedSettings.language);
+        } catch {
+          // changeLanguage handles the configured fallback locale.
+        }
         const translate = i18n.getFixedT(updatedSettings.language);
         toast({
           title: translate("settings:settings_updated_title"),

@@ -48,6 +48,7 @@ function ProjectionTooltip({
   if (!point) return null;
 
   const label = dateFormatting.formatCalendarDate(`${point.date}-01`, {
+    calendar: "gregory",
     month: "short",
     year: "numeric",
   });
@@ -134,6 +135,7 @@ function ProjectionChart({
     isHidden ? "***" : formatting.formatCompactAmount(v, currency);
   const formatDateLabel = (value: string) =>
     dateFormatting.formatCalendarDate(`${value}-01`, {
+      calendar: "gregory",
       month: "short",
       year: "2-digit",
     });

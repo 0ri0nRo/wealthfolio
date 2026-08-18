@@ -122,10 +122,16 @@ export function BudgetLineChartCard({
       daysInMonth,
       daysRemaining: isCurrentMonth ? Math.max(0, daysInMonth - dayOfMonth) : 0,
       monthLabel: dateFormatting
-        .formatCalendarDate({ year, month, day: 1 }, { month: "long", year: "numeric" })
+        .formatCalendarDate(
+          { year, month, day: 1 },
+          { calendar: "gregory", month: "long", year: "numeric" },
+        )
         .toUpperCase(),
       shortLabel: dateFormatting
-        .formatCalendarDate({ year, month, day: 1 }, { month: "short", year: "numeric" })
+        .formatCalendarDate(
+          { year, month, day: 1 },
+          { calendar: "gregory", month: "short", year: "numeric" },
+        )
         .toUpperCase(),
     };
   }, [monthKey, isCurrentMonth, dateFormatting, today]);

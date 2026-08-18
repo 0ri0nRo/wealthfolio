@@ -7,7 +7,11 @@ import { toneClass, toneFill, type Momentum } from "./utils";
 const PRIOR_BAR_COLOR = "color-mix(in srgb, var(--muted-foreground) 35%, transparent)";
 
 function monthLabel(month: string, formatting: Pick<FormattingApi, "formatCalendarDate">): string {
-  return formatting.formatCalendarDate(`${month}-01`, { month: "short", year: "2-digit" });
+  return formatting.formatCalendarDate(`${month}-01`, {
+    calendar: "gregory",
+    month: "short",
+    year: "2-digit",
+  });
 }
 
 interface MomentumCardProps {
