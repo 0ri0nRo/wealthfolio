@@ -5,11 +5,12 @@ import {
   FormattingProvider,
   useAmountFormatting,
   useDateFormatting,
+  useDateFnsLocale,
   useLocalizationSettings,
   useNumberFormatting,
 } from "@wealthfolio/ui";
 import { type ReactElement, useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 function LocaleSwitcher() {
   const [locale, setLocale] = useState("en-US");
@@ -24,12 +25,12 @@ function LocaleSwitcher() {
 }
 
 function FormattingConsumer() {
-  ({
+  void {
     ...useLocalizationSettings(),
     ...useAmountFormatting(),
     ...useNumberFormatting(),
     ...useDateFormatting(),
-  });
+  };
   return null;
 }
 
@@ -44,7 +45,7 @@ function AmountServiceConsumer() {
   return null;
 }
 
-const observedServices: Array<{ amount: unknown; number: unknown; date: unknown }> = [];
+const observedServices: { amount: unknown; number: unknown; date: unknown }[] = [];
 function ServiceIdentityConsumer() {
   observedServices.push({
     amount: useAmountFormatting(),
@@ -56,6 +57,20 @@ function ServiceIdentityConsumer() {
 
 function RegionalNumber() {
   return <span>{useNumberFormatting().formatDecimal(1234.56)}</span>;
+}
+
+function RegionalCalendar() {
+  const locale = useDateFnsLocale();
+  return <span>{`${locale.localize.month(0)}:${locale.options?.weekStartsOn}`}</span>;
+}
+
+function RegionalFormattedMonth() {
+  const formatting = useDateFormatting();
+  return <span>{formatting.formatCalendarDate("2026-01-01", { month: "long" })}</span>;
+}
+
+function UILocaleConsumer() {
+  return <span>{useLocalizationSettings().uiLocale}</span>;
 }
 
 describe("FormattingProvider", () => {
@@ -77,13 +92,27 @@ describe("FormattingProvider", () => {
     expect(screen.getByText("••••")).toBeInTheDocument();
   });
 
-  it("keeps UI language separate from regional number conventions", () => {
+  it("uses the formatting locale for numbers and calendar date content", () => {
     render(
       <FormattingProvider locale="DE" uiLocale="en">
         <RegionalNumber />
+        <RegionalCalendar />
+        <RegionalFormattedMonth />
       </FormattingProvider>,
     );
     expect(screen.getByText("1.234,56")).toBeInTheDocument();
+    expect(screen.getByText("Januar:1")).toBeInTheDocument();
+    expect(screen.getByText("Januar")).toBeInTheDocument();
+  });
+
+  it("keeps the UI locale available separately from the formatting locale", () => {
+    render(
+      <FormattingProvider locale="DE" uiLocale="en">
+        <UILocaleConsumer />
+      </FormattingProvider>,
+    );
+
+    expect(screen.getByText("en")).toBeInTheDocument();
   });
 
   it("reuses the provider-owned finance service across consumers", () => {
@@ -119,15 +148,15 @@ describe("FormattingProvider", () => {
     expect(updated.date).not.toBe(initial.date);
   });
 
-  it("throws clearly when the required provider is missing", () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    expect(() => render(<FormattingConsumer />)).toThrow(
-      "useLocalizationSettings must be used within a FormattingProvider",
+  it("keeps public components and hooks usable without a provider", () => {
+    render(
+      <>
+        <FormattingConsumer />
+        <AmountFormattingConsumer />
+        <AmountDisplay value={1234.56} currency="USD" />
+      </>,
     );
-    expect(() => render(<AmountFormattingConsumer />)).toThrow(
-      "useAmountFormatting must be used within a FormattingProvider",
-    );
-    consoleError.mockRestore();
+    expect(screen.getByText("$1,234.56")).toBeInTheDocument();
   });
 });
 

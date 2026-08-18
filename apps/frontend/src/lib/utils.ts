@@ -128,7 +128,7 @@ function isDateInRange(date: Date): boolean {
 
 export function formatDate(
   input: string | number | Date | null | undefined,
-  formatting: Pick<FormattingApi, "formatDate">,
+  formatting: Pick<FormattingApi, "formatDate" | "formatCalendarDate">,
 ): string {
   if (input === null || input === undefined) {
     return "-";
@@ -139,8 +139,16 @@ export function formatDate(
   if (input instanceof Date) {
     date = input;
   } else if (typeof input === "string") {
-    if (input.trim() === "") {
+    const trimmedInput = input.trim();
+    if (trimmedInput === "") {
       return "-";
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedInput)) {
+      try {
+        return formatting.formatCalendarDate(trimmedInput);
+      } catch {
+        // Fall through to the existing invalid-input behavior.
+      }
     }
     date = tryParseDate(input);
   } else if (typeof input === "number") {
@@ -192,12 +200,12 @@ export function formatTime(
 
 export function formatDistanceToNow(
   date: Date | number,
-  formatting: Pick<FormattingApi, "locale">,
+  localization: { locale: string; uiLocale: string },
   options?: Parameters<typeof formatDistanceToNowDateFns>[1],
 ): string {
   return formatDistanceToNowDateFns(date, {
     ...options,
-    locale: dateFnsLocaleFor(formatting.locale),
+    locale: dateFnsLocaleFor(localization.uiLocale),
   });
 }
 

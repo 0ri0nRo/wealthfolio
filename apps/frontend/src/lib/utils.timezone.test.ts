@@ -1,11 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createFormatter } from "@wealthfolio/ui";
-import { formatDateISO, formatDateTime, resolveDisplayTimezone } from "./utils";
+import {
+  formatDate,
+  formatDateISO,
+  formatDateTime,
+  formatDistanceToNow,
+  resolveDisplayTimezone,
+} from "./utils";
 
 const formatting = createFormatter("en-US");
 
 describe("timezone formatting", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("formats with configured timezone", () => {
     const instant = "2025-01-01T00:30:00Z";
     const timezone = "America/Los_Angeles";
@@ -50,5 +60,24 @@ describe("timezone formatting", () => {
     } finally {
       process.env.TZ = originalTimezone;
     }
+  });
+
+  it("keeps date-only values on the same calendar day", () => {
+    const configuredFormatting = createFormatter("en-US", "Pacific/Honolulu");
+
+    expect(formatDate("2026-07-10", configuredFormatting)).toBe("Jul 10, 2026");
+  });
+
+  it("uses the UI language for relative prose, independently of date formatting", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-18T12:00:00Z"));
+
+    expect(
+      formatDistanceToNow(
+        new Date("2026-08-16T12:00:00Z"),
+        { locale: "fr-FR", uiLocale: "en" },
+        { addSuffix: true },
+      ),
+    ).toBe("2 days ago");
   });
 });

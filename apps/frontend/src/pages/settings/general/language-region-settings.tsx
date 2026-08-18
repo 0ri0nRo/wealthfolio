@@ -31,6 +31,8 @@ const FORMATTING_REGION_OPTIONS = [
   ["ES", "spain"],
   ["MX", "mexico"],
   ["CN", "china"],
+  ["JP", "japan"],
+  ["KR", "southKorea"],
 ] as const;
 
 export function LanguageRegionSettings() {
@@ -57,10 +59,7 @@ export function LanguageRegionSettings() {
   };
 
   const preview = useMemo(() => {
-    const formatter = createFormatter(
-      resolveFormattingLocale(formattingRegion, language),
-      timezone,
-    );
+    const formatter = createFormatter(resolveFormattingLocale(formattingRegion), timezone);
     const sample = new Date(2026, 6, 10, 14, 30);
     return [
       formatter.formatDate(sample, { dateStyle: "short" }),
@@ -68,7 +67,7 @@ export function LanguageRegionSettings() {
       formatter.formatAmount(1234.56, "CAD"),
       formatter.formatTime(sample, { timeStyle: "short" }),
     ].join(" · ");
-  }, [formattingRegion, language, timezone]);
+  }, [formattingRegion, timezone]);
 
   return (
     <Card>
@@ -115,7 +114,7 @@ export function LanguageRegionSettings() {
               {FORMATTING_REGION_OPTIONS.map(([value, labelKey]) => (
                 <SelectItem key={value} value={value}>
                   {value === "system"
-                    ? `${t(`settings:formattingRegion.options.${labelKey}`)} (${resolveFormattingLocale(value, language)})`
+                    ? `${t(`settings:formattingRegion.options.${labelKey}`)} (${resolveFormattingLocale(value)})`
                     : t(`settings:formattingRegion.options.${labelKey}`)}
                 </SelectItem>
               ))}

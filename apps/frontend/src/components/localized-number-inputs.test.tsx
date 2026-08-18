@@ -70,6 +70,35 @@ describe("localized financial input paste", () => {
     expect(onValueChange).toHaveBeenLastCalledWith(1234.56);
   });
 
+  it("normalizes full-width CJK numeric input", () => {
+    const onValueChange = vi.fn();
+    render(
+      <FormattingProvider locale="ja-JP">
+        <MoneyInput onValueChange={onValueChange} />
+      </FormattingProvider>,
+    );
+
+    paste("￥１，２３４．５６");
+
+    expect(onValueChange).toHaveBeenLastCalledWith(1234.56);
+  });
+
+  it.each([
+    ["fr-FR", "1\u202f234,56\u00a0$US"],
+    ["ja-JP", "元\u00a01,234.56"],
+  ])("pastes localized currency output for %s", (locale, clipboardValue) => {
+    const onValueChange = vi.fn();
+    render(
+      <FormattingProvider locale={locale}>
+        <MoneyInput onValueChange={onValueChange} />
+      </FormattingProvider>,
+    );
+
+    paste(clipboardValue);
+
+    expect(onValueChange).toHaveBeenLastCalledWith(1234.56);
+  });
+
   it("leaves partial plain-number pastes to the input", () => {
     const onValueChange = vi.fn();
     render(

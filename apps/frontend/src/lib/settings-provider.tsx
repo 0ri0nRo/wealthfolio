@@ -1,4 +1,5 @@
 import { isDesktop, logger } from "@/adapters";
+import { setAddonLocalizationSnapshot } from "@/addons/iframe/addon-sandbox-localization";
 import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 
 import { useSettings } from "@/hooks/use-settings";
@@ -6,7 +7,7 @@ import { useSettingsMutation } from "@/hooks/use-settings-mutation";
 import i18n from "@/i18n/i18n";
 import { DEFAULT_LOCALE } from "@/i18n/locales";
 import { Settings, SettingsContextType } from "@/lib/types";
-import { FormattingProvider } from "@wealthfolio/ui";
+import { FormattingProvider, resolveFormattingLocale } from "@wealthfolio/ui";
 
 interface ExtendedSettingsContextType extends SettingsContextType {
   updateSettings: (
@@ -97,6 +98,17 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   };
   const formattingRegion = settings ? settings.formattingRegion : "system";
   const uiLocale = settings ? settings.language : DEFAULT_LOCALE;
+  const resolvedFormattingLocale = resolveFormattingLocale(formattingRegion);
+  const formattingTimezone = settings?.timezone || undefined;
+
+  useEffect(() => {
+    setAddonLocalizationSnapshot({
+      locale: resolvedFormattingLocale,
+      uiLocale,
+      timezone: formattingTimezone,
+    });
+  }, [resolvedFormattingLocale, uiLocale, formattingTimezone]);
+
   if (settings && !formattingRegion) {
     throw new Error("Loaded settings are missing the required formatting region");
   }
@@ -109,7 +121,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       <FormattingProvider
         locale={formattingRegion}
         uiLocale={uiLocale}
-        timezone={settings?.timezone || undefined}
+        timezone={formattingTimezone}
       >
         {children}
       </FormattingProvider>
