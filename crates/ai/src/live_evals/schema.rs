@@ -68,7 +68,7 @@ pub struct Case {
     pub max_tool_calls: HashMap<String, u32>,
 
     /// Optional rubric for grading the agent's final text reply with an
-    /// LLM-as-judge. Skip the case if the judge model is unavailable.
+    /// LLM-as-judge. Judge errors fail the case rather than silently skipping it.
     #[serde(default)]
     pub expected_response: Option<ResponseRubric>,
 }
