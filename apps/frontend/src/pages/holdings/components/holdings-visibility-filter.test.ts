@@ -5,6 +5,7 @@ import {
   compareCashFirst,
   DEFAULT_HOLDINGS_VISIBILITY,
   filterHoldingsByVisibility,
+  getEffectiveHoldingsVisibility,
   hasNonDefaultHoldingsVisibility,
   isClosedPosition,
 } from "./holdings-visibility";
@@ -56,6 +57,15 @@ describe("holdings visibility filters", () => {
     expect(hasNonDefaultHoldingsVisibility(["open"])).toBe(false);
     expect(hasNonDefaultHoldingsVisibility(["closed"])).toBe(true);
     expect(hasNonDefaultHoldingsVisibility(["open", "cash"])).toBe(true);
+  });
+
+  it("removes unsupported closed visibility for snapshot accounts", () => {
+    expect(getEffectiveHoldingsVisibility(["open", "closed", "cash"], false)).toEqual([
+      "open",
+      "cash",
+    ]);
+    expect(getEffectiveHoldingsVisibility(["closed"], false)).toEqual(["open"]);
+    expect(getEffectiveHoldingsVisibility(["closed"], true)).toEqual(["closed"]);
   });
 
   it("does not classify a zero cash balance as a closed position", () => {

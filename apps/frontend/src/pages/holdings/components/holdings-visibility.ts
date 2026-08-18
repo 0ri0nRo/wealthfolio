@@ -6,6 +6,17 @@ export type HoldingsVisibilityFilter = "open" | "closed" | "cash";
 export const DEFAULT_HOLDINGS_VISIBILITY: HoldingsVisibilityFilter[] = ["open"];
 export const HOLDINGS_VISIBILITY_STORAGE_KEY = "holdings-visibility-filters-v2";
 
+export function getEffectiveHoldingsVisibility(
+  filters: HoldingsVisibilityFilter[],
+  allowClosedPositions: boolean,
+): HoldingsVisibilityFilter[] {
+  const supportedFilters = allowClosedPositions
+    ? filters
+    : filters.filter((filter) => filter !== "closed");
+
+  return supportedFilters.length > 0 ? supportedFilters : [...DEFAULT_HOLDINGS_VISIBILITY];
+}
+
 export function isCashHolding(holding: Holding): boolean {
   return holding.holdingType === HoldingType.CASH;
 }

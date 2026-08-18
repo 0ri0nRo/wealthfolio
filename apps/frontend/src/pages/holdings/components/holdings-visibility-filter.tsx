@@ -6,17 +6,23 @@ import type { HoldingsVisibilityFilter } from "./holdings-visibility";
 interface HoldingsVisibilityFacetProps {
   value: HoldingsVisibilityFilter[];
   onChange: (value: HoldingsVisibilityFilter[]) => void;
+  showClosedPositions?: boolean;
 }
 
-export function HoldingsVisibilityFacet({ value, onChange }: HoldingsVisibilityFacetProps) {
+export function HoldingsVisibilityFacet({
+  value,
+  onChange,
+  showClosedPositions = true,
+}: HoldingsVisibilityFacetProps) {
   const { t } = useTranslation();
   const options = useMemo(
-    () => [
-      { value: "open", label: t("holdings:open") },
-      { value: "closed", label: t("holdings:closed") },
-      { value: "cash", label: t("holdings:cash") },
-    ],
-    [t],
+    () =>
+      [
+        { value: "open", label: t("holdings:open") },
+        ...(showClosedPositions ? [{ value: "closed", label: t("holdings:closed") }] : []),
+        { value: "cash", label: t("holdings:cash") },
+      ] as { value: HoldingsVisibilityFilter; label: string }[],
+    [showClosedPositions, t],
   );
 
   return (

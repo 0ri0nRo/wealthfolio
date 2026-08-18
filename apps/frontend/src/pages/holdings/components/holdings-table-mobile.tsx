@@ -49,6 +49,7 @@ interface HoldingsTableMobileProps {
   typeOptions?: { value: string; label: string }[];
   visibilityFilters?: HoldingsVisibilityFilter[];
   setVisibilityFilters?: (value: HoldingsVisibilityFilter[]) => void;
+  showClosedPositions?: boolean;
   toolbarActions?: ReactNode;
 }
 
@@ -71,6 +72,7 @@ export const HoldingsTableMobile = ({
   typeOptions,
   visibilityFilters = DEFAULT_HOLDINGS_VISIBILITY,
   setVisibilityFilters,
+  showClosedPositions = true,
   toolbarActions,
 }: HoldingsTableMobileProps) => {
   const { t } = useTranslation();
@@ -320,6 +322,7 @@ export const HoldingsTableMobile = ({
         typeOptions={typeOptions}
         visibilityFilters={visibilityFilters}
         setVisibilityFilters={setVisibilityFilters}
+        showClosedPositions={showClosedPositions}
       />
     </div>
   );

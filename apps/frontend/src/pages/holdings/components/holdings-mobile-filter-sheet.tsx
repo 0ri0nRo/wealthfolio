@@ -43,6 +43,7 @@ interface HoldingsMobileFilterSheetProps {
   typeOptions?: { value: string; label: string }[];
   visibilityFilters?: HoldingsVisibilityFilter[];
   setVisibilityFilters?: (value: HoldingsVisibilityFilter[]) => void;
+  showClosedPositions?: boolean;
 }
 
 export const HoldingsMobileFilterSheet = ({
@@ -64,8 +65,15 @@ export const HoldingsMobileFilterSheet = ({
   typeOptions,
   visibilityFilters = DEFAULT_HOLDINGS_VISIBILITY,
   setVisibilityFilters,
+  showClosedPositions = true,
 }: HoldingsMobileFilterSheetProps) => {
   const { t } = useTranslation();
+  const visibilityOptions: { value: HoldingsVisibilityFilter; label: string }[] = [
+    { value: "open", label: t("holdings:open") },
+    ...(showClosedPositions ? [{ value: "closed" as const, label: t("holdings:closed") }] : []),
+    { value: "cash", label: t("holdings:cash") },
+  ];
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -122,13 +130,7 @@ export const HoldingsMobileFilterSheet = ({
                   {t("common:view")}
                 </h4>
                 <div className="overflow-hidden rounded-lg border">
-                  {(
-                    [
-                      { value: "open", label: t("holdings:open") },
-                      { value: "closed", label: t("holdings:closed") },
-                      { value: "cash", label: t("holdings:cash") },
-                    ] as const
-                  ).map((option, index) => {
+                  {visibilityOptions.map((option, index) => {
                     const isSelected = visibilityFilters.includes(option.value);
                     return (
                       <button

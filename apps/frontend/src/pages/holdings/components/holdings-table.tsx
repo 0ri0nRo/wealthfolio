@@ -76,12 +76,14 @@ export const HoldingsTable = ({
   onClassify,
   visibilityFilters,
   setVisibilityFilters,
+  showClosedPositions = true,
 }: {
   holdings: Holding[];
   isLoading: boolean;
   onClassify?: (holding: Holding) => void;
   visibilityFilters?: HoldingsVisibilityFilter[];
   setVisibilityFilters?: (value: HoldingsVisibilityFilter[]) => void;
+  showClosedPositions?: boolean;
 }) => {
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
@@ -157,7 +159,11 @@ export const HoldingsTable = ({
         pinRowsToTop={isCashHolding}
         toolbarFilters={
           visibilityFilters && setVisibilityFilters ? (
-            <HoldingsVisibilityFacet value={visibilityFilters} onChange={setVisibilityFilters} />
+            <HoldingsVisibilityFacet
+              value={visibilityFilters}
+              onChange={setVisibilityFilters}
+              showClosedPositions={showClosedPositions}
+            />
           ) : undefined
         }
         toolbarActions={

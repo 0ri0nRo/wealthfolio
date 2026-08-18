@@ -2085,14 +2085,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_zero_quantity_security() {
+    async fn test_zero_quantity_security_does_not_fetch_quotes() {
         let (_fx_service, market_data_service, valuation_service) = setup_test_env();
 
-        market_data_service.add_quote_pair(
-            "XYZ.TO",
-            create_quote("2024-01-10", dec!(150.0), "CAD"),
-            Some(create_quote("2024-01-09", dec!(145.0), "CAD")),
-        );
+        *market_data_service.should_fail.lock().unwrap() = true;
 
         let mut holdings = vec![create_holding(
             "h_zero",

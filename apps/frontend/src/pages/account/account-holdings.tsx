@@ -22,6 +22,7 @@ import {
   DEFAULT_HOLDINGS_VISIBILITY,
   HOLDINGS_VISIBILITY_STORAGE_KEY,
   filterHoldingsByVisibility,
+  getEffectiveHoldingsVisibility,
   type HoldingsVisibilityFilter,
 } from "@/pages/holdings/components/holdings-visibility";
 
@@ -47,14 +48,6 @@ const AccountHoldings = ({
     [...DEFAULT_HOLDINGS_VISIBILITY],
   );
 
-  const { holdings, isLoading } = useHoldings(
-    {
-      type: "account",
-      accountId,
-    },
-    { includeClosed: true },
-  );
-
   const { accounts } = useAccounts();
 
   const selectedAccount = useMemo(() => {
@@ -66,6 +59,20 @@ const AccountHoldings = ({
     if (!selectedAccount) return false;
     return selectedAccount.trackingMode === "HOLDINGS";
   }, [selectedAccount]);
+
+  const showClosedPositions = !isHoldingsMode;
+  const effectiveVisibilityFilters = useMemo(
+    () => getEffectiveHoldingsVisibility(visibilityFilters, showClosedPositions),
+    [showClosedPositions, visibilityFilters],
+  );
+
+  const { holdings, isLoading } = useHoldings(
+    {
+      type: "account",
+      accountId,
+    },
+    { includeClosed: effectiveVisibilityFilters.includes("closed") },
+  );
 
   // Check if user can directly edit holdings (manual HOLDINGS-mode accounts only)
   const canEditHoldingsDirectly = useMemo(() => {
@@ -79,7 +86,7 @@ const AccountHoldings = ({
     return accountType === AccountType.CASH || isLiabilityAccountType(accountType);
   }, [selectedAccount]);
 
-  const filteredHoldings = filterHoldingsByVisibility(holdings ?? [], visibilityFilters);
+  const filteredHoldings = filterHoldingsByVisibility(holdings ?? [], effectiveVisibilityFilters);
 
   const typeOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -246,15 +253,17 @@ const AccountHoldings = ({
           portfolios={[]}
           showAccountScope={false}
           typeOptions={typeOptions}
-          visibilityFilters={visibilityFilters}
+          visibilityFilters={effectiveVisibilityFilters}
           setVisibilityFilters={setVisibilityFilters}
+          showClosedPositions={showClosedPositions}
         />
       ) : (
         <HoldingsTable
           holdings={filteredHoldings ?? []}
           isLoading={isLoading}
-          visibilityFilters={visibilityFilters}
+          visibilityFilters={effectiveVisibilityFilters}
           setVisibilityFilters={setVisibilityFilters}
+          showClosedPositions={showClosedPositions}
         />
       )}
     </div>

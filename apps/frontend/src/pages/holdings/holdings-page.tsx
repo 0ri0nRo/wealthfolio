@@ -41,6 +41,7 @@ import {
   DEFAULT_HOLDINGS_VISIBILITY,
   HOLDINGS_VISIBILITY_STORAGE_KEY,
   filterHoldingsByVisibility,
+  getEffectiveHoldingsVisibility,
   isClosedPosition,
   type HoldingsVisibilityFilter,
 } from "./components/holdings-visibility";
@@ -82,7 +83,15 @@ export const HoldingsPage = () => {
   // Keep selectedAccount for edit/add functionality when a specific account is selected.
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
 
-  const { holdings, isLoading } = useHoldings(accountFilter, { includeClosed: true });
+  const showClosedPositions = selectedAccount?.trackingMode !== "HOLDINGS";
+  const effectiveVisibilityFilters = useMemo(
+    () => getEffectiveHoldingsVisibility(visibilityFilters, showClosedPositions),
+    [showClosedPositions, visibilityFilters],
+  );
+
+  const { holdings, isLoading } = useHoldings(accountFilter, {
+    includeClosed: effectiveVisibilityFilters.includes("closed"),
+  });
   const { accounts, isLoading: isAccountsLoading } = useAccounts({
     accountPurpose: AccountPurpose.HOLDINGS,
   });
@@ -356,7 +365,7 @@ export const HoldingsPage = () => {
       }
     }
 
-    let filtered = filterHoldingsByVisibility(scopedHoldings, visibilityFilters);
+    let filtered = filterHoldingsByVisibility(scopedHoldings, effectiveVisibilityFilters);
 
     if (selectedTypes.length > 0) {
       filtered = filtered.filter((holding) => {
@@ -376,7 +385,7 @@ export const HoldingsPage = () => {
       filteredHoldings: filtered,
       availableTypeOptions: typeOptions,
     };
-  }, [holdings, visibilityFilters, selectedTypes, investmentsFilter, healthFilter]);
+  }, [holdings, effectiveVisibilityFilters, selectedTypes, investmentsFilter, healthFilter]);
 
   // Combined loading state
   const isDataLoading = isLoading || isAccountsLoading || isAlternativeHoldingsLoading;
@@ -493,8 +502,9 @@ export const HoldingsPage = () => {
             <HoldingsTable
               holdings={filteredHoldings ?? []}
               isLoading={isDataLoading}
-              visibilityFilters={visibilityFilters}
+              visibilityFilters={effectiveVisibilityFilters}
               setVisibilityFilters={setVisibilityFilters}
+              showClosedPositions={showClosedPositions}
               onClassify={(holding) =>
                 setClassifyAsset({
                   id: holding.instrument?.id ?? holding.id,
@@ -523,8 +533,9 @@ export const HoldingsPage = () => {
               performanceMode={performanceMode}
               setPerformanceMode={setPerformanceMode}
               typeOptions={availableTypeOptions}
-              visibilityFilters={visibilityFilters}
+              visibilityFilters={effectiveVisibilityFilters}
               setVisibilityFilters={setVisibilityFilters}
+              showClosedPositions={showClosedPositions}
               toolbarActions={
                 isMobileViewport && currentTab === "investments" ? (
                   <ActionPalette
