@@ -9,7 +9,7 @@ import { SwipablePage, SwipablePageView } from "@/components/page";
 import { AccountScopeSelector } from "@/components/account-filter-selector";
 import { ActionPalette, type ActionPaletteGroup } from "@/components/action-palette";
 import { useAccounts } from "@/hooks/use-accounts";
-import { useHoldings } from "@/hooks/use-holdings";
+import { useHoldingsWithClosedProbe } from "@/hooks/use-holdings";
 import { usePortfolios } from "@/hooks/use-portfolios";
 import {
   useAlternativeHoldings,
@@ -89,9 +89,14 @@ export const HoldingsPage = () => {
     [showClosedPositions, visibilityFilters],
   );
 
-  const { holdings, isLoading } = useHoldings(accountFilter, {
-    includeClosed: effectiveVisibilityFilters.includes("closed"),
-  });
+  const includeClosed = effectiveVisibilityFilters.includes("closed");
+  const { holdings, isLoading, hasHiddenClosedPositions } = useHoldingsWithClosedProbe(
+    accountFilter,
+    {
+      includeClosed,
+      probeClosedWhenEmpty: showClosedPositions,
+    },
+  );
   const { accounts, isLoading: isAccountsLoading } = useAccounts({
     accountPurpose: AccountPurpose.HOLDINGS,
   });
@@ -389,9 +394,11 @@ export const HoldingsPage = () => {
 
   // Combined loading state
   const isDataLoading = isLoading || isAccountsLoading || isAlternativeHoldingsLoading;
+  const hasHiddenInvestmentPositions =
+    hasHiddenClosedPositions || (holdings.length > 0 && filteredHoldings.length === 0);
 
   // Empty state checks
-  const hasNoInvestments = !isDataLoading && holdings.length === 0;
+  const hasNoInvestments = !isDataLoading && holdings.length === 0 && !hasHiddenClosedPositions;
   const hasNoAssets = !isDataLoading && assetsHoldings.length === 0;
   const hasNoLiabilities = !isDataLoading && liabilitiesHoldings.length === 0;
   const hasMobileInvestmentsToolbar =
@@ -536,6 +543,7 @@ export const HoldingsPage = () => {
               visibilityFilters={effectiveVisibilityFilters}
               setVisibilityFilters={setVisibilityFilters}
               showClosedPositions={showClosedPositions}
+              hasHiddenPositions={hasHiddenInvestmentPositions}
               toolbarActions={
                 isMobileViewport && currentTab === "investments" ? (
                   <ActionPalette

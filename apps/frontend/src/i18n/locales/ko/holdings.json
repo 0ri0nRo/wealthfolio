@@ -13,6 +13,7 @@
   "gain_loss_percent": "손익률",
   "today_gain": "오늘의 손익",
   "weight": "비중",
+  "weight_value": "비중 {{value}}",
   "sector": "섹터",
   "asset_class": "자산군",
   "sort_by": "정렬 기준",

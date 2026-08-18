@@ -70,7 +70,6 @@ import { useActivityActionDialogs } from "@/pages/activity/hooks/use-activity-ac
 import { useActivitySearch } from "@/pages/activity/hooks/use-activity-search";
 import { PortfolioUpdateTrigger } from "@/pages/dashboard/portfolio-update-trigger";
 import { HoldingsEditMode } from "@/pages/holdings/components/holdings-edit-mode";
-import { isClosedPosition } from "@/pages/holdings/components/holdings-visibility";
 import { useCalculatePerformanceHistory } from "@/pages/performance/hooks/use-performance-data";
 import { useQuery } from "@tanstack/react-query";
 import type { SortingState } from "@tanstack/react-table";
@@ -249,22 +248,15 @@ const AccountPage = () => {
     return canAddHoldings(account);
   }, [account]);
 
-  const { holdings, isLoading: isHoldingsLoading } = useHoldings(
-    {
-      type: "account",
-      accountId: id,
-    },
-    { includeClosed: true },
-  );
-  const activeHoldings = useMemo(
-    () => holdings.filter((holding) => !isClosedPosition(holding)),
-    [holdings],
-  );
+  const { holdings, isLoading: isHoldingsLoading } = useHoldings({
+    type: "account",
+    accountId: id,
+  });
 
   // Check if account has any holdings (including cash)
   const hasHoldings = useMemo(() => {
-    return activeHoldings.length > 0;
-  }, [activeHoldings]);
+    return holdings.length > 0;
+  }, [holdings]);
 
   const hasNonCashHoldings = useMemo(() => {
     if (!holdings) return false;
@@ -1180,7 +1172,7 @@ const AccountPage = () => {
             </SheetHeader>
             <div className="flex-1 overflow-hidden px-6">
               <HoldingsEditMode
-                holdings={activeHoldings}
+                holdings={holdings}
                 account={account}
                 isLoading={isHoldingsLoading}
                 onClose={() => {

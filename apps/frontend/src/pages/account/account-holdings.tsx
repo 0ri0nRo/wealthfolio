@@ -1,5 +1,5 @@
 import { useAccounts } from "@/hooks/use-accounts";
-import { useHoldings } from "@/hooks/use-holdings";
+import { useHoldingsWithClosedProbe } from "@/hooks/use-holdings";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { AccountType, isLiabilityAccountType } from "@/lib/constants";
 import { canAddHoldings } from "@/lib/activity-restrictions";
@@ -66,12 +66,16 @@ const AccountHoldings = ({
     [showClosedPositions, visibilityFilters],
   );
 
-  const { holdings, isLoading } = useHoldings(
+  const includeClosed = effectiveVisibilityFilters.includes("closed");
+  const { holdings, isLoading, hasHiddenClosedPositions } = useHoldingsWithClosedProbe(
     {
       type: "account",
       accountId,
     },
-    { includeClosed: effectiveVisibilityFilters.includes("closed") },
+    {
+      includeClosed,
+      probeClosedWhenEmpty: showClosedPositions,
+    },
   );
 
   // Check if user can directly edit holdings (manual HOLDINGS-mode accounts only)
@@ -79,14 +83,15 @@ const AccountHoldings = ({
     return canAddHoldings(selectedAccount ?? undefined);
   }, [selectedAccount]);
 
-  // Cash and credit-card accounts hold no investments, so a "no holdings"
-  // empty state never applies — they only track activity / cash balance.
+  // Cash and credit-card accounts track activity and cash rather than investments.
   const isCashOrCreditAccount = useMemo(() => {
     const accountType = selectedAccount?.accountType;
     return accountType === AccountType.CASH || isLiabilityAccountType(accountType);
   }, [selectedAccount]);
 
   const filteredHoldings = filterHoldingsByVisibility(holdings ?? [], effectiveVisibilityFilters);
+  const hasHiddenPositions =
+    hasHiddenClosedPositions || (holdings.length > 0 && filteredHoldings.length === 0);
 
   const typeOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -107,15 +112,13 @@ const AccountHoldings = ({
   }
 
   // Show empty state when there are no holdings
-  if (holdings.length === 0) {
+  if (holdings.length === 0 && !hasHiddenClosedPositions) {
     if (!showEmptyState) {
       return null;
     }
 
-    // Cash / credit-card accounts have no investment holdings by nature. When
-    // the account already has activity (a cash balance), show nothing here —
-    // the balance lives in the metrics panel. Only prompt to add an activity
-    // when there is no activity at all.
+    // For cash / credit-card accounts, an empty holdings response means there
+    // is no activity-derived cash position to display yet.
     if (isCashOrCreditAccount) {
       return (
         <div className="flex items-center justify-center py-16">
@@ -256,6 +259,7 @@ const AccountHoldings = ({
           visibilityFilters={effectiveVisibilityFilters}
           setVisibilityFilters={setVisibilityFilters}
           showClosedPositions={showClosedPositions}
+          hasHiddenPositions={hasHiddenPositions}
         />
       ) : (
         <HoldingsTable

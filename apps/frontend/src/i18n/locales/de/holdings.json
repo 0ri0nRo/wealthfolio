@@ -13,6 +13,7 @@
   "gain_loss_percent": "Gewinn/Verlust %",
   "today_gain": "Heutiger Gewinn",
   "weight": "Gewichtung",
+  "weight_value": "Gewichtung {{value}}",
   "sector": "Sektor",
   "asset_class": "Anlageklasse",
   "sort_by": "Sortieren nach",

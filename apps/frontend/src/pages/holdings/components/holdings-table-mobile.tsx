@@ -50,6 +50,7 @@ interface HoldingsTableMobileProps {
   visibilityFilters?: HoldingsVisibilityFilter[];
   setVisibilityFilters?: (value: HoldingsVisibilityFilter[]) => void;
   showClosedPositions?: boolean;
+  hasHiddenPositions?: boolean;
   toolbarActions?: ReactNode;
 }
 
@@ -73,6 +74,7 @@ export const HoldingsTableMobile = ({
   visibilityFilters = DEFAULT_HOLDINGS_VISIBILITY,
   setVisibilityFilters,
   showClosedPositions = true,
+  hasHiddenPositions = false,
   toolbarActions,
 }: HoldingsTableMobileProps) => {
   const { t } = useTranslation();
@@ -253,7 +255,9 @@ export const HoldingsTableMobile = ({
                     )}
                     {isCash && (
                       <p className="text-muted-foreground text-xs">
-                        {t("holdings:weight")} {formatPercent(holding.weight ?? 0)}
+                        {t("holdings:weight_value", {
+                          value: formatPercent(holding.weight ?? 0),
+                        })}
                       </p>
                     )}
                     {!isCash &&
@@ -296,7 +300,7 @@ export const HoldingsTableMobile = ({
           <div className="flex h-48 flex-col items-center justify-center rounded-lg border border-dashed p-8 text-center">
             <h3 className="text-lg font-medium">{t("holdings:no_positions_found")}</h3>
             <p className="text-muted-foreground text-sm">
-              {holdings.length === 0
+              {holdings.length === 0 && !hasHiddenPositions
                 ? t("holdings:add_activities_prompt")
                 : t("holdings:try_adjusting_filters")}
             </p>

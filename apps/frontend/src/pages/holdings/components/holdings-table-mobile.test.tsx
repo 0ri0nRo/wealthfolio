@@ -61,4 +61,25 @@ describe("HoldingsTableMobile", () => {
 
     expect(screen.getByText("Weight 25.00%")).toBeInTheDocument();
   });
+
+  it("suggests changing filters when closed positions are hidden", () => {
+    render(
+      <HoldingsTableMobile
+        holdings={[]}
+        isLoading={false}
+        selectedTypes={[]}
+        setSelectedTypes={vi.fn()}
+        accountFilter={{ type: "all" }}
+        onAccountScopeChange={vi.fn()}
+        accounts={[]}
+        portfolios={[]}
+        hasHiddenPositions
+      />,
+    );
+
+    expect(screen.getByText("Try adjusting your search or filter criteria.")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Add activities to see your positions here."),
+    ).not.toBeInTheDocument();
+  });
 });
