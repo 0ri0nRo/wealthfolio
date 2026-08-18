@@ -212,7 +212,7 @@ export function formatDistanceToNow(
 export const formatDateTime = (
   date: string | Date,
   formatting: Pick<FormattingApi, "formatDate" | "formatTime">,
-  _timezone?: string,
+  timezone?: string,
 ) => {
   if (!date) return { date: "-", time: "-" };
 
@@ -235,16 +235,21 @@ export const formatDateTime = (
     return { date: "-", time: "-" };
   }
 
+  const explicitTimezone = timezone?.trim();
+  const effectiveTimezone = explicitTimezone ? resolveDisplayTimezone(explicitTimezone) : undefined;
+
   const dateOptions: Intl.DateTimeFormatOptions = {
     year: "numeric",
     month: "short",
     day: "numeric",
+    ...(effectiveTimezone ? { timeZone: effectiveTimezone } : {}),
   };
 
   const timeOptions: Intl.DateTimeFormatOptions = {
     hour: "numeric",
     minute: "numeric",
     second: "numeric",
+    ...(effectiveTimezone ? { timeZone: effectiveTimezone } : {}),
   };
   return {
     date: formatting.formatDate(dateObj, dateOptions),

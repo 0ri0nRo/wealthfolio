@@ -9,7 +9,7 @@ import {
   resolveDisplayTimezone,
 } from "./utils";
 
-const formatting = createFormatter("en-US");
+const formatting = createFormatter("en-US", "UTC");
 
 describe("timezone formatting", () => {
   afterEach(() => {
@@ -26,9 +26,16 @@ describe("timezone formatting", () => {
       day: "numeric",
       timeZone: timezone,
     }).format(new Date(instant));
+    const expectedTime = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "numeric",
+      second: "numeric",
+      timeZone: timezone,
+    }).format(new Date(instant));
 
     const formatted = formatDateTime(instant, formatting, timezone);
     expect(formatted.date).toBe(expectedDate);
+    expect(formatted.time).toBe(expectedTime);
   });
 
   it("falls back to browser timezone for invalid configured timezone", () => {
