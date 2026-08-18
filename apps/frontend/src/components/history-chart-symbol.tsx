@@ -154,11 +154,7 @@ export default function HistoryChart({
                 strokeWidth={1}
                 ifOverflow="extendDomain"
                 label={{
-                  value: amountFormatting.formatPrice(
-                    averageCost,
-                    data[0]?.currency ?? "",
-                    false,
-                  ),
+                  value: amountFormatting.formatPrice(averageCost, data[0]?.currency ?? "", false),
                   position: "insideBottomLeft",
                   fill: "var(--foreground)",
                   fontSize: 11,

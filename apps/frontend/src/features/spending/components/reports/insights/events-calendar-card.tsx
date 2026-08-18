@@ -42,15 +42,11 @@ export const EventsCalendarCard: FC<Props> = ({ events, currency, selectedId, on
     cursor,
   );
   const dayNames = Array.from({ length: 7 }, (_, index) =>
-    dateFormatting.formatCalendarDate(
-      calendarDateFromLocalDate(new Date(2026, 7, 2 + index)),
-      { weekday: "short" },
-    ),
+    dateFormatting.formatCalendarDate(calendarDateFromLocalDate(new Date(2026, 7, 2 + index)), {
+      weekday: "short",
+    }),
   );
-  const orderedDayNames = [
-    ...dayNames.slice(weekStartsOn),
-    ...dayNames.slice(0, weekStartsOn),
-  ];
+  const orderedDayNames = [...dayNames.slice(weekStartsOn), ...dayNames.slice(0, weekStartsOn)];
 
   return (
     <div className={CARD_CLASS}>

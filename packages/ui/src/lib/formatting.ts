@@ -435,9 +435,9 @@ export function parseLocalizedDate(value: string, locale: string): Date | undefi
   const resolvedLocale = locale && locale !== "system" ? locale : resolveFormattingLocale(locale);
   const text = normalizeLocalizedDigits(
     value
-    .normalize("NFKC")
-    .trim()
-    .replace(/[\u061c\u200e\u200f]/gu, ""),
+      .normalize("NFKC")
+      .trim()
+      .replace(/[\u061c\u200e\u200f]/gu, ""),
     resolvedLocale,
   );
   if (

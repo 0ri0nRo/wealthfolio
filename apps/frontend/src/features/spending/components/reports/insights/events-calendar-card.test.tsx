@@ -23,12 +23,7 @@ describe("EventsCalendarCard", () => {
 
     render(
       <FormattingProvider locale="de-DE" uiLocale="en">
-        <EventsCalendarCard
-          events={[]}
-          currency="EUR"
-          selectedId={null}
-          onSelect={vi.fn()}
-        />
+        <EventsCalendarCard events={[]} currency="EUR" selectedId={null} onSelect={vi.fn()} />
       </FormattingProvider>,
     );
 

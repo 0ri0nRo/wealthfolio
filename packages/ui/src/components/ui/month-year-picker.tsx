@@ -86,10 +86,7 @@ function MonthYearPicker({ value, onChange, minDate, maxDate, className }: Month
       }),
     [formatting],
   );
-  const yearLabel = formatting.formatCalendarDate(
-    { year: viewYear, month: 1, day: 1 },
-    { year: "numeric" },
-  );
+  const yearLabel = formatting.formatCalendarDate({ year: viewYear, month: 1, day: 1 }, { year: "numeric" });
 
   const handlePrevYear = () => {
     if (canGoPrevYear) setViewYear((y) => y - 1);
