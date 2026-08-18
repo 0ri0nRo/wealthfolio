@@ -125,6 +125,8 @@
   "asset_currency": "资产货币",
   "base_currency": "基准货币",
   "manual": "手动",
+  "open": "持仓中",
+  "closed": "已平仓",
   "qty": "数量",
   "contracts": "份合约",
   "bonds": "份债券",

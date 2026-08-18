@@ -1,7 +1,6 @@
 import { useAccounts } from "@/hooks/use-accounts";
 import { useHoldings } from "@/hooks/use-holdings";
 import { useIsMobileViewport } from "@/hooks/use-platform";
-import { HoldingType } from "@/lib/types";
 import { AccountType, isLiabilityAccountType } from "@/lib/constants";
 import { canAddHoldings } from "@/lib/activity-restrictions";
 import { HoldingsTable } from "@/pages/holdings/components/holdings-table";
@@ -18,6 +17,13 @@ import {
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { usePersistentState } from "@/hooks/use-persistent-state";
+import {
+  DEFAULT_HOLDINGS_VISIBILITY,
+  HOLDINGS_VISIBILITY_STORAGE_KEY,
+  filterHoldingsByVisibility,
+  type HoldingsVisibilityFilter,
+} from "@/pages/holdings/components/holdings-visibility";
 
 interface AccountHoldingsProps {
   accountId: string;
@@ -36,11 +42,18 @@ const AccountHoldings = ({
   const isMobile = useIsMobileViewport();
   const navigate = useNavigate();
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
+  const [visibilityFilters, setVisibilityFilters] = usePersistentState<HoldingsVisibilityFilter[]>(
+    HOLDINGS_VISIBILITY_STORAGE_KEY,
+    [...DEFAULT_HOLDINGS_VISIBILITY],
+  );
 
-  const { holdings, isLoading } = useHoldings({
-    type: "account",
-    accountId,
-  });
+  const { holdings, isLoading } = useHoldings(
+    {
+      type: "account",
+      accountId,
+    },
+    { includeClosed: true },
+  );
 
   const { accounts } = useAccounts();
 
@@ -66,13 +79,12 @@ const AccountHoldings = ({
     return accountType === AccountType.CASH || isLiabilityAccountType(accountType);
   }, [selectedAccount]);
 
-  const filteredHoldings = holdings?.filter((holding) => holding.holdingType !== HoldingType.CASH);
+  const filteredHoldings = filterHoldingsByVisibility(holdings ?? [], visibilityFilters);
 
   const typeOptions = useMemo(() => {
-    if (!filteredHoldings) return [];
     const seen = new Set<string>();
     const options: { value: string; label: string }[] = [];
-    for (const h of filteredHoldings) {
+    for (const h of holdings ?? []) {
       const name = h.instrument?.classifications?.assetType?.name;
       if (name && !seen.has(name)) {
         seen.add(name);
@@ -80,7 +92,7 @@ const AccountHoldings = ({
       }
     }
     return options;
-  }, [filteredHoldings]);
+  }, [holdings]);
 
   // Show loading state while data is being fetched
   if (isLoading) {
@@ -88,7 +100,7 @@ const AccountHoldings = ({
   }
 
   // Show empty state when there are no holdings
-  if (!filteredHoldings || filteredHoldings.length === 0) {
+  if (holdings.length === 0) {
     if (!showEmptyState) {
       return null;
     }
@@ -98,10 +110,6 @@ const AccountHoldings = ({
     // the balance lives in the metrics panel. Only prompt to add an activity
     // when there is no activity at all.
     if (isCashOrCreditAccount) {
-      if (holdings && holdings.length > 0) {
-        return null;
-      }
-
       return (
         <div className="flex items-center justify-center py-16">
           <EmptyPlaceholder
@@ -238,9 +246,16 @@ const AccountHoldings = ({
           portfolios={[]}
           showAccountScope={false}
           typeOptions={typeOptions}
+          visibilityFilters={visibilityFilters}
+          setVisibilityFilters={setVisibilityFilters}
         />
       ) : (
-        <HoldingsTable holdings={filteredHoldings ?? []} isLoading={isLoading} />
+        <HoldingsTable
+          holdings={filteredHoldings ?? []}
+          isLoading={isLoading}
+          visibilityFilters={visibilityFilters}
+          setVisibilityFilters={setVisibilityFilters}
+        />
       )}
     </div>
   );

@@ -125,6 +125,8 @@
   "asset_currency": "Vermögenswährung",
   "base_currency": "Basiswährung",
   "manual": "Manuell",
+  "open": "Offen",
+  "closed": "Geschlossen",
   "qty": "Anz.",
   "contracts": "Kontrakte",
   "bonds": "Anleihen",

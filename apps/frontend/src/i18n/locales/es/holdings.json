@@ -125,6 +125,8 @@
   "asset_currency": "Divisa del activo",
   "base_currency": "Divisa base",
   "manual": "Manual",
+  "open": "Abierta",
+  "closed": "Cerrada",
   "qty": "Cant.",
   "contracts": "contratos",
   "bonds": "bonos",

@@ -125,6 +125,8 @@
   "asset_currency": "Asset Currency",
   "base_currency": "Base Currency",
   "manual": "Manual",
+  "open": "Open",
+  "closed": "Closed",
   "qty": "Qty",
   "contracts": "contracts",
   "bonds": "bonds",

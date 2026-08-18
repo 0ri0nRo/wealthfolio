@@ -4,15 +4,22 @@ import { HoldingType } from "@/lib/constants";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import { Account, AccountScope, Holding } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { AmountDisplay, GainPercent, Input, Separator } from "@wealthfolio/ui";
+import { AmountDisplay, Badge, GainPercent, Input, Separator } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Card } from "@wealthfolio/ui/components/ui/card";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { HoldingsMobileFilterSheet } from "./holdings-mobile-filter-sheet";
+import {
+  compareCashFirst,
+  DEFAULT_HOLDINGS_VISIBILITY,
+  hasNonDefaultHoldingsVisibility,
+  isClosedPosition,
+  type HoldingsVisibilityFilter,
+} from "./holdings-visibility";
 
 type PerformanceMode = "daily" | "pnl" | "return";
 
@@ -33,6 +40,9 @@ interface HoldingsTableMobileProps {
   performanceMode?: PerformanceMode;
   setPerformanceMode?: (value: PerformanceMode) => void;
   typeOptions?: { value: string; label: string }[];
+  visibilityFilters?: HoldingsVisibilityFilter[];
+  setVisibilityFilters?: (value: HoldingsVisibilityFilter[]) => void;
+  toolbarActions?: ReactNode;
 }
 
 export const HoldingsTableMobile = ({
@@ -52,6 +62,9 @@ export const HoldingsTableMobile = ({
   performanceMode: controlledPerformanceMode,
   setPerformanceMode: controlledSetPerformanceMode,
   typeOptions,
+  visibilityFilters = DEFAULT_HOLDINGS_VISIBILITY,
+  setVisibilityFilters,
+  toolbarActions,
 }: HoldingsTableMobileProps) => {
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
@@ -71,8 +84,9 @@ export const HoldingsTableMobile = ({
   const hasActiveFilters = useMemo(() => {
     const hasAccountScope = showAccountScope && accountFilter.type !== "all";
     const hasTypeFilter = selectedTypes.length > 0;
-    return hasAccountScope || hasTypeFilter;
-  }, [accountFilter, selectedTypes, showAccountScope]);
+    const hasVisibilityFilter = hasNonDefaultHoldingsVisibility(visibilityFilters);
+    return hasAccountScope || hasTypeFilter || hasVisibilityFilter;
+  }, [accountFilter, selectedTypes, showAccountScope, visibilityFilters]);
 
   const filteredHoldings = useMemo(() => {
     let result = [...holdings];
@@ -95,6 +109,9 @@ export const HoldingsTableMobile = ({
     }
 
     return result.sort((a, b) => {
+      const cashOrder = compareCashFirst(a, b);
+      if (cashOrder !== 0) return cashOrder;
+
       if (sortBy === "marketValue") {
         const valA = a.marketValue?.base ?? 0;
         const valB = b.marketValue?.base ?? 0;
@@ -144,15 +161,16 @@ export const HoldingsTableMobile = ({
               placeholder={t("holdings:search_placeholder")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-secondary/30 h-10 flex-1 rounded-full border-none"
+              className="bg-secondary/30 h-10 min-w-0 flex-1 rounded-full border-none"
             />
           )}
           {showFilterButton && (
             <Button
               variant="outline"
               size="icon"
-              className="relative size-9 shrink-0"
+              className="relative size-10 shrink-0 rounded-full"
               onClick={() => setIsFilterSheetOpen(true)}
+              aria-label={t("holdings:open_holdings_filters")}
             >
               <Icons.ListFilter className="h-4 w-4" />
               {hasActiveFilters && (
@@ -160,6 +178,7 @@ export const HoldingsTableMobile = ({
               )}
             </Button>
           )}
+          {toolbarActions}
         </div>
       )}
       <div className="space-y-2">
@@ -167,6 +186,7 @@ export const HoldingsTableMobile = ({
           filteredHoldings.map((holding) => {
             const symbol = holding.instrument?.symbol ?? holding.id;
             const isCash = holding.holdingType === HoldingType.CASH || symbol.startsWith("$CASH");
+            const isClosed = isClosedPosition(holding);
             const parsedOption = isCash ? null : parseOccSymbol(symbol);
             const avatarSymbol = isCash
               ? `CASH:${holding.localCurrency}`
@@ -178,9 +198,11 @@ export const HoldingsTableMobile = ({
               : parsedOption
                 ? parsedOption.underlying
                 : symbol;
-            const subtitle = parsedOption
-              ? `${new Date(parsedOption.expiration + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} $${parsedOption.strikePrice} ${parsedOption.optionType}`
-              : (holding.instrument?.name ?? null);
+            const subtitle = isCash
+              ? t("holdings:cash_balance")
+              : parsedOption
+                ? `${new Date(parsedOption.expiration + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} $${parsedOption.strikePrice} ${parsedOption.optionType}`
+                : (holding.instrument?.name ?? null);
             const isNavigable = !isCash && holding.instrument?.symbol;
 
             return (
@@ -198,6 +220,11 @@ export const HoldingsTableMobile = ({
                     <div className="flex-1 overflow-hidden">
                       <div className="flex items-center gap-1.5">
                         <p className="truncate font-semibold">{displaySymbol}</p>
+                        {isClosed && (
+                          <Badge variant="outline" className="h-4 px-1 py-0 text-[10px]">
+                            {t("holdings:closed")}
+                          </Badge>
+                        )}
                       </div>
                       {subtitle && (
                         <p className="text-muted-foreground truncate text-sm">{subtitle}</p>
@@ -205,38 +232,47 @@ export const HoldingsTableMobile = ({
                     </div>
                   </div>
                   <div className="ml-2 text-right">
-                    <AmountDisplay
-                      value={holding.marketValue?.local ?? 0}
-                      currency={holding.localCurrency}
-                      isHidden={isBalanceHidden}
-                      className="font-medium"
-                    />
-                    <div className="flex items-center justify-end gap-1">
+                    {isClosed ? (
+                      <p className="text-muted-foreground font-medium">—</p>
+                    ) : (
                       <AmountDisplay
-                        value={
-                          performanceMode === "return"
-                            ? (holding.totalReturn?.local ?? holding.totalGain?.local ?? 0)
-                            : performanceMode === "pnl"
-                              ? (holding.totalGain?.local ?? 0)
-                              : (holding.dayChange?.local ?? 0)
-                        }
+                        value={holding.marketValue?.local ?? 0}
                         currency={holding.localCurrency}
                         isHidden={isBalanceHidden}
-                        colorFormat
-                        className="text-xs"
+                        className="font-medium"
                       />
-                      <Separator orientation="vertical" className="mx-1 h-4" />
-                      <GainPercent
-                        value={
-                          performanceMode === "return"
-                            ? (holding.totalReturnPct ?? holding.totalGainPct ?? 0)
-                            : performanceMode === "pnl"
-                              ? (holding.totalGainPct ?? 0)
-                              : (holding.dayChangePct ?? 0)
-                        }
-                        className="text-xs"
-                      />
-                    </div>
+                    )}
+                    {!isCash &&
+                      (isClosed && performanceMode === "daily" ? (
+                        <p className="text-muted-foreground text-xs">—</p>
+                      ) : (
+                        <div className="flex items-center justify-end gap-1">
+                          <AmountDisplay
+                            value={
+                              performanceMode === "return"
+                                ? (holding.totalReturn?.local ?? holding.totalGain?.local ?? 0)
+                                : performanceMode === "pnl"
+                                  ? (holding.totalGain?.local ?? 0)
+                                  : (holding.dayChange?.local ?? 0)
+                            }
+                            currency={holding.localCurrency}
+                            isHidden={isBalanceHidden}
+                            colorFormat
+                            className="text-xs"
+                          />
+                          <Separator orientation="vertical" className="mx-1 h-4" />
+                          <GainPercent
+                            value={
+                              performanceMode === "return"
+                                ? (holding.totalReturnPct ?? holding.totalGainPct ?? 0)
+                                : performanceMode === "pnl"
+                                  ? (holding.totalGainPct ?? 0)
+                                  : (holding.dayChangePct ?? 0)
+                            }
+                            className="text-xs"
+                          />
+                        </div>
+                      ))}
                   </div>
                 </div>
               </Card>
@@ -270,6 +306,8 @@ export const HoldingsTableMobile = ({
         performanceMode={performanceMode}
         setPerformanceMode={setPerformanceMode}
         typeOptions={typeOptions}
+        visibilityFilters={visibilityFilters}
+        setVisibilityFilters={setVisibilityFilters}
       />
     </div>
   );
