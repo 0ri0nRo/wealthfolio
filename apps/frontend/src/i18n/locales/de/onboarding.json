@@ -50,7 +50,9 @@
       "currencyRequired": "Bitte wählen Sie eine Basiswährung aus.",
       "timezoneRequired": "Bitte wählen Sie eine Zeitzone aus.",
       "languageLabel": "Sprache",
-      "formattingRegionLabel": "Region und Formate"
+      "formattingRegionLabel": "Region und Formate",
+      "searchRegionsPlaceholder": "Regionen suchen...",
+      "noRegionsFound": "Keine Regionen gefunden"
     }
   },
   "appearance": {

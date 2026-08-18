@@ -22,6 +22,9 @@
   "previous": "Anterior",
   "finish": "Finalizar",
   "retry": "Reintentar",
+  "addon_loading": "Cargando complemento",
+  "addon_load_failed": "No se pudo cargar la vista del complemento",
+  "addon_start_failed": "No se pudo iniciar el complemento «{{id}}»",
   "refresh": "Actualizar",
   "export": "Exportar",
   "import": "Importar",
@@ -310,7 +313,9 @@
     "try_open_link_manually": "Intenta abrir el enlace manualmente.",
     "unable_to_open_changelog": "No se pudo abrir el registro de cambios",
     "try_open_changelog_manually": "Intenta abrir el registro de cambios manualmente en tu navegador.",
-    "all_portfolio": "Toda la cartera"
+    "all_portfolio": "Toda la cartera",
+    "calculation_notes_one": "Nota de cálculo ({{count}})",
+    "calculation_notes_other": "Notas de cálculo ({{count}})"
   },
   "notFound": {
     "title": "Página no encontrada",

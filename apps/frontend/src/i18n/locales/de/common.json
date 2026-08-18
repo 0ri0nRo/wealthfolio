@@ -30,6 +30,9 @@
   "next": "Weiter",
   "previous": "Zurück",
   "retry": "Erneut versuchen",
+  "addon_loading": "Add-on wird geladen",
+  "addon_load_failed": "Add-on-Ansicht konnte nicht geladen werden",
+  "addon_start_failed": "Add-on „{{id}}“ konnte nicht gestartet werden",
   "refresh": "Aktualisieren",
   "export": "Exportieren",
   "import": "Importieren",
@@ -308,7 +311,9 @@
     "try_open_link_manually": "Versuchen Sie, den Link manuell zu öffnen.",
     "unable_to_open_changelog": "Änderungsprotokoll kann nicht geöffnet werden",
     "try_open_changelog_manually": "Versuchen Sie, das Änderungsprotokoll manuell in Ihrem Browser zu öffnen.",
-    "all_portfolio": "Gesamtes Portfolio"
+    "all_portfolio": "Gesamtes Portfolio",
+    "calculation_notes_one": "Berechnungshinweis ({{count}})",
+    "calculation_notes_other": "Berechnungshinweise ({{count}})"
   },
   "app_name": "Wealthfolio",
   "deselect_all": "Alle abwählen",

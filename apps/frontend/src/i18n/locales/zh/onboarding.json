@@ -50,7 +50,9 @@
       "currencyRequired": "请选择一种基准货币。",
       "timezoneRequired": "请选择一个时区。",
       "languageLabel": "语言",
-      "formattingRegionLabel": "地区与格式"
+      "formattingRegionLabel": "地区与格式",
+      "searchRegionsPlaceholder": "搜索地区……",
+      "noRegionsFound": "未找到地区"
     }
   },
   "appearance": {

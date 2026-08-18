@@ -22,6 +22,9 @@
   "previous": "上一步",
   "finish": "完成",
   "retry": "重试",
+  "addon_loading": "正在加载附加组件",
+  "addon_load_failed": "附加组件视图加载失败",
+  "addon_start_failed": "无法启动附加组件“{{id}}”",
   "refresh": "刷新",
   "export": "导出",
   "import": "导入",
@@ -310,7 +313,8 @@
     "try_open_link_manually": "请尝试手动打开链接。",
     "unable_to_open_changelog": "无法打开更新日志",
     "try_open_changelog_manually": "请尝试在浏览器中手动打开更新日志。",
-    "all_portfolio": "全部投资组合"
+    "all_portfolio": "全部投资组合",
+    "calculation_notes_other": "计算说明({{count}})"
   },
   "notFound": {
     "title": "未找到页面",

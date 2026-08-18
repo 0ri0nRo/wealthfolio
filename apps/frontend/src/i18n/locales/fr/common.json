@@ -22,6 +22,9 @@
   "previous": "Précédent",
   "finish": "Terminer",
   "retry": "Réessayer",
+  "addon_loading": "Chargement de l’extension",
+  "addon_load_failed": "Échec du chargement de la vue de l’extension",
+  "addon_start_failed": "Impossible de démarrer l’extension « {{id}} »",
   "refresh": "Actualiser",
   "export": "Exporter",
   "import": "Importer",
@@ -310,7 +313,9 @@
     "try_open_link_manually": "Essayez d'ouvrir le lien manuellement.",
     "unable_to_open_changelog": "Impossible d'ouvrir le journal des modifications",
     "try_open_changelog_manually": "Essayez d'ouvrir le journal des modifications manuellement dans votre navigateur.",
-    "all_portfolio": "Tout le portefeuille"
+    "all_portfolio": "Tout le portefeuille",
+    "calculation_notes_one": "Note de calcul ({{count}})",
+    "calculation_notes_other": "Notes de calcul ({{count}})"
   },
   "notFound": {
     "title": "Page introuvable",

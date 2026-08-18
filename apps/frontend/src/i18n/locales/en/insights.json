@@ -50,7 +50,9 @@
       "target": "Target",
       "no_target_yet": "No target allocation yet",
       "compare_weights": "Compare current weights with your intended portfolio.",
-      "set_target_allocation": "Set target allocation"
+      "set_target_allocation": "Set target allocation",
+      "outside_range_one": "{{count}} outside range · largest gap {{gap}}",
+      "outside_range_other": "{{count}} outside range · largest gap {{gap}}"
     },
     "value_strip": {
       "portfolio_value": "Portfolio value",
@@ -119,6 +121,8 @@
       "contributions": "Contributions",
       "equity_built": "Equity built",
       "per_month": "/mo"
-    }
+    },
+    "days_ago_one": "{{count}}d ago",
+    "days_ago_other": "{{count}}d ago"
   }
 }

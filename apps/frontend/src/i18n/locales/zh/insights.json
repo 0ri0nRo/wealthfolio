@@ -50,7 +50,8 @@
       "target": "目标",
       "no_target_yet": "尚无目标配置",
       "compare_weights": "将当前权重与您预期的投资组合进行比较。",
-      "set_target_allocation": "设置目标配置"
+      "set_target_allocation": "设置目标配置",
+      "outside_range_other": "{{count}} 项超出区间 · 最大偏差 {{gap}}"
     },
     "value_strip": {
       "portfolio_value": "投资组合价值",
@@ -119,6 +120,7 @@
       "contributions": "投入",
       "equity_built": "累积权益",
       "per_month": "/月"
-    }
+    },
+    "days_ago_other": "{{count}} 天前"
   }
 }

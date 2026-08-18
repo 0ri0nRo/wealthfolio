@@ -22,6 +22,9 @@
   "previous": "Previous",
   "finish": "Finish",
   "retry": "Retry",
+  "addon_loading": "Loading add-on",
+  "addon_load_failed": "Add-on view failed to load",
+  "addon_start_failed": "Failed to start add-on '{{id}}'",
   "refresh": "Refresh",
   "export": "Export",
   "import": "Import",
@@ -310,7 +313,9 @@
     "try_open_link_manually": "Try opening the link manually.",
     "unable_to_open_changelog": "Unable to open changelog",
     "try_open_changelog_manually": "Try opening the changelog manually in your browser.",
-    "all_portfolio": "All Portfolio"
+    "all_portfolio": "All Portfolio",
+    "calculation_notes_one": "Calculation note ({{count}})",
+    "calculation_notes_other": "Calculation notes ({{count}})"
   },
   "notFound": {
     "title": "Page not found",

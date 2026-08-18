@@ -50,7 +50,9 @@
       "target": "Ziel",
       "no_target_yet": "Noch keine Zielaufteilung",
       "compare_weights": "Vergleichen Sie die aktuellen Gewichtungen mit Ihrem gewünschten Portfolio.",
-      "set_target_allocation": "Zielaufteilung festlegen"
+      "set_target_allocation": "Zielaufteilung festlegen",
+      "outside_range_one": "{{count}} außerhalb des Bereichs · größte Abweichung {{gap}}",
+      "outside_range_other": "{{count}} außerhalb des Bereichs · größte Abweichung {{gap}}"
     },
     "value_strip": {
       "portfolio_value": "Portfoliowert",
@@ -119,6 +121,8 @@
       "contributions": "Einzahlungen",
       "equity_built": "Aufgebautes Eigenkapital",
       "per_month": "/Mon."
-    }
+    },
+    "days_ago_one": "vor {{count}} T",
+    "days_ago_other": "vor {{count}} T"
   }
 }
