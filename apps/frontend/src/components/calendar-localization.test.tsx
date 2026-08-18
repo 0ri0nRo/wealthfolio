@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Calendar, DatePickerInput, FormattingProvider, MonthYearPicker } from "@wealthfolio/ui";
 import { describe, expect, it, vi } from "vitest";
+import { MonthSwitcher } from "../features/spending/components/month-switcher";
 
 describe("calendar localization policy", () => {
   it("formats month choices with the formatting locale", () => {
@@ -42,6 +43,27 @@ describe("calendar localization policy", () => {
       expect(onChange).toHaveBeenCalledWith("2026-01");
     },
   );
+
+  it.each(["fa-IR", "th-TH"])("labels the Gregorian report month correctly in %s", (locale) => {
+    const expected = new Intl.DateTimeFormat(locale, {
+      calendar: "gregory",
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(Date.UTC(2026, 7, 1)));
+
+    render(
+      <FormattingProvider locale={locale} uiLocale="en">
+        <MonthSwitcher
+          selectedMonth="2026-08"
+          availableMonths={["2026-08"]}
+          onMonthChange={vi.fn()}
+        />
+      </FormattingProvider>,
+    );
+
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
 
   it("uses UI-language labels for DayPicker controls", () => {
     render(

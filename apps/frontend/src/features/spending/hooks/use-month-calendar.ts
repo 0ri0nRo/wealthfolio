@@ -128,6 +128,7 @@ export function useMonthCalendar(events: EventSpendingSummary[], cursor: Date): 
   );
 
   const monthLabel = formatting.formatCalendarDate(calendarDateFromLocalDate(cursor), {
+    calendar: "gregory",
     month: "long",
     year: "numeric",
   });

@@ -29,6 +29,7 @@ export function MonthSwitcher({
   const displayLabel = useMemo(
     () =>
       formatting.formatCalendarDate(`${selectedMonth}-01`, {
+        calendar: "gregory",
         month: "long",
         year: "numeric",
       }),

@@ -466,6 +466,19 @@ export function parseLocalizedDate(value: string, locale: string): Date | undefi
     const result = new Date(text);
     return Number.isFinite(result.getTime()) ? result : undefined;
   }
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (isoDate) {
+    const [, yearText, monthText, dayText] = isoDate;
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const day = Number(dayText);
+    const result = new Date(year, month - 1, day);
+    return result.getFullYear() === year &&
+      result.getMonth() === month - 1 &&
+      result.getDate() === day
+      ? result
+      : undefined;
+  }
   const yearFirstDate = /^(\d{4})([-/])(\d{1,2})\2(\d{1,2})$/.exec(text);
   const calendar = new Intl.DateTimeFormat(resolvedLocale).resolvedOptions().calendar;
   if (yearFirstDate && calendar === "gregory") {

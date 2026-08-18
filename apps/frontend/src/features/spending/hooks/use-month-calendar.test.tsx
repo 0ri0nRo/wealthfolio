@@ -45,4 +45,19 @@ describe("useMonthCalendar", () => {
     expect(result.current.weekStartsOn).toBe(1);
     expect(result.current.weeks[0].days[0].getDay()).toBe(1);
   });
+
+  it.each(["fa-IR", "th-TH"])("keeps the report month Gregorian for %s", (locale) => {
+    const { result } = renderHook(() => useMonthCalendar([], cursor), {
+      wrapper: wrapper(locale),
+    });
+
+    expect(result.current.monthLabel).toBe(
+      new Intl.DateTimeFormat(locale, {
+        calendar: "gregory",
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      }).format(new Date(Date.UTC(2026, 5, 15))),
+    );
+  });
 });

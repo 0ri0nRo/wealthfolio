@@ -118,9 +118,9 @@ const MoneyInput = React.forwardRef<HTMLInputElement, MoneyInputProps>(
           );
           if (hasSelection && plainFragmentPattern.test(clipboardValue)) return;
 
+          event.preventDefault();
           const parsed = formatting.parseNumber(clipboardValue);
           if (parsed === undefined || parsed < 0) return;
-          event.preventDefault();
           onValueChange?.(parsed);
           if (!onValueChange && onChange) {
             onChange({ target: { name, value: parsed } } as unknown as React.ChangeEvent<HTMLInputElement>);

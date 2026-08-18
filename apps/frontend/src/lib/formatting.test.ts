@@ -134,6 +134,13 @@ describe("locale formatting", () => {
     );
   });
 
+  it.each(["fa-IR", "th-TH"])(
+    "keeps ISO date-only values Gregorian for the %s calendar",
+    (locale) => {
+      expect(parseLocalizedDate("2026-08-18", locale)).toEqual(new Date(2026, 7, 18));
+    },
+  );
+
   it("preserves month-name and RFC date paste formats", () => {
     expect(parseLocalizedDate("3-Jan-2023", "en-US")?.getDate()).toBe(3);
     expect(parseLocalizedDate("August 18, 2026", "en-US")?.getMonth()).toBe(7);

@@ -109,9 +109,9 @@ const QuantityInput = React.forwardRef<HTMLInputElement, QuantityInputProps>(
           );
           if (hasSelection && plainFragmentPattern.test(clipboardValue)) return;
 
+          event.preventDefault();
           const parsed = formatting.parseNumber(clipboardValue);
           if (parsed === undefined || (!allowNegative && parsed < 0)) return;
-          event.preventDefault();
           onValueChange?.(parsed);
           if (!onValueChange && onChange) {
             onChange({ target: { name, value: parsed } } as unknown as React.ChangeEvent<HTMLInputElement>);

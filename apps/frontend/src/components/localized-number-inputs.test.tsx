@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { FormattingProvider, MoneyInput, QuantityInput } from "@wealthfolio/ui";
 import { describe, expect, it, vi } from "vitest";
 
@@ -46,19 +47,34 @@ describe("localized financial input paste", () => {
     expect(onValueChange).toHaveBeenLastCalledWith(expected);
   });
 
-  it("does not update the value for malformed mixed separators", () => {
-    const onValueChange = vi.fn();
-    render(
-      <FormattingProvider locale="en-US">
-        <MoneyInput onValueChange={onValueChange} />
-      </FormattingProvider>,
-    );
+  it.each([
+    ["1.234,56", "money"],
+    ["-100", "money"],
+    ["1.234,56", "quantity"],
+    ["-100", "quantity"],
+  ] as const)(
+    "blocks rejected %s full-value pastes in %s inputs",
+    async (clipboardValue, inputKind) => {
+      const user = userEvent.setup();
+      const onValueChange = vi.fn();
+      render(
+        <FormattingProvider locale="en-US">
+          {inputKind === "money" ? (
+            <MoneyInput onValueChange={onValueChange} />
+          ) : (
+            <QuantityInput onValueChange={onValueChange} />
+          )}
+        </FormattingProvider>,
+      );
+      const input = screen.getByRole<HTMLInputElement>("textbox");
 
-    const allowed = paste("1.234,56");
+      await user.click(input);
+      await user.paste(clipboardValue);
 
-    expect(allowed).toBe(true);
-    expect(onValueChange).not.toHaveBeenCalled();
-  });
+      expect(input).toHaveValue("");
+      expect(onValueChange).not.toHaveBeenCalled();
+    },
+  );
 
   it("uses the same locale-aware paste behavior for quantities", () => {
     const onValueChange = vi.fn();
