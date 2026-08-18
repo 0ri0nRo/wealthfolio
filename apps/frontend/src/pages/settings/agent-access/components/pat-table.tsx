@@ -1,6 +1,11 @@
 import type { AgentAccessToken } from "@/adapters";
 import { cn } from "@/lib/utils";
-import { useDateFormatting, type DateFormatting } from "@wealthfolio/ui";
+import {
+  dateFnsLocaleFor,
+  useDateFormatting,
+  useLocalizationSettings,
+  type DateFormatting,
+} from "@wealthfolio/ui";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,7 +28,6 @@ import {
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@wealthfolio/ui/components/ui/tooltip";
-import { useDateFnsLocale } from "@wealthfolio/ui/hooks/use-date-fns-locale";
 import { formatDistanceToNowStrict, type Locale } from "date-fns";
 import type { TFunction } from "i18next";
 import { useState } from "react";
@@ -109,7 +113,8 @@ function ScopeBadge({ scopes }: { scopes: string[] }) {
 
 export function PatTable({ serverUrl }: { serverUrl?: string } = {}) {
   const formatting = useDateFormatting();
-  const dateFnsLocale = useDateFnsLocale();
+  const { uiLocale } = useLocalizationSettings();
+  const dateFnsLocale = dateFnsLocaleFor(uiLocale);
   const { t } = useTranslation();
   const { tokens, isLoading, createMutation, deleteMutation } = useAccessTokens();
   const [createOpen, setCreateOpen] = useState(false);

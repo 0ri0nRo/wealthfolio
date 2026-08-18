@@ -71,6 +71,8 @@ const formattingRegions = [
   ["ES", "spain"],
   ["MX", "mexico"],
   ["CN", "china"],
+  ["JP", "japan"],
+  ["KR", "southKorea"],
 ] as const;
 
 const popularFormattingRegions = ["system", "US", "CA", "GB"];
@@ -193,7 +195,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
       setShowFormattingRegionSearch(false);
       setFormattingRegionSearch("");
       if (!form.formState.dirtyFields.baseCurrency) {
-        const suggestedCurrency = detectDefaultCurrency(resolveFormattingLocale(region, language));
+        const suggestedCurrency = detectDefaultCurrency(resolveFormattingLocale(region));
         if (suggestedCurrency) {
           form.setValue("baseCurrency", suggestedCurrency, { shouldValidate: true });
         }
@@ -224,11 +226,11 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
     const detectedTimezone = useMemo(() => detectBrowserTimezone(), []);
     const currentTimezone = form.watch("timezone");
     const formattingPreview = useMemo(() => {
-      const locale = resolveFormattingLocale(formattingRegion, language);
+      const locale = resolveFormattingLocale(formattingRegion);
       const formatter = createFormatter(locale, currentTimezone || detectedTimezone);
       const sample = new Date(2026, 6, 23, 14, 30);
       return `${locale} · ${formatter.formatDate(sample, { dateStyle: "short" })} · ${formatter.formatDecimal(1234.56, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${formatter.formatTime(sample, { timeStyle: "short" })}`;
-    }, [currentTimezone, detectedTimezone, formattingRegion, language]);
+    }, [currentTimezone, detectedTimezone, formattingRegion]);
 
     const filteredTimezones = allTimezones.filter((tz) =>
       tz.toLowerCase().includes(timezoneSearch.toLowerCase()),
@@ -339,10 +341,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                         <Icons.Calendar className="text-muted-foreground h-5 w-5" />
                       </div>
                       <span className="text-lg font-semibold sm:text-xl">
-                        {t(
-                          "onboarding:steps.preferences.formattingRegionLabel",
-                          "Region & formats",
-                        )}
+                        {t("onboarding:steps.preferences.formattingRegionLabel")}
                       </span>
                     </div>
                     <div
@@ -546,7 +545,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
               <div className="p-6">
                 <div className="mb-4 flex items-center justify-between">
                   <h3 className="text-xl font-bold">
-                    {t("onboarding:steps.preferences.formattingRegionLabel", "Region & formats")}
+                    {t("onboarding:steps.preferences.formattingRegionLabel")}
                   </h3>
                   <button
                     type="button"
@@ -563,10 +562,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                   <Icons.Search className="text-muted-foreground absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2" />
                   <Input
                     type="text"
-                    placeholder={t(
-                      "onboarding:steps.preferences.searchRegionsPlaceholder",
-                      "Search regions...",
-                    )}
+                    placeholder={t("onboarding:steps.preferences.searchRegionsPlaceholder")}
                     value={formattingRegionSearch}
                     onChange={(event) => setFormattingRegionSearch(event.target.value)}
                     className="pl-10"
@@ -596,7 +592,7 @@ export const OnboardingStep2 = forwardRef<OnboardingStep2Handle, OnboardingStep2
                   ))}
                   {filteredFormattingRegions.length === 0 && (
                     <div className="text-muted-foreground py-8 text-center">
-                      {t("onboarding:steps.preferences.noRegionsFound", "No regions found")}
+                      {t("onboarding:steps.preferences.noRegionsFound")}
                     </div>
                   )}
                 </div>

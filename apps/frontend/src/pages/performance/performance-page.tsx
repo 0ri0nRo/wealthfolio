@@ -987,8 +987,6 @@ const SelectedItemBadge = ({
 export default function PerformancePage() {
   const amountFormatting = useAmountFormatting();
 
-  const formatting = { ...amountFormatting };
-
   const { t } = useTranslation();
   const isMobile = useIsMobileViewport();
   const [storedSelectedItems, setSelectedItems] = usePersistentState<TrackedItem[]>(
@@ -1317,7 +1315,7 @@ export default function PerformancePage() {
       warnings: visibleWarnings,
       notApplicableReasons: found.dataQuality.notApplicableReasons ?? [],
     };
-  }, [selectedPerformanceData, accountNamesById, formatting, t]);
+  }, [selectedPerformanceData, accountNamesById, amountFormatting, t]);
 
   const preserveCurrentChartAnchor = (fallbackId: string) => {
     setSelectedItemId(
