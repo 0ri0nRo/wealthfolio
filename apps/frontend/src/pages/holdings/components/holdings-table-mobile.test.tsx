@@ -43,6 +43,27 @@ const cashHolding: Holding = {
 };
 
 describe("HoldingsTableMobile", () => {
+  it("keeps its controls available while holdings load", () => {
+    render(
+      <HoldingsTableMobile
+        holdings={[]}
+        isLoading
+        selectedTypes={[]}
+        setSelectedTypes={vi.fn()}
+        accountFilter={{ type: "all" }}
+        onAccountScopeChange={vi.fn()}
+        accounts={[]}
+        portfolios={[]}
+        toolbarActions={<button type="button">Open actions</button>}
+      />,
+    );
+
+    expect(screen.getByPlaceholderText("Search...")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open holdings filters" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open actions" })).toBeInTheDocument();
+    expect(screen.queryByText("No positions found")).not.toBeInTheDocument();
+  });
+
   it("shows portfolio weight below a cash balance", () => {
     render(
       <HoldingsTableMobile

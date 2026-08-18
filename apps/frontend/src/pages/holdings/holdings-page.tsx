@@ -43,6 +43,7 @@ import {
   filterHoldingsByVisibility,
   getEffectiveHoldingsVisibility,
   isClosedPosition,
+  mergeHoldingsVisibilitySelection,
   type HoldingsVisibilityFilter,
 } from "./components/holdings-visibility";
 import {
@@ -87,6 +88,14 @@ export const HoldingsPage = () => {
   const effectiveVisibilityFilters = useMemo(
     () => getEffectiveHoldingsVisibility(visibilityFilters, showClosedPositions),
     [showClosedPositions, visibilityFilters],
+  );
+  const handleVisibilityFiltersChange = useCallback(
+    (nextFilters: HoldingsVisibilityFilter[]) => {
+      setVisibilityFilters((currentFilters) =>
+        mergeHoldingsVisibilitySelection(currentFilters, nextFilters, showClosedPositions),
+      );
+    },
+    [setVisibilityFilters, showClosedPositions],
   );
 
   const includeClosed = effectiveVisibilityFilters.includes("closed");
@@ -510,7 +519,7 @@ export const HoldingsPage = () => {
               holdings={filteredHoldings ?? []}
               isLoading={isDataLoading}
               visibilityFilters={effectiveVisibilityFilters}
-              setVisibilityFilters={setVisibilityFilters}
+              setVisibilityFilters={handleVisibilityFiltersChange}
               showClosedPositions={showClosedPositions}
               onClassify={(holding) =>
                 setClassifyAsset({
@@ -541,7 +550,7 @@ export const HoldingsPage = () => {
               setPerformanceMode={setPerformanceMode}
               typeOptions={availableTypeOptions}
               visibilityFilters={effectiveVisibilityFilters}
-              setVisibilityFilters={setVisibilityFilters}
+              setVisibilityFilters={handleVisibilityFiltersChange}
               showClosedPositions={showClosedPositions}
               hasHiddenPositions={hasHiddenInvestmentPositions}
               toolbarActions={

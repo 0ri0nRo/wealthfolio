@@ -14,7 +14,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@wealthfolio/ui";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { usePersistentState } from "@/hooks/use-persistent-state";
@@ -23,6 +23,7 @@ import {
   HOLDINGS_VISIBILITY_STORAGE_KEY,
   filterHoldingsByVisibility,
   getEffectiveHoldingsVisibility,
+  mergeHoldingsVisibilitySelection,
   type HoldingsVisibilityFilter,
 } from "@/pages/holdings/components/holdings-visibility";
 
@@ -64,6 +65,14 @@ const AccountHoldings = ({
   const effectiveVisibilityFilters = useMemo(
     () => getEffectiveHoldingsVisibility(visibilityFilters, showClosedPositions),
     [showClosedPositions, visibilityFilters],
+  );
+  const handleVisibilityFiltersChange = useCallback(
+    (nextFilters: HoldingsVisibilityFilter[]) => {
+      setVisibilityFilters((currentFilters) =>
+        mergeHoldingsVisibilitySelection(currentFilters, nextFilters, showClosedPositions),
+      );
+    },
+    [setVisibilityFilters, showClosedPositions],
   );
 
   const includeClosed = effectiveVisibilityFilters.includes("closed");
@@ -257,7 +266,7 @@ const AccountHoldings = ({
           showAccountScope={false}
           typeOptions={typeOptions}
           visibilityFilters={effectiveVisibilityFilters}
-          setVisibilityFilters={setVisibilityFilters}
+          setVisibilityFilters={handleVisibilityFiltersChange}
           showClosedPositions={showClosedPositions}
           hasHiddenPositions={hasHiddenPositions}
         />
@@ -266,7 +275,7 @@ const AccountHoldings = ({
           holdings={filteredHoldings ?? []}
           isLoading={isLoading}
           visibilityFilters={effectiveVisibilityFilters}
-          setVisibilityFilters={setVisibilityFilters}
+          setVisibilityFilters={handleVisibilityFiltersChange}
           showClosedPositions={showClosedPositions}
         />
       )}

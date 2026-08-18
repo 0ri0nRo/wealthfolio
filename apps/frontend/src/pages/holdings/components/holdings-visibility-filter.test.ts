@@ -8,6 +8,7 @@ import {
   getEffectiveHoldingsVisibility,
   hasNonDefaultHoldingsVisibility,
   isClosedPosition,
+  mergeHoldingsVisibilitySelection,
 } from "./holdings-visibility";
 
 function holding(
@@ -66,6 +67,21 @@ describe("holdings visibility filters", () => {
     ]);
     expect(getEffectiveHoldingsVisibility(["closed"], false)).toEqual(["open"]);
     expect(getEffectiveHoldingsVisibility(["closed"], true)).toEqual(["closed"]);
+  });
+
+  it("preserves a hidden closed preference when supported filters change", () => {
+    expect(mergeHoldingsVisibilitySelection(["open", "closed"], ["open", "cash"], false)).toEqual([
+      "open",
+      "cash",
+      "closed",
+    ]);
+  });
+
+  it("allows closed to be removed where the filter is supported", () => {
+    expect(mergeHoldingsVisibilitySelection(["open", "closed"], ["open", "cash"], true)).toEqual([
+      "open",
+      "cash",
+    ]);
   });
 
   it("does not classify a zero cash balance as a closed position", () => {

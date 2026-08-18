@@ -152,17 +152,6 @@ export const HoldingsTableMobile = ({
     }
   };
 
-  if (isLoading) {
-    return (
-      <div className="space-y-2">
-        <Skeleton className="h-20 w-full rounded-lg" />
-        <Skeleton className="h-20 w-full rounded-lg" />
-        <Skeleton className="h-20 w-full rounded-lg" />
-        <Skeleton className="h-20 w-full rounded-lg" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-3">
       {(showSearch || showFilterButton) && (
@@ -193,7 +182,14 @@ export const HoldingsTableMobile = ({
         </div>
       )}
       <div className="space-y-2">
-        {filteredHoldings.length > 0 ? (
+        {isLoading ? (
+          <>
+            <Skeleton className="h-20 w-full rounded-lg" />
+            <Skeleton className="h-20 w-full rounded-lg" />
+            <Skeleton className="h-20 w-full rounded-lg" />
+            <Skeleton className="h-20 w-full rounded-lg" />
+          </>
+        ) : filteredHoldings.length > 0 ? (
           filteredHoldings.map((holding) => {
             const symbol = holding.instrument?.symbol ?? holding.id;
             const isCash = holding.holdingType === HoldingType.CASH || symbol.startsWith("$CASH");
