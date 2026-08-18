@@ -10,8 +10,6 @@ import {
   useAmountFormatting,
   useBalancePrivacy,
   useDateFormatting,
-  useLocalizationSettings,
-  useNumberFormatting,
 } from "@wealthfolio/ui";
 
 import { topCategoryId } from "../lib/category-rollup";
@@ -106,17 +104,8 @@ export function BudgetLineChartCard({
   monthByDay: DayBucket[];
   historicalByDay: DayBucket[];
 }) {
-  const localizationSettings = useLocalizationSettings();
   const amountFormatting = useAmountFormatting();
-  const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
-
-  const formatting = {
-    ...localizationSettings,
-    ...amountFormatting,
-    ...numberFormatting,
-    ...dateFormatting,
-  };
 
   const { t } = useTranslation();
   // All hooks must run unconditionally — the `target <= 0` early return below
@@ -139,7 +128,7 @@ export function BudgetLineChartCard({
         .formatCalendarDate({ year, month, day: 1 }, { month: "short", year: "numeric" })
         .toUpperCase(),
     };
-  }, [monthKey, isCurrentMonth, formatting, today]);
+  }, [monthKey, isCurrentMonth, dateFormatting, today]);
   const { dayOfMonth, daysInMonth, daysRemaining, monthLabel } = monthMeta;
 
   const cumulative = useMemo(() => {

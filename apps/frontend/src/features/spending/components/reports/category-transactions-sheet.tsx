@@ -347,7 +347,7 @@ export function CategoryTransactionsSheet({
                         />
                       </div>
                       <span className="text-muted-foreground/80 w-10 shrink-0 text-right text-[11px] tabular-nums">
-                        {row.share.toFixed(0)}%
+                        {numberFormatting.formatPercent(row.share / 100, { digits: 0 })}
                       </span>
                       <span className="text-foreground/90 w-16 shrink-0 text-right text-xs font-semibold tabular-nums">
                         {isBalanceHidden

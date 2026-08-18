@@ -1,4 +1,4 @@
-import { useAmountFormatting } from "@wealthfolio/ui";
+import { useAmountFormatting, useNumberFormatting } from "@wealthfolio/ui";
 import { useTranslation } from "react-i18next";
 import {
   Area,
@@ -43,6 +43,7 @@ function CoverageProjectionTooltip({
   valueMode: ChartValueMode;
 }) {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload as CoverageProjectionPoint | undefined;
@@ -136,7 +137,7 @@ function CoverageProjectionTooltip({
                 : "text-red-500"
           }`}
         >
-          {coveragePct.toFixed(0)}%
+          {numberFormatting.formatPercent(coveragePct / 100, { digits: 0 })}
         </span>
       </div>
     </div>

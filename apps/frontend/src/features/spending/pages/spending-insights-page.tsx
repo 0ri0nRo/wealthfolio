@@ -125,8 +125,6 @@ const VALID_STAGES: InsightsStage[] = ["where", "changed", "when"];
 export default function SpendingInsightsPage() {
   const dateFormatting = useDateFormatting();
 
-  const formatting = { ...dateFormatting };
-
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -310,13 +308,13 @@ export default function SpendingInsightsPage() {
   // existing child cards. Every number still flows from one server query.
   const insightProjection = useMemo(
     () => (insight ? insightToReportProjection(insight, dateFormatting) : null),
-    [insight, formatting],
+    [insight, dateFormatting],
   );
   const whatChangedInsight = whatChangedRequest ? mtdComparisonInsight : insight;
   const whatChangedProjection = useMemo(
     () =>
       whatChangedInsight ? insightToReportProjection(whatChangedInsight, dateFormatting) : null,
-    [whatChangedInsight, formatting],
+    [whatChangedInsight, dateFormatting],
   );
   const isWhatChangedLoading = whatChangedRequest ? isMtdComparisonLoading : isInsightLoading;
   const whatChangedRange = whatChangedWindow?.current ?? range;
@@ -366,7 +364,7 @@ export default function SpendingInsightsPage() {
       heatmapInsight
         ? new Map(heatmapInsight.byDay.map((day) => [day.date, day.spent] as const))
         : undefined,
-    [heatmapInsight?.byDay],
+    [heatmapInsight],
   );
 
   const eventsRequest = useMemo(

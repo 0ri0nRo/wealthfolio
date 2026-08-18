@@ -18,6 +18,7 @@ import type { Activity, TaxonomyCategory } from "@/lib/types";
 import { cn, parseLocalDate } from "@/lib/utils";
 import {
   Button,
+  calendarDateFromLocalDate,
   Icons,
   PrivacyAmount,
   Tooltip,
@@ -37,7 +38,7 @@ import type { EventSpendingSummary } from "../../../types/event";
 import { useEventDialog } from "../../event-dialog-provider";
 import { getEventColors } from "./event-colors";
 import { formatMonthDay } from "./format";
-import { CARD_CLASS, LABEL_CLASS, MONTH_LABELS } from "./insights-shared";
+import { CARD_CLASS, LABEL_CLASS } from "./insights-shared";
 
 export interface EventDetailPanelProps {
   event: EventSpendingSummary;
@@ -64,7 +65,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
   const amountFormatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
-  const formatting = useAmountFormatting();
+  const formatting = amountFormatting;
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const isPhone = useIsMobileViewport();
@@ -120,7 +121,18 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
           ...dateFormatting,
         },
       }),
-    [days, lift, currency, categories, isBalanceHidden, t, formatting],
+    [
+      days,
+      lift,
+      currency,
+      categories,
+      isBalanceHidden,
+      t,
+      localizationSettings,
+      amountFormatting,
+      numberFormatting,
+      dateFormatting,
+    ],
   );
 
   const { update } = useSpendingEventMutations();
@@ -318,7 +330,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
             {peak ? <PrivacyAmount value={peak.amount} currency={currency} /> : "—"}
           </div>
           <div className="text-muted-foreground/80 mt-1 text-[10px]">
-            {peak ? formatPeakDay(peak.date, t) : ""}
+            {peak ? formatPeakDay(peak.date, dateFormatting) : ""}
           </div>
         </StatCell>
       </div>
@@ -481,7 +493,7 @@ export const EventDetailPanel: FC<EventDetailPanelProps> = ({
               />
               {ev.eventName}
               <span className="text-muted-foreground/80 ml-1">
-                · {formatChipDate(parseLocalDate(ev.startDate))}
+                · {formatChipDate(parseLocalDate(ev.startDate), dateFormatting)}
               </span>
             </button>
           );
@@ -547,6 +559,7 @@ function DailyBars({
   t: TFunction;
 }) {
   const formatting = useAmountFormatting();
+  const dateFormatting = useDateFormatting();
   const max = Math.max(1, baseline, ...series);
   const hasOutOfWindow = inWindow.some((v) => !v);
 
@@ -588,12 +601,12 @@ function DailyBars({
         })}
       </div>
       <div className="text-muted-foreground/80 mt-2 flex items-center justify-between text-[10px] tracking-wide">
-        <span className="tabular-nums">{formatPeakDay(chartStartDate, t)}</span>
+        <span className="tabular-nums">{formatPeakDay(chartStartDate, dateFormatting)}</span>
         <span className="text-muted-foreground/60">
           {t("spending:eventDetail.daysCount", { count: eventDays })}
           {hasOutOfWindow ? ` · ${t("spending:eventDetail.inclOutside")}` : ""}
         </span>
-        <span className="tabular-nums">{formatPeakDay(chartEndDate, t)}</span>
+        <span className="tabular-nums">{formatPeakDay(chartEndDate, dateFormatting)}</span>
       </div>
     </div>
   );
@@ -711,22 +724,16 @@ function Sparkline({
 
 // ─── Formatters / text builders ──────────────────────────────────────────
 
-const PEAK_DAY_KEYS = [
-  "spending:eventDetail.daySun",
-  "spending:eventDetail.dayMon",
-  "spending:eventDetail.dayTue",
-  "spending:eventDetail.dayWed",
-  "spending:eventDetail.dayThu",
-  "spending:eventDetail.dayFri",
-  "spending:eventDetail.daySat",
-];
-
-function formatPeakDay(d: Date, t: TFunction): string {
-  return `${t(PEAK_DAY_KEYS[d.getDay()])}, ${MONTH_LABELS[d.getMonth()]} ${d.getDate()}`;
+function formatPeakDay(d: Date, formatting: Pick<FormattingApi, "formatCalendarDate">): string {
+  return formatting.formatCalendarDate(calendarDateFromLocalDate(d), {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
-function formatChipDate(d: Date): string {
-  return `${MONTH_LABELS[d.getMonth()]} ${d.getDate()}`;
+function formatChipDate(d: Date, formatting: Pick<FormattingApi, "formatCalendarDate">): string {
+  return formatMonthDay(d, formatting);
 }
 
 function buildEventCaption({
@@ -773,13 +780,13 @@ function buildEventCaption({
 function formatRange(
   start: Date,
   end: Date,
-  formatting: Pick<FormattingApi, "formatCalendarDate">,
+  formatting: Pick<FormattingApi, "formatCalendarDateRange">,
 ): string {
-  const sameMonth =
-    start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear();
-  return sameMonth
-    ? `${formatMonthDay(start, formatting)}–${end.getDate()}`.toUpperCase()
-    : `${formatMonthDay(start, formatting)} – ${formatMonthDay(end, formatting)}`.toUpperCase();
+  return formatting.formatCalendarDateRange(
+    calendarDateFromLocalDate(start),
+    calendarDateFromLocalDate(end),
+    { month: "short", day: "numeric" },
+  );
 }
 
 /** "2026-05-08" → "May 8" (parsed at noon to avoid UTC drift). */

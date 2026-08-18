@@ -7,6 +7,7 @@ import {
   useAmountFormatting,
   type FormattingApi,
   useDateFormatting,
+  useNumberFormatting,
 } from "@wealthfolio/ui";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
@@ -77,6 +78,7 @@ function ProgressBar({ progress, fillClass }: { progress: number; fillClass: str
 export function GoalCard({ goal }: { goal: Goal }) {
   const dateFormatting = useDateFormatting();
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const { settings } = useSettingsContext();
@@ -150,7 +152,7 @@ export function GoalCard({ goal }: { goal: Goal }) {
       ? formatting.formatCompactAmount(remaining, currency)
       : "—";
 
-  const progressPct = (progress * 100).toFixed(1);
+  const progressPct = numberFormatting.formatPercent(progress, { digits: 1 });
 
   return (
     <Link to={`/goals/${goal.id}`} className="group block">
@@ -208,7 +210,6 @@ export function GoalCard({ goal }: { goal: Goal }) {
             <div className="text-right">
               <div className={cn("font-serif text-[20px] leading-none", accentClass)}>
                 {progressPct}
-                <span className="text-[11px]">%</span>
               </div>
               <div className="text-muted-foreground mt-0.5 text-[9px] tracking-[0.15em]">
                 {t("goals:card.complete")}

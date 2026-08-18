@@ -3,7 +3,14 @@ import { useTranslation } from "react-i18next";
 
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { cn } from "@/lib/utils";
-import { Button, Icons, useAmountFormatting } from "@wealthfolio/ui";
+import {
+  Button,
+  Icons,
+  calendarDateFromLocalDate,
+  useAmountFormatting,
+  useDateFormatting,
+  useNumberFormatting,
+} from "@wealthfolio/ui";
 
 import { useMonthCalendar } from "../../../hooks/use-month-calendar";
 import type { EventSpendingSummary } from "../../../types/event";
@@ -12,16 +19,6 @@ import { getEventColors } from "./event-colors";
 
 const CARD_CLASS = "border-border/60 bg-card/40 rounded-2xl border p-4 backdrop-blur-xl";
 const LABEL_CLASS = "text-muted-foreground/70 text-[10px] font-normal uppercase tracking-[0.12em]";
-
-const DAY_NAME_KEYS = [
-  "spending:calendar.dayMon",
-  "spending:calendar.dayTue",
-  "spending:calendar.dayWed",
-  "spending:calendar.dayThu",
-  "spending:calendar.dayFri",
-  "spending:calendar.daySat",
-  "spending:calendar.daySun",
-];
 
 interface Props {
   events: EventSpendingSummary[];
@@ -32,13 +29,28 @@ interface Props {
 
 export const EventsCalendarCard: FC<Props> = ({ events, currency, selectedId, onSelect }) => {
   const formatting = useAmountFormatting();
+  const dateFormatting = useDateFormatting();
+  const numberFormatting = useNumberFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const { openEventDialog } = useEventDialog();
   const today = useMemo(() => stripTime(new Date()), []);
   const [cursor, setCursor] = useState<Date>(() => startOfMonth(today));
 
-  const { monthLabel, monthStart, monthEnd, weeks, monthEvents } = useMonthCalendar(events, cursor);
+  const { monthLabel, weekStartsOn, monthStart, monthEnd, weeks, monthEvents } = useMonthCalendar(
+    events,
+    cursor,
+  );
+  const dayNames = Array.from({ length: 7 }, (_, index) =>
+    dateFormatting.formatCalendarDate(
+      calendarDateFromLocalDate(new Date(2026, 7, 2 + index)),
+      { weekday: "short" },
+    ),
+  );
+  const orderedDayNames = [
+    ...dayNames.slice(weekStartsOn),
+    ...dayNames.slice(0, weekStartsOn),
+  ];
 
   return (
     <div className={CARD_CLASS}>
@@ -93,9 +105,9 @@ export const EventsCalendarCard: FC<Props> = ({ events, currency, selectedId, on
 
       {/* Day-of-week header */}
       <div className={cn("grid grid-cols-7 text-center", LABEL_CLASS)}>
-        {DAY_NAME_KEYS.map((key) => (
-          <div key={key} className="pb-1">
-            {t(key)}
+        {orderedDayNames.map((name, index) => (
+          <div key={index} className="pb-1">
+            {name}
           </div>
         ))}
       </div>
@@ -129,7 +141,7 @@ export const EventsCalendarCard: FC<Props> = ({ events, currency, selectedId, on
                         "ring-foreground/70 inline-flex h-5 w-5 items-center justify-center rounded-full ring-1",
                     )}
                   >
-                    {day.getDate()}
+                    {numberFormatting.formatDecimal(day.getDate(), { useGrouping: false })}
                   </span>
                 </div>
               );

@@ -60,8 +60,6 @@ export function HeatmapCellSheet({
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
 
-  const formatting = { ...dateFormatting };
-
   const zonedFormatting = useMemo(
     () => createFormatter(localizationSettings.locale, resolveDisplayTimezone(timezone)),
     [localizationSettings.locale, timezone],
@@ -107,7 +105,7 @@ export function HeatmapCellSheet({
   // Group by ISO week (Mon-start) so the dense list breaks into legible chunks.
   const grouped = useMemo(
     () => groupByWeek(activities, timezone, t, dateFormatting),
-    [activities, timezone, t, formatting],
+    [activities, timezone, t, dateFormatting],
   );
 
   const hourLabel = hour == null ? "" : formatHourRange(hour, endHour, dateFormatting);

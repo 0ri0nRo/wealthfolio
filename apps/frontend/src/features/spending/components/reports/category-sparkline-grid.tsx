@@ -6,7 +6,7 @@ import { Area, AreaChart, ResponsiveContainer } from "recharts";
 import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import type { TaxonomyCategory } from "@/lib/types";
 import { cn } from "@/lib/utils";
-import { Skeleton, useAmountFormatting } from "@wealthfolio/ui";
+import { Skeleton, useAmountFormatting, useNumberFormatting } from "@wealthfolio/ui";
 
 import type { CategoryBreakdownRow, DayCategoryBucket, MonthBucket } from "../../types/report";
 import { CategoryIcon } from "../category-chips";
@@ -99,6 +99,7 @@ export function CategorySparklineGrid({
 
 function SparklineCard({ row, currency }: { row: CategorySparklineRow; currency: string }) {
   const formatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
   const { isBalanceHidden } = useBalancePrivacy();
   const color = row.color ?? "var(--muted-foreground)";
   const tintBg = row.color ? `${row.color}1F` : "var(--muted)";
@@ -126,7 +127,8 @@ function SparklineCard({ row, currency }: { row: CategorySparklineRow; currency:
               row.deltaPct >= 0 ? "text-destructive" : "text-success",
             )}
           >
-            {row.deltaPct >= 0 ? "↑" : "↓"} {Math.abs(row.deltaPct).toFixed(0)}%
+            {row.deltaPct >= 0 ? "↑" : "↓"}{" "}
+            {numberFormatting.formatPercent(Math.abs(row.deltaPct) / 100, { digits: 0 })}
           </span>
         )}
       </div>

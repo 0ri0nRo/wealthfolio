@@ -100,8 +100,6 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
 
-  const formatting = { ...dateFormatting };
-
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const { settings } = useSettingsContext();
@@ -277,7 +275,7 @@ export default function SaveUpDetailPage({ goal, plan, overview }: Props) {
   const targetDateLabel = formatGoalDate(targetDate, dateFormatting);
   const savingsMilestones = useMemo(
     () => buildSavingsMilestones(chartData, targetAmount, currentValue, t, dateFormatting),
-    [chartData, targetAmount, currentValue, t, formatting],
+    [chartData, targetAmount, currentValue, t, dateFormatting],
   );
 
   return (

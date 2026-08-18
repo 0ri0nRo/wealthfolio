@@ -348,7 +348,7 @@ export default function SpendingTabContent() {
     insightPeriod,
   } = useMemo(
     () => selectionData(selection, dateFormatting, appTimezone),
-    [selection, formatting, appTimezone],
+    [selection, dateFormatting, appTimezone],
   );
   const theme: Palette = FOREST_THEME;
 
@@ -489,7 +489,7 @@ export default function SpendingTabContent() {
     const end = { ...endMonth, day: daysInCalendarMonth(endMonth.year, endMonth.month) };
     const days = Math.max(1, calendarDaysBetweenInclusive(start, end));
     return total / days;
-  }, [historyReport?.current.outflow, budgetMonthKey, todayParts]);
+  }, [historyReport, budgetMonthKey, todayParts]);
 
   // Always render in the user's base currency. The backend FX-converts every
   // activity in `report` to base at period end, so labeling by the first

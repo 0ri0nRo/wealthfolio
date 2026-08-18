@@ -149,10 +149,19 @@ const PaceCard: FC<PaceCardProps> = ({
   isLoading,
   reconciledPace,
 }) => {
+  const localizationSettings = useLocalizationSettings();
+  const amountFormatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
-
-  const formatting = { ...dateFormatting, ...numberFormatting };
+  const formatting = useMemo<FormattingApi>(
+    () => ({
+      ...localizationSettings,
+      ...amountFormatting,
+      ...numberFormatting,
+      ...dateFormatting,
+    }),
+    [localizationSettings, amountFormatting, numberFormatting, dateFormatting],
+  );
 
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
@@ -162,16 +171,7 @@ const PaceCard: FC<PaceCardProps> = ({
 
   const pace = useMemo(
     () =>
-      computePace(
-        range,
-        spent,
-        target,
-        currency,
-        isBalanceHidden,
-        t,
-        dateFormatting,
-        reconciledPace,
-      ),
+      computePace(range, spent, target, currency, isBalanceHidden, t, formatting, reconciledPace),
     [range, spent, target, currency, isBalanceHidden, t, formatting, reconciledPace],
   );
 
@@ -284,16 +284,12 @@ function computePace(
   currency: string,
   isBalanceHidden: boolean,
   t: TFunction,
-  formatting: Pick<FormattingApi, "formatCalendarDate">,
+  formatting: FormattingApi,
   reconciledPace?: PaceState,
 ): PaceComputed {
   // Determine elapsed fraction of the active range. For periods that include
   // "today" we treat (today - start)/(end - start) as elapsed; for fully-past
   // ranges elapsed = 1 (everything has happened).
-  const localizationSettings = useLocalizationSettings();
-  const amountFormatting = useAmountFormatting();
-  const numberFormatting = useNumberFormatting();
-  const dateFormatting = useDateFormatting();
   const now = Date.now();
   const startMs = range.start.getTime();
   const endMs = range.end.getTime();
@@ -364,12 +360,7 @@ function computePace(
         currency,
         isBalanceHidden,
         t,
-        formatting: {
-          ...localizationSettings,
-          ...amountFormatting,
-          ...numberFormatting,
-          ...dateFormatting,
-        },
+        formatting,
       })
     : buildLiveNarrative({
         diffFromPace,
@@ -379,12 +370,7 @@ function computePace(
         closeLabel,
         isBalanceHidden,
         t,
-        formatting: {
-          ...localizationSettings,
-          ...amountFormatting,
-          ...numberFormatting,
-          ...dateFormatting,
-        },
+        formatting,
       });
 
   return {
@@ -523,6 +509,7 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
 }) => {
   const numberFormatting = useNumberFormatting();
   const formatting = useAmountFormatting();
+  const dateFormatting = useDateFormatting();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const segments = useMemo(
@@ -542,7 +529,6 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
 
   const priorLabel = useMemo(() => {
     if (range.months <= 1) {
-      const dateFormatting = useDateFormatting();
       const prev = new Date(range.start);
       prev.setMonth(prev.getMonth() - 1);
       return t("spending:whereIAm.vsMonth", {
@@ -550,7 +536,7 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
       });
     }
     return t("spending:whereIAm.vsPrior");
-  }, [formatting, range, t]);
+  }, [dateFormatting, range, t]);
 
   if (isLoading) {
     return (
@@ -853,12 +839,10 @@ function CashflowOverview({
 }: CashflowOverviewProps) {
   const dateFormatting = useDateFormatting();
 
-  const formatting = { ...dateFormatting };
-
   const { t } = useTranslation();
   const periodLabel = useMemo(
     () => buildPeriodSubtitle(range, dateFormatting),
-    [range, formatting],
+    [range, dateFormatting],
   );
   const incomeRows = useMemo(
     () => buildCashflowRows(currentReport?.incomeBreakdown ?? [], incomeCategories, t),
@@ -1076,8 +1060,6 @@ function BreakdownCanvas({
 }: BreakdownCanvasProps) {
   const dateFormatting = useDateFormatting();
 
-  const formatting = { ...dateFormatting };
-
   const { t } = useTranslation();
   const [filter, setFilter] = useState<BreakdownFilter>("all");
   const [sort, setSort] = useState<BreakdownSort>("spent");
@@ -1123,7 +1105,7 @@ function BreakdownCanvas({
 
   const periodLabel = useMemo(
     () => buildPeriodSubtitle(range, dateFormatting),
-    [range, formatting],
+    [range, dateFormatting],
   );
 
   const filterChips = useMemo<{ id: BreakdownFilter; label: string; count: number }[]>(
@@ -1220,7 +1202,11 @@ function BreakdownCanvas({
         {/* Desktop footer: count + link */}
         <div className="text-muted-foreground/80 border-border/40 hidden items-center justify-between border-t px-4 py-3 text-xs md:flex">
           <span className="tabular-nums">
-            {t("spending:whereIAm.categoriesShown", { shown: shownCats, total: totalCats })}
+            {t("spending:whereIAm.categoriesShown", {
+              shown: shownCats,
+              total: totalCats,
+              count: totalCats,
+            })}
           </span>
           <Link
             to="/activities?tab=spending"
@@ -1232,7 +1218,11 @@ function BreakdownCanvas({
         {/* Mobile footer: count + low-emphasis link */}
         <div className="text-muted-foreground/80 mt-3 flex items-center justify-between gap-3 px-1 text-xs md:hidden">
           <span className="tabular-nums">
-            {t("spending:whereIAm.categoriesShown", { shown: shownCats, total: totalCats })}
+            {t("spending:whereIAm.categoriesShown", {
+              shown: shownCats,
+              total: totalCats,
+              count: totalCats,
+            })}
           </span>
           <Link
             to="/activities?tab=spending"
