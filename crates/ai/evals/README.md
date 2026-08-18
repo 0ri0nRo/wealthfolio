@@ -56,6 +56,7 @@ One file per suite under `cases/`. Each file has zero or more `[[case]]` entries
 | `id` | string | yes | Unique handle for filtering / reports. |
 | `description` | string | yes | One-line human description. |
 | `prompt` | string | yes | The user message that drives the turn. |
+| `attachments` | array | no | Inline test attachments with `name`, `contentType`, and `data`. |
 | `severity` | `"P0"` / `"P1"` / `"P2"` | no, default `P1` | P0 fails the run; P1/P2 only log. |
 | `tags` | array of strings | no | Free-form tags for filtering (`"smoke"`, `"regression"`). |
 | `fixture` | string | no | (Reserved) name of a fixture under `evals/fixtures/`. |
