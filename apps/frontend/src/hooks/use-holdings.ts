@@ -3,7 +3,12 @@ import { AccountScope, Holding } from "@/lib/types";
 import { getHoldingsList } from "@/adapters";
 import { QueryKeys } from "@/lib/query-keys";
 
-export function useHoldings(accountFilter: AccountScope) {
+interface UseHoldingsOptions {
+  includeClosed?: boolean;
+}
+
+export function useHoldings(accountFilter: AccountScope, options: UseHoldingsOptions = {}) {
+  const includeClosed = options.includeClosed ?? false;
   const isEnabled = (() => {
     switch (accountFilter.type) {
       case "account":
@@ -26,8 +31,8 @@ export function useHoldings(accountFilter: AccountScope) {
     isError,
     error,
   } = useQuery<Holding[], Error>({
-    queryKey: [QueryKeys.HOLDINGS, accountFilter],
-    queryFn: () => getHoldingsList(accountFilter),
+    queryKey: [QueryKeys.HOLDINGS, accountFilter, { includeClosed }],
+    queryFn: () => getHoldingsList(accountFilter, { includeClosed }),
     enabled: isEnabled,
   });
 

@@ -512,6 +512,7 @@ mod tests {
             id: id.to_string(),
             account_id: "acc_1".to_string(),
             holding_type,
+            is_closed: false,
             quantity,
             local_currency: local_currency.to_string(),
             base_currency: base_currency.to_string(),
