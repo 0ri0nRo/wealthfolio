@@ -94,7 +94,7 @@ export function AccountSelect<TFieldValues extends FieldValues = FieldValues>({
                   );
                 }
               }}
-              defaultValue={field.value}
+              value={field.value ?? ""}
             >
               <SelectTrigger aria-label={resolvedLabel} data-testid="account-select">
                 <SelectValue placeholder={resolvedPlaceholder} />
