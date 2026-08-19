@@ -36,6 +36,7 @@ interface DataTableProps<TData, TValue> {
   manualPagination?: boolean;
   scrollable?: boolean;
   showColumnToggle?: boolean;
+  toolbarView?: React.ReactNode;
   toolbarFilters?: React.ReactNode;
   toolbarActions?: React.ReactNode;
   pinRowsToTop?: (row: TData) => boolean;
@@ -53,6 +54,7 @@ export function DataTable<TData, TValue>({
   storageKey,
   scrollable = false,
   showColumnToggle = false,
+  toolbarView,
   toolbarFilters,
   toolbarActions,
   pinRowsToTop,
@@ -114,6 +116,7 @@ export function DataTable<TData, TValue>({
           table={table}
           searchBy={searchBy}
           filters={filters}
+          viewControl={toolbarView}
           additionalFilters={toolbarFilters}
           showColumnToggle={showColumnToggle}
           actions={toolbarActions}

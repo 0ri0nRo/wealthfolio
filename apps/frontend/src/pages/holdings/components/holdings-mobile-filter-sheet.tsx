@@ -71,7 +71,6 @@ export const HoldingsMobileFilterSheet = ({
   const visibilityOptions: { value: HoldingsVisibilityFilter; label: string }[] = [
     { value: "open", label: t("holdings:open") },
     ...(showClosedPositions ? [{ value: "closed" as const, label: t("holdings:closed") }] : []),
-    { value: "cash", label: t("holdings:cash") },
   ];
 
   return (
@@ -127,7 +126,7 @@ export const HoldingsMobileFilterSheet = ({
             {setVisibilityFilters && (
               <div className="space-y-3">
                 <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
-                  {t("common:view")}
+                  {t("common:status")}
                 </h4>
                 <div className="overflow-hidden rounded-lg border">
                   {visibilityOptions.map((option, index) => {
@@ -141,14 +140,7 @@ export const HoldingsMobileFilterSheet = ({
                           index > 0 && "border-t",
                           isSelected ? "bg-accent/50 font-medium" : "hover:bg-muted/50",
                         )}
-                        onClick={() => {
-                          const nextValues = isSelected
-                            ? visibilityFilters.filter((value) => value !== option.value)
-                            : [...visibilityFilters, option.value];
-                          setVisibilityFilters(
-                            nextValues.length > 0 ? nextValues : [...DEFAULT_HOLDINGS_VISIBILITY],
-                          );
-                        }}
+                        onClick={() => setVisibilityFilters([option.value])}
                       >
                         <span>{option.label}</span>
                         {isSelected && <Icons.Check className="text-primary h-4 w-4" />}

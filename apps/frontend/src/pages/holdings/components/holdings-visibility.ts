@@ -1,10 +1,10 @@
 import { HoldingType } from "@/lib/constants";
 import type { Holding } from "@/lib/types";
 
-export type HoldingsVisibilityFilter = "open" | "closed" | "cash";
+export type HoldingsVisibilityFilter = "open" | "closed";
 
 export const DEFAULT_HOLDINGS_VISIBILITY: HoldingsVisibilityFilter[] = ["open"];
-export const HOLDINGS_VISIBILITY_STORAGE_KEY = "holdings-visibility-filters-v2";
+export const HOLDINGS_VISIBILITY_STORAGE_KEY = "holdings-visibility-filters-v3";
 
 export function getEffectiveHoldingsVisibility(
   filters: HoldingsVisibilityFilter[],
@@ -54,10 +54,8 @@ export function filterHoldingsByVisibility(
 ): Holding[] {
   const showOpen = filters.includes("open");
   const showClosed = filters.includes("closed");
-  const showCash = filters.includes("cash");
 
   return holdings.filter((holding) => {
-    if (isCashHolding(holding)) return showCash;
     if (isClosedPosition(holding)) return showClosed;
     return showOpen;
   });

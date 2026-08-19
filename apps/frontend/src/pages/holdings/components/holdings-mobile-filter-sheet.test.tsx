@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { HoldingsMobileFilterSheet } from "./holdings-mobile-filter-sheet";
@@ -32,7 +32,7 @@ vi.mock("@wealthfolio/ui/components/ui/sheet", () => ({
 }));
 
 describe("HoldingsMobileFilterSheet", () => {
-  it("hides closed positions when the account cannot provide closed history", () => {
+  it("places cash under asset type and hides unsupported closed status", () => {
     render(
       <HoldingsMobileFilterSheet
         open
@@ -51,11 +51,18 @@ describe("HoldingsMobileFilterSheet", () => {
         visibilityFilters={["open"]}
         setVisibilityFilters={vi.fn()}
         showClosedPositions={false}
+        typeOptions={[{ value: "CASH", label: "Cash" }]}
       />,
     );
 
+    const statusSection = screen.getByText("Status").parentElement;
+    const assetTypeSection = screen.getByText("Asset Type").parentElement;
+
+    expect(statusSection).not.toBeNull();
+    expect(assetTypeSection).not.toBeNull();
+    expect(within(statusSection!).queryByText("Cash")).not.toBeInTheDocument();
+    expect(within(assetTypeSection!).getByText("Cash")).toBeInTheDocument();
     expect(screen.getByText("Open")).toBeInTheDocument();
-    expect(screen.getByText("Cash")).toBeInTheDocument();
     expect(screen.queryByText("Closed")).not.toBeInTheDocument();
   });
 });

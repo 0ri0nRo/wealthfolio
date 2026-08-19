@@ -33,9 +33,14 @@ import type { TFunction } from "i18next";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, type NavigateFunction } from "react-router-dom";
-import { HoldingsVisibilityFacet } from "./holdings-visibility-filter";
+import { HoldingsStatusSegmentedControl } from "./holdings-status-control";
 import { isCashHolding, isClosedPosition } from "./holdings-visibility";
 import type { HoldingsVisibilityFilter } from "./holdings-visibility";
+import {
+  getHoldingTypeFilterOption,
+  getHoldingTypeFilterValue,
+  getHoldingTypeTranslationKey,
+} from "./holdings-type-filter";
 
 // Helper function to get display value and currency based on toggle state
 const getDisplayValueAndCurrency = (
@@ -91,7 +96,7 @@ export const HoldingsTable = ({
   setVisibilityFilters?: (value: HoldingsVisibilityFilter[]) => void;
   showClosedPositions?: boolean;
 }) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const formatting = useNumberFormatting();
   const dateFormatting = useDateFormatting();
   const navigate = useNavigate();
@@ -121,12 +126,16 @@ export const HoldingsTable = ({
 
   const uniqueTypesSet = new Set();
   const assetsTypes: { label: string; value: string }[] = holdings.reduce(
-    (result: { label: string; value: string }[], asset) => {
-      // Use taxonomy-based assetType classification
-      const type = asset.instrument?.classifications?.assetType?.name;
-      if (type && !uniqueTypesSet.has(type)) {
-        uniqueTypesSet.add(type);
-        result.push({ label: type.toUpperCase(), value: type });
+    (result: { label: string; value: string }[], holding) => {
+      const option = getHoldingTypeFilterOption(holding, t("holdings:cash"));
+      if (option && !uniqueTypesSet.has(option.value)) {
+        uniqueTypesSet.add(option.value);
+        result.push({
+          label: t(getHoldingTypeTranslationKey(option.value), {
+            defaultValue: option.fallbackLabel,
+          }).toLocaleUpperCase(i18n.resolvedLanguage),
+          value: option.value,
+        });
       }
       return result;
     },
@@ -157,7 +166,7 @@ export const HoldingsTable = ({
         searchBy="symbol"
         filters={filters}
         showColumnToggle={true}
-        storageKey="holdings-table-v2"
+        storageKey="holdings-table-v3"
         defaultColumnVisibility={{
           currency: false,
           symbolName: false,
@@ -174,9 +183,9 @@ export const HoldingsTable = ({
         defaultSorting={[{ id: "symbol", desc: false }]}
         scrollable={true}
         pinRowsToTop={isCashHolding}
-        toolbarFilters={
+        toolbarView={
           visibilityFilters && setVisibilityFilters ? (
-            <HoldingsVisibilityFacet
+            <HoldingsStatusSegmentedControl
               value={visibilityFilters}
               onChange={setVisibilityFilters}
               showClosedPositions={showClosedPositions}
@@ -790,7 +799,7 @@ const getColumns = (
   },
   {
     id: "holdingType",
-    accessorFn: (row) => row.instrument?.classifications?.assetType?.name,
+    accessorFn: getHoldingTypeFilterValue,
     meta: {
       label: t("holdings:asset_type"),
     },
