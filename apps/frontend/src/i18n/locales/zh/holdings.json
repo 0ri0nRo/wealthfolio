@@ -129,6 +129,7 @@
   "open": "持仓中",
   "closed": "已平仓",
   "qty": "数量",
+  "shares_label": "股数",
   "contracts": "份合约",
   "bonds": "份债券",
   "units": "份",

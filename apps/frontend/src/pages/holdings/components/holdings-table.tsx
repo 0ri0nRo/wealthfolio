@@ -347,7 +347,7 @@ const getColumns = (
                 ? t("holdings:bonds")
                 : isEtfOrFund
                   ? t("holdings:units")
-                  : t("holdings:shares")}
+                  : t("holdings:shares_label")}
           </span>
         </div>
       );
