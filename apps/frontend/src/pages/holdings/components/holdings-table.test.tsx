@@ -3,15 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 
 import { HoldingType, QuoteMode } from "@/lib/constants";
 import type { Holding } from "@/lib/types";
-import { createFormatter } from "@wealthfolio/ui";
 import type { ReactNode } from "react";
 
-import { formatHoldingDate, HoldingsTable } from "./holdings-table";
+import { HoldingsTable } from "./holdings-table";
 
 vi.mock("@wealthfolio/ui/components/ui/data-table", () => ({
   DataTable: ({
     columns,
     data,
+    defaultColumnVisibility,
   }: {
     columns: {
       id?: string;
@@ -25,6 +25,7 @@ vi.mock("@wealthfolio/ui/components/ui/data-table", () => ({
       ) => boolean;
     }[];
     data: Holding[];
+    defaultColumnVisibility?: Record<string, boolean>;
   }) => {
     const getValue = (id: string) =>
       data[0] == null
@@ -52,6 +53,9 @@ vi.mock("@wealthfolio/ui/components/ui/data-table", () => ({
     return (
       <div>
         <div data-testid="column-ids">{columns.map((column) => column.id).join(",")}</div>
+        <div data-testid="symbol-name-hidden">
+          {String(defaultColumnVisibility?.symbolName === false)}
+        </div>
         <div data-testid="closed-cost-basis">{getNumericValue("closedCostBasis")}</div>
         <div data-testid="sale-proceeds">{getNumericValue("saleProceeds")}</div>
         <div data-testid="closing-cash-flow-label">
@@ -82,12 +86,6 @@ vi.mock("react-router-dom", async (importOriginal) => ({
 }));
 
 describe("HoldingsTable columns", () => {
-  it("formats the opened timestamp in the configured timezone", () => {
-    const formatting = createFormatter("en-US", "America/Toronto");
-
-    expect(formatHoldingDate("2026-08-18T02:00:00.000Z", formatting)).toBe("Aug 17, 2026");
-  });
-
   it("uses market columns for open positions", () => {
     render(<HoldingsTable holdings={[]} isLoading={false} visibilityFilters={["open"]} />);
 
@@ -103,16 +101,17 @@ describe("HoldingsTable columns", () => {
     expect(screen.getByTestId("column-ids")).toHaveTextContent(
       [
         "symbol",
-        "openedAt",
         "closedCostBasis",
         "saleProceeds",
         "closedRealizedPnl",
         "realizedReturn",
+        "symbolName",
         "holdingType",
         "currency",
         "actions",
       ].join(","),
     );
+    expect(screen.getByTestId("symbol-name-hidden")).toHaveTextContent("true");
   });
 
   it("derives closing cash flow from disposed cost basis and realized gain", () => {

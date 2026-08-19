@@ -141,7 +141,6 @@
   "manual": "手动",
   "open": "持仓中",
   "closed": "已平仓",
-  "opened_at": "建仓日期",
   "cost_basis": "投资成本",
   "sale_proceeds": "卖出成交金额",
   "realized_return": "已实现收益率",

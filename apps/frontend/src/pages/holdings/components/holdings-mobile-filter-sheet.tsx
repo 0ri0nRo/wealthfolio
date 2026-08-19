@@ -135,6 +135,7 @@ export const HoldingsMobileFilterSheet = ({
                       <button
                         key={option.value}
                         type="button"
+                        aria-pressed={isSelected}
                         className={cn(
                           "flex w-full items-center justify-between p-3 text-left text-sm transition-colors",
                           index > 0 && "border-t",

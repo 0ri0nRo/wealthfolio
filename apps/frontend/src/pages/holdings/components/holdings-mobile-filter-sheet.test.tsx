@@ -63,4 +63,30 @@ describe("HoldingsMobileFilterSheet", () => {
     expect(screen.queryByText("Open")).not.toBeInTheDocument();
     expect(screen.queryByText("Closed")).not.toBeInTheDocument();
   });
+
+  it("exposes the selected position status to assistive technology", () => {
+    render(
+      <HoldingsMobileFilterSheet
+        open
+        onOpenChange={vi.fn()}
+        accountFilter={{ type: "all" }}
+        onAccountScopeChange={vi.fn()}
+        accounts={[]}
+        portfolios={[]}
+        selectedTypes={[]}
+        setSelectedTypes={vi.fn()}
+        showAccountScope={false}
+        sortBy="marketValue"
+        setSortBy={vi.fn()}
+        performanceMode="pnl"
+        setPerformanceMode={vi.fn()}
+        visibilityFilters={["closed"]}
+        setVisibilityFilters={vi.fn()}
+        showClosedPositions
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Open" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Closed" })).toHaveAttribute("aria-pressed", "true");
+  });
 });

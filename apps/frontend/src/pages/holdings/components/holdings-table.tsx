@@ -104,41 +104,19 @@ const getClosingCashFlow = (holding: Holding): MonetaryValue | null => {
   };
 };
 
-const getDateTimestamp = (value: Holding["openDate"]): number | null => {
-  if (value == null) return null;
-
-  const timestamp = new Date(value).getTime();
-  return Number.isNaN(timestamp) ? null : timestamp;
-};
-
-export const formatHoldingDate = (
-  value: Holding["openDate"],
-  dateFormatting: Pick<FormattingApi, "formatDate">,
-): string | null => {
-  const timestamp = getDateTimestamp(value);
-  if (timestamp == null) return null;
-
-  return dateFormatting.formatDate(new Date(timestamp), {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-};
-
 const CLOSED_POSITION_COLUMN_IDS = new Set([
   "symbol",
-  "openedAt",
   "closedCostBasis",
   "saleProceeds",
   "closedRealizedPnl",
   "realizedReturn",
+  "symbolName",
   "holdingType",
   "currency",
   "actions",
 ]);
 
 const CLOSED_ONLY_COLUMN_IDS = new Set([
-  "openedAt",
   "closedCostBasis",
   "saleProceeds",
   "closedRealizedPnl",
@@ -244,6 +222,7 @@ export const HoldingsTable = ({
             ? {
                 currency: false,
                 holdingType: false,
+                symbolName: false,
               }
             : {
                 currency: false,
@@ -314,7 +293,7 @@ const getColumns = (
   isHidden: boolean,
   showConvertedValues: boolean,
   formatting: Pick<FormattingApi, "formatPercent" | "formatDecimal">,
-  dateFormatting: Pick<FormattingApi, "formatDate" | "formatCalendarDate">,
+  dateFormatting: Pick<FormattingApi, "formatCalendarDate">,
   navigate: NavigateFunction,
   onClassify?: (holding: Holding) => void,
 ): ColumnDef<Holding>[] => [
@@ -407,31 +386,6 @@ const getColumns = (
       return !!(symbolMatch || nameMatch || idMatch || underlyingMatch);
     },
     enableHiding: false,
-  },
-  {
-    id: "openedAt",
-    accessorFn: (row) => getDateTimestamp(row.openDate) ?? 0,
-    enableHiding: true,
-    header: ({ column }) => (
-      <DataTableColumnHeader
-        className="justify-end text-right"
-        column={column}
-        title={t("holdings:opened_at")}
-      />
-    ),
-    meta: {
-      label: t("holdings:opened_at"),
-    },
-    cell: ({ row }) => (
-      <div className="px-4 text-right tabular-nums">
-        {formatHoldingDate(row.original.openDate, dateFormatting) ?? (
-          <span className="text-muted-foreground">—</span>
-        )}
-      </div>
-    ),
-    sortingFn: (rowA, rowB) =>
-      (getDateTimestamp(rowA.original.openDate) ?? 0) -
-      (getDateTimestamp(rowB.original.openDate) ?? 0),
   },
   {
     id: "closedCostBasis",
