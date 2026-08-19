@@ -123,7 +123,7 @@ export const HoldingsMobileFilterSheet = ({
             <Separator />
 
             {/* Position visibility */}
-            {setVisibilityFilters && (
+            {setVisibilityFilters && showClosedPositions && (
               <div className="space-y-3">
                 <h4 className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
                   {t("common:status")}
@@ -151,7 +151,7 @@ export const HoldingsMobileFilterSheet = ({
               </div>
             )}
 
-            {setVisibilityFilters && <Separator />}
+            {setVisibilityFilters && showClosedPositions && <Separator />}
 
             {/* Category Filter Section */}
             {setCategoryFilter && (

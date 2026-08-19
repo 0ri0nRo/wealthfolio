@@ -1,8 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { HoldingType } from "@/lib/constants";
+import { HoldingType, QuoteMode } from "@/lib/constants";
 import type { Holding } from "@/lib/types";
+import type { ReactNode } from "react";
 
 import { HoldingsTable } from "./holdings-table";
 
@@ -11,7 +12,16 @@ vi.mock("@wealthfolio/ui/components/ui/data-table", () => ({
     columns,
     data,
   }: {
-    columns: { id?: string; accessorFn?: (row: Holding, index: number) => unknown }[];
+    columns: {
+      id?: string;
+      accessorFn?: (row: Holding, index: number) => unknown;
+      cell?: (context: { row: { original: Holding } }) => ReactNode;
+      filterFn?: (
+        row: { getValue: (id: string) => unknown },
+        id: string,
+        value: string[],
+      ) => boolean;
+    }[];
     data: Holding[];
   }) => {
     const getValue = (id: string) =>
@@ -22,12 +32,26 @@ vi.mock("@wealthfolio/ui/components/ui/data-table", () => ({
       const value = getValue(id);
       return typeof value === "number" ? value : "";
     };
+    const holdingTypeColumn = columns.find((column) => column.id === "holdingType");
+    const holdingTypeCell =
+      data[0] && holdingTypeColumn?.cell
+        ? holdingTypeColumn.cell({ row: { original: data[0] } })
+        : null;
+    const matchesHoldingType = (value: string) =>
+      holdingTypeColumn?.filterFn?.({ getValue: () => getValue("holdingType") }, "holdingType", [
+        value,
+      ]) ?? false;
 
     return (
       <div>
         <div data-testid="column-ids">{columns.map((column) => column.id).join(",")}</div>
         <div data-testid="closed-cost-basis">{getNumericValue("closedCostBasis")}</div>
         <div data-testid="sale-proceeds">{getNumericValue("saleProceeds")}</div>
+        <div data-testid="holding-type-cell">{holdingTypeCell}</div>
+        <div data-testid="parent-type-match">{matchesHoldingType("FUND") ? "true" : "false"}</div>
+        <div data-testid="exact-type-match">
+          {matchesHoldingType("FUND_MUTUAL") ? "true" : "false"}
+        </div>
       </div>
     );
   },
@@ -95,5 +119,47 @@ describe("HoldingsTable columns", () => {
 
     expect(screen.getByTestId("closed-cost-basis")).toHaveTextContent("125");
     expect(screen.getByTestId("sale-proceeds")).toHaveTextContent("150");
+  });
+
+  it("renders a localized asset type and matches its taxonomy key exactly", () => {
+    const holding: Holding = {
+      id: "mutual-fund",
+      accountId: "account-1",
+      holdingType: HoldingType.SECURITY,
+      quantity: 1,
+      localCurrency: "USD",
+      baseCurrency: "USD",
+      marketValue: { local: 100, base: 100 },
+      weight: 1,
+      asOfDate: "2026-08-18",
+      instrument: {
+        id: "asset-mutual-fund",
+        symbol: "FUND",
+        currency: "USD",
+        quoteMode: QuoteMode.MARKET,
+        classifications: {
+          assetType: {
+            id: "FUND_MUTUAL",
+            taxonomyId: "instrument_type",
+            name: "Mutual Fund",
+            key: "FUND_MUTUAL",
+            color: "#000000",
+            sortOrder: 1,
+            createdAt: "2026-08-18",
+            updatedAt: "2026-08-18",
+          },
+          assetClasses: [],
+          sectors: [],
+          regions: [],
+          customGroups: [],
+        },
+      },
+    };
+
+    render(<HoldingsTable holdings={[holding]} isLoading={false} visibilityFilters={["open"]} />);
+
+    expect(screen.getByTestId("holding-type-cell")).toHaveTextContent("Mutual Fund");
+    expect(screen.getByTestId("parent-type-match")).toHaveTextContent("false");
+    expect(screen.getByTestId("exact-type-match")).toHaveTextContent("true");
   });
 });

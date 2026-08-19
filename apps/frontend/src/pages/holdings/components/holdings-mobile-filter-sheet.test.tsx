@@ -55,14 +55,12 @@ describe("HoldingsMobileFilterSheet", () => {
       />,
     );
 
-    const statusSection = screen.getByText("Status").parentElement;
     const assetTypeSection = screen.getByText("Asset Type").parentElement;
 
-    expect(statusSection).not.toBeNull();
     expect(assetTypeSection).not.toBeNull();
-    expect(within(statusSection!).queryByText("Cash")).not.toBeInTheDocument();
     expect(within(assetTypeSection!).getByText("Cash")).toBeInTheDocument();
-    expect(screen.getByText("Open")).toBeInTheDocument();
+    expect(screen.queryByText("Status")).not.toBeInTheDocument();
+    expect(screen.queryByText("Open")).not.toBeInTheDocument();
     expect(screen.queryByText("Closed")).not.toBeInTheDocument();
   });
 });

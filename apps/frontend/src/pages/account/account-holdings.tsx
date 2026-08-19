@@ -23,7 +23,6 @@ import {
   HOLDINGS_VISIBILITY_STORAGE_KEY,
   filterHoldingsByVisibility,
   getEffectiveHoldingsVisibility,
-  mergeHoldingsVisibilitySelection,
   type HoldingsVisibilityFilter,
 } from "@/pages/holdings/components/holdings-visibility";
 import {
@@ -72,9 +71,7 @@ const AccountHoldings = ({
   );
   const handleVisibilityFiltersChange = useCallback(
     (nextFilters: HoldingsVisibilityFilter[]) => {
-      setVisibilityFilters((currentFilters) =>
-        mergeHoldingsVisibilitySelection(currentFilters, nextFilters, showClosedPositions),
-      );
+      setVisibilityFilters(getEffectiveHoldingsVisibility(nextFilters, showClosedPositions));
     },
     [setVisibilityFilters, showClosedPositions],
   );

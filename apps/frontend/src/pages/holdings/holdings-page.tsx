@@ -43,7 +43,6 @@ import {
   filterHoldingsByVisibility,
   getEffectiveHoldingsVisibility,
   isClosedPosition,
-  mergeHoldingsVisibilitySelection,
   type HoldingsVisibilityFilter,
 } from "./components/holdings-visibility";
 import {
@@ -97,9 +96,7 @@ export const HoldingsPage = () => {
   );
   const handleVisibilityFiltersChange = useCallback(
     (nextFilters: HoldingsVisibilityFilter[]) => {
-      setVisibilityFilters((currentFilters) =>
-        mergeHoldingsVisibilitySelection(currentFilters, nextFilters, showClosedPositions),
-      );
+      setVisibilityFilters(getEffectiveHoldingsVisibility(nextFilters, showClosedPositions));
     },
     [setVisibilityFilters, showClosedPositions],
   );

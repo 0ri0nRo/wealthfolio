@@ -1045,7 +1045,18 @@ const getColumns = (
     header: ({ column }) => (
       <DataTableColumnHeader column={column} title={t("holdings:asset_type")} />
     ),
-    filterFn: "arrIncludesSome",
+    cell: ({ row }) => {
+      const option = getHoldingTypeFilterOption(row.original, t("holdings:cash"));
+      if (!option) return null;
+
+      return t(getHoldingTypeTranslationKey(option.value), {
+        defaultValue: option.fallbackLabel,
+      });
+    },
+    filterFn: (row, id, value: string[]) => {
+      const holdingType = row.getValue<string | undefined>(id);
+      return holdingType != null && value.includes(holdingType);
+    },
   },
   {
     id: "currency",
