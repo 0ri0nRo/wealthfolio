@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { FormattingProvider } from "@wealthfolio/ui";
 import { describe, expect, it, vi } from "vitest";
 
 import { AmountInput } from "./amount-input";
@@ -34,6 +35,44 @@ describe("spending AmountInput", () => {
     expect(input).not.toHaveFocus();
     expect(onCommit).toHaveBeenCalledOnce();
     expect(onCommit).toHaveBeenCalledWith("7.5");
+  });
+
+  it("renders and commits locale-native decimal input", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <FormattingProvider locale="fr-FR">
+        <AmountInput value={12.5} onCommit={onCommit} />
+      </FormattingProvider>,
+    );
+
+    const input = screen.getByRole<HTMLInputElement>("textbox");
+    expect(input).toHaveValue("12,5");
+
+    await user.clear(input);
+    await user.type(input, "15,25");
+    await user.tab();
+
+    expect(onCommit).toHaveBeenCalledOnce();
+    expect(onCommit).toHaveBeenCalledWith("15.25");
+  });
+
+  it("commits machine-formatted currency paste under a comma-decimal locale", async () => {
+    const user = userEvent.setup();
+    const onCommit = vi.fn();
+    render(
+      <FormattingProvider locale="fr-FR">
+        <AmountInput value={0} onCommit={onCommit} />
+      </FormattingProvider>,
+    );
+
+    const input = screen.getByRole<HTMLInputElement>("textbox");
+    await user.click(input);
+    await user.paste("$1,234.56");
+    await user.tab();
+
+    expect(onCommit).toHaveBeenCalledOnce();
+    expect(onCommit).toHaveBeenCalledWith("1234.56");
   });
 
   it("does not commit unchanged or invalid drafts", async () => {
