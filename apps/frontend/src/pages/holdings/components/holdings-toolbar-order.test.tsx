@@ -1,7 +1,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable } from "@wealthfolio/ui/components/ui/data-table";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it } from "vitest";
 
 interface TestHolding {
   symbol: string;
@@ -9,11 +9,19 @@ interface TestHolding {
 }
 
 const columns: ColumnDef<TestHolding>[] = [
-  { accessorKey: "symbol", header: "Symbol" },
+  {
+    accessorKey: "symbol",
+    header: "Symbol",
+    cell: ({ getValue }) => <span data-testid="symbol-cell">{getValue<string>()}</span>,
+  },
   { accessorKey: "holdingType", header: "Type" },
 ];
 
 describe("holdings desktop toolbar", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
   it("orders status before search and keeps display controls on the right", () => {
     const { container } = render(
       <DataTable
@@ -44,5 +52,35 @@ describe("holdings desktop toolbar", () => {
     expect(controls.indexOf(search)).toBeLessThan(controls.indexOf(type));
     expect(controls.indexOf(type)).toBeLessThan(controls.indexOf(currency));
     expect(controls.indexOf(currency)).toBeLessThan(controls.indexOf(columnToggle));
+  });
+
+  it("replaces sorting for a removed view column with the default", async () => {
+    window.localStorage.setItem(
+      "holdings-sorting-test:sorting",
+      JSON.stringify([{ id: "marketValue", desc: true }]),
+    );
+
+    render(
+      <DataTable
+        data={[
+          { symbol: "ZZZ", holdingType: "ETF" },
+          { symbol: "AAA", holdingType: "STOCK" },
+        ]}
+        columns={columns}
+        defaultSorting={[{ id: "symbol", desc: false }]}
+        storageKey="holdings-sorting-test"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId("symbol-cell").map((cell) => cell.textContent)).toEqual([
+        "AAA",
+        "ZZZ",
+      ]);
+    });
+
+    expect(JSON.parse(window.localStorage.getItem("holdings-sorting-test:sorting") ?? "[]")).toEqual(
+      [{ id: "symbol", desc: false }],
+    );
   });
 });

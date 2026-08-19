@@ -111,14 +111,14 @@ const getDateTimestamp = (value: Holding["openDate"]): number | null => {
   return Number.isNaN(timestamp) ? null : timestamp;
 };
 
-const formatHoldingDate = (
+export const formatHoldingDate = (
   value: Holding["openDate"],
-  dateFormatting: Pick<FormattingApi, "formatCalendarDate">,
+  dateFormatting: Pick<FormattingApi, "formatDate">,
 ): string | null => {
   const timestamp = getDateTimestamp(value);
   if (timestamp == null) return null;
 
-  return dateFormatting.formatCalendarDate(new Date(timestamp).toISOString().slice(0, 10), {
+  return dateFormatting.formatDate(new Date(timestamp), {
     year: "numeric",
     month: "short",
     day: "numeric",
@@ -314,7 +314,7 @@ const getColumns = (
   isHidden: boolean,
   showConvertedValues: boolean,
   formatting: Pick<FormattingApi, "formatPercent" | "formatDecimal">,
-  dateFormatting: Pick<FormattingApi, "formatCalendarDate">,
+  dateFormatting: Pick<FormattingApi, "formatDate" | "formatCalendarDate">,
   navigate: NavigateFunction,
   onClassify?: (holding: Holding) => void,
 ): ColumnDef<Holding>[] => [
