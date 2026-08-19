@@ -92,7 +92,7 @@ const getDisposedCostBasis = (holding: Holding): MonetaryValue | null => {
   };
 };
 
-const getSaleProceeds = (holding: Holding): MonetaryValue | null => {
+const getClosingCashFlow = (holding: Holding): MonetaryValue | null => {
   const costBasis = getDisposedCostBasis(holding);
   if (costBasis == null || holding.realizedGain == null) {
     return null;
@@ -469,26 +469,26 @@ const getColumns = (
   },
   {
     id: "saleProceeds",
-    accessorFn: (row) => getSaleProceeds(row)?.base ?? 0,
+    accessorFn: (row) => getClosingCashFlow(row)?.base ?? 0,
     enableHiding: true,
     header: ({ column }) => (
       <DataTableColumnHeader
         className="justify-end text-right"
         column={column}
-        title={t("holdings:sale_proceeds")}
+        title={t("holdings:closing_cash_flow")}
       />
     ),
     meta: {
-      label: t("holdings:sale_proceeds"),
+      label: t("holdings:closing_cash_flow"),
     },
     cell: ({ row }) => {
       const holding = row.original;
-      const proceeds = getSaleProceeds(holding);
-      if (proceeds == null) {
+      const cashFlow = getClosingCashFlow(holding);
+      if (cashFlow == null) {
         return <div className="text-muted-foreground px-4 text-right">—</div>;
       }
 
-      const value = showConvertedValues ? proceeds.base : proceeds.local;
+      const value = showConvertedValues ? cashFlow.base : cashFlow.local;
       const currency = showConvertedValues ? holding.baseCurrency : holding.localCurrency;
       return (
         <div className="flex min-h-[40px] flex-col items-end justify-center px-4">
@@ -498,7 +498,8 @@ const getColumns = (
       );
     },
     sortingFn: (rowA, rowB) =>
-      (getSaleProceeds(rowA.original)?.base ?? 0) - (getSaleProceeds(rowB.original)?.base ?? 0),
+      (getClosingCashFlow(rowA.original)?.base ?? 0) -
+      (getClosingCashFlow(rowB.original)?.base ?? 0),
   },
   {
     id: "closedRealizedPnl",
@@ -554,7 +555,11 @@ const getColumns = (
 
       return (
         <div className="flex min-h-[40px] items-center justify-end px-4">
-          <HoldingPerformancePercent value={percentage} />
+          {percentage == null ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            <HoldingPerformancePercent value={percentage} />
+          )}
         </div>
       );
     },

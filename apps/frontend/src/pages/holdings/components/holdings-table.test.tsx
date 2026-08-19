@@ -17,6 +17,7 @@ vi.mock("@wealthfolio/ui/components/ui/data-table", () => ({
       id?: string;
       accessorFn?: (row: Holding, index: number) => unknown;
       cell?: (context: { row: { original: Holding } }) => ReactNode;
+      meta?: { label?: string };
       filterFn?: (
         row: { getValue: (id: string) => unknown },
         id: string,
@@ -38,6 +39,11 @@ vi.mock("@wealthfolio/ui/components/ui/data-table", () => ({
       data[0] && holdingTypeColumn?.cell
         ? holdingTypeColumn.cell({ row: { original: data[0] } })
         : null;
+    const realizedReturnColumn = columns.find((column) => column.id === "realizedReturn");
+    const realizedReturnCell =
+      data[0] && realizedReturnColumn?.cell
+        ? realizedReturnColumn.cell({ row: { original: data[0] } })
+        : null;
     const matchesHoldingType = (value: string) =>
       holdingTypeColumn?.filterFn?.({ getValue: () => getValue("holdingType") }, "holdingType", [
         value,
@@ -48,6 +54,10 @@ vi.mock("@wealthfolio/ui/components/ui/data-table", () => ({
         <div data-testid="column-ids">{columns.map((column) => column.id).join(",")}</div>
         <div data-testid="closed-cost-basis">{getNumericValue("closedCostBasis")}</div>
         <div data-testid="sale-proceeds">{getNumericValue("saleProceeds")}</div>
+        <div data-testid="closing-cash-flow-label">
+          {columns.find((column) => column.id === "saleProceeds")?.meta?.label}
+        </div>
+        <div data-testid="realized-return-cell">{realizedReturnCell}</div>
         <div data-testid="holding-type-cell">{holdingTypeCell}</div>
         <div data-testid="parent-type-match">{matchesHoldingType("FUND") ? "true" : "false"}</div>
         <div data-testid="exact-type-match">
@@ -105,7 +115,7 @@ describe("HoldingsTable columns", () => {
     );
   });
 
-  it("derives sale proceeds from disposed cost basis and realized gain", () => {
+  it("derives closing cash flow from disposed cost basis and realized gain", () => {
     const holding: Holding = {
       id: "closed-position",
       accountId: "account-1",
@@ -126,6 +136,32 @@ describe("HoldingsTable columns", () => {
 
     expect(screen.getByTestId("closed-cost-basis")).toHaveTextContent("125");
     expect(screen.getByTestId("sale-proceeds")).toHaveTextContent("150");
+    expect(screen.getByTestId("closing-cash-flow-label")).toHaveTextContent("Closing Cash Flow");
+    expect(screen.getByTestId("realized-return-cell")).toHaveTextContent("—");
+  });
+
+  it("keeps the closing cash flow signed for a closed short position", () => {
+    const holding: Holding = {
+      id: "closed-short-position",
+      accountId: "account-1",
+      holdingType: HoldingType.SECURITY,
+      isClosed: true,
+      quantity: 0,
+      localCurrency: "USD",
+      baseCurrency: "USD",
+      marketValue: { local: 0, base: 0 },
+      costBasis: { local: 0, base: 0 },
+      returnBasis: { local: -1000, base: -1000 },
+      realizedGain: { local: 200, base: 200 },
+      realizedGainPct: 0.2,
+      weight: 0,
+      asOfDate: "2026-08-18",
+    };
+
+    render(<HoldingsTable holdings={[holding]} isLoading={false} visibilityFilters={["closed"]} />);
+
+    expect(screen.getByTestId("closed-cost-basis")).toHaveTextContent("-1000");
+    expect(screen.getByTestId("sale-proceeds")).toHaveTextContent("-800");
   });
 
   it("renders a localized asset type and matches its taxonomy key exactly", () => {

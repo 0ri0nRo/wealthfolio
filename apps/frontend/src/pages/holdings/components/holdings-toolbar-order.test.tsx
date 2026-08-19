@@ -79,8 +79,8 @@ describe("holdings desktop toolbar", () => {
       ]);
     });
 
-    expect(JSON.parse(window.localStorage.getItem("holdings-sorting-test:sorting") ?? "[]")).toEqual(
-      [{ id: "symbol", desc: false }],
-    );
+    expect(
+      JSON.parse(window.localStorage.getItem("holdings-sorting-test:sorting") ?? "[]"),
+    ).toEqual([{ id: "symbol", desc: false }]);
   });
 });

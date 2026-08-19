@@ -234,5 +234,6 @@
   "assets_need_valuations_other": "{{count}} activos necesitan valoraciones actualizadas",
   "category_breakdown": "Desglose por categoría",
   "personal_assets": "Activos personales",
-  "health_filter_active": "Se muestran las posiciones marcadas por el Centro de salud"
+  "health_filter_active": "Se muestran las posiciones marcadas por el Centro de salud",
+  "closing_cash_flow": "Flujo de caja al cierre"
 }

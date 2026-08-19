@@ -234,5 +234,6 @@
   "assets_need_valuations_other": "자산 {{count}}개에 평가액 업데이트가 필요합니다",
   "category_breakdown": "카테고리별 세부 내역",
   "personal_assets": "개인 자산",
-  "health_filter_active": "건강 센터가 표시한 보유 자산을 표시하고 있습니다"
+  "health_filter_active": "건강 센터가 표시한 보유 자산을 표시하고 있습니다",
+  "closing_cash_flow": "포지션 청산 현금 흐름"
 }

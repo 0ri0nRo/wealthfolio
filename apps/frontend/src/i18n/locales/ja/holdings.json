@@ -234,5 +234,6 @@
   "assets_need_valuations_other": "{{count}}件の資産で評価額の更新が必要です",
   "category_breakdown": "カテゴリ別内訳",
   "personal_assets": "個人資産",
-  "health_filter_active": "ヘルスセンターが指摘した保有資産を表示しています"
+  "health_filter_active": "ヘルスセンターが指摘した保有資産を表示しています",
+  "closing_cash_flow": "決済キャッシュフロー"
 }
