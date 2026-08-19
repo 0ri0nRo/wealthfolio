@@ -709,7 +709,7 @@
     "low_range": "Low range ({{rate}})",
     "legend_projected": "Projected",
     "legend_target": "Target",
-    "legend_range": "Range (±{{pct}}%)"
+    "legend_range": "Range (±{{pct}})"
   },
   "milestones": {
     "kicker": "Checkpoints",
@@ -752,7 +752,9 @@
       "gap_at_target_age": "Gap at target age",
       "money_lasts": "Money lasts",
       "paths_count": "{{count}} paths",
-      "not_run": "not run"
+      "not_run": "not run",
+      "paths_count_one": "{{count}} path",
+      "paths_count_other": "{{count}} paths"
     },
     "results": {
       "base_plan": "Base plan",
@@ -798,7 +800,9 @@
       "outcome": "Outcome",
       "fi_age": "FI age",
       "extra_gap": "Extra gap",
-      "money_left": "Money left"
+      "money_left": "Money left",
+      "eyebrow_with_count_one": "What could break this plan? · {{count}} scenario",
+      "eyebrow_with_count_other": "What could break this plan? · {{count}} scenarios"
     },
     "montecarlo": {
       "eyebrow": "Market paths",
@@ -831,7 +835,9 @@
       "median_fi_age": "Median FI age",
       "market_paths_count": "{{count}} market paths",
       "retire": "retire",
-      "goal": "goal"
+      "goal": "goal",
+      "market_paths_count_one": "{{count}} market path",
+      "market_paths_count_other": "{{count}} market paths"
     },
     "moves": {
       "eyebrow": "What changes the plan most?",

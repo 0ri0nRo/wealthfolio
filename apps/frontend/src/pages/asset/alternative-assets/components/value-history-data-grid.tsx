@@ -10,15 +10,15 @@ import {
   Button,
   DataGrid,
   DatePickerInput,
-  formatAmount,
-  formatCurrencySymbol,
   Icons,
   InputGroup,
   InputGroupAddon,
   InputGroupText,
   MoneyInput,
   Textarea,
+  useAmountFormatting,
   useDataGrid,
+  useDateFormatting,
 } from "@wealthfolio/ui";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -155,6 +155,8 @@ export function ValueHistoryDataGrid({
 }: ValueHistoryDataGridProps) {
   const { t } = useTranslation();
   const isMobile = useIsMobileViewport();
+  const amountFormatting = useAmountFormatting();
+  const dateFormatting = useDateFormatting();
   // Convert quotes to local entries
   const initialEntries = useMemo(
     () => data.map(toValueHistoryEntry).sort((a, b) => b.date.getTime() - a.date.getTime()),
@@ -598,7 +600,9 @@ export function ValueHistoryDataGrid({
                         </label>
                         <InputGroup className="bg-input-bg h-10 rounded-md">
                           <InputGroupAddon align="inline-start">
-                            <InputGroupText>{formatCurrencySymbol(draft.currency)}</InputGroupText>
+                            <InputGroupText>
+                              {amountFormatting.formatCurrencySymbol(draft.currency)}
+                            </InputGroupText>
                           </InputGroupAddon>
                           <MoneyInput
                             data-slot="input-group-control"
@@ -655,17 +659,17 @@ export function ValueHistoryDataGrid({
                     type="button"
                     className="active:bg-muted/40 grid min-h-11 min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 rounded-md px-1.5 py-2 text-left disabled:opacity-50"
                     aria-label={t("asset:valueHistory.edit_entry_aria", {
-                      date: format(entry.date, "yyyy-MM-dd"),
-                      value: formatAmount(entry.value, entry.currency),
+                      date: dateFormatting.formatCalendarDate(format(entry.date, "yyyy-MM-dd")),
+                      value: amountFormatting.formatAmount(entry.value, entry.currency),
                     })}
                     disabled={isPersisting}
                     onClick={() => handleMobileEdit(entry)}
                   >
                     <span className="text-muted-foreground truncate text-sm">
-                      {format(entry.date, "yyyy-MM-dd")}
+                      {dateFormatting.formatCalendarDate(format(entry.date, "yyyy-MM-dd"))}
                     </span>
                     <span className="text-foreground text-base font-semibold tabular-nums">
-                      {formatAmount(entry.value, entry.currency)}
+                      {amountFormatting.formatAmount(entry.value, entry.currency)}
                     </span>
                     <Icons.Pencil className="text-muted-foreground h-4 w-4" aria-hidden="true" />
                     {entry.notes && (
@@ -679,8 +683,8 @@ export function ValueHistoryDataGrid({
                     size="icon"
                     className="text-muted-foreground hover:text-destructive h-11 w-11 shrink-0"
                     aria-label={t("asset:valueHistory.delete_entry_aria", {
-                      date: format(entry.date, "yyyy-MM-dd"),
-                      value: formatAmount(entry.value, entry.currency),
+                      date: dateFormatting.formatCalendarDate(format(entry.date, "yyyy-MM-dd")),
+                      value: amountFormatting.formatAmount(entry.value, entry.currency),
                     })}
                     disabled={isPersisting}
                     onClick={() => setMobileDeleteEntry(entry)}

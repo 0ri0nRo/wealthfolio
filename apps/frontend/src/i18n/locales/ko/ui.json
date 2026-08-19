@@ -81,7 +81,13 @@
   },
   "datePicker": {
     "dateLabel": "날짜",
-    "pick": "날짜 선택"
+    "pick": "날짜 선택",
+    "previousMonth": "이전 달",
+    "nextMonth": "다음 달",
+    "chooseMonth": "월 선택",
+    "chooseYear": "연도 선택",
+    "previousYear": "이전 연도",
+    "nextYear": "다음 연도"
   },
   "dateRange": {
     "pick": "날짜 범위 선택",

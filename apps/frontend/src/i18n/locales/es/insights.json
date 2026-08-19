@@ -50,7 +50,9 @@
       "target": "Objetivo",
       "no_target_yet": "Aún no hay asignación objetivo",
       "compare_weights": "Compara los pesos actuales con tu cartera prevista.",
-      "set_target_allocation": "Establecer asignación objetivo"
+      "set_target_allocation": "Establecer asignación objetivo",
+      "outside_range_one": "{{count}} fuera de rango · mayor diferencia {{gap}}",
+      "outside_range_other": "{{count}} fuera de rango · mayor diferencia {{gap}}"
     },
     "value_strip": {
       "portfolio_value": "Valor de la cartera",
@@ -119,6 +121,8 @@
       "contributions": "Aportaciones",
       "equity_built": "Capital acumulado",
       "per_month": "/mes"
-    }
+    },
+    "days_ago_one": "hace {{count}} d",
+    "days_ago_other": "hace {{count}} d"
   }
 }

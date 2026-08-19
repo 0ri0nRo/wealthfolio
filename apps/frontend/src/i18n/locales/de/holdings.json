@@ -216,5 +216,6 @@
   "assets_need_valuations_one": "{{count}} Vermögenswert benötigt aktualisierte Bewertungen",
   "assets_need_valuations_other": "{{count}} Vermögenswerte benötigen aktualisierte Bewertungen",
   "category_breakdown": "Kategorieaufschlüsselung",
-  "personal_assets": "Persönliche Vermögenswerte"
+  "personal_assets": "Persönliche Vermögenswerte",
+  "health_filter_active": "Vom Health Center markierte Positionen werden angezeigt"
 }
