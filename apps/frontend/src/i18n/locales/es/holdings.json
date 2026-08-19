@@ -129,6 +129,7 @@
   "open": "Abierta",
   "closed": "Cerrada",
   "qty": "Cant.",
+  "shares_label": "acciones",
   "contracts": "contratos",
   "bonds": "bonos",
   "units": "participaciones",

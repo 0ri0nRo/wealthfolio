@@ -129,6 +129,7 @@
   "open": "보유 중",
   "closed": "청산됨",
   "qty": "수량",
+  "shares_label": "주식 수",
   "contracts": "계약",
   "bonds": "채권",
   "units": "좌",
