@@ -129,6 +129,7 @@
   "open": "保有中",
   "closed": "決済済み",
   "qty": "数量",
+  "shares_label": "株数",
   "contracts": "枚",
   "bonds": "口",
   "units": "口",

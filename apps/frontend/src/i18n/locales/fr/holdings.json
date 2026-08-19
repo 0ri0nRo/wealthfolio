@@ -129,6 +129,7 @@
   "open": "Ouverte",
   "closed": "Clôturée",
   "qty": "Qté",
+  "shares_label": "actions",
   "contracts": "contrats",
   "bonds": "obligations",
   "units": "parts",
