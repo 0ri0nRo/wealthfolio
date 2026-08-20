@@ -44,8 +44,11 @@ pub struct CategorizationRuleDB {
     pub preset_modified: i32,
     pub created_at: String,
     pub updated_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub amount_op: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub amount_value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub amount_value2: Option<String>,
 }
 
@@ -246,6 +249,28 @@ fn new_rule_db(new_rule: NewCategorizationRule, now: &str) -> NewCategorizationR
     }
 }
 
+fn outbox_request_with_explicit_amount_fields(
+    rule: &CategorizationRuleDB,
+    op: SyncOperation,
+) -> wealthfolio_core::errors::Result<OutboxWriteRequest> {
+    let mut request = crate::sync::outbox_request_for_model(rule, op)?;
+    if let Some(payload) = request.payload.as_object_mut() {
+        payload.insert(
+            "amountOp".to_string(),
+            serde_json::to_value(&rule.amount_op)?,
+        );
+        payload.insert(
+            "amountValue".to_string(),
+            serde_json::to_value(&rule.amount_value)?,
+        );
+        payload.insert(
+            "amountValue2".to_string(),
+            serde_json::to_value(&rule.amount_value2)?,
+        );
+    }
+    Ok(request)
+}
+
 #[async_trait]
 impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
     async fn list(&self) -> Result<Vec<CategorizationRule>> {
@@ -297,6 +322,9 @@ impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
         patch: UpdateCategorizationRule,
     ) -> Result<CategorizationRule> {
         let id = id.to_string();
+        let amount_fields_changed = patch.amount_op.is_some()
+            || patch.amount_value.is_some()
+            || patch.amount_value2.is_some();
         self.writer
             .exec_tx(move |tx| {
                 let mut existing: CategorizationRuleDB = spending_categorization_rules::table
@@ -366,7 +394,14 @@ impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
                     .execute(tx.conn())
                     .map_err(StorageError::from)?;
 
-                tx.update(&existing)?;
+                if amount_fields_changed {
+                    tx.queue_outbox(outbox_request_with_explicit_amount_fields(
+                        &existing,
+                        SyncOperation::Update,
+                    )?);
+                } else {
+                    tx.update(&existing)?;
+                }
                 Ok(existing)
             })
             .await
@@ -420,6 +455,12 @@ impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
                             continue;
                         }
 
+                        let previous_amount_fields = (
+                            existing.amount_op.clone(),
+                            existing.amount_value.clone(),
+                            existing.amount_value2.clone(),
+                        );
+
                         existing.name = rule.name;
                         existing.pattern = rule.pattern;
                         existing.match_type = rule.match_type.as_str().to_string();
@@ -437,6 +478,12 @@ impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
                         existing.preset_version = rule.preset_version;
                         existing.preset_modified = 0;
                         existing.updated_at = now.clone();
+                        let amount_fields_changed = previous_amount_fields
+                            != (
+                                existing.amount_op.clone(),
+                                existing.amount_value.clone(),
+                                existing.amount_value2.clone(),
+                            );
 
                         diesel::update(spending_categorization_rules::table.find(&existing.id))
                             .set((
@@ -467,7 +514,14 @@ impl CategorizationRulesRepositoryTrait for CategorizationRulesRepository {
                             ))
                             .execute(tx.conn())
                             .map_err(StorageError::from)?;
-                        tx.update(&existing)?;
+                        if amount_fields_changed {
+                            tx.queue_outbox(outbox_request_with_explicit_amount_fields(
+                                &existing,
+                                SyncOperation::Update,
+                            )?);
+                        } else {
+                            tx.update(&existing)?;
+                        }
                         counts.updated += 1;
                         continue;
                     }
@@ -703,6 +757,22 @@ mod tests {
             .expect("load outbox")
     }
 
+    fn rule_outbox_payloads(
+        repo: &CategorizationRulesRepository,
+        rule_id: &str,
+    ) -> Vec<serde_json::Value> {
+        let conn = &mut get_connection(&repo.pool).expect("conn");
+        sync_outbox::table
+            .filter(sync_outbox::entity.eq("spending_categorization_rule"))
+            .filter(sync_outbox::entity_id.eq(rule_id))
+            .select(sync_outbox::payload)
+            .load::<String>(conn)
+            .expect("load rule outbox payloads")
+            .into_iter()
+            .map(|payload| serde_json::from_str(&payload).expect("parse rule outbox payload"))
+            .collect()
+    }
+
     #[tokio::test]
     async fn preset_rule_deletion_lifecycle_writes_sync_outbox() {
         let repo = setup_repo();
@@ -814,15 +884,44 @@ mod tests {
         assert_eq!(cleared.amount_op, None);
         assert_eq!(cleared.amount_value, None);
         assert_eq!(cleared.amount_value2, None);
+
+        let payloads = rule_outbox_payloads(&repo, "rule-amount");
+        assert!(payloads.iter().any(|payload| {
+            payload.get("amount_op") == Some(&serde_json::Value::Null)
+                && payload.get("amount_value") == Some(&serde_json::Value::Null)
+                && payload.get("amount_value2") == Some(&serde_json::Value::Null)
+        }));
+        assert!(payloads.iter().any(|payload| {
+            payload.get("amount_op").and_then(serde_json::Value::as_str) == Some("gte")
+                && payload.get("amount_value2") == Some(&serde_json::Value::Null)
+        }));
     }
 
     #[tokio::test]
-    async fn rule_without_amount_condition_round_trips_nulls() {
+    async fn rule_without_amount_condition_omits_amount_fields_from_outbox() {
         let repo = setup_repo();
         let created = repo.create(preset_rule()).await.expect("create rule");
         assert_eq!(created.amount_op, None);
         assert_eq!(created.amount_value, None);
         assert_eq!(created.amount_value2, None);
+
+        repo.update(
+            "rule-ca-groceries",
+            UpdateCategorizationRule {
+                name: Some("Renamed groceries".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("update rule");
+
+        let payloads = rule_outbox_payloads(&repo, "rule-ca-groceries");
+        assert_eq!(payloads.len(), 2);
+        for payload in payloads {
+            assert!(payload.get("amount_op").is_none());
+            assert!(payload.get("amount_value").is_none());
+            assert!(payload.get("amount_value2").is_none());
+        }
     }
 
     #[test]
