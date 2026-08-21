@@ -4,6 +4,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `ExchangeRatesAPI.getRatesForDates(pairs)` for batched date-specific FX-rate
+  lookups, with per-pair errors and Wealthfolio's standard FX resolution rules.
+
 ## [3.6.1] - 2026-07-06
 
 Follow-up to the v3.6 sandbox release: sidebar icons are now a typed, curated

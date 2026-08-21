@@ -841,6 +841,7 @@ export interface ExchangeRate {
 export interface ExchangeRateDateQuery {
   fromCurrency: string;
   toCurrency: string;
+  /** Requested date in YYYY-MM-DD format. */
   date: string;
 }
 

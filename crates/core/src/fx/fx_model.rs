@@ -1,6 +1,5 @@
 use crate::quotes::Quote;
 use crate::utils::decimal_serde;
-use crate::utils::decimal_serde::decimal_serde_option;
 use chrono::{DateTime, NaiveDate, Utc};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -112,7 +111,6 @@ pub struct ExchangeRateDateResult {
     pub from_currency: String,
     pub to_currency: String,
     pub date: NaiveDate,
-    #[serde(with = "decimal_serde_option")]
     pub rate: Option<Decimal>,
     pub error: Option<String>,
 }
@@ -122,4 +120,25 @@ pub struct ExchangeRateDateResult {
 #[serde(rename_all = "camelCase")]
 pub struct ExchangeRateDateBatchRequest {
     pub pairs: Vec<ExchangeRateDateQuery>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exchange_rate_date_result_serializes_rate_as_number() {
+        let result = ExchangeRateDateResult {
+            from_currency: "USD".to_string(),
+            to_currency: "EUR".to_string(),
+            date: NaiveDate::from_ymd_opt(2026, 5, 18).unwrap(),
+            rate: Some(Decimal::new(9, 1)),
+            error: None,
+        };
+
+        let value = serde_json::to_value(result).unwrap();
+
+        assert!(value["rate"].is_number());
+        assert_eq!(value["rate"], serde_json::json!(0.9));
+    }
 }
