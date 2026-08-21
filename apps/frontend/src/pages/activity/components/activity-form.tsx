@@ -20,7 +20,7 @@ import { ActivityFormRenderer } from "./activity-form-renderer";
 import type { AccountSelectOption } from "./forms/fields";
 import { useActivityForm } from "../hooks/use-activity-form";
 import { mapActivityTypeToPicker } from "../utils/activity-form-utils";
-import type { PickerActivityType } from "../config/activity-form-config";
+import { hasActivityForm, type PickerActivityType } from "../config/activity-form-config";
 
 // Re-export for consumers
 export type { AccountSelectOption };
@@ -60,11 +60,22 @@ export function ActivityForm({
   const isEditing = !!activity?.id;
   const initialType = mapActivityTypeToPicker(activity?.activityType);
 
-  // Local state for selected type (only used when creating new activity)
-  const [selectedType, setSelectedType] = useState<PickerActivityType | undefined>(initialType);
+  // Not every persisted type has a form. Sync stores needs-review rows as
+  // UNKNOWN, and CREDIT/ADJUSTMENT have no editor either, so pinning the type
+  // while editing would leave those rows uneditable — including the ones whose
+  // whole point is that a user has to reclassify them. Offer the picker instead.
+  const initialTypeIsEditable = hasActivityForm(initialType);
 
-  // For editing, always use the activity's type; for new, use local state
-  const effectiveSelectedType = isEditing ? initialType : selectedType;
+  // Local state for the selected type: used when creating, and when editing a
+  // row whose stored type has no form and so has to be chosen.
+  const [selectedType, setSelectedType] = useState<PickerActivityType | undefined>(
+    initialTypeIsEditable ? initialType : undefined,
+  );
+
+  // Editing keeps the activity's own type when that type can be edited;
+  // otherwise the user's pick stands in for it.
+  const effectiveSelectedType = isEditing && initialTypeIsEditable ? initialType : selectedType;
+  const showPicker = !hidePicker && (!isEditing || !initialTypeIsEditable);
 
   // Filter accounts by selected activity type (exclude HOLDINGS accounts for unsupported types).
   // Transfers use the full account list so spending/saving accounts are valid counterparties.
@@ -122,19 +133,22 @@ export function ActivityForm({
         </SheetHeader>
 
         <div className="flex-1 space-y-6 overflow-y-auto py-4">
-          {/* Activity Type Picker - only show when creating new activity and not locked to a type */}
-          {!isEditing && !hidePicker && (
-            <ActivityTypePicker value={effectiveSelectedType} onSelect={setSelectedType} />
-          )}
-
-          {/* When editing, show the activity type as a badge */}
-          {isEditing && effectiveSelectedType && (
+          {/* When editing, report the type the activity is stored under. Shown
+              alongside the picker for a row that still needs one, so it is clear
+              what is being reclassified. */}
+          {isEditing && (initialType ?? activity?.activityType) && (
             <div className="flex items-center gap-2 text-sm">
               <span className="text-muted-foreground">{t("activity:activity_type")}:</span>
               <span className="bg-primary/10 text-primary rounded-md px-2 py-1 font-medium">
-                {effectiveSelectedType}
+                {initialType ?? activity?.activityType}
               </span>
             </div>
+          )}
+
+          {/* Activity Type Picker - when creating, and when editing a row whose
+              stored type has no form of its own */}
+          {showPicker && (
+            <ActivityTypePicker value={effectiveSelectedType} onSelect={setSelectedType} />
           )}
 
           {/* Render the appropriate form */}

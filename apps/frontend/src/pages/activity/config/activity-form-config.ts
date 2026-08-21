@@ -600,3 +600,14 @@ export const ACTIVITY_FORM_CONFIG: Record<
     },
   },
 };
+
+/**
+ * Whether a stored activity type has a form of its own.
+ *
+ * Not every persisted type does. Sync writes needs-review rows as `UNKNOWN`,
+ * and `CREDIT`/`ADJUSTMENT` have no editor either, so editing one of those has
+ * to begin by choosing a type rather than by pinning the stored one.
+ */
+export function hasActivityForm(pickerType: string | undefined): pickerType is PickerActivityType {
+  return !!pickerType && pickerType in ACTIVITY_FORM_CONFIG;
+}
