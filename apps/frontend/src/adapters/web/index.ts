@@ -11,6 +11,7 @@ export { isDesktop, isWeb, logger } from "./core";
 export { RunEnvs } from "../types";
 export type {
   AddonFile,
+  AddonAsset,
   AddonInstallResult,
   AddonManifest,
   AddonNetworkRequest,
@@ -466,6 +467,7 @@ export {
   listInstalledAddons,
   loadAddon,
   loadAddonForRuntime,
+  loadAddonAsset,
   setAddonStorageItem,
   submitAddonRating,
   toggleAddon,

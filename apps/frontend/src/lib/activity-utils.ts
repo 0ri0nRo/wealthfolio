@@ -49,6 +49,16 @@ export const isCashActivity = (activityType: string): boolean => {
   return !(SYMBOL_REQUIRED_TYPES as readonly string[]).includes(activityType);
 };
 
+/** Whether an activity can explicitly cross the tracked-account performance boundary. */
+export const supportsPerformanceBoundary = (activityType?: string | null): boolean => {
+  const normalizedActivityType = activityType?.trim().toUpperCase();
+  return (
+    normalizedActivityType === ActivityType.CREDIT ||
+    normalizedActivityType === ActivityType.TRANSFER_IN ||
+    normalizedActivityType === ActivityType.TRANSFER_OUT
+  );
+};
+
 /**
  * Determines if an activity is an income activity based on its type
  * @param activityType The activity type to check
@@ -363,12 +373,20 @@ export const calculateActivityValue = (activity: ActivityDetails): number => {
     return 0; // Split activities don't have a monetary value
   }
 
+  // Standalone charges mirror the backend's charge_amt_for precedence:
+  // TAX prefers tax, then fee, then amount; FEE prefers fee, then amount.
   if (activityType === ActivityType.FEE || activityType === ActivityType.TAX) {
-    const amount = getAmount(activity);
-    if (amount !== 0) {
-      return roundCurrency(amount);
+    if (activityType === ActivityType.TAX) {
+      const tax = getTax(activity);
+      if (tax !== 0) {
+        return roundCurrency(tax);
+      }
     }
-    return roundCurrency(getFee(activity));
+    const fee = getFee(activity);
+    if (fee !== 0) {
+      return roundCurrency(fee);
+    }
+    return roundCurrency(getAmount(activity));
   }
 
   const isSecTransfer = isSecuritiesTransfer(activityType, assetSymbol, assetId);
@@ -390,9 +408,9 @@ export const calculateActivityValue = (activity: ActivityDetails): number => {
       }
     }
 
-    // For outgoing cash activities, subtract fee from amount
+    // For outgoing cash activities, add fee and tax to amount (total cash out)
     if (activityType === ActivityType.WITHDRAWAL || activityType === ActivityType.TRANSFER_OUT) {
-      return roundCurrency(Number(amount) + Number(fee));
+      return roundCurrency(Number(amount) + Number(fee) + Number(tax));
     }
 
     // For incoming cash activities, subtract fee and withholding tax from amount

@@ -1,14 +1,16 @@
+import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { usePersistentState } from "@/hooks/use-persistent-state";
+import { useSettingsContext } from "@/lib/settings-provider";
+import { cn } from "@/lib/utils";
 import type { ToolCallMessagePartProps } from "@assistant-ui/react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import {
+  AnimatedToggleGroup,
   Badge,
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-  formatAmount,
-  formatPercent,
   Skeleton,
   Table,
   TableBody,
@@ -16,22 +18,25 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  useAmountFormatting,
+  useNumberFormatting,
 } from "@wealthfolio/ui";
 import { memo, useMemo, type FC } from "react";
 import { useTranslation } from "react-i18next";
-import { cn } from "@/lib/utils";
-import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
-import { ResponsiveContainer, Treemap, Tooltip as ChartTooltip } from "recharts";
-import { useSettingsContext } from "@/lib/settings-provider";
-import { AnimatedToggleGroup } from "@wealthfolio/ui";
+import { Tooltip as ChartTooltip, ResponsiveContainer, Treemap } from "recharts";
 import { CompactToolCard } from "./shared";
+import {
+  calculateBasePortfolioPerformance,
+  calculateDailyPortfolioPerformance,
+  getPortfolioChangePercent,
+  type ReturnType,
+} from "./holdings-tool-semantics";
 
 // ============================================================================
 // Types
 // ============================================================================
 
 type ViewMode = "table" | "treemap" | "both";
-type ReturnType = "daily" | "pnl" | "return";
 
 interface GetHoldingsArgs {
   accountId?: string;
@@ -248,6 +253,7 @@ const TreemapContent: FC<TreemapContentProps> = ({
   maxGain = 0,
   minGain = 0,
 }) => {
+  const formatting = useNumberFormatting();
   const fontSize = Math.min(width, height) < 60 ? Math.min(width, height) * 0.18 : 11;
   const fontSize2 = Math.min(width, height) < 60 ? Math.min(width, height) * 0.14 : 10;
   const colorScale = getColorScale(gain, maxGain, minGain);
@@ -289,7 +295,7 @@ const TreemapContent: FC<TreemapContentProps> = ({
             className="font-light"
             style={{ fontSize: fontSize2 }}
           >
-            {gain > 0 ? "+" + formatPercent(gain) : formatPercent(gain)}
+            {gain > 0 ? "+" + formatting.formatPercent(gain) : formatting.formatPercent(gain)}
           </text>
         </>
       )}
@@ -311,6 +317,9 @@ interface TreemapTooltipProps {
 }
 
 const TreemapTooltip: FC<TreemapTooltipProps> = ({ active, payload, currency = "USD" }) => {
+  const amountFormatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+
   const { t } = useTranslation();
   if (!active || !payload?.length) return null;
   const data = payload[0].payload;
@@ -328,13 +337,13 @@ const TreemapTooltip: FC<TreemapTooltipProps> = ({ active, payload, currency = "
         <div className="border-t pt-2">
           <div className="flex items-center justify-between gap-4 text-xs">
             <span className="text-muted-foreground">{t("ai:holdings.value")}</span>
-            <span className="font-medium">{formatAmount(value, currency)}</span>
+            <span className="font-medium">{amountFormatting.formatAmount(value, currency)}</span>
           </div>
           <div className="flex items-center justify-between gap-4 text-xs">
             <span className="text-muted-foreground">{t("ai:holdings.today")}</span>
             <span className={cn("font-medium", isPositive ? "text-success" : "text-destructive")}>
               {isPositive ? "+" : ""}
-              {formatPercent(gain)}
+              {numberFormatting.formatPercent(gain)}
             </span>
           </div>
         </div>
@@ -359,6 +368,9 @@ export const HoldingsToolUI = makeAssistantToolUI<GetHoldingsArgs, GetHoldingsOu
 type HoldingsContentProps = ToolCallMessagePartProps<GetHoldingsArgs, GetHoldingsOutput>;
 
 function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
+  const amountFormatting = useAmountFormatting();
+  const numberFormatting = useNumberFormatting();
+
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const baseCurrency = settings?.baseCurrency ?? "USD";
@@ -385,34 +397,23 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
     }
     const value =
       parsed?.totalValue ?? sortedHoldings.reduce((sum, h) => sum + h.marketValueBase, 0);
-    const basis = sortedHoldings.reduce(
-      (sum, h) => sum + (h.returnBasisBase ?? h.costBasisBase ?? 0),
-      0,
-    );
-    const pnl = sortedHoldings.reduce((sum, h) => sum + (h.totalGainBase ?? 0), 0);
-    const returnAmount = sortedHoldings.reduce(
-      (sum, h) => sum + (h.totalReturnBase ?? h.totalGainBase ?? 0),
-      0,
-    );
+    const performance = calculateBasePortfolioPerformance(sortedHoldings);
     return {
       totalValue: value,
-      totalPnl: pnl,
-      totalPnlPct: basis > 0 ? pnl / basis : 0,
-      totalReturn: returnAmount,
-      totalReturnPct: basis > 0 ? returnAmount / basis : 0,
+      ...performance,
     };
   }, [parsed?.totalValue, sortedHoldings]);
 
   // Prepare treemap data based on returnType
   // Note: dayChangePct and unrealizedGainPct from backend are in decimal form (e.g., -0.1579 for -15.79%)
-  const { treemapData, hasData, totalChange } = useMemo(() => {
+  const { treemapData, hasData, dailyChangeAmount, weightedDailyChange } = useMemo(() => {
     let maxGain = -Infinity;
     let minGain = Infinity;
-    let totalChangeAmount = 0;
     let hasAnyData = false;
+    const dailyPerformance = calculateDailyPortfolioPerformance(sortedHoldings);
 
     const data = sortedHoldings
-      .filter((h) => h.marketValueBase > 0)
+      .filter((h) => h.marketValueBase !== 0)
       .map((h) => {
         const gain =
           returnType === "daily"
@@ -425,12 +426,11 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
           hasAnyData = true;
           maxGain = Math.max(maxGain, gain);
           minGain = Math.min(minGain, gain);
-          totalChangeAmount += h.marketValueBase * gain;
         }
         return {
           symbol: h.symbol,
           name: h.name,
-          marketValue: h.marketValueBase,
+          marketValue: Math.abs(h.marketValueBase),
           gain,
         };
       });
@@ -441,10 +441,20 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
       minGain: minGain === Infinity ? 0 : minGain,
     }));
 
-    const totalChangePct = totalValue > 0 ? totalChangeAmount / totalValue : 0;
+    return {
+      treemapData,
+      hasData: hasAnyData,
+      dailyChangeAmount: dailyPerformance.changeAmount,
+      weightedDailyChange: dailyPerformance.changePct,
+    };
+  }, [sortedHoldings, returnType]);
 
-    return { treemapData, hasData: hasAnyData, totalChange: totalChangePct };
-  }, [sortedHoldings, totalValue, returnType]);
+  const portfolioChange = getPortfolioChangePercent(
+    returnType,
+    weightedDailyChange,
+    totalPnlPct,
+    totalReturnPct,
+  );
 
   const accountLabel = parsed?.accountScope ?? args?.accountId ?? "Portfolio";
   const isLoading = status?.type === "running";
@@ -462,7 +472,7 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
     if (isBalanceHidden) {
       return "******";
     }
-    return formatAmount(value, currency);
+    return amountFormatting.formatAmount(value, currency);
   };
 
   // Loading skeleton
@@ -577,16 +587,26 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
             <p
               className={cn(
                 "text-sm font-medium",
-                totalChange >= 0 ? "text-success" : "text-destructive",
+                portfolioChange == null
+                  ? "text-muted-foreground"
+                  : portfolioChange >= 0
+                    ? "text-success"
+                    : "text-destructive",
               )}
             >
-              {totalChange > 0 ? "+" : ""}
-              {formatPercent(totalChange)}{" "}
-              {returnType === "daily"
-                ? t("ai:holdings.todaySuffix")
-                : returnType === "return"
-                  ? t("ai:holdings.returnSuffix")
-                  : t("ai:holdings.pnlSuffix")}
+              {portfolioChange == null ? (
+                "-"
+              ) : (
+                <>
+                  {portfolioChange > 0 ? "+" : ""}
+                  {numberFormatting.formatPercent(portfolioChange)}{" "}
+                  {returnType === "daily"
+                    ? t("ai:holdings.todaySuffix")
+                    : returnType === "return"
+                      ? t("ai:holdings.returnSuffix")
+                      : t("ai:holdings.pnlSuffix")}
+                </>
+              )}
             </p>
           )}
         </div>
@@ -608,14 +628,9 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
 
   // Table view component
   const TableView = ({ showHeader = true }: { showHeader?: boolean }) => {
-    const gainPct =
-      returnType === "daily" ? totalChange : returnType === "return" ? totalReturnPct : totalPnlPct;
+    const gainPct = portfolioChange;
     const gainAmount =
-      returnType === "daily"
-        ? totalValue * totalChange
-        : returnType === "return"
-          ? totalReturn
-          : totalPnl;
+      returnType === "daily" ? dailyChangeAmount : returnType === "return" ? totalReturn : totalPnl;
 
     return (
       <>
@@ -649,8 +664,16 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
                   )}
                 >
                   {gainAmount > 0 ? "+" : ""}
-                  {formatAmount(gainAmount, currency)} ({gainPct > 0 ? "+" : ""}
-                  {formatPercent(gainPct)})
+                  {amountFormatting.formatAmount(gainAmount, currency)} (
+                  {gainPct == null ? (
+                    "-"
+                  ) : (
+                    <>
+                      {gainPct > 0 ? "+" : ""}
+                      {numberFormatting.formatPercent(gainPct)}
+                    </>
+                  )}
+                  )
                 </p>
               )}
             </div>
@@ -710,7 +733,7 @@ function HoldingsContentImpl({ args, result, status }: HoldingsContentProps) {
                           )}
                         >
                           {tableGainPct > 0 ? "+" : ""}
-                          {formatPercent(tableGainPct)}
+                          {numberFormatting.formatPercent(tableGainPct)}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">-</span>

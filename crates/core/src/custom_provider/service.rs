@@ -907,7 +907,7 @@ pub fn parse_number_string(s: &str, locale: Option<&str>) -> Option<f64> {
         .filter(|c| {
             !matches!(
                 c,
-                '$' | '€' | '£' | '¥' | '₹' | '₽' | '₿' | '%' | '+' | '\u{00a0}'
+                '$' | '€' | '£' | '¥' | '₹' | '₽' | '₿' | 'R' | '%' | '+' | '\u{00a0}'
             ) && !c.is_whitespace()
         })
         .collect();
@@ -1270,6 +1270,20 @@ pub fn detect_html_locale(body: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn extracts_json_values_from_unicode_keys() {
+        let body = r#"[{"净值日期":"2026-07-11","单位净值":1.4018}]"#;
+
+        assert_eq!(
+            extract_json_value(body, r#"$[*]["单位净值"]"#),
+            Some(1.4018)
+        );
+        assert_eq!(
+            extract_json_string(body, r#"$[*]["净值日期"]"#),
+            Some("2026-07-11".to_string())
+        );
+    }
+
     // Header row uses <td> (no <thead>/<th>) — like ariva.de's historical
     // prices table. The first <td> row is the headers, not data.
     const TD_HEADER_TABLE: &str = r#"<html><body><table>
@@ -1329,5 +1343,13 @@ mod tests {
             extract_table_value(body, "0:1", Some("en-US")),
             Some(123.45)
         );
+    }
+
+    #[test]
+    fn parse_number_string_strips_brl_prefix() {
+        // Before the fix, the leading "R" (from "R$") made the value fail
+        // the starts-with-digit check and return None, even though the
+        // rest already correctly auto-detects "1.234,56" as 1234.56.
+        assert_eq!(parse_number_string("R$ 1.234,56", None), Some(1234.56));
     }
 }

@@ -199,6 +199,16 @@ mod tests {
             Ok(HashMap::new())
         }
 
+        fn get_sparse_asset_market_facts(
+            &self,
+            _requests: &[(String, NaiveDate)],
+        ) -> Result<crate::quotes::SparseAssetMarketFacts> {
+            Err(Error::Unexpected(
+                "MockMarketDataService::get_sparse_asset_market_facts should not be called"
+                    .to_string(),
+            ))
+        }
+
         fn get_latest_quotes_snapshot(
             &self,
             asset_ids: &[String],
@@ -502,6 +512,7 @@ mod tests {
             id: id.to_string(),
             account_id: "acc_1".to_string(),
             holding_type,
+            is_closed: false,
             quantity,
             local_currency: local_currency.to_string(),
             base_currency: base_currency.to_string(),
@@ -1037,6 +1048,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn issue_1277_transfer_in_fx_effect_does_not_change_holding_return_pct() {
+        let (fx_service, market_data_service, valuation_service) = setup_test_env();
+        fx_service.add_rate("USD", "MXN", dec!(17.46));
+
+        market_data_service.add_quote_pair(
+            "TRANSFERRED",
+            create_quote("2024-01-10", dec!(91.63), "USD"),
+            None,
+        );
+
+        let mut holdings = vec![create_holding(
+            "h-transfer-in",
+            HoldingType::Security,
+            "TRANSFERRED",
+            dec!(1),
+            "USD",
+            "MXN",
+            Some(dec!(91.50)),
+            Some("Transferred security"),
+        )];
+        // A TRANSFER_IN lot keeps the base cost recorded at the historical FX rate.
+        holdings[0].cost_basis.as_mut().unwrap().base = dec!(726.61);
+
+        valuation_service
+            .calculate_holdings_live_valuation(&mut holdings)
+            .await
+            .unwrap();
+
+        let holding = &holdings[0];
+        assert_monetary_value_approx(
+            holding.unrealized_gain.as_ref(),
+            dec!(0.13),
+            dec!(873.2498),
+            TOLERANCE,
+            "Unrealized Gain",
+        );
+        assert_eq!(holding.unrealized_gain_pct, Some(dec!(0.0014)));
+        assert_eq!(holding.total_gain_pct, Some(dec!(0.0014)));
+    }
+
+    #[tokio::test]
     async fn issue_408_preserves_historical_base_cost_basis() {
         let (fx_service, market_data_service, valuation_service) = setup_test_env();
         fx_service.add_rate("USD", "EUR", dec!(0.8));
@@ -1086,7 +1138,7 @@ mod tests {
         );
         assert_decimal_approx(
             holding.unrealized_gain_pct,
-            dec!(-0.1200),
+            dec!(0.1000),
             TOLERANCE,
             "Unrealized Gain Pct",
         );
@@ -2033,14 +2085,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_zero_quantity_security() {
+    async fn test_zero_quantity_security_does_not_fetch_quotes() {
         let (_fx_service, market_data_service, valuation_service) = setup_test_env();
 
-        market_data_service.add_quote_pair(
-            "XYZ.TO",
-            create_quote("2024-01-10", dec!(150.0), "CAD"),
-            Some(create_quote("2024-01-09", dec!(145.0), "CAD")),
-        );
+        *market_data_service.should_fail.lock().unwrap() = true;
 
         let mut holdings = vec![create_holding(
             "h_zero",

@@ -64,6 +64,11 @@ services:
       # Set to "false" to force local-only logout even when the IdP supports RP-Initiated Logout.
       WF_OIDC_RP_LOGOUT: "${WF_OIDC_RP_LOGOUT:-}"
 
+      # ── AI Agent Access / MCP (optional) ────────────────────────────────
+      # Requires Wealthfolio authentication via password or OIDC.
+      WF_MCP_ENABLED: "${WF_MCP_ENABLED:-false}"
+      WF_MCP_AUDIT_ENABLED: "${WF_MCP_AUDIT_ENABLED:-true}"
+
       # Required when auth is enabled — set to your app's origin, e.g. https://wealthfolio.example.com
       WF_CORS_ALLOW_ORIGINS: "${WF_CORS_ALLOW_ORIGINS:-}"
       WF_REQUEST_TIMEOUT_MS: "${WF_REQUEST_TIMEOUT_MS:-30000}"

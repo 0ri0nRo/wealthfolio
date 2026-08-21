@@ -4,6 +4,7 @@ import { debounce } from "@/lib/debounce";
 import { SymbolSearchResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useQuery } from "@tanstack/react-query";
+import { useAmountFormatting } from "@wealthfolio/ui";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import {
   Command,
@@ -224,6 +225,7 @@ const TickerSearchInput = forwardRef<HTMLButtonElement, SearchProps>(
     },
     ref,
   ) => {
+    const amountFormatting = useAmountFormatting();
     const { t } = useTranslation();
     const resolvedPlaceholder = placeholder ?? t("common:component.select_symbol");
     const isControlled = openProp !== undefined;
@@ -517,10 +519,11 @@ const TickerSearchInput = forwardRef<HTMLButtonElement, SearchProps>(
                         ) : (
                           quoteInfo?.price != null && (
                             <span className="tabular-nums">
-                              {quoteInfo.price.toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 4,
-                              })}
+                              {amountFormatting.formatPrice(
+                                quoteInfo.price,
+                                quoteInfo.currency ?? "USD",
+                                false,
+                              )}
                             </span>
                           )
                         )}

@@ -1,23 +1,26 @@
 import { DashboardCard } from "@/components/dashboard-card";
+import { HoldingPerformancePercent } from "@/components/holding-performance-percent";
 import { TickerAvatar } from "@/components/ticker-avatar";
-import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
+import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 import { HoldingType, isAlternativeAssetKind } from "@/lib/constants";
-import { parseOccSymbol } from "@/lib/occ-symbol";
+import { getBaseHoldingPerformancePercentForMode } from "@/lib/holding-performance";
+import { formatOptionSubtitle, parseOccSymbol } from "@/lib/occ-symbol";
 import { Holding } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import {
   AmountDisplay,
   Button,
   GainAmount,
-  GainPercent,
   Icons,
+  useNumberFormatting,
   usePersistentState,
+  useDateFormatting,
 } from "@wealthfolio/ui";
 import { Popover, PopoverContent, PopoverTrigger } from "@wealthfolio/ui/components/ui/popover";
+import { Skeleton } from "@wealthfolio/ui/components/ui/skeleton";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate } from "react-router-dom";
-import { useBalancePrivacy } from "@/hooks/use-balance-privacy";
 
 const MAX_DISPLAYED_HOLDINGS = 7;
 const MAX_STACKED_AVATARS = 5;
@@ -47,6 +50,9 @@ function HoldingRow({
   showName,
   onClick,
 }: HoldingRowProps) {
+  const numberFormatting = useNumberFormatting();
+  const dateFormatting = useDateFormatting();
+  const formatting = useNumberFormatting();
   const { t } = useTranslation();
   const symbol = holding.instrument?.symbol ?? holding.id;
   const parsedOption = parseOccSymbol(symbol);
@@ -54,10 +60,12 @@ function HoldingRow({
   const nameLabel = holding.instrument?.name?.trim() || symbolLabel;
   const title = showName ? nameLabel : symbolLabel;
   const subtitle = parsedOption
-    ? `${new Date(parsedOption.expiration + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} $${parsedOption.strikePrice} ${parsedOption.optionType}`
+    ? formatOptionSubtitle(parsedOption, { ...numberFormatting, ...dateFormatting })
     : t("dashboard:holdings.shares", {
         count: holding.quantity ?? 0,
-        formatted: (holding.quantity ?? 0).toLocaleString(undefined, { maximumFractionDigits: 3 }),
+        formatted: formatting.formatDecimal(holding.quantity ?? 0, {
+          maximumFractionDigits: 3,
+        }),
       });
   const avatarSymbol = parsedOption ? parsedOption.underlying : symbol;
   const marketValue = holding.marketValue?.base ?? 0;
@@ -67,12 +75,7 @@ function HoldingRow({
       : performanceMode === "pnl"
         ? (holding.totalGain?.base ?? holding.unrealizedGain?.base ?? 0)
         : (holding.dayChange?.base ?? 0);
-  const gainPercent =
-    performanceMode === "return"
-      ? (holding.totalReturnPct ?? holding.totalGainPct ?? 0)
-      : performanceMode === "pnl"
-        ? (holding.totalGainPct ?? holding.unrealizedGainPct ?? 0)
-        : (holding.dayChangePct ?? 0);
+  const gainPercent = getBaseHoldingPerformancePercentForMode(holding, performanceMode);
 
   return (
     <div
@@ -86,7 +89,7 @@ function HoldingRow({
         <TickerAvatar symbol={avatarSymbol} className="size-9 shrink-0" />
         <div className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-semibold">{title}</span>
-          <span className="text-muted-foreground text-xs">{subtitle}</span>
+          <span className="text-muted-foreground truncate text-xs">{subtitle}</span>
         </div>
       </div>
       <div className="flex shrink-0 flex-col items-end gap-1">
@@ -103,10 +106,10 @@ function HoldingRow({
             displayCurrency={false}
             className="text-xs"
           />
-          <GainPercent
+          <HoldingPerformancePercent
             value={gainPercent}
             variant="badge"
-            className="min-w-[60px] justify-center text-xs"
+            className="min-w-[60px] justify-center text-center text-xs"
           />
         </div>
       </div>

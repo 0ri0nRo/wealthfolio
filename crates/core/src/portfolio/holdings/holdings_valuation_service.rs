@@ -18,11 +18,11 @@ pub trait HoldingsValuationServiceTrait: Send + Sync {
     async fn calculate_holdings_live_valuation(&self, holdings: &mut [Holding]) -> Result<()>;
 }
 
-fn gain_pct_from_basis(amount_base: Decimal, basis_base: Decimal) -> Option<Decimal> {
-    let exposure_base = basis_base.abs();
-    if exposure_base > Decimal::ZERO {
-        Some((amount_base / exposure_base).round_dp(4))
-    } else if amount_base.is_zero() {
+fn gain_pct_from_basis(amount: Decimal, basis: Decimal) -> Option<Decimal> {
+    let exposure = basis.abs();
+    if exposure > Decimal::ZERO {
+        Some((amount / exposure).round_dp(4))
+    } else if amount.is_zero() {
         Some(Decimal::ZERO)
     } else {
         None
@@ -101,6 +101,7 @@ impl HoldingsValuationService {
         // Asset ID is the unique identifier matching quotes table (e.g., "SHOP:XTSE", "BTC:USD")
         let required_asset_ids: Vec<String> = holdings
             .iter()
+            .filter(|holding| holding.quantity != Decimal::ZERO)
             .filter_map(|holding| {
                 // Include both Security and AlternativeAsset holdings
                 match holding.holding_type {
@@ -241,7 +242,6 @@ impl HoldingsValuationService {
 
         // --- Handle Zero Quantity ---
         if quantity == Decimal::ZERO {
-            warn!("{}: Skipping valuation for zero quantity.", context_msg);
             holding.market_value = MonetaryValue::zero();
             holding.price = None;
             holding.unrealized_gain = None;
@@ -271,12 +271,7 @@ impl HoldingsValuationService {
                     local: neg_local,
                     base: neg_base,
                 });
-                let exposure_base = cost_basis.base.abs();
-                if exposure_base != Decimal::ZERO {
-                    holding.unrealized_gain_pct = Some((neg_base / exposure_base).round_dp(4));
-                } else {
-                    holding.unrealized_gain_pct = Some(Decimal::ZERO);
-                }
+                holding.unrealized_gain_pct = gain_pct_from_basis(neg_local, cost_basis.local);
             } else {
                 holding.unrealized_gain = None;
                 holding.unrealized_gain_pct = None;
@@ -345,7 +340,7 @@ impl HoldingsValuationService {
                 });
 
                 holding.unrealized_gain_pct =
-                    gain_pct_from_basis(unrealized_gain_base, cost_basis_base);
+                    gain_pct_from_basis(unrealized_gain_local, cost_basis.local);
             } else {
                 holding.unrealized_gain = None;
                 holding.unrealized_gain_pct = None;
@@ -485,7 +480,6 @@ impl HoldingsValuationService {
 
         // --- Handle Zero Quantity ---
         if quantity == Decimal::ZERO {
-            warn!("{}: Skipping valuation for zero quantity.", context_msg);
             holding.market_value = MonetaryValue::zero();
             holding.price = None;
             holding.unrealized_gain = None;
@@ -558,7 +552,7 @@ impl HoldingsValuationService {
                 });
 
                 holding.unrealized_gain_pct =
-                    gain_pct_from_basis(unrealized_gain_base, total_cost_base);
+                    gain_pct_from_basis(unrealized_gain_local, total_cost_local);
                 true
             } else if let Some(cost_basis) = &holding.cost_basis {
                 // Fall back to lot-based cost basis calculation
@@ -573,7 +567,7 @@ impl HoldingsValuationService {
                 });
 
                 holding.unrealized_gain_pct =
-                    gain_pct_from_basis(unrealized_gain_base, cost_basis_base);
+                    gain_pct_from_basis(unrealized_gain_local, cost_basis.local);
                 true
             } else {
                 // No purchase_price and no cost_basis - gain is N/A

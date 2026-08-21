@@ -10,6 +10,39 @@ and this project adheres to
 
 - `ExchangeRatesAPI.getRatesForDates(pairs)` for batched date-specific FX-rate
   lookups, with per-pair errors and Wealthfolio's standard FX resolution rules.
+- `registerTranslations()` and `useAddonTranslation()` for translating addon UI
+  strings. Resources live on a dedicated i18next instance inside the addon
+  sandbox, isolated from the host catalog; the language follows the host
+  setting. Requires a Wealthfolio release that ships this sandbox runtime
+  (unreleased at the time of writing). See the
+  [Addon Localization guide](../../docs/addons/addon-localization.md).
+
+## [3.7.0] - 2026-08-10
+
+Wealthfolio 3.7 adds private packaged assets while preserving the documented
+v3.6 addon runtime contract. See the
+[v3.6 → v3.7 migration guide](../../docs/addons/addon-migration-guide-v3.6-to-v3.7.md).
+
+### Added
+
+- `AddonContext.assets` (`AddonAssets`) with `list()`, `has()`, `getBlob()`, and
+  lifecycle-scoped `getUrl()` methods.
+- `AddonAsset` metadata and `ExtractedAddon.assets` for host/runtime package
+  integration.
+- Automatic indexing of `assets/**` and `dist/assets/**`, including local CSS
+  `url(...)` rewriting for sandbox-safe Blob URLs.
+
+### Changed
+
+- Addon enable functions and returned disable callbacks may be asynchronous.
+- Development loading uses coherent, generation-addressed runtime package
+  snapshots. Wealthfolio 3.7 requires `@wealthfolio/addon-dev-tools` 3.7 or
+  newer for live development.
+
+### Compatibility
+
+- Existing v3.6 bundles remain supported. Addons that use `ctx.assets` must set
+  `minWealthfolioVersion` to `3.7.0` or newer.
 
 ## [3.6.1] - 2026-07-06
 
