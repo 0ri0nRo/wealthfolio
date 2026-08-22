@@ -10,7 +10,7 @@ use std::sync::Arc;
 const SUPPORTED_FORMATTING_REGIONS: &[&str] = &[
     "system", "CA", "US", "GB", "FR", "DE", "ES", "MX", "CN", "JP", "KR", "IT",
 ];
-const SUPPORTED_UI_LANGUAGES: &[&str] = &["en", "fr", "de", "es", "zh", "ja", "ko", "it"];
+const SUPPORTED_UI_LANGUAGES: &[&str] = &["en", "fr", "de", "es", "pt", "zh", "ja", "ko", "it"];
 
 fn normalize_ui_language(language: &str) -> String {
     let base = language.split(['-', '_']).next().unwrap_or(language);
