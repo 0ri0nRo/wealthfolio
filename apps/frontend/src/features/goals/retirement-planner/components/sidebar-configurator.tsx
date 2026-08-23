@@ -27,7 +27,11 @@ import type { TFunction } from "i18next";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_DC_PAYOUT_ESTIMATE_RATE } from "../lib/constants";
-import { incomeStreamMonthlyAmount, type PlannerMode } from "../lib/dashboard-math";
+import {
+  incomeStreamMonthlyAmount,
+  planAccumulationReturn,
+  type PlannerMode,
+} from "../lib/dashboard-math";
 import {
   createExpenseItem,
   expenseAgeRangeLabel,
@@ -1260,13 +1264,11 @@ export function SidebarConfigurator({
                             />
                             <LeverRow
                               label={t("goals:sidebar.income.fund_return_before_payout")}
-                              value={
-                                s.accumulationReturn ?? draft.investment.preRetirementAnnualReturn
-                              }
+                              value={s.accumulationReturn ?? planAccumulationReturn(draft)}
                               onChange={(v) => updateStream(s.id, { accumulationReturn: v })}
                               min={0}
                               max={rateSliderMaxFor(
-                                s.accumulationReturn ?? draft.investment.preRetirementAnnualReturn,
+                                s.accumulationReturn ?? planAccumulationReturn(draft),
                                 DEFAULT_RETURN_SLIDER_MAX,
                                 RATE_SLIDER_INCREMENT,
                                 MAX_RETIREMENT_RETURN,
@@ -1276,7 +1278,7 @@ export function SidebarConfigurator({
                               suffix="%"
                               format={(v) => (v * 100).toFixed(1)}
                               warning={highReturnWarning(
-                                s.accumulationReturn ?? draft.investment.preRetirementAnnualReturn,
+                                s.accumulationReturn ?? planAccumulationReturn(draft),
                               )}
                             />
                             <LeverRow
