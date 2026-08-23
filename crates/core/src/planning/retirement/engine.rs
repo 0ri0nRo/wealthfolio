@@ -11,7 +11,7 @@ use super::withdrawal::{
 use crate::portfolio::fire::GlidepathSettings;
 
 // Re-export output types used by this module's public API
-use super::dto::{FireProjection, YearlySnapshot};
+use super::dto::{FireProjection, IncomeStreamExhaustion, YearlySnapshot};
 
 const MAX_REQUIRED_CAPITAL_DOUBLING_STEPS: usize = 128;
 const MIN_RETURN_STD_DEV: f64 = 1e-9;
@@ -233,6 +233,33 @@ pub(crate) fn annual_expenses_at_year_stochastic(
     (total, essential)
 }
 
+/// The income a single stream is scheduled to pay at `age`, before anything checks
+/// whether there is a balance left to pay it out of.
+fn scheduled_stream_annual_income(
+    s: &RetirementIncomeStream,
+    resolved_payouts: &HashMap<String, f64>,
+    years_from_now: u32,
+    inflation_rate: f64,
+    cumulative_inflation: Option<f64>,
+) -> f64 {
+    let base_monthly = resolved_payouts
+        .get(&s.id)
+        .copied()
+        .unwrap_or(s.monthly_amount.unwrap_or(0.0));
+    let annual = base_monthly * 12.0;
+    if let Some(r) = s.annual_growth_rate {
+        // Custom growth rate: always deterministic
+        annual * (1.0 + r).powi(years_from_now as i32)
+    } else if s.adjust_for_inflation {
+        match cumulative_inflation {
+            Some(cum) => annual * cum,
+            None => annual * (1.0 + inflation_rate).powi(years_from_now as i32),
+        }
+    } else {
+        annual
+    }
+}
+
 /// Like `plan_income_at_age` but accepts an optional stochastic `cumulative_inflation`
 /// factor for inflation-indexed streams. When `cumulative_inflation` is `Some`, those
 /// streams use the stochastic factor instead of `(1+rate)^years`.
@@ -248,24 +275,81 @@ pub(crate) fn plan_income_at_age_stochastic(
         .iter()
         .filter(|s| age >= s.start_age)
         .map(|s| {
-            let base_monthly = resolved_payouts
-                .get(&s.id)
-                .copied()
-                .unwrap_or(s.monthly_amount.unwrap_or(0.0));
-            let annual = base_monthly * 12.0;
-            if let Some(r) = s.annual_growth_rate {
-                // Custom growth rate: always deterministic
-                annual * (1.0 + r).powi(years_from_now as i32)
-            } else if s.adjust_for_inflation {
-                match cumulative_inflation {
-                    Some(cum) => annual * cum,
-                    None => annual * (1.0 + inflation_rate).powi(years_from_now as i32),
-                }
-            } else {
-                annual
-            }
+            scheduled_stream_annual_income(
+                s,
+                resolved_payouts,
+                years_from_now,
+                inflation_rate,
+                cumulative_inflation,
+            )
         })
         .sum()
+}
+
+/// Plan income at `age` where a drawdown fund pays only what its remaining balance
+/// covers, and stops for good once that balance is gone.
+///
+/// Every stream that is not in drawdown pays its scheduled amount, so a plan with no
+/// drawdown fund returns exactly what `plan_income_at_age_stochastic` would.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn plan_income_at_age_with_drawdown(
+    streams: &[RetirementIncomeStream],
+    resolved_payouts: &HashMap<String, f64>,
+    ledger: &mut DrawdownLedger,
+    age: u32,
+    years_from_now: u32,
+    inflation_rate: f64,
+    cumulative_inflation: Option<f64>,
+    default_post_payout_return: f64,
+) -> f64 {
+    let mut total = 0.0;
+    for s in streams.iter().filter(|s| age >= s.start_age) {
+        let scheduled = scheduled_stream_annual_income(
+            s,
+            resolved_payouts,
+            years_from_now,
+            inflation_rate,
+            cumulative_inflation,
+        );
+        total += if s.is_drawdown() {
+            let post_payout_return = s
+                .post_payout_return
+                .unwrap_or(default_post_payout_return)
+                .max(-0.99);
+            ledger.withdraw(&s.id, scheduled, age, post_payout_return)
+        } else {
+            scheduled
+        };
+    }
+    total
+}
+
+/// Fund balance projected forward to `start_age` — the figure the payout rate is
+/// applied to, and the pot a drawdown fund then draws against.
+pub(crate) fn projected_dc_balance_at_start(
+    s: &RetirementIncomeStream,
+    current_age: u32,
+    retirement_age: u32,
+    default_accumulation_return: f64,
+) -> f64 {
+    let total_years = (s.start_age as i32 - current_age as i32).max(0) as u32;
+    let contrib_years = (s.start_age.min(retirement_age) as i32 - current_age as i32).max(0) as u32;
+    let growth_only_years = total_years - contrib_years;
+    let r = s
+        .accumulation_return
+        .unwrap_or(default_accumulation_return)
+        .max(-0.99);
+    let initial = s.current_value.unwrap_or(0.0);
+    let monthly_contrib = s.monthly_contribution.unwrap_or(0.0);
+    let fv_lump = initial * (1.0 + r).powi(total_years as i32);
+    let annual_contrib_end_value = end_of_year_value_of_monthly_contributions(monthly_contrib, r);
+    let fv_annuity_at_stop = if r > 1e-9 {
+        annual_contrib_end_value * ((1.0 + r).powi(contrib_years as i32) - 1.0) / r
+    } else {
+        monthly_contrib * 12.0 * contrib_years as f64
+    };
+    let fv_annuity = fv_annuity_at_stop * (1.0 + r).powi(growth_only_years as i32);
+    fv_lump + fv_annuity
 }
 
 /// DC payout resolver: precompute the monthly payout from accumulated balance at start_age.
@@ -287,29 +371,109 @@ pub(crate) fn resolve_plan_dc_payouts(
                 let fallback = s.current_value.unwrap_or(0.0).max(0.0) * payout_rate / 12.0;
                 return (s.id.clone(), s.monthly_amount.unwrap_or(fallback).max(0.0));
             }
-            let total_years = (s.start_age as i32 - current_age as i32).max(0) as u32;
-            let contrib_years =
-                (s.start_age.min(retirement_age) as i32 - current_age as i32).max(0) as u32;
-            let growth_only_years = total_years - contrib_years;
-            let r = s
-                .accumulation_return
-                .unwrap_or(default_accumulation_return)
-                .max(-0.99);
-            let initial = s.current_value.unwrap_or(0.0);
-            let monthly_contrib = s.monthly_contribution.unwrap_or(0.0);
-            let fv_lump = initial * (1.0 + r).powi(total_years as i32);
-            let annual_contrib_end_value =
-                end_of_year_value_of_monthly_contributions(monthly_contrib, r);
-            let fv_annuity_at_stop = if r > 1e-9 {
-                annual_contrib_end_value * ((1.0 + r).powi(contrib_years as i32) - 1.0) / r
-            } else {
-                monthly_contrib * 12.0 * contrib_years as f64
-            };
-            let fv_annuity = fv_annuity_at_stop * (1.0 + r).powi(growth_only_years as i32);
-            let monthly_payout = (fv_lump + fv_annuity) * payout_rate / 12.0;
-            (s.id.clone(), monthly_payout)
+            let balance = projected_dc_balance_at_start(
+                s,
+                current_age,
+                retirement_age,
+                default_accumulation_return,
+            );
+            (s.id.clone(), balance * payout_rate / 12.0)
         })
         .collect()
+}
+
+/// Opening payout-phase balances for the funds that are drawn down rather than
+/// annuitised. Annuity funds are absent: their pot is gone at `start_age`.
+pub(crate) fn resolve_plan_drawdown_balances(
+    streams: &[RetirementIncomeStream],
+    current_age: u32,
+    retirement_age: u32,
+    default_accumulation_return: f64,
+) -> HashMap<String, f64> {
+    streams
+        .iter()
+        .filter(|s| s.is_drawdown())
+        .map(|s| {
+            let balance = if s.start_age <= current_age {
+                s.current_value.unwrap_or(0.0)
+            } else {
+                projected_dc_balance_at_start(
+                    s,
+                    current_age,
+                    retirement_age,
+                    default_accumulation_return,
+                )
+            };
+            (s.id.clone(), balance.max(0.0))
+        })
+        .collect()
+}
+
+/// The balances of the funds being drawn down, and the age each one empties at.
+///
+/// One of these belongs to a single projected path: the deterministic run, one
+/// Monte Carlo simulation, one SORR scenario, or one required-capital trial. It
+/// is what makes a fund's income depend on what earlier years already took out.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct DrawdownLedger {
+    balances: HashMap<String, f64>,
+    exhausted_ages: HashMap<String, u32>,
+}
+
+impl DrawdownLedger {
+    pub(crate) fn new(
+        streams: &[RetirementIncomeStream],
+        current_age: u32,
+        retirement_age: u32,
+        default_accumulation_return: f64,
+    ) -> Self {
+        Self::from_balances(resolve_plan_drawdown_balances(
+            streams,
+            current_age,
+            retirement_age,
+            default_accumulation_return,
+        ))
+    }
+
+    pub(crate) fn from_balances(balances: HashMap<String, f64>) -> Self {
+        Self {
+            balances,
+            exhausted_ages: HashMap::new(),
+        }
+    }
+
+    /// What is left in the fund, as at the start of the year.
+    pub(crate) fn balance(&self, stream_id: &str) -> f64 {
+        self.balances.get(stream_id).copied().unwrap_or(0.0)
+    }
+
+    /// Take this year's withdrawal, capped at what is actually there, then grow
+    /// what survives it. Returns the amount genuinely paid, which is what the
+    /// spending ledger may count as income.
+    fn withdraw(
+        &mut self,
+        stream_id: &str,
+        scheduled: f64,
+        age: u32,
+        post_payout_return: f64,
+    ) -> f64 {
+        let Some(balance) = self.balances.get_mut(stream_id) else {
+            return 0.0;
+        };
+        let paid = scheduled.max(0.0).min(*balance);
+        let remaining = (*balance - paid).max(0.0);
+        *balance = remaining * (1.0 + post_payout_return);
+        if remaining <= 0.0 {
+            self.exhausted_ages
+                .entry(stream_id.to_string())
+                .or_insert(age);
+        }
+        paid
+    }
+
+    pub(crate) fn exhausted_ages(&self) -> &HashMap<String, u32> {
+        &self.exhausted_ages
+    }
 }
 
 /// Compute total annual income from plan income streams at a given age.
@@ -320,24 +484,14 @@ pub(crate) fn plan_income_at_age(
     years_from_now: u32,
     inflation_rate: f64,
 ) -> f64 {
-    streams
-        .iter()
-        .filter(|s| age >= s.start_age)
-        .map(|s| {
-            let base_monthly = resolved_payouts
-                .get(&s.id)
-                .copied()
-                .unwrap_or(s.monthly_amount.unwrap_or(0.0));
-            let annual = base_monthly * 12.0;
-            if let Some(r) = s.annual_growth_rate {
-                annual * (1.0 + r).powi(years_from_now as i32)
-            } else if s.adjust_for_inflation {
-                annual * (1.0 + inflation_rate).powi(years_from_now as i32)
-            } else {
-                annual
-            }
-        })
-        .sum()
+    plan_income_at_age_stochastic(
+        streams,
+        resolved_payouts,
+        age,
+        years_from_now,
+        inflation_rate,
+        None,
+    )
 }
 
 /// Advance pre-payout pension fund balances for plan income streams.
@@ -447,6 +601,16 @@ fn retirement_feasible_from_capital(
         plan_accumulation_return(plan),
     );
 
+    // Sizing has to see a drawdown fund's income stop, or it would size the
+    // portfolio against income the fund cannot actually pay for that long.
+    let mut drawdown = DrawdownLedger::new(
+        &plan.income_streams,
+        current_age,
+        retirement_age,
+        plan_accumulation_return(plan),
+    );
+    let default_post_payout_return = plan_retirement_return(plan);
+
     let mut buckets = initial_withdrawal_buckets(&plan.tax, starting_capital.max(0.0));
     for y in 0..=(horizon as i32 - retirement_age as i32).max(0) as u32 {
         let age = retirement_age + y;
@@ -454,12 +618,15 @@ fn retirement_feasible_from_capital(
         let annual_return = plan_blended_return(plan, years_from_now, true, retirement_age);
         let grown_buckets = apply_growth(buckets, annual_return);
         let (expenses, _) = annual_expenses_at_year(&plan.expenses, age, years_from_now, inflation);
-        let income = plan_income_at_age(
+        let income = plan_income_at_age_with_drawdown(
             &plan.income_streams,
             &resolved_payouts,
+            &mut drawdown,
             age,
             years_from_now,
             inflation,
+            None,
+            default_post_payout_return,
         );
         // Required capital is a target-sizing problem: can the portfolio fund
         // the planned spending schedule? This drives the dashed "need" path.
@@ -618,6 +785,7 @@ pub(crate) fn project_retirement_with_mode_cached(
     let mut in_fire = false;
     let mut actual_retirement_age = plan.personal.target_retirement_age;
     let mut resolved_payouts: Option<HashMap<String, f64>> = None;
+    let mut drawdown = DrawdownLedger::default();
     let mut year_by_year = Vec::new();
 
     let mut pension_balances: HashMap<String, f64> = plan
@@ -630,21 +798,6 @@ pub(crate) fn project_retirement_with_mode_cached(
         let age = current_age + i;
         let year = start_year + i;
         let portfolio = buckets.total();
-
-        let pension_assets: f64 = plan
-            .income_streams
-            .iter()
-            .filter(|stream| {
-                let has_accumulation = stream.current_value.unwrap_or(0.0) > 0.0
-                    || stream.monthly_contribution.unwrap_or(0.0) > 0.0;
-                has_accumulation && age < stream.start_age
-            })
-            .map(|stream| {
-                *pension_balances
-                    .get(&stream.id)
-                    .unwrap_or(&stream.current_value.unwrap_or(0.0))
-            })
-            .sum();
 
         if !in_fire {
             let required = required_capital_for(plan, age, required_capital_cache);
@@ -673,15 +826,52 @@ pub(crate) fn project_retirement_with_mode_cached(
                     age,
                     plan_accumulation_return(plan),
                 ));
+                drawdown = DrawdownLedger::new(
+                    &plan.income_streams,
+                    current_age,
+                    age,
+                    plan_accumulation_return(plan),
+                );
             }
         }
+
+        // Counted after the retirement decision above, because a fund that starts
+        // paying in this same year needs the drawdown ledger that decision creates.
+        let pension_assets: f64 = plan
+            .income_streams
+            .iter()
+            .map(|stream| {
+                if age >= stream.start_age {
+                    // An annuitised pot is gone at start age; one in drawdown is
+                    // still an asset, and shrinking.
+                    return drawdown.balance(&stream.id);
+                }
+                let has_accumulation = stream.current_value.unwrap_or(0.0) > 0.0
+                    || stream.monthly_contribution.unwrap_or(0.0) > 0.0;
+                if !has_accumulation {
+                    return 0.0;
+                }
+                *pension_balances
+                    .get(&stream.id)
+                    .unwrap_or(&stream.current_value.unwrap_or(0.0))
+            })
+            .sum();
 
         let r = plan_blended_return(plan, i, in_fire, actual_retirement_age);
 
         if in_fire {
             let payouts = resolved_payouts.as_ref().unwrap();
             let (total_expenses, _) = annual_expenses_at_year(&plan.expenses, age, i, inflation);
-            let income = plan_income_at_age(&plan.income_streams, payouts, age, i, inflation);
+            let income = plan_income_at_age_with_drawdown(
+                &plan.income_streams,
+                payouts,
+                &mut drawdown,
+                age,
+                i,
+                inflation,
+                None,
+                plan_retirement_return(plan),
+            );
 
             let grown_buckets = apply_growth(buckets, r);
             let outcome = apply_planned_spending_withdrawal(
@@ -748,6 +938,22 @@ pub(crate) fn project_retirement_with_mode_cached(
         step_plan_pension_funds(&plan.income_streams, &mut pension_balances, age, in_fire);
     }
 
+    let mut income_stream_exhaustion: Vec<IncomeStreamExhaustion> = plan
+        .income_streams
+        .iter()
+        .filter_map(|stream| {
+            drawdown
+                .exhausted_ages()
+                .get(&stream.id)
+                .map(|age| IncomeStreamExhaustion {
+                    stream_id: stream.id.clone(),
+                    label: stream.label.clone(),
+                    exhausted_age: *age,
+                })
+        })
+        .collect();
+    income_stream_exhaustion.sort_by_key(|entry| entry.exhausted_age);
+
     FireProjection {
         fire_age,
         fire_year,
@@ -758,6 +964,7 @@ pub(crate) fn project_retirement_with_mode_cached(
         coast_fire_amount: coast_amount,
         coast_fire_reached: target_at_goal.is_some() && current_portfolio >= coast_amount,
         year_by_year,
+        income_stream_exhaustion,
     }
 }
 
@@ -944,6 +1151,8 @@ mod tests {
             monthly_contribution: None,
             accumulation_return: None,
             payout_rate: None,
+            payout_mode: None,
+            post_payout_return: None,
         });
         let target_at_50 = compute_required_capital(&p, 50).expect("target should be reachable");
         let target_at_60 = compute_required_capital(&p, 60).expect("target should be reachable");
@@ -970,6 +1179,8 @@ mod tests {
             monthly_contribution: Some(200.0),
             accumulation_return: Some(0.04),
             payout_rate: None,
+            payout_mode: None,
+            post_payout_return: None,
         };
         // Retiring at 50: contributions stop at 50, 15 years of growth-only until 65
         let payouts_at_50 = resolve_plan_dc_payouts(std::slice::from_ref(&dc), 35, 50, 0.04);
@@ -1001,6 +1212,8 @@ mod tests {
             monthly_contribution: None,
             accumulation_return: None,
             payout_rate: None,
+            payout_mode: None,
+            post_payout_return: None,
         };
 
         let low = resolve_plan_dc_payouts(std::slice::from_ref(&dc), 45, 65, 0.02);
@@ -1024,6 +1237,8 @@ mod tests {
             monthly_contribution: None,
             accumulation_return: Some(0.0),
             payout_rate: None,
+            payout_mode: None,
+            post_payout_return: None,
         };
 
         let payouts = resolve_plan_dc_payouts(&[dc], 65, 65, 0.04);
@@ -1049,6 +1264,8 @@ mod tests {
             monthly_contribution: None,
             accumulation_return: Some(0.0),
             payout_rate: Some(0.06),
+            payout_mode: None,
+            post_payout_return: None,
         };
 
         let payouts = resolve_plan_dc_payouts(&[dc], 45, 65, 0.04);
@@ -1074,6 +1291,8 @@ mod tests {
             monthly_contribution: None,
             accumulation_return: None,
             payout_rate: Some(0.06),
+            payout_mode: None,
+            post_payout_return: None,
         };
 
         let payouts = resolve_plan_dc_payouts(&[dc], 65, 65, 0.04);
@@ -1099,6 +1318,8 @@ mod tests {
             monthly_contribution: Some(500.0),
             accumulation_return: Some(0.04),
             payout_rate: None,
+            payout_mode: None,
+            post_payout_return: None,
         };
 
         let payouts = resolve_plan_dc_payouts(&[dc], 65, 65, 0.04);
@@ -1126,6 +1347,8 @@ mod tests {
             monthly_contribution: Some(500.0),
             accumulation_return: Some(0.04),
             payout_rate: None,
+            payout_mode: None,
+            post_payout_return: None,
         });
 
         let projection = project_retirement(&plan, 500_000.0);
@@ -1142,6 +1365,181 @@ mod tests {
 
         assert!(age_64.pension_assets > 0.0);
         assert_eq!(age_65.pension_assets, 0.0);
+    }
+
+    /// A plan whose only income is one fund, arranged so the arithmetic is exact:
+    /// a 100k balance that neither grows nor receives contributions before its
+    /// start age, which is also the age retirement begins.
+    fn plan_with_fund(
+        payout_rate: f64,
+        payout_mode: Option<PayoutMode>,
+        post_payout_return: f64,
+        indexed: bool,
+    ) -> RetirementPlan {
+        let mut plan = base_plan();
+        plan.personal.current_age = 64;
+        plan.personal.target_retirement_age = 65;
+        plan.personal.planning_horizon_age = 95;
+        plan.investment.monthly_contribution = 0.0;
+        plan.income_streams.push(RetirementIncomeStream {
+            id: "dc".into(),
+            label: "RRSP".into(),
+            stream_type: StreamKind::DefinedContribution,
+            start_age: 65,
+            adjust_for_inflation: indexed,
+            annual_growth_rate: None,
+            monthly_amount: None,
+            linked_account_id: None,
+            current_value: Some(100_000.0),
+            monthly_contribution: None,
+            accumulation_return: Some(0.0),
+            payout_rate: Some(payout_rate),
+            payout_mode,
+            post_payout_return: Some(post_payout_return),
+        });
+        plan
+    }
+
+    fn income_at(projection: &FireProjection, age: u32) -> f64 {
+        projection
+            .year_by_year
+            .iter()
+            .find(|snapshot| snapshot.age == age)
+            .unwrap_or_else(|| panic!("age {age} snapshot should exist"))
+            .annual_income
+    }
+
+    fn pension_assets_at(projection: &FireProjection, age: u32) -> f64 {
+        projection
+            .year_by_year
+            .iter()
+            .find(|snapshot| snapshot.age == age)
+            .unwrap_or_else(|| panic!("age {age} snapshot should exist"))
+            .pension_assets
+    }
+
+    #[test]
+    fn a_drawdown_fund_empties_and_its_income_stops() {
+        // 100k drawn at 12%/yr with nothing left growing: eight years of 12k takes
+        // it to 4k, which is all the ninth year can pay.
+        let projection = project_retirement(
+            &plan_with_fund(0.12, Some(PayoutMode::Drawdown), 0.0, false),
+            5_000_000.0,
+        );
+
+        assert_eq!(
+            projection.income_stream_exhaustion,
+            vec![IncomeStreamExhaustion {
+                stream_id: "dc".into(),
+                label: "RRSP".into(),
+                exhausted_age: 73,
+            }],
+        );
+        assert!((income_at(&projection, 72) - 12_000.0).abs() < 1e-6);
+        assert!(
+            (income_at(&projection, 73) - 4_000.0).abs() < 1e-6,
+            "the last withdrawal is capped at what is left, not paid in full"
+        );
+        assert_eq!(income_at(&projection, 74), 0.0);
+        assert_eq!(income_at(&projection, 95), 0.0);
+        assert!(
+            projection
+                .year_by_year
+                .iter()
+                .all(|snapshot| snapshot.pension_assets >= 0.0),
+            "a fund must never be overdrawn"
+        );
+    }
+
+    #[test]
+    fn an_annuity_fund_at_the_same_rate_pays_to_the_horizon() {
+        // The shipped behaviour, and the reason drawdown had to be opt-in: at 12%
+        // on a pot earning nothing, an annuity still pays every year.
+        let projection = project_retirement(&plan_with_fund(0.12, None, 0.0, false), 5_000_000.0);
+
+        assert!(projection.income_stream_exhaustion.is_empty());
+        for age in [73, 80, 95] {
+            assert!(
+                (income_at(&projection, age) - 12_000.0).abs() < 1e-6,
+                "an annuitised pot should still be paying at age {age}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_explicit_annuity_projects_identically_to_an_absent_payout_mode() {
+        let stored = project_retirement(&plan_with_fund(0.12, None, 0.0, false), 5_000_000.0);
+        let explicit = project_retirement(
+            &plan_with_fund(0.12, Some(PayoutMode::Annuity), 0.0, false),
+            5_000_000.0,
+        );
+
+        let income = |projection: &FireProjection| -> Vec<f64> {
+            projection
+                .year_by_year
+                .iter()
+                .map(|snapshot| snapshot.annual_income)
+                .collect()
+        };
+        let portfolio = |projection: &FireProjection| -> Vec<f64> {
+            projection
+                .year_by_year
+                .iter()
+                .map(|snapshot| snapshot.portfolio_end_value)
+                .collect()
+        };
+
+        assert_eq!(income(&stored), income(&explicit));
+        assert_eq!(portfolio(&stored), portfolio(&explicit));
+    }
+
+    #[test]
+    fn a_drawdown_below_its_payout_phase_return_never_empties() {
+        let projection = project_retirement(
+            &plan_with_fund(0.03, Some(PayoutMode::Drawdown), 0.05, false),
+            5_000_000.0,
+        );
+
+        assert!(projection.income_stream_exhaustion.is_empty());
+        assert!((income_at(&projection, 95) - 3_000.0).abs() < 1e-6);
+        assert!(
+            pension_assets_at(&projection, 95) > 100_000.0,
+            "a 3% draw on a fund earning 5% should leave the pot larger, not smaller"
+        );
+    }
+
+    #[test]
+    fn an_indexed_drawdown_empties_before_a_fixed_one() {
+        let fixed = project_retirement(
+            &plan_with_fund(0.12, Some(PayoutMode::Drawdown), 0.0, false),
+            5_000_000.0,
+        );
+        let indexed = project_retirement(
+            &plan_with_fund(0.12, Some(PayoutMode::Drawdown), 0.0, true),
+            5_000_000.0,
+        );
+
+        let fixed_age = fixed.income_stream_exhaustion[0].exhausted_age;
+        let indexed_age = indexed.income_stream_exhaustion[0].exhausted_age;
+        assert!(
+            indexed_age < fixed_age,
+            "an indexed draw empties the pot sooner: indexed {indexed_age}, fixed {fixed_age}"
+        );
+    }
+
+    #[test]
+    fn pension_assets_keep_counting_a_drawdown_fund_in_payout() {
+        let projection = project_retirement(
+            &plan_with_fund(0.12, Some(PayoutMode::Drawdown), 0.0, false),
+            5_000_000.0,
+        );
+
+        assert!((pension_assets_at(&projection, 65) - 100_000.0).abs() < 1e-6);
+        assert!(
+            (pension_assets_at(&projection, 66) - 88_000.0).abs() < 1e-6,
+            "the pot is still an asset once it starts paying, minus what it paid"
+        );
+        assert_eq!(pension_assets_at(&projection, 74), 0.0);
     }
 
     #[test]
@@ -1163,6 +1561,8 @@ mod tests {
             monthly_contribution: None,
             accumulation_return: None,
             payout_rate: None,
+            payout_mode: None,
+            post_payout_return: None,
         });
         let target_at_60 = compute_required_capital(&p, 60).expect("target should be reachable");
         let target_at_35 = compute_required_capital(&p, 35).expect("target should be reachable");
@@ -1359,6 +1759,8 @@ mod tests {
             monthly_contribution: None,
             accumulation_return: None,
             payout_rate: None,
+            payout_mode: None,
+            post_payout_return: None,
         });
         let proj = project_retirement(&plan, 800_000.0);
         let at_60 = proj

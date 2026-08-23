@@ -231,6 +231,7 @@ interface RetirementOverviewLike {
   successStatus?: string;
   failureAge?: number | null;
   spendingShortfallAge?: number | null;
+  incomeStreamExhaustion?: { label: string; exhaustedAge: number }[] | null;
 }
 
 interface DeriveRetirementReadinessInput {
@@ -249,10 +250,23 @@ export interface RetirementReadiness {
     | "unreachable-target"
     | "spending-gap"
     | "portfolio-depletion"
+    | "fund-exhaustion"
     | "on-track"
     | "late"
     | "not-reachable";
   body: string | null;
+}
+
+/** The first drawdown fund to run out, which is the one worth naming. */
+function earliestFundExhaustion(overview: RetirementOverviewLike) {
+  return (overview.incomeStreamExhaustion ?? []).reduce<{
+    label: string;
+    exhaustedAge: number;
+  } | null>(
+    (earliest, entry) =>
+      earliest && earliest.exhaustedAge <= entry.exhaustedAge ? earliest : entry,
+    null,
+  );
 }
 
 export function deriveRetirementReadiness({
@@ -288,6 +302,15 @@ export function deriveRetirementReadiness({
       tone: "watch",
       problem: "spending-gap",
       body: `Projected spending gap starts at age ${overview.spendingShortfallAge}. Increase contributions, retire later, reduce retirement spending, or add retirement income.`,
+    };
+  }
+
+  const exhaustion = earliestFundExhaustion(overview);
+  if (exhaustion) {
+    return {
+      tone: "watch",
+      problem: "fund-exhaustion",
+      body: `${exhaustion.label} runs out at age ${exhaustion.exhaustedAge} and pays nothing after that. Lower its payout rate, switch it to an annuity, or plan for the portfolio to cover the gap.`,
     };
   }
 

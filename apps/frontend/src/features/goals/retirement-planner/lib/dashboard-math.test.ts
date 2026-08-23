@@ -119,6 +119,44 @@ describe("retirement dashboard math", () => {
     ).toMatchObject({ tone: "bad", problem: "portfolio-depletion" });
   });
 
+  it("reports a fund that runs out, naming the earliest one", () => {
+    const readiness = deriveRetirementReadiness({
+      overview: {
+        requiredCapitalReachable: true,
+        incomeStreamExhaustion: [
+          { label: "Company fund", exhaustedAge: 86 },
+          { label: "SIPP", exhaustedAge: 79 },
+        ],
+      },
+      plannerMode: "traditional",
+      isFinanciallyIndependent: false,
+      effectiveFiAge: null,
+      desiredAge: 65,
+      horizonAge: 90,
+    });
+
+    expect(readiness).toMatchObject({ tone: "watch", problem: "fund-exhaustion" });
+    expect(readiness.body).toContain("SIPP");
+    expect(readiness.body).toContain("79");
+  });
+
+  it("puts a portfolio problem ahead of a fund running out", () => {
+    expect(
+      deriveRetirementReadiness({
+        overview: {
+          requiredCapitalReachable: true,
+          failureAge: 83,
+          incomeStreamExhaustion: [{ label: "SIPP", exhaustedAge: 79 }],
+        },
+        plannerMode: "traditional",
+        isFinanciallyIndependent: false,
+        effectiveFiAge: null,
+        desiredAge: 65,
+        horizonAge: 90,
+      }),
+    ).toMatchObject({ tone: "bad", problem: "portfolio-depletion" });
+  });
+
   it("draws fund income at the stream's payout rate, defaulting to 3.5%/yr", () => {
     expect(projectedAnnualIncomeNominalAtAge(planWithFund({}), 65, 65)).toBeCloseTo(4_200, 6);
     expect(

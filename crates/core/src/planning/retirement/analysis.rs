@@ -77,6 +77,19 @@ pub fn run_monte_carlo_with_mode_and_seed(
             )
         })
         .collect();
+    // Opening balances for drawdown funds, by the age retirement starts. The
+    // depletion itself is per-simulation, so each path carries its own ledger.
+    let per_age_drawdown_balances: Vec<HashMap<String, f64>> = (0..age_range)
+        .map(|i| {
+            resolve_plan_drawdown_balances(
+                &plan.income_streams,
+                current_age,
+                current_age + i as u32,
+                plan_accumulation_return(plan),
+            )
+        })
+        .collect();
+    let default_post_payout_return = plan_retirement_return(plan);
 
     // paths[sim] = (year_values, survived, fi_age)
     let sim_results: Vec<(Vec<f64>, bool, Option<u32>)> = (0..n_sims)
@@ -91,6 +104,7 @@ pub fn run_monte_carlo_with_mode_and_seed(
             let mut path = Vec::with_capacity(horizon_years as usize + 1);
             let mut cumulative_inflation = 1.0_f64;
             let mut sim_resolved_payouts: Option<&HashMap<String, f64>> = None;
+            let mut sim_drawdown = DrawdownLedger::default();
             let mut sim_retirement_age = target_fire_age;
 
             for i in 0..=horizon_years {
@@ -109,6 +123,9 @@ pub fn run_monte_carlo_with_mode_and_seed(
                         in_fire = true;
                         sim_retirement_age = age;
                         sim_resolved_payouts = Some(&per_age_payouts[i as usize]);
+                        sim_drawdown = DrawdownLedger::from_balances(
+                            per_age_drawdown_balances[i as usize].clone(),
+                        );
                     }
                 }
 
@@ -138,13 +155,15 @@ pub fn run_monte_carlo_with_mode_and_seed(
                         inflation_rate,
                         cumulative_inflation,
                     );
-                    let income = plan_income_at_age_stochastic(
+                    let income = plan_income_at_age_with_drawdown(
                         &streams_clone,
                         payouts,
+                        &mut sim_drawdown,
                         age,
                         i,
                         inflation_rate,
                         Some(cumulative_inflation),
+                        default_post_payout_return,
                     );
                     let outcome = apply_planned_spending_withdrawal(
                         &grown_buckets,
@@ -745,6 +764,14 @@ pub fn run_sorr(
             let mut path = Vec::with_capacity(years + 1);
             let mut essential_funded_every_year = true;
             let mut failure_age = None;
+            // Each scenario depletes its own funds; a shock year does not change
+            // the draw, but the fund still has to have the money.
+            let mut drawdown = DrawdownLedger::new(
+                &plan.income_streams,
+                plan.personal.current_age,
+                retirement_start_age,
+                plan_accumulation_return(plan),
+            );
 
             #[allow(clippy::needless_range_loop)]
             for i in 0..years {
@@ -753,12 +780,15 @@ pub fn run_sorr(
                 let years_from_now = years_to_fire + i as u32;
                 let (total_expenses, essential_expenses) =
                     annual_expenses_at_year(&plan.expenses, age, years_from_now, inflation);
-                let income = plan_income_at_age(
+                let income = plan_income_at_age_with_drawdown(
                     &plan.income_streams,
                     &resolved_payouts,
+                    &mut drawdown,
                     age,
                     years_from_now,
                     inflation,
+                    None,
+                    r,
                 );
                 // Use scenario returns[i] but blend with glide path for the base-return component.
                 // For non-base scenarios the shock return overrides the actual return for that year.
