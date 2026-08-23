@@ -1112,24 +1112,25 @@ export function SidebarConfigurator({
               const expanded = expandedIncomeId === s.id;
               const amount = incomeStreamMonthlyAmount(draft, s);
               const growthMeta =
-                s.streamType === "dc"
-                  ? t("goals:sidebar.income.balance_derived_payout")
-                  : s.annualGrowthRate !== undefined
-                    ? t("goals:sidebar.income.growth_meta", {
-                        pct: numberFormatting.formatDecimal(s.annualGrowthRate * 100, {
-                          minimumFractionDigits: 1,
-                          maximumFractionDigits: 1,
-                        }),
-                      })
-                    : s.adjustForInflation
-                      ? t("goals:sidebar.income.inflation_indexed")
-                      : t("goals:sidebar.income.fixed_nominal");
+                s.annualGrowthRate !== undefined
+                  ? t("goals:sidebar.income.growth_meta", {
+                      pct: numberFormatting.formatDecimal(s.annualGrowthRate * 100, {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1,
+                      }),
+                    })
+                  : s.adjustForInflation
+                    ? t("goals:sidebar.income.inflation_indexed")
+                    : t("goals:sidebar.income.fixed_nominal");
               const meta = [
                 t("goals:sidebar.income.age_range", {
                   start: s.startAge,
                   end: draft.personal.planningHorizonAge,
                 }),
                 growthMeta,
+                ...(s.streamType === "dc"
+                  ? [t("goals:sidebar.income.balance_derived_payout")]
+                  : []),
               ].join(" · ");
 
               return (
