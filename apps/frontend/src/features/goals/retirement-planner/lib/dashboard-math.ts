@@ -1,6 +1,6 @@
 import { DEFAULT_DC_PAYOUT_ESTIMATE_RATE } from "./constants";
 import { activeExpenseItems } from "./expense-items";
-import type { InvestmentAssumptions, RetirementIncomeStream, RetirementPlan } from "../types";
+import type { RetirementIncomeStream, RetirementPlan } from "../types";
 
 export type PlannerMode = "fire" | "traditional";
 
@@ -18,24 +18,46 @@ export function modeLabel(mode: PlannerMode) {
   };
 }
 
+export function boundedInflationFactor(rate: number, years: number) {
+  return Math.max(0.01, Math.pow(1 + rate, Math.max(0, years)));
+}
+
+/** Mirror of the engine's `net_annual_return`: the fee comes off the assumption. */
+export function netAnnualReturn(grossReturn: number, annualFeeRate: number) {
+  return Math.max(-0.99, grossReturn - annualFeeRate);
+}
+
 /**
- * The return a drawdown fund's remaining balance earns during its payout phase.
- * With no override the engine uses the plan's retirement return after fees, so the
- * sidebar has to show that same figure: showing the gross rate would make touching
- * the control save a higher number than the projection had been using.
+ * Mirror of the engine's `plan_accumulation_return`, and the rate a fund with no
+ * `accumulationReturn` of its own grows at. The plan's stated return is gross of
+ * the investment fee everywhere the engine consumes it.
  */
-export function payoutPhaseReturn(
-  stream: Pick<RetirementIncomeStream, "postPayoutReturn">,
-  investment: Pick<InvestmentAssumptions, "retirementAnnualReturn" | "annualInvestmentFeeRate">,
-) {
-  return (
-    stream.postPayoutReturn ??
-    investment.retirementAnnualReturn - investment.annualInvestmentFeeRate
+export function planAccumulationReturn(plan: RetirementPlan) {
+  return netAnnualReturn(
+    plan.investment.preRetirementAnnualReturn,
+    plan.investment.annualInvestmentFeeRate,
   );
 }
 
-export function boundedInflationFactor(rate: number, years: number) {
-  return Math.max(0.01, Math.pow(1 + rate, Math.max(0, years)));
+/** Mirror of the engine's `plan_retirement_return`. */
+export function planRetirementReturn(plan: RetirementPlan) {
+  return netAnnualReturn(
+    plan.investment.retirementAnnualReturn,
+    plan.investment.annualInvestmentFeeRate,
+  );
+}
+
+/**
+ * The return a drawdown fund's remaining balance earns during its payout phase, and
+ * the rate a fund with no `postPayoutReturn` of its own draws against. Showing the
+ * gross assumption instead would make touching the control save a higher number than
+ * the projection had been using.
+ */
+export function payoutPhaseReturn(
+  stream: Pick<RetirementIncomeStream, "postPayoutReturn">,
+  plan: RetirementPlan,
+) {
+  return stream.postPayoutReturn ?? planRetirementReturn(plan);
 }
 
 export function projectedAnnualExpenseNominalAtAge(plan: RetirementPlan, age: number) {
@@ -94,7 +116,7 @@ export function projectedAnnualIncomeNominalAtAge(
             stream,
             plan.personal.currentAge,
             retirementAge,
-            plan.investment.preRetirementAnnualReturn,
+            planAccumulationReturn(plan),
           )
         : (stream.monthlyAmount ?? 0);
     const annual = baseMonthly * 12;
@@ -115,7 +137,7 @@ export function incomeStreamMonthlyAmount(plan: RetirementPlan, stream: Retireme
       stream,
       plan.personal.currentAge,
       plan.personal.targetRetirementAge,
-      plan.investment.preRetirementAnnualReturn,
+      planAccumulationReturn(plan),
     );
   }
   return stream.monthlyAmount ?? 0;

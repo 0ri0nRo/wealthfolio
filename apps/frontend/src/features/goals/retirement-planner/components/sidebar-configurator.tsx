@@ -30,6 +30,7 @@ import { DEFAULT_DC_PAYOUT_ESTIMATE_RATE } from "../lib/constants";
 import {
   incomeStreamMonthlyAmount,
   payoutPhaseReturn,
+  planAccumulationReturn,
   type PlannerMode,
 } from "../lib/dashboard-math";
 import {
@@ -1117,24 +1118,25 @@ export function SidebarConfigurator({
               const expanded = expandedIncomeId === s.id;
               const amount = incomeStreamMonthlyAmount(draft, s);
               const growthMeta =
-                s.streamType === "dc"
-                  ? t("goals:sidebar.income.balance_derived_payout")
-                  : s.annualGrowthRate !== undefined
-                    ? t("goals:sidebar.income.growth_meta", {
-                        pct: numberFormatting.formatDecimal(s.annualGrowthRate * 100, {
-                          minimumFractionDigits: 1,
-                          maximumFractionDigits: 1,
-                        }),
-                      })
-                    : s.adjustForInflation
-                      ? t("goals:sidebar.income.inflation_indexed")
-                      : t("goals:sidebar.income.fixed_nominal");
+                s.annualGrowthRate !== undefined
+                  ? t("goals:sidebar.income.growth_meta", {
+                      pct: numberFormatting.formatDecimal(s.annualGrowthRate * 100, {
+                        minimumFractionDigits: 1,
+                        maximumFractionDigits: 1,
+                      }),
+                    })
+                  : s.adjustForInflation
+                    ? t("goals:sidebar.income.inflation_indexed")
+                    : t("goals:sidebar.income.fixed_nominal");
               const meta = [
                 t("goals:sidebar.income.age_range", {
                   start: s.startAge,
                   end: draft.personal.planningHorizonAge,
                 }),
                 growthMeta,
+                ...(s.streamType === "dc"
+                  ? [t("goals:sidebar.income.balance_derived_payout")]
+                  : []),
               ].join(" · ");
 
               return (
@@ -1265,13 +1267,11 @@ export function SidebarConfigurator({
                             />
                             <LeverRow
                               label={t("goals:sidebar.income.fund_return_before_payout")}
-                              value={
-                                s.accumulationReturn ?? draft.investment.preRetirementAnnualReturn
-                              }
+                              value={s.accumulationReturn ?? planAccumulationReturn(draft)}
                               onChange={(v) => updateStream(s.id, { accumulationReturn: v })}
                               min={0}
                               max={rateSliderMaxFor(
-                                s.accumulationReturn ?? draft.investment.preRetirementAnnualReturn,
+                                s.accumulationReturn ?? planAccumulationReturn(draft),
                                 DEFAULT_RETURN_SLIDER_MAX,
                                 RATE_SLIDER_INCREMENT,
                                 MAX_RETIREMENT_RETURN,
@@ -1281,7 +1281,7 @@ export function SidebarConfigurator({
                               suffix="%"
                               format={(v) => (v * 100).toFixed(1)}
                               warning={highReturnWarning(
-                                s.accumulationReturn ?? draft.investment.preRetirementAnnualReturn,
+                                s.accumulationReturn ?? planAccumulationReturn(draft),
                               )}
                             />
                             <LeverRow
@@ -1323,11 +1323,11 @@ export function SidebarConfigurator({
                             {s.payoutMode === "drawdown" && (
                               <LeverRow
                                 label={t("goals:sidebar.income.fund_return_during_payout")}
-                                value={payoutPhaseReturn(s, draft.investment)}
+                                value={payoutPhaseReturn(s, draft)}
                                 onChange={(v) => updateStream(s.id, { postPayoutReturn: v })}
                                 min={0}
                                 max={rateSliderMaxFor(
-                                  payoutPhaseReturn(s, draft.investment),
+                                  payoutPhaseReturn(s, draft),
                                   DEFAULT_RETURN_SLIDER_MAX,
                                   RATE_SLIDER_INCREMENT,
                                   MAX_RETIREMENT_RETURN,
@@ -1336,7 +1336,7 @@ export function SidebarConfigurator({
                                 step={0.001}
                                 suffix="%"
                                 format={(v) => (v * 100).toFixed(1)}
-                                warning={highReturnWarning(payoutPhaseReturn(s, draft.investment))}
+                                warning={highReturnWarning(payoutPhaseReturn(s, draft))}
                               />
                             )}
                             {s.startAge <= draft.personal.currentAge && (
