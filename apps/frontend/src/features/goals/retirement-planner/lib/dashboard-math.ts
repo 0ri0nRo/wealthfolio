@@ -1,6 +1,6 @@
 import { DEFAULT_DC_PAYOUT_ESTIMATE_RATE } from "./constants";
 import { activeExpenseItems } from "./expense-items";
-import type { RetirementIncomeStream, RetirementPlan } from "../types";
+import type { InvestmentAssumptions, RetirementIncomeStream, RetirementPlan } from "../types";
 
 export type PlannerMode = "fire" | "traditional";
 
@@ -16,6 +16,22 @@ export function modeLabel(mode: PlannerMode) {
     targetAge: mode === "fire" ? "Desired retirement age" : "Retirement age",
     horizonAge: mode === "fire" ? "Plan through age" : "Life expectancy",
   };
+}
+
+/**
+ * The return a drawdown fund's remaining balance earns during its payout phase.
+ * With no override the engine uses the plan's retirement return after fees, so the
+ * sidebar has to show that same figure: showing the gross rate would make touching
+ * the control save a higher number than the projection had been using.
+ */
+export function payoutPhaseReturn(
+  stream: Pick<RetirementIncomeStream, "postPayoutReturn">,
+  investment: Pick<InvestmentAssumptions, "retirementAnnualReturn" | "annualInvestmentFeeRate">,
+) {
+  return (
+    stream.postPayoutReturn ??
+    investment.retirementAnnualReturn - investment.annualInvestmentFeeRate
+  );
 }
 
 export function boundedInflationFactor(rate: number, years: number) {

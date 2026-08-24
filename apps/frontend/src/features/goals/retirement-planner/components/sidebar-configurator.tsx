@@ -27,7 +27,11 @@ import type { TFunction } from "i18next";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_DC_PAYOUT_ESTIMATE_RATE } from "../lib/constants";
-import { incomeStreamMonthlyAmount, type PlannerMode } from "../lib/dashboard-math";
+import {
+  incomeStreamMonthlyAmount,
+  payoutPhaseReturn,
+  type PlannerMode,
+} from "../lib/dashboard-math";
 import {
   createExpenseItem,
   expenseAgeRangeLabel,
@@ -1319,13 +1323,11 @@ export function SidebarConfigurator({
                             {s.payoutMode === "drawdown" && (
                               <LeverRow
                                 label={t("goals:sidebar.income.fund_return_during_payout")}
-                                value={
-                                  s.postPayoutReturn ?? draft.investment.retirementAnnualReturn
-                                }
+                                value={payoutPhaseReturn(s, draft.investment)}
                                 onChange={(v) => updateStream(s.id, { postPayoutReturn: v })}
                                 min={0}
                                 max={rateSliderMaxFor(
-                                  s.postPayoutReturn ?? draft.investment.retirementAnnualReturn,
+                                  payoutPhaseReturn(s, draft.investment),
                                   DEFAULT_RETURN_SLIDER_MAX,
                                   RATE_SLIDER_INCREMENT,
                                   MAX_RETIREMENT_RETURN,
@@ -1334,9 +1336,7 @@ export function SidebarConfigurator({
                                 step={0.001}
                                 suffix="%"
                                 format={(v) => (v * 100).toFixed(1)}
-                                warning={highReturnWarning(
-                                  s.postPayoutReturn ?? draft.investment.retirementAnnualReturn,
-                                )}
+                                warning={highReturnWarning(payoutPhaseReturn(s, draft.investment))}
                               />
                             )}
                             {s.startAge <= draft.personal.currentAge && (

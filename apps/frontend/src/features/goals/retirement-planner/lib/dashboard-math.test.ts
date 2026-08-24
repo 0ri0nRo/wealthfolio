@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RetirementIncomeStream, RetirementPlan } from "../types";
 import {
   deriveRetirementReadiness,
+  payoutPhaseReturn,
   projectedAnnualIncomeNominalAtAge,
   resolveCoverageAnnualNominalValues,
   resolveFundedProgress,
@@ -29,6 +30,13 @@ function planWithFund(stream: Partial<RetirementIncomeStream>): RetirementPlan {
 }
 
 describe("retirement dashboard math", () => {
+  it("shows the payout-phase return the engine will use, after fees", () => {
+    const investment = { retirementAnnualReturn: 0.0337, annualInvestmentFeeRate: 0.006 };
+
+    expect(payoutPhaseReturn({ postPayoutReturn: undefined }, investment)).toBeCloseTo(0.0277, 10);
+    expect(payoutPhaseReturn({ postPayoutReturn: 0.04 }, investment)).toBe(0.04);
+  });
+
   it("does not inflate backend nominal budget fallback values again", () => {
     const values = resolveCoverageAnnualNominalValues({
       totalMonthlyBudget: 1_000,

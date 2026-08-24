@@ -77,18 +77,7 @@ pub fn run_monte_carlo_with_mode_and_seed(
             )
         })
         .collect();
-    // Opening balances for drawdown funds, by the age retirement starts. The
-    // depletion itself is per-simulation, so each path carries its own ledger.
-    let per_age_drawdown_balances: Vec<HashMap<String, f64>> = (0..age_range)
-        .map(|i| {
-            resolve_plan_drawdown_balances(
-                &plan.income_streams,
-                current_age,
-                current_age + i as u32,
-                plan_accumulation_return(plan),
-            )
-        })
-        .collect();
+    let accumulation_return = plan_accumulation_return(plan);
     let default_post_payout_return = plan_retirement_return(plan);
 
     // paths[sim] = (year_values, survived, fi_age)
@@ -123,11 +112,23 @@ pub fn run_monte_carlo_with_mode_and_seed(
                         in_fire = true;
                         sim_retirement_age = age;
                         sim_resolved_payouts = Some(&per_age_payouts[i as usize]);
-                        sim_drawdown = DrawdownLedger::from_balances(
-                            per_age_drawdown_balances[i as usize].clone(),
-                        );
                     }
                 }
+
+                // A fund can start paying before this path reaches retirement, so the
+                // depletion it carries starts at the fund's own start age. Until the
+                // retirement decision picks a set of payouts, this year's set is the
+                // right one: contributions stop at the earlier of the start age and
+                // retirement either way.
+                let payouts = sim_resolved_payouts.unwrap_or(&per_age_payouts[i as usize]);
+                open_due_drawdown_funds(
+                    &mut sim_drawdown,
+                    &streams_clone,
+                    age,
+                    current_age,
+                    if in_fire { sim_retirement_age } else { age },
+                    accumulation_return,
+                );
 
                 // Glide-path-blended return distribution for this year
                 let (eff_mean, eff_std) = blended_return_params_mc(
@@ -146,7 +147,6 @@ pub fn run_monte_carlo_with_mode_and_seed(
                     sample_return_and_inflation(&mut rng, eff_mean, eff_std, inflation_rate);
 
                 if in_fire {
-                    let payouts = sim_resolved_payouts.unwrap();
                     let grown_buckets = apply_growth(buckets, annual_return);
                     let (total_expenses, essential_expenses) = annual_expenses_at_year_stochastic(
                         &expenses_clone,
@@ -181,6 +181,19 @@ pub fn run_monte_carlo_with_mode_and_seed(
 
                     buckets = outcome.remaining_buckets;
                 } else {
+                    // The withdrawal has to leave the fund even in a year the plan
+                    // models no spending for it to fund, or a fund paying since 65
+                    // would be whole again when retirement begins at 70.
+                    drawdown_income_at_age(
+                        &streams_clone,
+                        payouts,
+                        &mut sim_drawdown,
+                        age,
+                        i,
+                        inflation_rate,
+                        Some(cumulative_inflation),
+                        default_post_payout_return,
+                    );
                     let year_monthly_contribution =
                         monthly_contribution * (1.0 + contrib_growth).powi(i as i32);
                     let annual_contribution = end_of_year_value_of_monthly_contributions(
@@ -765,12 +778,16 @@ pub fn run_sorr(
             let mut essential_funded_every_year = true;
             let mut failure_age = None;
             // Each scenario depletes its own funds; a shock year does not change
-            // the draw, but the fund still has to have the money.
-            let mut drawdown = DrawdownLedger::new(
+            // the draw, but the fund still has to have the money. A fund that started
+            // paying before retirement arrives already part-drawn.
+            let mut drawdown = drawdown_ledger_entering_retirement(
                 &plan.income_streams,
+                &resolved_payouts,
                 plan.personal.current_age,
                 retirement_start_age,
                 plan_accumulation_return(plan),
+                inflation,
+                r,
             );
 
             #[allow(clippy::needless_range_loop)]
@@ -778,6 +795,14 @@ pub fn run_sorr(
                 path.push(buckets.total().max(0.0));
                 let age = retirement_start_age + i as u32;
                 let years_from_now = years_to_fire + i as u32;
+                open_due_drawdown_funds(
+                    &mut drawdown,
+                    &plan.income_streams,
+                    age,
+                    plan.personal.current_age,
+                    retirement_start_age,
+                    plan_accumulation_return(plan),
+                );
                 let (total_expenses, essential_expenses) =
                     annual_expenses_at_year(&plan.expenses, age, years_from_now, inflation);
                 let income = plan_income_at_age_with_drawdown(
