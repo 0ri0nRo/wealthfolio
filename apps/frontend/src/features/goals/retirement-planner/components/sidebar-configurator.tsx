@@ -1215,11 +1215,6 @@ export function SidebarConfigurator({
                                 value === "dc"
                                   ? (s.monthlyContribution ?? 0)
                                   : s.monthlyContribution,
-                              accumulationReturn:
-                                value === "dc"
-                                  ? (s.accumulationReturn ??
-                                    draft.investment.preRetirementAnnualReturn)
-                                  : s.accumulationReturn,
                             })
                           }
                         />
@@ -1406,7 +1401,6 @@ export function SidebarConfigurator({
                   monthlyAmount: undefined,
                   currentValue: 0,
                   monthlyContribution: 0,
-                  accumulationReturn: draft.investment.preRetirementAnnualReturn,
                   adjustForInflation: false,
                 })
               }
