@@ -61,6 +61,7 @@ describe("SidebarConfigurator pension fund returns", () => {
     saveIncomeSection();
 
     const savedPlan = onSavePlan.mock.calls[0][0];
+    expect(savedPlan.incomeStreams[0].streamType).toBe("dc");
     expect(savedPlan.incomeStreams[0].accumulationReturn).toBeUndefined();
   });
 });
