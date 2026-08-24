@@ -41,4 +41,16 @@ describe("GoalLeverRow number input", () => {
 
     expect(onChange).toHaveBeenCalledWith(-0.02);
   });
+
+  it("treats a comma as the decimal separator", () => {
+    const onChange = vi.fn();
+    renderRateLever(-0.006, onChange);
+
+    const input = screen.getByRole("textbox");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "-2,0" } });
+    fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenCalledWith(-0.02);
+  });
 });

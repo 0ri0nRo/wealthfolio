@@ -100,7 +100,7 @@ export function GoalLeverRow({
       return;
     }
 
-    const parsed = parseFloat(raw.replace(/,/g, ""));
+    const parsed = parseFloat(raw.replace(",", "."));
     if (Number.isNaN(parsed)) {
       setDraftValue(null);
       return;
