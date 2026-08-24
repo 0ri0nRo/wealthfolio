@@ -38,8 +38,10 @@ import type {
   SnapshotImportResult,
   SnapshotInfo,
   SnapshotInput,
+  SpendCategoryOption,
   SymbolSearchResult,
   UpdateAssetProfile,
+  UpsertCategorizationRuleInput,
 } from './data-types';
 
 export interface ActivitySearchFilters {
@@ -393,6 +395,46 @@ export interface ExchangeRatesAPI {
    * @returns Promise resolving to one result per requested pair, in the same order
    */
   getRatesForDates(pairs: ExchangeRateDateQuery[]): Promise<ExchangeRateDateResult[]>;
+}
+
+/**
+ * Spend categorization APIs
+ * Lets addons classify activities (e.g. WITHDRAWALs) into the user's
+ * existing spend-category taxonomy via Wealthfolio's categorization-rules
+ * engine, rather than a one-off per-activity tag.
+ */
+export interface SpendingAPI {
+  /**
+   * List selectable spend categories, flattened with a display path.
+   * @param taxonomyId Defaults to Wealthfolio's built-in "spending_categories" taxonomy
+   * @returns Promise resolving to array of spend category options
+   */
+  getSpendCategories(taxonomyId?: string): Promise<SpendCategoryOption[]>;
+
+  /**
+   * Create or update a categorization rule identified by `input.ruleKey`.
+   * Calling this again with the same ruleKey updates the existing rule
+   * in place instead of creating a duplicate.
+   * @param input Rule definition
+   * @returns Promise that resolves once the rule is created or updated
+   */
+  upsertCategorizationRule(input: UpsertCategorizationRuleInput): Promise<void>;
+
+  /**
+   * Delete the rule previously created with this ruleKey. No-op if absent.
+   * @param ruleKey The stable key passed to a prior upsertCategorizationRule call
+   * @returns Promise that resolves once the rule is deleted (or confirmed absent)
+   */
+  deleteCategorizationRule(ruleKey: string): Promise<void>;
+
+  /**
+   * Re-run all categorization rules. Pass true to only fill in currently
+   * uncategorized activities — this preserves any existing manual or
+   * AI-assigned categories.
+   * @param onlyUncategorized Defaults to false
+   * @returns Promise resolving to the number of activities touched
+   */
+  rerunCategorizationRules(onlyUncategorized?: boolean): Promise<number>;
 }
 
 /**
@@ -858,6 +900,9 @@ export interface HostAPI {
 
   /** Exchange rates operations */
   exchangeRates: ExchangeRatesAPI;
+
+  /** Spend categorization operations */
+  spending: SpendingAPI;
 
   /** Contribution limits operations */
   contributionLimits: ContributionLimitsAPI;

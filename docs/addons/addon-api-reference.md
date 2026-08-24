@@ -720,6 +720,69 @@ for (const result of results) {
 
 ---
 
+## Spend Categorization API
+
+Classify activities (e.g. `WITHDRAWAL`s) into the user's existing spend-category
+taxonomy via Wealthfolio's categorization-rules engine, instead of a one-off
+per-activity tag. A rule is reusable — it keeps applying to future matching
+imports, not just the activities that exist when it's created.
+
+### Methods
+
+#### `getSpendCategories(taxonomyId?: string): Promise<SpendCategoryOption[]>`
+
+Lists selectable spend categories, flattened with a display path. Defaults to
+Wealthfolio's built-in `"spending_categories"` taxonomy.
+
+```typescript
+const categories = await ctx.api.spending.getSpendCategories();
+// [{ taxonomyId: "spending_categories", categoryId: "cat_groceries",
+//    key: "groceries", name: "Groceries", path: "Food & Dining / Groceries" }, ...]
+```
+
+#### `upsertCategorizationRule(input: UpsertCategorizationRuleInput): Promise<void>`
+
+Creates or updates a categorization rule identified by `input.ruleKey`. Calling
+this again with the same `ruleKey` (typically a stable id you already persist in
+your own addon settings) updates the existing rule in place instead of creating
+a duplicate — safe to call on every settings save.
+
+```typescript
+await ctx.api.spending.upsertCategorizationRule({
+  ruleKey: "my-addon-rule-1", // a stable key you choose and reuse
+  name: "Groceries via MyBank",
+  pattern: "MYBANK GROCERY",
+  matchType: "contains", // "contains" | "starts_with" | "exact" | "regex"
+  taxonomyId: "spending_categories",
+  categoryId: "cat_groceries",
+  activityType: "WITHDRAWAL", // omit to match any activity type
+  accountId: "account-123", // omit for a rule that applies to all accounts
+});
+```
+
+#### `deleteCategorizationRule(ruleKey: string): Promise<void>`
+
+Deletes the rule previously created with this `ruleKey`. No-op if no matching
+rule exists.
+
+```typescript
+await ctx.api.spending.deleteCategorizationRule("my-addon-rule-1");
+```
+
+#### `rerunCategorizationRules(onlyUncategorized?: boolean): Promise<number>`
+
+Re-runs all categorization rules. Pass `true` to only fill in currently
+uncategorized activities — this preserves any existing manual or AI-assigned
+categories. Call this after an import so newly created activities pick up
+matching rules, since a rule only recategorizes existing activities at the
+moment it's created or updated.
+
+```typescript
+const touched = await ctx.api.spending.rerunCategorizationRules(true);
+```
+
+---
+
 ## Contribution Limits API
 
 Manage investment contribution limits and calculations.

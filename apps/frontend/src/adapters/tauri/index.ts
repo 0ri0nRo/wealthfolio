@@ -117,6 +117,9 @@ export * from "../shared/contribution-limits";
 // Exchange Rates Commands
 export * from "../shared/exchange-rates";
 
+// Spending Categorization Commands
+export * from "../shared/spending";
+
 // Secrets Commands
 export * from "../shared/secrets";
 

@@ -10,6 +10,13 @@ and this project adheres to
 
 - `ExchangeRatesAPI.getRatesForDates(pairs)` for batched date-specific FX-rate
   lookups, with per-pair errors and Wealthfolio's standard FX resolution rules.
+- `ctx.api.spending` (`SpendingAPI`) — `getSpendCategories()`,
+  `upsertCategorizationRule()`, `deleteCategorizationRule()`,
+  `rerunCategorizationRules()`, letting addons classify activities into the
+  user's existing spend-category taxonomy via Wealthfolio's categorization-rules
+  engine. Requires a Wealthfolio release that ships this bridge (unreleased at
+  the time of writing). See the
+  [Spend Categorization API reference](../../docs/addons/addon-api-reference.md#spend-categorization-api).
 - `registerTranslations()` and `useAddonTranslation()` for translating addon UI
   strings. Resources live on a dedicated i18next instance inside the addon
   sandbox, isolated from the host catalog; the language follows the host

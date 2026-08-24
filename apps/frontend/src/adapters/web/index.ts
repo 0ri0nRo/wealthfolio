@@ -254,6 +254,16 @@ export {
   updateExchangeRate,
 } from "../shared/exchange-rates";
 
+// Spending Categorization Commands
+export {
+  createCategorizationRule,
+  deleteCategorizationRule,
+  getSpendCategories,
+  listCategorizationRules,
+  rerunCategorizationRules,
+  updateCategorizationRule,
+} from "../shared/spending";
+
 // Alternative Assets Commands
 export {
   createAlternativeAsset,

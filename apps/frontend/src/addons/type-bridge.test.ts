@@ -2,6 +2,7 @@
 
 import { vi, describe, it, expect } from "vitest";
 import { createPermissionGuard, createSDKHostAPIBridge, type InternalHostAPI } from "./type-bridge";
+import { deriveRuleId } from "./spending-rule-key";
 import { getPermissionCategory, isBaselineCategory } from "@wealthfolio/addon-sdk";
 
 describe("Addon Type Bridge", () => {
@@ -283,6 +284,169 @@ describe("Addon Type Bridge", () => {
         url: "https://api.example.com/v1",
         auth: { type: "bearer", secretKey: "api-token" },
       });
+    });
+  });
+
+  describe("spending namespace", () => {
+    const spendingGuard = (functionName: string) =>
+      createPermissionGuard("test-addon", [
+        {
+          category: "spending",
+          purpose: "Categorize transactions",
+          functions: [{ name: functionName, isDeclared: true, isDetected: false }],
+        },
+      ]);
+    const loggerMocks = {
+      logError: vi.fn(),
+      logInfo: vi.fn(),
+      logWarn: vi.fn(),
+      logTrace: vi.fn(),
+      logDebug: vi.fn(),
+    };
+
+    it("creates a new rule when none exists for the ruleKey", async () => {
+      const mockList = vi.fn().mockResolvedValue([]);
+      const mockCreate = vi.fn().mockResolvedValue({});
+      const mockUpdate = vi.fn();
+
+      const sdkAPI = createSDKHostAPIBridge(
+        {
+          listCategorizationRules: mockList,
+          createCategorizationRule: mockCreate,
+          updateCategorizationRule: mockUpdate,
+          ...loggerMocks,
+        } as unknown as InternalHostAPI,
+        "test-addon",
+        spendingGuard("upsertCategorizationRule"),
+      );
+
+      await sdkAPI.spending.upsertCategorizationRule({
+        ruleKey: "pattern-1",
+        name: "Groceries",
+        pattern: "SUPERMARKET",
+        taxonomyId: "spending_categories",
+        categoryId: "cat_groceries",
+        activityType: "WITHDRAWAL",
+        accountId: "account-1",
+      });
+
+      const expectedId = await deriveRuleId("test-addon", "pattern-1");
+      expect(mockUpdate).not.toHaveBeenCalled();
+      expect(mockCreate).toHaveBeenCalledWith({
+        id: expectedId,
+        name: "Groceries",
+        pattern: "SUPERMARKET",
+        matchType: "contains",
+        taxonomyId: "spending_categories",
+        categoryId: "cat_groceries",
+        activityType: "WITHDRAWAL",
+        isGlobal: false,
+        accountId: "account-1",
+        priority: 0,
+      });
+    });
+
+    it("updates the existing rule in place on a repeat upsert with the same ruleKey", async () => {
+      const expectedId = await deriveRuleId("test-addon", "pattern-1");
+      const mockList = vi.fn().mockResolvedValue([{ id: expectedId }]);
+      const mockCreate = vi.fn();
+      const mockUpdate = vi.fn().mockResolvedValue({});
+
+      const sdkAPI = createSDKHostAPIBridge(
+        {
+          listCategorizationRules: mockList,
+          createCategorizationRule: mockCreate,
+          updateCategorizationRule: mockUpdate,
+          ...loggerMocks,
+        } as unknown as InternalHostAPI,
+        "test-addon",
+        spendingGuard("upsertCategorizationRule"),
+      );
+
+      await sdkAPI.spending.upsertCategorizationRule({
+        ruleKey: "pattern-1",
+        name: "Groceries (renamed)",
+        pattern: "SUPERMARKET",
+        taxonomyId: "spending_categories",
+        categoryId: "cat_groceries",
+      });
+
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(mockUpdate).toHaveBeenCalledWith(
+        expectedId,
+        expect.objectContaining({ name: "Groceries (renamed)", isGlobal: true, accountId: null }),
+      );
+    });
+
+    it("scopes different addons to different rule ids for the same ruleKey", async () => {
+      const idA = await deriveRuleId("addon-a", "pattern-1");
+      const idB = await deriveRuleId("addon-b", "pattern-1");
+      expect(idA).not.toBe(idB);
+    });
+
+    it("deleteCategorizationRule is a no-op when no rule exists for the ruleKey", async () => {
+      const mockList = vi.fn().mockResolvedValue([]);
+      const mockDelete = vi.fn();
+
+      const sdkAPI = createSDKHostAPIBridge(
+        {
+          listCategorizationRules: mockList,
+          deleteCategorizationRuleById: mockDelete,
+          ...loggerMocks,
+        } as unknown as InternalHostAPI,
+        "test-addon",
+        spendingGuard("deleteCategorizationRule"),
+      );
+
+      await sdkAPI.spending.deleteCategorizationRule("never-created");
+
+      expect(mockDelete).not.toHaveBeenCalled();
+    });
+
+    it("deleteCategorizationRule removes the matching rule", async () => {
+      const expectedId = await deriveRuleId("test-addon", "pattern-1");
+      const mockList = vi.fn().mockResolvedValue([{ id: expectedId }]);
+      const mockDelete = vi.fn().mockResolvedValue(undefined);
+
+      const sdkAPI = createSDKHostAPIBridge(
+        {
+          listCategorizationRules: mockList,
+          deleteCategorizationRuleById: mockDelete,
+          ...loggerMocks,
+        } as unknown as InternalHostAPI,
+        "test-addon",
+        spendingGuard("deleteCategorizationRule"),
+      );
+
+      await sdkAPI.spending.deleteCategorizationRule("pattern-1");
+
+      expect(mockDelete).toHaveBeenCalledWith(expectedId);
+    });
+
+    it("enforces the spending permission category", () => {
+      const guard = createPermissionGuard("test-addon", []);
+      const sdkAPI = createSDKHostAPIBridge(
+        { getSpendCategories: vi.fn(), ...loggerMocks } as unknown as InternalHostAPI,
+        "test-addon",
+        guard,
+      );
+
+      expect(() => sdkAPI.spending.getSpendCategories()).toThrow(
+        "Addon 'test-addon' is not allowed to call spending.getSpendCategories",
+      );
+    });
+
+    it("registers the spending permission category with a medium risk level", () => {
+      const category = getPermissionCategory("spending");
+      expect(category?.riskLevel).toBe("medium");
+      expect(category?.functions).toEqual(
+        expect.arrayContaining([
+          "getSpendCategories",
+          "upsertCategorizationRule",
+          "deleteCategorizationRule",
+          "rerunCategorizationRules",
+        ]),
+      );
     });
   });
 });

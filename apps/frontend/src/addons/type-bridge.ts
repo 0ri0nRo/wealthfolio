@@ -43,14 +43,22 @@ import type {
 } from "@/lib/types";
 import type { HoldingInput } from "@/adapters";
 import type {
+  CategorizationRule,
+  NewCategorizationRule,
+  UpdateCategorizationRule,
+} from "@/features/spending/types/rule";
+import type {
   Goal as SDKGoal,
   GoalAllocation as SDKGoalAllocation,
   HostAPI as SDKHostAPI,
   NetworkRequest as SDKNetworkRequest,
   NetworkResponse as SDKNetworkResponse,
   Permission,
+  SpendCategoryOption,
+  UpsertCategorizationRuleInput,
 } from "@wealthfolio/addon-sdk";
 import { isBaselineCategory } from "@wealthfolio/addon-sdk";
+import { deriveRuleId } from "./spending-rule-key";
 
 /**
  * Internal HostAPI interface that matches the actual command function signatures
@@ -67,6 +75,17 @@ export interface InternalHostAPI {
   updateExchangeRate(updatedRate: ExchangeRate): Promise<ExchangeRate>;
   addExchangeRate(newRate: Omit<ExchangeRate, "id">): Promise<ExchangeRate>;
   getExchangeRatesForDates(pairs: ExchangeRateDateQuery[]): Promise<ExchangeRateDateResult[]>;
+
+  // Spend categorization
+  getSpendCategories(taxonomyId?: string): Promise<SpendCategoryOption[]>;
+  listCategorizationRules(): Promise<CategorizationRule[]>;
+  createCategorizationRule(rule: NewCategorizationRule): Promise<CategorizationRule>;
+  updateCategorizationRule(
+    id: string,
+    patch: UpdateCategorizationRule,
+  ): Promise<CategorizationRule>;
+  deleteCategorizationRuleById(id: string): Promise<void>;
+  rerunCategorizationRulesForAddon(onlyUncategorized?: boolean): Promise<number>;
 
   // Contribution limits
   getContributionLimit(): Promise<ContributionLimit[]>;
@@ -489,6 +508,40 @@ export function createSDKHostAPIBridge(
     "currency",
     guard,
   );
+  const spending = guardNamespace(
+    {
+      getSpendCategories: internalAPI.getSpendCategories,
+      upsertCategorizationRule: async (input: UpsertCategorizationRuleInput): Promise<void> => {
+        const id = await deriveRuleId(addonId || "unknown-addon", input.ruleKey);
+        const rules = await internalAPI.listCategorizationRules();
+        const fields = {
+          name: input.name,
+          pattern: input.pattern,
+          matchType: input.matchType ?? "contains",
+          taxonomyId: input.taxonomyId,
+          categoryId: input.categoryId,
+          activityType: input.activityType ?? null,
+          isGlobal: !input.accountId,
+          accountId: input.accountId ?? null,
+          priority: input.priority ?? 0,
+        } as const;
+        if (rules.some((rule) => rule.id === id)) {
+          await internalAPI.updateCategorizationRule(id, fields);
+        } else {
+          await internalAPI.createCategorizationRule({ id, ...fields });
+        }
+      },
+      deleteCategorizationRule: async (ruleKey: string): Promise<void> => {
+        const id = await deriveRuleId(addonId || "unknown-addon", ruleKey);
+        const rules = await internalAPI.listCategorizationRules();
+        if (!rules.some((rule) => rule.id === id)) return;
+        await internalAPI.deleteCategorizationRuleById(id);
+      },
+      rerunCategorizationRules: internalAPI.rerunCategorizationRulesForAddon,
+    },
+    "spending",
+    guard,
+  );
   const contributionLimits = guardNamespace(
     {
       getAll: internalAPI.getContributionLimit,
@@ -578,6 +631,7 @@ export function createSDKHostAPIBridge(
     quotes: quotes as unknown as SDKApiWithoutSecrets["quotes"],
     performance: performance as unknown as SDKApiWithoutSecrets["performance"],
     exchangeRates: exchangeRates as unknown as SDKApiWithoutSecrets["exchangeRates"],
+    spending: spending as unknown as SDKApiWithoutSecrets["spending"],
     contributionLimits: contributionLimits as unknown as SDKApiWithoutSecrets["contributionLimits"],
     goals: goals as unknown as SDKApiWithoutSecrets["goals"],
     settings: settings as unknown as SDKApiWithoutSecrets["settings"],

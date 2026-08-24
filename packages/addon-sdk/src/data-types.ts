@@ -525,6 +525,49 @@ export interface CategoryWithWeight {
   weight: number;
 }
 
+/**
+ * A selectable spend category, flattened from a taxonomy's category tree.
+ * Used to classify activities (e.g. WITHDRAWALs) via categorization rules,
+ * as distinct from the asset-classification taxonomies above.
+ */
+export interface SpendCategoryOption {
+  taxonomyId: string;
+  categoryId: string;
+  /** Machine key, e.g. "groceries" */
+  key: string;
+  /** Display name, e.g. "Groceries" */
+  name: string;
+  /** Full breadcrumb path, e.g. "Food & Dining / Groceries" */
+  path: string;
+}
+
+export type CategorizationRuleMatchType = 'contains' | 'starts_with' | 'exact' | 'regex';
+
+export interface UpsertCategorizationRuleInput {
+  /**
+   * Stable key you choose and keep reusing for the same logical rule across
+   * edits/re-saves. Internally combined with your addon's id, so it can't
+   * collide with another addon's ruleKey. Calling this again with the same
+   * ruleKey updates the existing rule in place instead of creating a
+   * duplicate.
+   */
+  ruleKey: string;
+  /** Shown in Wealthfolio's own Settings → Spending → Rules UI */
+  name: string;
+  /** Text matched against the activity's notes/description */
+  pattern: string;
+  /** @default "contains" */
+  matchType?: CategorizationRuleMatchType;
+  taxonomyId: string;
+  categoryId: string;
+  /** Restrict to one activity type, e.g. "WITHDRAWAL". Omit to match any type. */
+  activityType?: string;
+  /** Restrict the rule to one account. Omit for a rule that applies everywhere. */
+  accountId?: string;
+  /** @default 0 */
+  priority?: number;
+}
+
 export interface MonetaryValue {
   local: number;
   base: number;
