@@ -11,7 +11,7 @@ import type { TransferFormValues } from "../components/forms/transfer-form";
 import {
   ACTIVITY_FORM_CONFIG,
   type ActivityFormValues,
-  type PickerActivityType,
+  type EditableActivityType,
 } from "../config/activity-form-config";
 import { useActivityMutations } from "./use-activity-mutations";
 
@@ -51,7 +51,7 @@ function transferPairIds(activity: Partial<ActivityDetails> | undefined): {
 export interface UseActivityFormParams {
   accounts: AccountSelectOption[];
   activity?: Partial<ActivityDetails>;
-  selectedType: PickerActivityType | undefined;
+  selectedType: EditableActivityType | undefined;
   onSuccess?: () => void;
 }
 

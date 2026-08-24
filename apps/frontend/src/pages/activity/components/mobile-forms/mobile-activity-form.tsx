@@ -294,7 +294,12 @@ export function MobileActivityForm({
   startOnDetails,
 }: MobileActivityFormProps) {
   const { t } = useTranslation();
-  const shouldStartOnDetails = Boolean(activity?.id || startOnDetails);
+  // Sync stores a needs-review row as UNKNOWN, which has no editor here. Jumping
+  // such a row straight to the details step renders a form with no type and no
+  // way back, so the edit has to begin by choosing a type.
+  const needsTypeSelection =
+    Boolean(activity?.id) && !isValidMobileActivityType(activity?.activityType);
+  const shouldStartOnDetails = Boolean(activity?.id || startOnDetails) && !needsTypeSelection;
   const initialStep = shouldStartOnDetails ? 2 : 1;
   const [currentStep, setCurrentStep] = useState(initialStep);
   const {
@@ -847,7 +852,7 @@ export function MobileActivityForm({
                 ? t("activity:mobile_update_activity")
                 : t("activity:mobile_add_activity")}
             </SheetTitle>
-            {!activity?.id && !startOnDetails && (
+            {!shouldStartOnDetails && (
               <div className="flex gap-1.5">
                 {[1, 2].map((step) => (
                   <div
@@ -883,6 +888,7 @@ export function MobileActivityForm({
                   currentStep={currentStep}
                   accounts={effectiveAccounts}
                   isEditing={!!activity?.id}
+                  needsTypeSelection={needsTypeSelection}
                 />
               </form>
             </Form>
@@ -891,7 +897,7 @@ export function MobileActivityForm({
 
         <SheetFooter className="mt-auto border-t px-6 py-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
           <div className="flex w-full gap-3">
-            {currentStep > 1 && !activity?.id && !startOnDetails && (
+            {currentStep > 1 && !shouldStartOnDetails && (
               <Button
                 type="button"
                 variant="outline"

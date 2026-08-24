@@ -8,17 +8,24 @@ interface MobileActivityStepsProps {
   currentStep: number;
   accounts: AccountSelectOption[];
   isEditing: boolean;
+  /**
+   * Editing a row whose stored type has no editor here (sync writes needs-review
+   * rows as UNKNOWN). Such a row has to be reclassified first, so it walks the
+   * type step before the details step instead of going straight to details.
+   */
+  needsTypeSelection?: boolean;
 }
 
 export function MobileActivitySteps({
   currentStep,
   accounts,
   isEditing,
+  needsTypeSelection = false,
 }: MobileActivityStepsProps) {
   const { watch } = useFormContext<NewActivityFormValues>();
   const activityType = watch("activityType");
 
-  if (isEditing) {
+  if (isEditing && !needsTypeSelection) {
     return <MobileDetailsStep activityType={activityType} accounts={accounts} isEditing />;
   }
 
@@ -26,7 +33,7 @@ export function MobileActivitySteps({
     <div className="h-full">
       {currentStep === 1 && <MobileActivityTypeStep />}
       {currentStep === 2 && activityType && (
-        <MobileDetailsStep activityType={activityType} accounts={accounts} />
+        <MobileDetailsStep activityType={activityType} accounts={accounts} isEditing={isEditing} />
       )}
     </div>
   );

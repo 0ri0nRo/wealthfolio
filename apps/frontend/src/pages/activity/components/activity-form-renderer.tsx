@@ -3,11 +3,11 @@ import type { AccountSelectOption } from "./forms/fields";
 import {
   ACTIVITY_FORM_CONFIG,
   type ActivityFormValues,
-  type PickerActivityType,
+  type EditableActivityType,
 } from "../config/activity-form-config";
 
 interface ActivityFormRendererProps {
-  selectedType: PickerActivityType | undefined;
+  selectedType: EditableActivityType | undefined;
   accounts: AccountSelectOption[];
   defaultValues: Partial<ActivityFormValues> | undefined;
   onSubmit: (data: ActivityFormValues) => void | Promise<void>;

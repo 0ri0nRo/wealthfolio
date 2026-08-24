@@ -5,6 +5,8 @@ import { WithdrawalForm } from "../withdrawal-form";
 import { FeeForm } from "../fee-form";
 import { InterestForm } from "../interest-form";
 import { TaxForm } from "../tax-form";
+import { CreditForm } from "../credit-form";
+import { AdjustmentForm } from "../adjustment-form";
 import type { AccountSelectOption } from "../fields";
 
 // Mock useSettings hook to avoid AuthProvider dependency
@@ -330,6 +332,59 @@ describe("TaxForm", () => {
       render(<TaxForm accounts={mockAccounts} onSubmit={mockOnSubmit} isLoading={true} />);
 
       expect(screen.getByTestId("spinner")).toBeInTheDocument();
+    });
+  });
+});
+
+// CREDIT and ADJUSTMENT are stored types the picker never offers, so these forms
+// are only ever reached by editing a row that already has one.
+describe("CreditForm", () => {
+  const mockOnSubmit = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("Render Tests", () => {
+    it("renders all form fields", () => {
+      render(<CreditForm accounts={mockAccounts} onSubmit={mockOnSubmit} />);
+
+      expect(screen.getByTestId("select-accountId")).toBeInTheDocument();
+      expect(screen.getByTestId("date-picker-activityDate")).toBeInTheDocument();
+      expect(screen.getByTestId("input-amount")).toBeInTheDocument();
+      expect(screen.getByTestId("textarea-comment")).toBeInTheDocument();
+    });
+
+    it("renders submit button with correct text when editing", () => {
+      render(<CreditForm accounts={mockAccounts} onSubmit={mockOnSubmit} isEditing={true} />);
+
+      expect(screen.getByRole("button", { name: /update/i })).toBeInTheDocument();
+    });
+  });
+});
+
+describe("AdjustmentForm", () => {
+  const mockOnSubmit = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("Render Tests", () => {
+    it("renders all form fields", () => {
+      render(<AdjustmentForm accounts={mockAccounts} onSubmit={mockOnSubmit} />);
+
+      expect(screen.getByTestId("symbol-search-symbol")).toBeInTheDocument();
+      expect(screen.getByTestId("select-accountId")).toBeInTheDocument();
+      expect(screen.getByTestId("date-picker-activityDate")).toBeInTheDocument();
+      expect(screen.getByTestId("input-quantity")).toBeInTheDocument();
+      expect(screen.getByTestId("textarea-comment")).toBeInTheDocument();
+    });
+
+    it("renders submit button with correct text when editing", () => {
+      render(<AdjustmentForm accounts={mockAccounts} onSubmit={mockOnSubmit} isEditing={true} />);
+
+      expect(screen.getByRole("button", { name: /update/i })).toBeInTheDocument();
     });
   });
 });

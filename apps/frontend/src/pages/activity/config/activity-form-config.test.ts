@@ -21,13 +21,19 @@ describe("hasActivityForm", () => {
     }
   });
 
-  it("rejects stored types that have no editor", () => {
-    // These are persisted types with no form. A needs-review row imported by
-    // sync arrives as UNKNOWN, which is exactly the row a user has to
-    // reclassify — so the caller must offer the picker rather than pin it.
-    expect(hasActivityForm("UNKNOWN")).toBe(false);
-    expect(hasActivityForm("CREDIT")).toBe(false);
-    expect(hasActivityForm("ADJUSTMENT")).toBe(false);
+  it("accepts stored types that are editable without being pickable", () => {
+    // CREDIT and ADJUSTMENT are valid types the picker does not offer, so they
+    // can only be reached by editing a row that already has one. Editing must
+    // keep them as they are rather than force a reclassification.
+    expect(hasActivityForm(ActivityType.CREDIT)).toBe(true);
+    expect(hasActivityForm(ActivityType.ADJUSTMENT)).toBe(true);
+  });
+
+  it("rejects a stored type that has no editor", () => {
+    // A needs-review row imported by sync arrives as UNKNOWN, which carries no
+    // classification and so has nothing to edit — the caller must offer the
+    // picker rather than pin it.
+    expect(hasActivityForm(ActivityType.UNKNOWN)).toBe(false);
   });
 
   it("rejects an absent type", () => {

@@ -19,6 +19,8 @@ import { SplitForm, type SplitFormValues } from "../components/forms/split-form"
 import { FeeForm, type FeeFormValues } from "../components/forms/fee-form";
 import { InterestForm, type InterestFormValues } from "../components/forms/interest-form";
 import { TaxForm, type TaxFormValues } from "../components/forms/tax-form";
+import { CreditForm, type CreditFormValues } from "../components/forms/credit-form";
+import { AdjustmentForm, type AdjustmentFormValues } from "../components/forms/adjustment-form";
 import type { AccountSelectOption } from "../components/forms/fields";
 import type { NewActivityFormValues } from "../components/forms/schemas";
 
@@ -35,6 +37,14 @@ export type PickerActivityType =
   | typeof ActivityType.INTEREST
   | typeof ActivityType.TAX;
 
+// Every persisted type that has an editor. CREDIT and ADJUSTMENT are valid types
+// the mobile flow has always been able to edit, but neither is offered as a way
+// to record a new activity, so they are editable without being pickable.
+export type EditableActivityType =
+  | PickerActivityType
+  | typeof ActivityType.CREDIT
+  | typeof ActivityType.ADJUSTMENT;
+
 // Form values union type
 export type ActivityFormValues =
   | BuyFormValues
@@ -46,7 +56,9 @@ export type ActivityFormValues =
   | SplitFormValues
   | FeeFormValues
   | InterestFormValues
-  | TaxFormValues;
+  | TaxFormValues
+  | CreditFormValues
+  | AdjustmentFormValues;
 
 // Common form props interface
 export interface ActivityFormComponentProps<T> {
@@ -102,7 +114,7 @@ function selectedExistingAsset(
 
 // Configuration for each activity type
 export const ACTIVITY_FORM_CONFIG: Record<
-  PickerActivityType,
+  EditableActivityType,
   ActivityTypeConfig<ActivityFormValues>
 > = {
   BUY: {
@@ -599,15 +611,72 @@ export const ACTIVITY_FORM_CONFIG: Record<
       };
     },
   },
+
+  CREDIT: {
+    component: CreditForm as ComponentType<ActivityFormComponentProps<ActivityFormValues>>,
+    activityType: ActivityType.CREDIT,
+    getDefaults: (activity, accounts) => ({
+      ...getBaseDefaults(activity, accounts),
+      amount: absNum(activity?.amount),
+      // Advanced options
+      currency: activity?.currency,
+      fxRate: activity?.fxRate ?? undefined,
+      subtype: activity?.subtype ?? null,
+    }),
+    toPayload: (data) => {
+      const d = data as CreditFormValues;
+      return {
+        accountId: d.accountId,
+        activityDate: d.activityDate,
+        amount: d.amount,
+        comment: d.comment,
+        subtype: d.subtype ?? null,
+        currency: d.currency,
+        fxRate: d.fxRate,
+      };
+    },
+  },
+
+  ADJUSTMENT: {
+    component: AdjustmentForm as ComponentType<ActivityFormComponentProps<ActivityFormValues>>,
+    activityType: ActivityType.ADJUSTMENT,
+    getDefaults: (activity, accounts) => ({
+      ...getBaseDefaults(activity, accounts),
+      symbol: activity?.assetSymbol ?? activity?.assetId ?? "",
+      quantity: absNum(activity?.quantity),
+      // Advanced options
+      currency: activity?.currency,
+      subtype: activity?.subtype ?? null,
+      exchangeMic: activity?.exchangeMic,
+    }),
+    toPayload: (data) => {
+      const d = data as AdjustmentFormValues;
+      return {
+        accountId: d.accountId,
+        activityDate: d.activityDate,
+        assetId: d.symbol,
+        ...selectedExistingAsset(d.symbol, d.existingAssetId, d.symbolInstrumentType),
+        quantity: d.quantity,
+        comment: d.comment,
+        subtype: d.subtype ?? null,
+        currency: d.currency,
+        exchangeMic: d.exchangeMic ?? undefined,
+        symbolQuoteCcy: d.symbolQuoteCcy ?? undefined,
+        symbolInstrumentType: d.symbolInstrumentType ?? undefined,
+      };
+    },
+  },
 };
 
 /**
- * Whether a stored activity type has a form of its own.
+ * Whether a stored activity type has an editor of its own.
  *
- * Not every persisted type does. Sync writes needs-review rows as `UNKNOWN`,
- * and `CREDIT`/`ADJUSTMENT` have no editor either, so editing one of those has
- * to begin by choosing a type rather than by pinning the stored one.
+ * Not every persisted type does: sync writes needs-review rows as `UNKNOWN`,
+ * which has no fields to edit because it carries no classification, so editing
+ * one has to begin by choosing a type rather than by pinning the stored one.
  */
-export function hasActivityForm(pickerType: string | undefined): pickerType is PickerActivityType {
-  return !!pickerType && pickerType in ACTIVITY_FORM_CONFIG;
+export function hasActivityForm(
+  activityType: string | undefined,
+): activityType is EditableActivityType {
+  return !!activityType && activityType in ACTIVITY_FORM_CONFIG;
 }
