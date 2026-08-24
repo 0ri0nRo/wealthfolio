@@ -56,6 +56,7 @@ const DEFAULT_FEE_SLIDER_MAX = 0.03;
 const DEFAULT_VOLATILITY_SLIDER_MAX = 0.5;
 const DEFAULT_CONTRIBUTION_GROWTH_SLIDER_MAX = 0.1;
 // Keep hard caps in sync with validate_retirement_plan in crates/core/src/goals/goals_service.rs.
+const MIN_RETIREMENT_RETURN = -0.2;
 const MAX_RETIREMENT_RETURN = 0.5;
 const MAX_RETIREMENT_INFLATION = 0.2;
 const MAX_RETIREMENT_FEE = 0.1;
@@ -1214,11 +1215,6 @@ export function SidebarConfigurator({
                                 value === "dc"
                                   ? (s.monthlyContribution ?? 0)
                                   : s.monthlyContribution,
-                              accumulationReturn:
-                                value === "dc"
-                                  ? (s.accumulationReturn ??
-                                    draft.investment.preRetirementAnnualReturn)
-                                  : s.accumulationReturn,
                             })
                           }
                         />
@@ -1267,7 +1263,7 @@ export function SidebarConfigurator({
                               label={t("goals:sidebar.income.fund_return_before_payout")}
                               value={s.accumulationReturn ?? planAccumulationReturn(draft)}
                               onChange={(v) => updateStream(s.id, { accumulationReturn: v })}
-                              min={0}
+                              min={MIN_RETIREMENT_RETURN}
                               max={rateSliderMaxFor(
                                 s.accumulationReturn ?? planAccumulationReturn(draft),
                                 DEFAULT_RETURN_SLIDER_MAX,
@@ -1405,7 +1401,6 @@ export function SidebarConfigurator({
                   monthlyAmount: undefined,
                   currentValue: 0,
                   monthlyContribution: 0,
-                  accumulationReturn: draft.investment.preRetirementAnnualReturn,
                   adjustForInflation: false,
                 })
               }
