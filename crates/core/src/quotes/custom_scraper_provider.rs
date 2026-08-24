@@ -326,7 +326,7 @@ impl CustomScraperProvider {
             }
         };
 
-        let currency = resolve_currency(source, symbol, currency_hint, &body, from, to)?;
+        let currency = resolve_currency(source, &body, &tctx)?;
 
         // Auto-detect locale from HTML lang if not explicitly set
         let locale = source.locale.as_deref().map(|s| s.to_string()).or_else(|| {
@@ -363,8 +363,7 @@ impl CustomScraperProvider {
                 Ok(rows_to_quotes(rows, source, &currency))
             }
             "json" => {
-                let rows =
-                    extract_json_rows(&body, source, symbol, currency_hint, locale_ref, from, to)?;
+                let rows = extract_json_rows(&body, source, &tctx, locale_ref)?;
                 if rows.is_empty() {
                     return Err(MarketDataError::ProviderError {
                         provider: DATA_SOURCE_CUSTOM_SCRAPER.to_string(),
@@ -737,39 +736,23 @@ fn apply_factor_invert(mut price: f64, source: &CustomProviderSource) -> f64 {
 
 fn resolve_currency(
     source: &CustomProviderSource,
-    symbol: &str,
-    currency_hint: Option<&str>,
     body: &str,
-    from: Option<&str>,
-    to: Option<&str>,
+    tctx: &TemplateContext<'_>,
 ) -> Result<String, MarketDataError> {
     if source.format == "json" {
-        let currency = currency_hint.unwrap_or("USD");
-        let tctx = TemplateContext {
-            symbol,
-            currency,
-            isin: None,
-            mic: None,
-            from,
-            to,
-        };
         let extracted = source
             .currency_path
             .as_ref()
             .map(|cp| {
-                expand_template(cp, &tctx).map_err(|error| MarketDataError::ValidationFailed {
+                expand_template(cp, tctx).map_err(|error| MarketDataError::ValidationFailed {
                     message: error.to_string(),
                 })
             })
             .transpose()?
             .and_then(|cp| extract_json_string(body, &cp));
-        Ok(extracted
-            .or_else(|| currency_hint.map(|s| s.to_string()))
-            .unwrap_or_else(|| "USD".to_string()))
+        Ok(extracted.unwrap_or_else(|| tctx.currency.to_string()))
     } else {
-        Ok(currency_hint
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "USD".to_string()))
+        Ok(tctx.currency.to_string())
     }
 }
 
@@ -1086,11 +1069,8 @@ fn extract_csv_rows(
 fn extract_json_rows(
     body: &str,
     source: &CustomProviderSource,
-    symbol: &str,
-    currency_hint: Option<&str>,
+    tctx: &TemplateContext<'_>,
     locale: Option<&str>,
-    from: Option<&str>,
-    to: Option<&str>,
 ) -> Result<Vec<ExtractedRow>, MarketDataError> {
     use jsonpath_rust::JsonPathQuery;
 
@@ -1099,17 +1079,8 @@ fn extract_json_rows(
         Err(_) => return Ok(Vec::new()),
     };
 
-    let currency = currency_hint.unwrap_or("USD");
-    let tctx = TemplateContext {
-        symbol,
-        currency,
-        isin: None,
-        mic: None,
-        from,
-        to,
-    };
     let expand_path = |p: &str| {
-        expand_template(p, &tctx).map_err(|error| MarketDataError::ValidationFailed {
+        expand_template(p, tctx).map_err(|error| MarketDataError::ValidationFailed {
             message: error.to_string(),
         })
     };
@@ -1538,31 +1509,22 @@ mod tests {
         source.date_path = Some("$.series.{TO}[*].date".to_string());
         source.open_path = Some("$.series.{TO}[*].open".to_string());
         source.currency_path = Some("$.meta.currencyByTo.{TO}".to_string());
+        let tctx = TemplateContext {
+            symbol: "ABC",
+            currency: "USD",
+            isin: None,
+            mic: None,
+            from: Some("2026-01-01"),
+            to: Some("2026-02-01"),
+        };
 
-        let rows = extract_json_rows(
-            body,
-            &source,
-            "ABC",
-            Some("USD"),
-            None,
-            Some("2026-01-01"),
-            Some("2026-02-01"),
-        )
-        .unwrap();
+        let rows = extract_json_rows(body, &source, &tctx, None).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].date, Some(ymd(2026, 2, 1)));
         assert_eq!(rows[0].close, 12.5);
         assert_eq!(rows[0].open, Some(12.0));
 
-        let currency = resolve_currency(
-            &source,
-            "ABC",
-            Some("USD"),
-            body,
-            Some("2026-01-01"),
-            Some("2026-02-01"),
-        )
-        .unwrap();
+        let currency = resolve_currency(&source, body, &tctx).unwrap();
         assert_eq!(currency, "CAD");
     }
 
@@ -1574,15 +1536,48 @@ mod tests {
         ]"#;
         let mut source = json_source(r#"$[*]["单位净值"]"#);
         source.date_path = Some(r#"$[*]["净值日期"]"#.to_string());
+        let tctx = TemplateContext {
+            symbol: "001097",
+            currency: "CNY",
+            isin: None,
+            mic: None,
+            from: None,
+            to: None,
+        };
 
-        let rows =
-            extract_json_rows(body, &source, "001097", Some("CNY"), None, None, None).unwrap();
+        let rows = extract_json_rows(body, &source, &tctx, None).unwrap();
 
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].date, Some(ymd(2026, 7, 10)));
         assert_eq!(rows[0].close, 1.4018);
         assert_eq!(rows[1].date, Some(ymd(2026, 7, 11)));
         assert_eq!(rows[1].close, 1.4026);
+    }
+
+    #[test]
+    fn json_mapping_paths_reuse_request_identity_context() {
+        let body = r#"{
+            "US0378331005": {
+                "XNAS": { "price": 123.45, "currency": "USD" }
+            }
+        }"#;
+        let mut source = json_source("$.{ISIN}.{MIC}.price");
+        source.currency_path = Some("$.{ISIN}.{MIC}.currency".to_string());
+        let tctx = TemplateContext {
+            symbol: "AAPL",
+            currency: "CAD",
+            isin: Some("US0378331005"),
+            mic: Some("XNAS"),
+            from: None,
+            to: None,
+        };
+
+        let rows = extract_json_rows(body, &source, &tctx, None).unwrap();
+        let currency = resolve_currency(&source, body, &tctx).unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].close, 123.45);
+        assert_eq!(currency, "USD");
     }
 
     #[test]

@@ -80,7 +80,14 @@ pub struct TemplateExpansionError {
     format: String,
 }
 
-fn has_unsupported_date_directive(format: &str) -> bool {
+fn has_unsupported_date_directive(variable: &str, format: &str) -> bool {
+    // DATE historically accepted every valid Chrono directive because it is
+    // formatted from a full DateTime<Utc>. Keep that compatibility while the
+    // date-only placeholders remain limited to directives they can represent.
+    if variable == "DATE" {
+        return false;
+    }
+
     let mut chars = format.chars();
     while let Some(character) = chars.next() {
         if character == '%' && !matches!(chars.next(), Some('Y' | 'm' | 'd')) {
@@ -100,20 +107,22 @@ pub(crate) enum PrepareRequestError<E> {
 ///
 /// Supported variables: `{SYMBOL}`, `{currency}`, `{CURRENCY}`, `{TODAY}`,
 /// `{FROM}`, `{TO}`, `{ISIN}`, `{MIC}`, `{DATE:format}`,
-/// `{FROM:format}`, `{TO:format}`, `{TODAY:format}`. Formatted dates support
-/// only the `%Y`, `%m`, and `%d` directives.
+/// `{FROM:format}`, `{TO:format}`, `{TODAY:format}`. `DATE` accepts any
+/// valid Chrono directive; the date-only variables support `%Y`, `%m`, and
+/// `%d`.
 pub fn expand_template(
     template: &str,
     ctx: &TemplateContext<'_>,
 ) -> Result<String, TemplateExpansionError> {
     for captures in DATE_TEMPLATE_RE.captures_iter(template) {
+        let variable = &captures[1];
         let format = &captures[2];
-        if has_unsupported_date_directive(format)
+        if has_unsupported_date_directive(variable, format)
             || chrono::format::StrftimeItems::new(format)
                 .any(|item| matches!(item, chrono::format::Item::Error))
         {
             return Err(TemplateExpansionError {
-                variable: captures[1].to_string(),
+                variable: variable.to_string(),
                 format: format.to_string(),
             });
         }
@@ -135,7 +144,7 @@ pub fn expand_template(
         out = out.replace("{MIC}", ctx.mic.unwrap_or(""));
     }
     // Formatted date templates:
-    //   {DATE:format}                 - current date (supports %Y, %m, and %d)
+    //   {DATE:format}                 - current instant (all valid Chrono directives)
     //   {FROM/TO/TODAY:format}        - the corresponding date, reformatted
     if out.contains("{DATE:")
         || out.contains("{FROM:")
@@ -623,6 +632,19 @@ mod tests {
         let error = expand_template("https://example.test/{FROM:%H}", &ctx(None, None))
             .expect_err("time directives should be rejected");
         assert!(error.to_string().contains("%H"));
+    }
+
+    #[test]
+    fn preserves_valid_legacy_date_directives() {
+        let out = expand_template("{DATE:%H}|{DATE:%j}|{DATE:%%}", &ctx(None, None)).unwrap();
+        let parts: Vec<_> = out.split('|').collect();
+
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0].len(), 2);
+        assert!(parts[0].chars().all(|character| character.is_ascii_digit()));
+        assert_eq!(parts[1].len(), 3);
+        assert!(parts[1].chars().all(|character| character.is_ascii_digit()));
+        assert_eq!(parts[2], "%");
     }
 
     #[test]
