@@ -14,6 +14,7 @@ import {
   resolveFormattingLocale,
 } from "@wealthfolio/ui";
 import { format } from "date-fns";
+import { zhTW } from "date-fns/locale";
 import { describe, expect, it, vi } from "vitest";
 import { formatOptionSubtitle } from "./occ-symbol";
 
@@ -67,6 +68,7 @@ describe("locale formatting", () => {
     expect(dateFnsLocaleFor("zh-HK").options?.weekStartsOn).toBe(0);
     expect(dateFnsLocaleFor("es-MX").localize.month(0)).toBe("enero");
     expect(dateFnsLocaleFor("es-MX").options?.weekStartsOn).toBe(0);
+    expect(dateFnsLocaleFor("zh-TW")).toBe(zhTW);
     expect(() => dateFnsLocaleFor(undefined)).toThrow("A resolved formatting locale is required");
   });
 

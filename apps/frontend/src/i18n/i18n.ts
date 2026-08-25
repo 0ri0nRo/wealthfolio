@@ -31,8 +31,8 @@ i18n
     lng: getCachedLanguage(),
     fallbackLng: DEFAULT_LOCALE,
     supportedLngs: SUPPORTED_LOCALE_CODES,
-    // Map regional codes (e.g. `fr-CA`) to the base language.
-    load: "languageOnly",
+    // Keep regional locales (for example `zh-TW`) distinct from their base language.
+    load: "currentOnly",
     ns: [...NAMESPACES],
     defaultNS: DEFAULT_NAMESPACE,
     interpolation: {

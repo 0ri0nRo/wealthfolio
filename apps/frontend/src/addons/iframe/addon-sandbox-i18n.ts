@@ -13,6 +13,7 @@ import jaUi from "@/i18n/locales/ja/ui.json";
 import koUi from "@/i18n/locales/ko/ui.json";
 import ptUi from "@/i18n/locales/pt/ui.json";
 import zhUi from "@/i18n/locales/zh/ui.json";
+import zhTWUi from "@/i18n/locales/zh-TW/ui.json";
 
 // The sandbox iframe renders `@wealthfolio/ui` components that call
 // `useTranslation()` against `ui:`-namespaced keys. The iframe is its own realm,
@@ -37,12 +38,17 @@ const resources: Record<LocaleCode, { ui: Record<string, unknown> }> = {
   ko: { ui: koUi },
   pt: { ui: ptUi },
   zh: { ui: zhUi },
+  "zh-TW": { ui: zhTWUi },
 };
 
-// Map regional codes (e.g. `fr-CA`) to the base language, matching the host.
-// Lowercased: i18next stores resource bundles case-sensitively but resolves
-// lowercase codes, so an uppercase key would be stored yet never resolve.
+// Preserve supported regional locales (for example `zh-TW`); normalize unknown
+// regional variants such as `fr-CA` to their base language.
 function normalizeLanguage(language: string) {
+  const supported = SUPPORTED_LOCALE_CODES.find(
+    (locale) => locale.toLowerCase() === language.toLowerCase(),
+  );
+  if (supported) return supported;
+
   return language.split("-")[0].toLowerCase();
 }
 
@@ -71,7 +77,7 @@ export function initSandboxI18n(language?: string) {
     lng: initialLanguage,
     fallbackLng: DEFAULT_LOCALE,
     supportedLngs: SUPPORTED_LOCALE_CODES,
-    load: "languageOnly",
+    load: "currentOnly",
     ns: ["ui"],
     defaultNS: "ui",
     resources,

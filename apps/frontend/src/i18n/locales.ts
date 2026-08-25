@@ -7,6 +7,7 @@ export const SUPPORTED_LOCALES = [
   { code: "es", label: "Español" },
   { code: "pt", label: "Português (Brasil)" },
   { code: "zh", label: "简体中文" },
+  { code: "zh-TW", label: "繁體中文" },
   { code: "ja", label: "日本語" },
   { code: "ko", label: "한국어" },
   { code: "it", label: "Italiano" },
