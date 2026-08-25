@@ -3,8 +3,11 @@
 Status: Draft for review (revised after #1565 review) Date: 2026-08-25 Authors:
 @Jonjon-prog Reviewers: @afadil, @marcoscale98
 
-Builds on [Allocation Targets V2](./v2-spec.md) and the worksheet implementation
-on `feature/allocation-worksheet-refactor`. Context:
+Builds on
+[Allocation Targets V2](https://github.com/wealthfolio/wealthfolio/blob/feature/allocation-worksheet-refactor/docs/features/allocations/v2-spec.md)
+and the worksheet implementation on `feature/allocation-worksheet-refactor`.
+Both live on that branch and are not on `main` yet, so the links point at the
+branch until it lands. Context:
 [PR #1486](https://github.com/wealthfolio/wealthfolio/pull/1486) discussion.
 
 ---
@@ -345,8 +348,9 @@ M1 is independent and can ship first. M3 depends on M2.
 
 ## 14. References
 
-- [Allocation Targets V2](./v2-spec.md) — product boundary, worksheet, cash
-  model, validation policy, disclosures.
+- [Allocation Targets V2](https://github.com/wealthfolio/wealthfolio/blob/feature/allocation-worksheet-refactor/docs/features/allocations/v2-spec.md)
+  — product boundary, worksheet, cash model, validation policy, disclosures. On
+  `feature/allocation-worksheet-refactor`; switch to `./v2-spec.md` once merged.
 - `feature/allocation-worksheet-refactor` — worksheet implementation, copy
   contract test, example weights.
 - [`rebalance-algorithm.md`](./rebalance-algorithm.md) — V1 engine, retained for
