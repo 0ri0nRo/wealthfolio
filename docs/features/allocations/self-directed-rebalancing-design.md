@@ -1,22 +1,26 @@
 # Self-Directed Rebalancing — Design Document
 
-Status: Draft for review (revised after #1565 review) Date: 2026-08-25 Authors:
+Status: Source of truth for allocation rebalancing Date: 2026-08-25 Authors:
 @Jonjon-prog Reviewers: @afadil, @marcoscale98
 
-Builds on
-[Allocation Targets V2](https://github.com/wealthfolio/wealthfolio/blob/feature/allocation-worksheet-refactor/docs/features/allocations/v2-spec.md)
-and the worksheet implementation on `feature/allocation-worksheet-refactor`.
-Both live on that branch and are not on `main` yet, so the links point at the
-branch until it lands. Context:
-[PR #1486](https://github.com/wealthfolio/wealthfolio/pull/1486) discussion.
+Context: [PR #1486](https://github.com/wealthfolio/wealthfolio/pull/1486)
+discussion.
+
+`docs/features/allocations/v2-spec.md`, which lives on
+`feature/allocation-worksheet-refactor`, is obsolete: it describes the earlier
+manual-only direction and is superseded by this document. That branch stays
+unchanged as a UX and code reference to copy from. Implementation starts from a
+fresh branch off `main` and reuses the worksheet UI, account allocation, copy,
+exports and example-weight work from it.
 
 ---
 
 ## 1. Why this document
 
-V2 removed the optimizer and replaced it with a user-authored worksheet that
-starts empty. That protects the product, but it also removes the part of the
-feature people actually used: not having to work out the amounts by hand.
+The manual-only direction removed the optimizer and replaced it with a worksheet
+that starts empty and is authored line by line. That protects the product, but
+it also removes the part of the feature people actually used: not having to work
+out the amounts by hand.
 
 This document describes the middle ground agreed in #1486. The user supplies the
 target, the eligible securities and the allocation rule; the app does the
@@ -39,8 +43,8 @@ being sufficient on their own.
 
 ## 2. Design principle
 
-The product boundary from V2 stands: Wealthfolio does not select, rank,
-optimize, recommend, or execute investments.
+The product boundary stands: Wealthfolio does not select, rank, optimize,
+recommend, or execute investments.
 
 The working rule for every decision below is **who supplied the judgment**.
 Arithmetic over inputs the user authored is in scope. Anything that requires an
@@ -66,8 +70,9 @@ Applied to this feature:
 
 - Keep the difference → worksheet loop useful without the app constructing a
   course of action.
-- Reuse the V2 worksheet as-is: position editor, progressive account allocation,
-  live portfolio impact, **Review adjustments**, export.
+- Reuse the worksheet from the reference branch as-is: position editor,
+  progressive account allocation, live portfolio impact, **Review adjustments**,
+  export.
 - Keep every calculated figure editable, and keep the arithmetic visible.
 - Keep opinionated behaviour (tax rules, substitution universes, scoring)
   outside core.
@@ -149,19 +154,21 @@ amount actually applied to it.
 
 The calculation is single-pass: the projection is not re-optimised after the
 combination step, because iterating to correct the result is exactly the
-construction V2 removed. A category can therefore end up outside its range even
-though another was brought inside it. That is reported in the existing
-outside-range strip and the **Current · Projected · Target** section, and it is
-the user's cue to edit a line.
+construction the manual-only direction removed. A category can therefore end up
+outside its range even though another was brought inside it. That is reported in
+the existing outside-range strip and the **Current · Projected · Target**
+section, and it is the user's cue to edit a line.
 
 ### 4.6 Limits applied before the worksheet is prefilled
 
 In order:
 
 1. **Funding.** Increases are funded by selected tracked cash, hypothetical
-   external cash, and reduction proceeds (V2 cash model). If intents exceed
-   available funding, every increase is scaled by the same factor; nothing is
-   dropped selectively, since dropping would be a choice between securities.
+   external cash, and reduction proceeds (cash model from the reference branch).
+   If intents exceed available funding, every increase is scaled by the same
+   factor; nothing is dropped selectively, since dropping would be a choice
+   between securities. The scaling is stated in the result and travels with the
+   export, so a scaled figure is never mistaken for the full amount.
 2. **Held quantity.** A reduction cannot exceed the recorded position in the
    account it is drawn from.
 3. **Rounding.** Under whole-unit policy, quantities are floored. Amounts stay
@@ -175,7 +182,7 @@ In order:
 
 ## 5. Prefilling the worksheet
 
-The V2 worksheet keeps its structure. The only change is where the first set of
+The worksheet keeps its structure. The only change is where the first set of
 values comes from.
 
 - **Adjust positions** opens prefilled with the calculated adjustments instead
@@ -255,11 +262,15 @@ Clipboard and CSV carry the same readable table, produced only from a fresh
 **Review adjustments** result:
 
 - Header: target, date, account scope, funding used, allocation rule, eligible
-  securities count.
-- One row per security/account allocation: category, direction, security,
-  account, amount, estimated quantity, price and price date.
-- Warnings, then the concise limitations disclosure that already travels with V2
-  exports.
+  securities count, and whether increases were scaled (§4.6).
+- One row per security/account allocation: status, category, direction,
+  security, account, amount, estimated quantity, price and price date.
+- **Unresolved amounts (§4.4) are rows in the same table**, with
+  `Status: Unresolved`, their category and amount filled in, and security,
+  account and quantity left empty. They are part of the picture, so they belong
+  in the file rather than only on screen.
+- Warnings, then the concise limitations disclosure that already travels with
+  the reference branch exports.
 - Amounts are primary and signed; estimated quantities are secondary. No column
   reads like an order ticket.
 
@@ -303,23 +314,26 @@ draft of the editable inputs.
 If the eligible-securities selection is later persisted, it is **saved
 configuration** — the choices the user made — and not a promise that a stored
 result can be reproduced. Results depend on prices, FX and recorded holdings at
-calculation time and are recalculated on open, exactly as V2 specifies. The
-likely home is `allocation_target_constraints` from #1177 with an asset-scoped
-action rather than a new table.
+calculation time and are recalculated on open, as the worksheet already does.
+The likely home is `allocation_target_constraints` from #1177 with an
+asset-scoped action rather than a new table.
 
 ---
 
 ## 12. Milestones
 
-| #   | Content                                                     | Verify                                                                                                                            |
-| --- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| M0  | Merge #1486 (eligible securities)                           | already green                                                                                                                     |
-| M1  | Example weights + copy pass across locales (§7, §10)        | copy-contract test, i18n parity                                                                                                   |
-| M2  | Allocation rule, combination and recalculation, limits (§4) | core tests: proportional split, multi-category combination, funding scale, held-quantity cap, rounding residue, unresolved amount |
-| M3  | Worksheet prefill and account rules (§5, §6)                | prefill → edit → recalculate keeps user edits; increase with several eligible accounts stays unallocated                          |
-| M4  | Export table and disclosure (§8)                            | export snapshot from a fresh review result                                                                                        |
+Three shipments.
 
-M1 is independent and can ship first. M3 depends on M2.
+| #      | Content                                                                                                            | Verify                                                                                                                                                                                                                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0     | Rebase, verify and merge #1486 (eligible securities)                                                               | rebased on `main`, existing suites green                                                                                                                                                                                                                                                                                           |
+| M1     | The complete calculated worksheet: copy, calculation, prefill, account allocation, preview, export (§4 to §8, §10) | core tests for proportional split, multi-category combination, funding scale, held-quantity cap, rounding residue and unresolved amounts; prefill keeps user edits across recalculation; increase with several eligible accounts stays unallocated; copy-contract test and i18n parity; export snapshot from a fresh review result |
+| Future | Optional security-level targets (§9)                                                                               | after the main workflow is stable                                                                                                                                                                                                                                                                                                  |
+
+Implementation branches from the latest `main` and copies the worksheet UI,
+account allocation, copy, exports and example-weight work from
+`feature/allocation-worksheet-refactor`. That branch is a reference, not a base:
+it is not rebased, extended or merged.
 
 ---
 
@@ -330,27 +344,27 @@ M1 is independent and can ship first. M3 depends on M2.
    friendliest behaviour, but it makes "what am I looking at" harder to state.
    The alternative is a clean replace with a warning. Recommendation: preserve,
    and mark replaced lines.
-2. **Funding shortfall (§4.6).** Scaling every increase by the same factor keeps
-   the app out of choosing between securities, but it produces many small lines
-   that the minimum line size may then remove. Acceptable, or should the
-   shortfall simply be reported and the prefill left unfunded?
-3. **Unresolved amounts in export (§4.4, §8).** Include them as rows with no
-   security, or keep them in the app only?
-4. **Minimum line size and rounding order.** Removing sub-minimum lines after
-   rounding can leave a category short. Report only, or re-round?
-   Recommendation: report only.
-5. **Example weights source/date.** Which examples carry a factual source line,
+2. **Minimum line size and rounding order.** Removing sub-minimum lines after
+   rounding can leave a category short, and proportional scaling under a funding
+   shortfall makes that more likely. Report only, or re-round? Recommendation:
+   report only.
+3. **Example weights source/date.** Which examples carry a factual source line,
    and where does that text come from?
-6. **Existing targets.** Targets created from the old named presets keep their
+4. **Existing targets.** Targets created from the old named presets keep their
    name. Migrate the label, or leave it as user-owned text?
+
+Settled in review: single-pass calculation with no automatic iteration,
+proportional scaling of increases on a funding shortfall with the scaling shown,
+and unresolved amounts exported as `Status: Unresolved` rows.
 
 ---
 
 ## 14. References
 
 - [Allocation Targets V2](https://github.com/wealthfolio/wealthfolio/blob/feature/allocation-worksheet-refactor/docs/features/allocations/v2-spec.md)
-  — product boundary, worksheet, cash model, validation policy, disclosures. On
-  `feature/allocation-worksheet-refactor`; switch to `./v2-spec.md` once merged.
+  — obsolete. Describes the manual-only direction and is superseded by this
+  document. Still useful for its cash model, validation policy and disclosure
+  wording, which this design keeps.
 - `feature/allocation-worksheet-refactor` — worksheet implementation, copy
   contract test, example weights.
 - [`rebalance-algorithm.md`](./rebalance-algorithm.md) — V1 engine, retained for
