@@ -24,7 +24,13 @@ export type SecondaryActivityType =
   | typeof CanonicalActivityType.FEE
   | typeof CanonicalActivityType.INTEREST
   | typeof CanonicalActivityType.TAX;
-export type ActivityType = PrimaryActivityType | SecondaryActivityType;
+export type ReclassificationActivityType =
+  | typeof CanonicalActivityType.CREDIT
+  | typeof CanonicalActivityType.ADJUSTMENT;
+export type ActivityType =
+  | PrimaryActivityType
+  | SecondaryActivityType
+  | ReclassificationActivityType;
 
 interface ActivityTypeConfig<T extends string> {
   value: T;
@@ -57,12 +63,22 @@ const SECONDARY_ACTIVITY_TYPES: ActivityTypeConfig<SecondaryActivityType>[] = [
 ];
 
 const ALL_ACTIVITY_TYPES = [...PRIMARY_ACTIVITY_TYPES, ...SECONDARY_ACTIVITY_TYPES];
+const RECLASSIFICATION_ACTIVITY_TYPES: ActivityTypeConfig<ReclassificationActivityType>[] = [
+  { value: CanonicalActivityType.CREDIT, labelKey: "activity:type_credit", icon: "Coins" },
+  {
+    value: CanonicalActivityType.ADJUSTMENT,
+    labelKey: "activity:mobile_type_adjustment_label",
+    icon: "RefreshCw",
+  },
+];
 
 interface ActivityTypePickerProps {
   value?: ActivityType;
   onSelect: (type: ActivityType) => void;
   /** Optional list of allowed activity types. If not provided, all types are shown. */
   allowedTypes?: readonly string[];
+  /** Include provider-import types when an unclassified row is being reclassified. */
+  includeReclassificationTypes?: boolean;
 }
 
 type ViewMode = "carousel" | "grid";
@@ -268,7 +284,12 @@ function GridView({
   );
 }
 
-export function ActivityTypePicker({ value, onSelect, allowedTypes }: ActivityTypePickerProps) {
+export function ActivityTypePicker({
+  value,
+  onSelect,
+  allowedTypes,
+  includeReclassificationTypes = false,
+}: ActivityTypePickerProps) {
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<ViewMode>("carousel");
 
@@ -276,10 +297,14 @@ export function ActivityTypePicker({ value, onSelect, allowedTypes }: ActivityTy
     setViewMode((prev) => (prev === "carousel" ? "grid" : "carousel"));
   }, []);
 
+  const availableTypes: ActivityTypeConfig<ActivityType>[] = includeReclassificationTypes
+    ? [...ALL_ACTIVITY_TYPES, ...RECLASSIFICATION_ACTIVITY_TYPES]
+    : ALL_ACTIVITY_TYPES;
+
   // Filter types if allowedTypes is provided
   const filteredTypes = allowedTypes
-    ? ALL_ACTIVITY_TYPES.filter((type) => allowedTypes.includes(type.value))
-    : ALL_ACTIVITY_TYPES;
+    ? availableTypes.filter((type) => allowedTypes.includes(type.value))
+    : availableTypes;
 
   return (
     <div className="space-y-1 overflow-hidden">

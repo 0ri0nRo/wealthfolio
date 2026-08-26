@@ -20,11 +20,7 @@ import { ActivityFormRenderer } from "./activity-form-renderer";
 import type { AccountSelectOption } from "./forms/fields";
 import { useActivityForm } from "../hooks/use-activity-form";
 import { mapActivityTypeToPicker } from "../utils/activity-form-utils";
-import {
-  hasActivityForm,
-  type EditableActivityType,
-  type PickerActivityType,
-} from "../config/activity-form-config";
+import { hasActivityForm, type EditableActivityType } from "../config/activity-form-config";
 
 // Re-export for consumers
 export type { AccountSelectOption };
@@ -76,11 +72,11 @@ export function ActivityForm({
   // to the activity means opening a different row starts unpicked instead of
   // inheriting the previous row's choice.
   const [pick, setPick] = useState<
-    { activityId: string | undefined; type: PickerActivityType } | undefined
+    { activityId: string | undefined; type: EditableActivityType } | undefined
   >(undefined);
   const pickedType = pick && pick.activityId === activity?.id ? pick.type : undefined;
   const handleSelectType = useCallback(
-    (type: PickerActivityType) => setPick({ activityId: activity?.id, type }),
+    (type: EditableActivityType) => setPick({ activityId: activity?.id, type }),
     [activity?.id],
   );
 
@@ -159,7 +155,13 @@ export function ActivityForm({
 
           {/* Activity Type Picker - when creating, and when editing a row whose
               stored type has no editor of its own */}
-          {showPicker && <ActivityTypePicker value={pickedType} onSelect={handleSelectType} />}
+          {showPicker && (
+            <ActivityTypePicker
+              value={pickedType}
+              onSelect={handleSelectType}
+              includeReclassificationTypes={isEditing && !storedTypeIsEditable}
+            />
+          )}
 
           {/* Render the appropriate form */}
           <ActivityFormRenderer

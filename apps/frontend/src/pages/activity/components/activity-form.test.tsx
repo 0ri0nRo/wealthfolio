@@ -23,14 +23,26 @@ vi.mock("./activity-type-picker", () => ({
   ActivityTypePicker: ({
     value,
     onSelect,
+    includeReclassificationTypes,
   }: {
     value?: string;
     onSelect: (type: string) => void;
+    includeReclassificationTypes?: boolean;
   }) => (
     <div data-testid="type-picker" data-value={value ?? ""}>
       <button type="button" onClick={() => onSelect(ActivityType.DEPOSIT)}>
         pick deposit
       </button>
+      {includeReclassificationTypes && (
+        <>
+          <button type="button" onClick={() => onSelect(ActivityType.CREDIT)}>
+            pick credit
+          </button>
+          <button type="button" onClick={() => onSelect(ActivityType.ADJUSTMENT)}>
+            pick adjustment
+          </button>
+        </>
+      )}
     </div>
   ),
 }));
@@ -87,6 +99,18 @@ describe("ActivityForm reclassification", () => {
     await user.click(screen.getByRole("button", { name: "pick deposit" }));
 
     expect(renderedType()).toBe(ActivityType.DEPOSIT);
+  });
+
+  it.each([
+    [ActivityType.CREDIT, "pick credit"],
+    [ActivityType.ADJUSTMENT, "pick adjustment"],
+  ])("can reclassify UNKNOWN as %s", async (activityType, buttonName) => {
+    const user = userEvent.setup();
+    renderForm(activity("act_1", ActivityType.UNKNOWN));
+
+    await user.click(screen.getByRole("button", { name: buttonName }));
+
+    expect(renderedType()).toBe(activityType);
   });
 
   it.each([ActivityType.CREDIT, ActivityType.ADJUSTMENT])(

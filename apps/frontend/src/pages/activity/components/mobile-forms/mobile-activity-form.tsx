@@ -721,12 +721,17 @@ export function MobileActivityForm({
         return;
       }
 
-      // For non-symbol activities (cash deposits, withdrawals, etc.) and cash transfers:
-      // Clear assetId so backend generates CASH:{currency}
+      const isCashAdjustment =
+        submitData.activityType === ActivityType.ADJUSTMENT &&
+        !submitData.assetId?.trim() &&
+        submitData.amount != null;
+
+      // Clear asset fields for cash activities so no asset resolution is attempted.
       if (
-        !isSymbolRequired(submitData.activityType) &&
-        !isSecuritiesTransfer &&
-        !isAssetBackedIncome
+        (!isSymbolRequired(submitData.activityType) &&
+          !isSecuritiesTransfer &&
+          !isAssetBackedIncome) ||
+        isCashAdjustment
       ) {
         delete (submitData as Record<string, unknown>).assetId;
         delete (submitData as Record<string, unknown>).quantity;
@@ -833,7 +838,10 @@ export function MobileActivityForm({
             : [...baseFields, "amount", "tax"];
         }
         if (activityType === ActivityType.ADJUSTMENT) {
-          return [...baseFields, "assetId"];
+          const assetId = form.getValues("assetId");
+          const amount = form.getValues("amount");
+          const isCashAdjustment = !!activity?.id && !assetId?.trim() && amount != null;
+          return [...baseFields, isCashAdjustment ? "amount" : "assetId"];
         }
         return ["amount", ...baseFields];
       }

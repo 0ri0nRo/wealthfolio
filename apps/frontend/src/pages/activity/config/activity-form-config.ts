@@ -644,6 +644,7 @@ export const ACTIVITY_FORM_CONFIG: Record<
       ...getBaseDefaults(activity, accounts),
       symbol: activity?.assetSymbol ?? activity?.assetId ?? "",
       quantity: absNum(activity?.quantity),
+      amount: absNum(activity?.amount),
       // Advanced options
       currency: activity?.currency,
       subtype: activity?.subtype ?? null,
@@ -651,12 +652,14 @@ export const ACTIVITY_FORM_CONFIG: Record<
     }),
     toPayload: (data) => {
       const d = data as AdjustmentFormValues;
+      const symbol = d.symbol?.trim();
       return {
         accountId: d.accountId,
         activityDate: d.activityDate,
-        assetId: d.symbol,
-        ...selectedExistingAsset(d.symbol, d.existingAssetId, d.symbolInstrumentType),
-        quantity: d.quantity,
+        assetId: symbol || undefined,
+        ...selectedExistingAsset(symbol, d.existingAssetId, d.symbolInstrumentType),
+        quantity: symbol ? d.quantity : null,
+        amount: symbol ? undefined : d.amount,
         comment: d.comment,
         subtype: d.subtype ?? null,
         currency: d.currency,

@@ -11,6 +11,7 @@ import type { TFunction } from "i18next";
 import {
   AccountSelect,
   AdvancedOptionsSection,
+  AmountInput,
   createValidatedSubmit,
   DatePicker,
   FormSection,
@@ -26,31 +27,39 @@ const msg = (t: MsgFn, key: string, en: string) => (t ? t(key) : en);
 
 // Zod schema factory for AdjustmentForm validation. `t` optional so the exported
 // static schema keeps English messages (used by tests and type inference).
-export const createAdjustmentFormSchema = (t?: TFunction) =>
-  z.object({
+export const createAdjustmentFormSchema = (t?: TFunction, isCashAdjustment = false) => {
+  const quantitySchema = z.coerce.number({
+    required_error: msg(t, "activity:form.err_enter_quantity", "Please enter a quantity."),
+    invalid_type_error: msg(t, "activity:form.err_quantity_number", "Quantity must be a number."),
+  });
+  const amountSchema = z.coerce.number({
+    invalid_type_error: msg(t, "activity:form.err_amount_number", "Amount must be a number."),
+  });
+
+  return z.object({
     accountId: z
       .string()
       .min(1, { message: msg(t, "activity:form.err_select_account", "Please select an account.") }),
-    symbol: z
-      .string()
-      .min(1, { message: msg(t, "activity:form.err_enter_symbol", "Please enter a symbol.") }),
+    symbol: isCashAdjustment
+      ? z.string().optional()
+      : z
+          .string()
+          .min(1, { message: msg(t, "activity:form.err_enter_symbol", "Please enter a symbol.") }),
     existingAssetId: z.string().nullable().optional(),
     exchangeMic: z.string().nullable().optional(),
     activityDate: z.date({
       required_error: msg(t, "activity:form.err_select_date", "Please select a date."),
     }),
-    quantity: z.coerce
-      .number({
-        required_error: msg(t, "activity:form.err_enter_quantity", "Please enter a quantity."),
-        invalid_type_error: msg(
-          t,
-          "activity:form.err_quantity_number",
-          "Quantity must be a number.",
-        ),
-      })
-      .positive({
-        message: msg(t, "activity:form.err_quantity_gt_zero", "Quantity must be greater than 0."),
-      }),
+    quantity: isCashAdjustment
+      ? quantitySchema.optional()
+      : quantitySchema.positive({
+          message: msg(t, "activity:form.err_quantity_gt_zero", "Quantity must be greater than 0."),
+        }),
+    amount: isCashAdjustment
+      ? amountSchema.positive({
+          message: msg(t, "activity:form.err_amount_gt_zero", "Amount must be greater than 0."),
+        })
+      : amountSchema.optional(),
     comment: z.string().optional().nullable(),
     // Advanced options
     currency: z
@@ -60,6 +69,7 @@ export const createAdjustmentFormSchema = (t?: TFunction) =>
     symbolQuoteCcy: z.string().nullable().optional(),
     symbolInstrumentType: z.string().nullable().optional(),
   });
+};
 
 // Zod schema for AdjustmentForm validation (English messages; used by tests).
 export const adjustmentFormSchema = createAdjustmentFormSchema();
@@ -80,10 +90,9 @@ interface AdjustmentFormProps {
 }
 
 /**
- * Editor for an ADJUSTMENT activity — a non-trade quantity correction against a
- * holding (option expiry today). Mirrors the field set the mobile flow already
- * offers for this type, and carries the subtype through so an OPTION_EXPIRY row
- * keeps behaving like one after an edit.
+ * Editor for an ADJUSTMENT activity. Asset-backed adjustments edit symbol and
+ * quantity, while imported cash corrections edit amount. The subtype is carried
+ * through so an OPTION_EXPIRY row keeps behaving like one after an edit.
  */
 export function AdjustmentForm({
   accounts,
@@ -98,8 +107,12 @@ export function AdjustmentForm({
   const { t } = useTranslation(["activity"]);
   const { data: settings } = useSettings();
   const baseCurrency = settings?.baseCurrency;
+  const isCashAdjustment = isEditing && !defaultValues?.symbol?.trim();
 
-  const schema = useMemo(() => createAdjustmentFormSchema(t), [t]);
+  const schema = useMemo(
+    () => createAdjustmentFormSchema(t, isCashAdjustment),
+    [isCashAdjustment, t],
+  );
 
   // Compute initial account and currency for defaultValues
   const initialAccountId =
@@ -116,6 +129,7 @@ export function AdjustmentForm({
       symbol: "",
       activityDate: new Date(),
       quantity: undefined,
+      amount: undefined,
       comment: null,
       subtype: null,
       ...defaultValues,
@@ -141,26 +155,34 @@ export function AdjustmentForm({
     <FormProvider {...form}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <FormSection title={t("activity:form.section_asset_account")}>
-          <SymbolSearch
-            name="symbol"
-            label={t("activity:form.label_symbol")}
-            isManualAsset={isManualSymbol}
-            exchangeMicName="exchangeMic"
-            currencyName="currency"
-            quoteCcyName="symbolQuoteCcy"
-            instrumentTypeName="symbolInstrumentType"
-            existingAssetIdName="existingAssetId"
-          />
-          <input type="hidden" {...form.register("symbolQuoteCcy")} />
-          <input type="hidden" {...form.register("symbolInstrumentType")} />
-          <input type="hidden" {...form.register("existingAssetId")} />
+          {!isCashAdjustment && (
+            <>
+              <SymbolSearch
+                name="symbol"
+                label={t("activity:form.label_symbol")}
+                isManualAsset={isManualSymbol}
+                exchangeMicName="exchangeMic"
+                currencyName="currency"
+                quoteCcyName="symbolQuoteCcy"
+                instrumentTypeName="symbolInstrumentType"
+                existingAssetIdName="existingAssetId"
+              />
+              <input type="hidden" {...form.register("symbolQuoteCcy")} />
+              <input type="hidden" {...form.register("symbolInstrumentType")} />
+              <input type="hidden" {...form.register("existingAssetId")} />
+            </>
+          )}
 
           <AccountSelect name="accountId" accounts={accounts} currencyName="currency" />
           <DatePicker name="activityDate" label={t("activity:field_date")} />
         </FormSection>
 
         <FormSection title={t("activity:type_adjustment")}>
-          <QuantityInput name="quantity" label={t("activity:form.label_quantity")} />
+          {isCashAdjustment ? (
+            <AmountInput name="amount" label={t("activity:form.label_amount")} />
+          ) : (
+            <QuantityInput name="quantity" label={t("activity:form.label_quantity")} />
+          )}
         </FormSection>
 
         {/* Advanced options (currency, subtype) and notes, collapsed by default */}

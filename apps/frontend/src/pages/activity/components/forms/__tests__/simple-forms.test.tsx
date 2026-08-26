@@ -386,5 +386,25 @@ describe("AdjustmentForm", () => {
 
       expect(screen.getByRole("button", { name: /update/i })).toBeInTheDocument();
     });
+
+    it("renders amount fields for an existing cash adjustment", () => {
+      render(
+        <AdjustmentForm
+          accounts={mockAccounts}
+          onSubmit={mockOnSubmit}
+          isEditing
+          defaultValues={{
+            accountId: "acc-1",
+            activityDate: new Date("2026-01-15T00:00:00Z"),
+            amount: 25,
+            currency: "USD",
+          }}
+        />,
+      );
+
+      expect(screen.getByTestId("input-amount")).toBeInTheDocument();
+      expect(screen.queryByTestId("symbol-search-symbol")).not.toBeInTheDocument();
+      expect(screen.queryByTestId("input-quantity")).not.toBeInTheDocument();
+    });
   });
 });

@@ -82,6 +82,13 @@ function renderForm(activityToEdit: Partial<ActivityDetails>) {
 }
 
 describe("MobileActivityForm reclassification", () => {
+  it("keeps provider-only types out of the ordinary creation picker", () => {
+    render(<MobileActivityForm accounts={accounts} open onClose={vi.fn()} />);
+
+    expect(screen.queryByRole("radio", { name: /Credit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /^Adjustment\b/i })).not.toBeInTheDocument();
+  });
+
   it("starts an activity with no editable type on the type step", () => {
     renderForm(activity(ActivityType.UNKNOWN));
 
@@ -100,6 +107,16 @@ describe("MobileActivityForm reclassification", () => {
     expect(details).toHaveTextContent(ActivityType.DEPOSIT);
     // Still an edit of the existing row, not a new activity.
     expect(details).toHaveAttribute("data-editing", "true");
+  });
+
+  it("can reclassify UNKNOWN as CREDIT", async () => {
+    const user = userEvent.setup();
+    renderForm(activity(ActivityType.UNKNOWN));
+
+    await user.click(screen.getByRole("radio", { name: /Credit/i }));
+    await user.click(screen.getByRole("button", { name: /Next/i }));
+
+    expect(await screen.findByTestId("details-step")).toHaveTextContent(ActivityType.CREDIT);
   });
 
   it.each([ActivityType.CREDIT, ActivityType.ADJUSTMENT])(
