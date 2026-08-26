@@ -1361,7 +1361,7 @@
     "dialog_access_token": "訪問令牌",
     "dialog_copy_token_aria": "複製令牌",
     "dialog_client_config": "客戶端設定",
-    "dialog_client_config_desc": "可可直接貼上的設定（包含此令牌）。適用於 Claude、Cursor、Windsurf 和 Cline；VS Code 和其他客戶端有所不同——請參閱 MCP 伺服器卡片中的幫助。",
+    "dialog_client_config_desc": "可直接貼上的設定（包含此令牌）。適用於 Claude、Cursor、Windsurf 和 Cline；VS Code 和其他客戶端有所不同——請參閱 MCP 伺服器卡片中的幫助。",
     "dialog_copy_config_aria": "複製客戶端設定",
     "dialog_done": "完成",
     "scope_locked_title": "由“活動”所需——提交/寫入",

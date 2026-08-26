@@ -60,4 +60,16 @@ describe("Traditional Chinese translations", () => {
 
     expect(activity.get("type_split_desc")).toContain("1 拆 2");
   });
+
+  it("keeps nominal values distinct from inflation-adjusted values", () => {
+    const goals = flatten(traditionalChinese["./locales/zh-TW/goals.json"]);
+
+    expect(goals.get("dashboard.value_mode.nominal_tip")).toContain("包含通膨影響");
+  });
+
+  it("does not duplicate the client configuration dialog prefix", () => {
+    const settings = flatten(traditionalChinese["./locales/zh-TW/settings.json"]);
+
+    expect(settings.get("agentAccess.dialog_client_config_desc")).toMatch(/^可直接貼上/);
+  });
 });

@@ -94,7 +94,7 @@
       "nominal": "名義值",
       "explained_aria": "現值與名義值說明",
       "todays_value_tip": "將未來的金額換算回今天的購買力，使金額與您目前的預算具有可比性。",
-      "nominal_tip": "顯示經通膨調整後的未來金額。這是您在未來那一年將看到的金額。"
+      "nominal_tip": "顯示包含通膨影響的未來金額。這是您在未來那一年將看到的金額。"
     },
     "age_label": "{{age}} 歲",
     "failed_to_load_portfolio": "載入投資組合資料失敗：{{message}}",
