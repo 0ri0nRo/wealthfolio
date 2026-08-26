@@ -20,9 +20,9 @@
     "hideSidebar": "隱藏側邊欄"
   },
   "empty": {
-    "noProviderTitle": "未設定 AI 提供商",
-    "noProviderDescription": "連線一個 AI 提供商，即可開始與您的個人理財助手對話。您的資料將保持私密和安全。",
-    "configureProviders": "設定 AI 提供商"
+    "noProviderTitle": "未設定 AI 供應商",
+    "noProviderDescription": "連線一個 AI 供應商，即可開始與您的個人理財助手對話。您的資料將保持私密和安全。",
+    "configureProviders": "設定 AI 供應商"
   },
   "model": {
     "noModel": "無模型",
@@ -31,7 +31,7 @@
     "addModels": "新增模型..."
   },
   "provider": {
-    "noProvidersConfigured": "未設定提供商"
+    "noProvidersConfigured": "未設定供應商"
   },
   "reasoning": {
     "thinking": "思考中...",
@@ -574,7 +574,7 @@
     "dataAccessTitle": "資料訪問",
     "dataAccessSubtitle": "AI 可訪問哪些資料",
     "aiDataSharing": "AI 資料共享",
-    "aiDataSharingDescription": "啟用的 AI 工具在對話中使用時，可能會與您選擇的 AI 提供商共享相關的投資組合資料和附件。",
+    "aiDataSharingDescription": "啟用的 AI 工具在對話中使用時，可能會與您選擇的 AI 供應商共享相關的投資組合資料和附件。",
     "advancedOptions": "進階選項",
     "customized": "已自訂",
     "resetToDefaults": "重設為預設值",
@@ -584,7 +584,7 @@
     "remove": "移除",
     "endpoint": "端點",
     "learnMore": "瞭解更多",
-    "endpointDescription": "覆蓋此提供商的預設端點。",
+    "endpointDescription": "覆蓋此供應商的預設端點。",
     "modelDefault": "模型預設",
     "overridden": "已覆蓋",
     "defaultValue": "預設：{{value}}",
@@ -620,7 +620,7 @@
       "repetitionTitle": "重複",
       "repetitionBlurb": "抑制模型自我重複。",
       "otherTitle": "其他",
-      "otherBlurb": "雜項提供商特定選項。"
+      "otherBlurb": "雜項供應商特定選項。"
     }
   }
 }

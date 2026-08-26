@@ -350,7 +350,7 @@
       "kicker": "稅費",
       "title": "提取稅",
       "taxable_account_rate": "應稅帳戶稅率",
-      "taxable_account_rate_tip": "當規劃器從常規應稅或非註冊帳戶提取時適用的有效稅率。稅率越高，總提取額越大，並可能延遲財務獨立。",
+      "taxable_account_rate_tip": "當規劃器從一般應稅或非註冊帳戶提取時適用的有效稅率。稅率越高，總提取額越大，並可能延遲財務獨立。",
       "taxable_account_rate_edit_tip": "從應稅或非註冊帳戶提取時適用的有效稅率。",
       "tax_deferred_account_rate": "遞延稅帳戶稅率",
       "tax_deferred_account_rate_tip": "適用於 RRSP、IRA、養老金或類似遞延稅提取的有效稅率。規劃器會對提取額進行稅前還原，以確保稅後支出得到支撐。",
@@ -467,7 +467,7 @@
       "step4_title": "檢查假設、稅費和帳戶佔比",
       "step4_desc": "檢視預計報酬率、費用、波動率、通膨、提取稅率、稅收類別，以及哪些帳戶為目標提供資金。",
       "step5_title": "先閱讀“概覽”，再開啟“假設分析”",
-      "step5_desc": "“概覽”回答基礎計劃是否可行，並顯示軌跡、支出覆蓋情況和計劃輸入。“假設分析”在市場路徑、壓力測試、決策圖和高階檢查中測試同一計劃。"
+      "step5_desc": "“概覽”回答基礎計劃是否可行，並顯示軌跡、支出覆蓋情況和計劃輸入。“假設分析”在市場路徑、壓力測試、決策圖和進階檢查中測試同一計劃。"
     },
     "overview": {
       "title": "理解“概覽”",
@@ -635,7 +635,7 @@
     "col_portfolio_withdrawal_yr": "投資組合提取/年"
   },
   "skeleton": {
-    "calculating_title": "正在計算情景",
+    "calculating_title": "正在計算情境",
     "calculating_desc": "正在針對您的計劃執行壓力測試、市場路徑模擬和敏感性分析圖。這通常需要幾秒鐘——各部分完成後結果將顯示在下方。"
   },
   "save_up": {
@@ -794,16 +794,16 @@
       "money_lasts_prompt_fire": "執行 1 萬條路徑，檢視計劃實現財務獨立並在 {{horizonAge}} 歲前保持資金充足的頻率。"
     },
     "stress": {
-      "eyebrow_with_count": "什麼可能破壞此計劃？ · {{count}} 個情景",
+      "eyebrow_with_count": "什麼可能破壞此計劃？ · {{count}} 個情境",
       "heading": "什麼可能破壞此計劃？",
       "loading_short": "壓力測試正在載入。",
-      "running": "正在針對您的計劃執行 6 個壓力情景……",
+      "running": "正在針對您的計劃執行 6 個壓力情境……",
       "outcome": "結果",
       "fi_age": "財務獨立年齡",
       "extra_gap": "額外缺口",
       "money_left": "剩餘資金",
-      "eyebrow_with_count_other": "什麼可能破壞此計劃？ · {{count}} 個情景",
-      "eyebrow_with_count_one": "什麼可能破壞此計劃？ · {{count}} 個情景"
+      "eyebrow_with_count_other": "什麼可能破壞此計劃？ · {{count}} 個情境",
+      "eyebrow_with_count_one": "什麼可能破壞此計劃？ · {{count}} 個情境"
     },
     "montecarlo": {
       "eyebrow": "市場路徑",
@@ -859,7 +859,7 @@
       "retirement_age_spending_loading": "正在檢查時點和退休支出如何改變結果。"
     },
     "advanced": {
-      "eyebrow": "高階檢查",
+      "eyebrow": "進階檢查",
       "heading": "早期市場崩盤路徑",
       "running_short": "正在執行……",
       "run_paths": "執行路徑",

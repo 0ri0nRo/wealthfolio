@@ -241,7 +241,7 @@
     "asset_type_equity": "股票(股票、ETF、基金)",
     "asset_type_crypto": "加密貨幣",
     "asset_type_bond": "債券",
-    "asset_type_option": "期權",
+    "asset_type_option": "選擇權",
     "asset_type_metal": "金屬(大宗商品)",
     "asset_type_other": "其他",
     "select_currency": "選擇貨幣...",

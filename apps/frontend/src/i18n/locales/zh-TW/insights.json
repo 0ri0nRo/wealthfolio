@@ -9,7 +9,7 @@
     "back_to_overview": "返回概覽",
     "rebalance": "再平衡",
     "no_target_selected": "未選擇目標",
-    "no_target_selected_description": "建立目標配置，以將目前權重與預期權重進行比較。",
+    "no_target_selected_description": "建立目標配置，以將目前權重與預選擇權重進行比較。",
     "set_target_allocation": "設定目標配置",
     "chart_classes": "類別",
     "chart_regions": "地區",

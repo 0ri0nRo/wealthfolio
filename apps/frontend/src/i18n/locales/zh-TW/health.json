@@ -8,7 +8,7 @@
     "price_no_market_data": {
       "title_one": "{{symbol}} 沒有市場資料",
       "title_other": "{{count}} 項持倉沒有市場資料",
-      "message": "無法取得某些持倉的市場資料。這可能是由於代號無效或資料提供商問題所致。您的投資組合價值可能不準確。"
+      "message": "無法取得某些持倉的市場資料。這可能是由於代號無效或資料供應商問題所致。您的投資組合價值可能不準確。"
     },
     "price_stale_outdated": {
       "title_one": "{{count}} 項持倉的價格已過期",
@@ -108,11 +108,11 @@
     },
     "account_timezone_missing": {
       "title": "未設定時區",
-      "message": "請在“常規”設定中設定您的時區，以確保日期與您所在的地區匹配。"
+      "message": "請在“一般”設定中設定您的時區，以確保日期與您所在的地區匹配。"
     },
     "account_timezone_invalid": {
       "title": "所設定的時區無效",
-      "message": "所設定的時區“{{timezone}}”無效。請在“常規”設定中更新它。"
+      "message": "所設定的時區“{{timezone}}”無效。請在“一般”設定中更新它。"
     },
     "account_timezone_mismatch": {
       "title": "瀏覽器時區與應用程式時區不一致",
@@ -121,7 +121,7 @@
     "quote_sync_error": {
       "title_one": "{{symbol}} 的報價同步失敗",
       "title_other": "{{count}} 項資產的報價同步失敗",
-      "message": "這些資產的價格已多次同步失敗。請檢查代號或資料提供商設定。"
+      "message": "這些資產的價格已多次同步失敗。請檢查代號或資料供應商設定。"
     },
     "quote_sync_warning": {
       "title_one": "{{symbol}} 存在同步問題",
@@ -165,7 +165,7 @@
     "to_accounts": "檢視帳戶",
     "to_taxonomies": "檢視分類",
     "to_market_data": "檢視市場資料",
-    "to_general_settings": "開啟常規設定",
+    "to_general_settings": "開啟一般設定",
     "to_connect": "設定帳戶",
     "review_transfers": "檢查轉帳"
   },
@@ -224,7 +224,7 @@
       },
       "timezoneInvalid": {
         "label": "時區設定",
-        "description": "您所設定的時區無效。請在“常規”設定中更新它，以恢復一致的日期處理。"
+        "description": "您所設定的時區無效。請在“一般”設定中更新它，以恢復一致的日期處理。"
       },
       "timezoneMismatch": {
         "label": "時區設定",
