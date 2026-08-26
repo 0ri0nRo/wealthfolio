@@ -11,9 +11,29 @@ import { interestFormSchema, type InterestFormValues } from "../interest-form";
 import { taxFormSchema } from "../tax-form";
 import { newActivitySchema } from "../schemas";
 import { ACTIVITY_FORM_CONFIG } from "../../../config/activity-form-config";
-import { ACTIVITY_SUBTYPES, ActivityType } from "@/lib/constants";
+import { ACTIVITY_SUBTYPES, ActivityType, METADATA_CONTRACT_MULTIPLIER } from "@/lib/constants";
 
 describe("Form Schemas Validation", () => {
+  it("preserves a non-standard option multiplier in trade edit defaults", () => {
+    for (const activityType of [ActivityType.BUY, ActivityType.SELL] as const) {
+      const defaults = ACTIVITY_FORM_CONFIG[activityType].getDefaults(
+        {
+          activityType,
+          accountId: "acc-123",
+          date: new Date(),
+          assetSymbol: "AAPL7 260116C00200000",
+          instrumentType: "OPTION",
+          metadata: { [METADATA_CONTRACT_MULTIPLIER]: 10 },
+          amount: "61",
+          currency: "USD",
+        },
+        [],
+      ) as { contractMultiplier?: number };
+
+      expect(defaults.contractMultiplier).toBe(10);
+    }
+  });
+
   describe("buyFormSchema", () => {
     it("validates a complete valid buy form", () => {
       const validData = {
@@ -262,7 +282,7 @@ describe("Form Schemas Validation", () => {
       }
     });
 
-    it("fails when amount is zero or negative", () => {
+    it("accepts an explicit zero amount", () => {
       const zeroAmount = {
         accountId: "acc-123",
         activityDate: new Date(),
@@ -271,10 +291,7 @@ describe("Form Schemas Validation", () => {
       };
 
       const result = depositFormSchema.safeParse(zeroAmount);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0].message).toBe("Amount must be greater than 0.");
-      }
+      expect(result.success).toBe(true);
     });
 
     it("allows optional comment to be null", () => {
@@ -316,7 +333,7 @@ describe("Form Schemas Validation", () => {
       const result = withdrawalFormSchema.safeParse(invalidAmount);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0].message).toBe("Amount must be greater than 0.");
+        expect(result.error.issues[0].message).toBe("Amount must be non-negative.");
       }
     });
   });
@@ -352,8 +369,8 @@ describe("Form Schemas Validation", () => {
       }
     });
 
-    it("fails when amount is not positive", () => {
-      const invalidAmount = {
+    it("accepts an explicit zero amount", () => {
+      const zeroAmount = {
         accountId: "acc-123",
         symbol: "AAPL",
         activityDate: new Date(),
@@ -361,11 +378,8 @@ describe("Form Schemas Validation", () => {
         currency: "USD",
       };
 
-      const result = dividendFormSchema.safeParse(invalidAmount);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0].message).toBe("Amount must be greater than 0.");
-      }
+      const result = dividendFormSchema.safeParse(zeroAmount);
+      expect(result.success).toBe(true);
     });
 
     it("accepts a cash dividend edit with stored quantity/unitPrice of 0", () => {
@@ -770,19 +784,16 @@ describe("Form Schemas Validation", () => {
       expect(result.success).toBe(true);
     });
 
-    it("fails when amount is not positive", () => {
-      const invalidAmount = {
+    it("accepts an explicit zero amount", () => {
+      const zeroAmount = {
         accountId: "acc-123",
         activityDate: new Date(),
         amount: 0,
         currency: "USD",
       };
 
-      const result = feeFormSchema.safeParse(invalidAmount);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0].message).toBe("Amount must be greater than 0.");
-      }
+      const result = feeFormSchema.safeParse(zeroAmount);
+      expect(result.success).toBe(true);
     });
   });
 
@@ -815,7 +826,7 @@ describe("Form Schemas Validation", () => {
       const result = interestFormSchema.safeParse(invalidAmount);
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0].message).toBe("Amount must be greater than 0.");
+        expect(result.error.issues[0].message).toBe("Amount must be non-negative.");
       }
     });
 
@@ -915,19 +926,16 @@ describe("Form Schemas Validation", () => {
       expect(result.success).toBe(true);
     });
 
-    it("fails when amount is not positive", () => {
-      const invalidAmount = {
+    it("accepts an explicit zero amount", () => {
+      const zeroAmount = {
         accountId: "acc-123",
         activityDate: new Date(),
         amount: 0,
         currency: "USD",
       };
 
-      const result = taxFormSchema.safeParse(invalidAmount);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0].message).toBe("Amount must be greater than 0.");
-      }
+      const result = taxFormSchema.safeParse(zeroAmount);
+      expect(result.success).toBe(true);
     });
 
     it("fails when accountId is missing", () => {
@@ -1367,6 +1375,20 @@ describe("Form Schemas Validation", () => {
   });
 
   describe("newActivitySchema extended mobile edit types", () => {
+    it("accepts explicit zero cash and income amounts", () => {
+      for (const activityType of ["DEPOSIT", "WITHDRAWAL", "DIVIDEND", "INTEREST", "CREDIT"]) {
+        const result = newActivitySchema.safeParse({
+          accountId: "acc-123",
+          activityType,
+          activityDate: new Date(),
+          amount: 0,
+          currency: "USD",
+        });
+
+        expect(result.success).toBe(true);
+      }
+    });
+
     it("accepts credit activities", () => {
       const result = newActivitySchema.safeParse({
         accountId: "acc-123",

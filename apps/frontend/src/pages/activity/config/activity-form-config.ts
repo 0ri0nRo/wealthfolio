@@ -139,7 +139,8 @@ export const ACTIVITY_FORM_CONFIG: Record<
           strikePrice: parsed?.strikePrice,
           expirationDate: parsed?.expiration,
           optionType: parsed?.optionType,
-          contractMultiplier: 100,
+          contractMultiplier:
+            absNum(activity?.metadata?.[METADATA_CONTRACT_MULTIPLIER] as string | number) ?? 100,
           subtype: activity?.subtype ?? ACTIVITY_SUBTYPES.POSITION_OPEN,
         };
       }
@@ -158,14 +159,17 @@ export const ACTIVITY_FORM_CONFIG: Record<
       return base;
     },
     toPayload: (data) => {
-      const d = data as BuyFormValues;
+      const d = data as BuyFormValues & { needsReview?: boolean };
       return {
+        // Set by the form only when the user confirmed a custom total.
+        ...(d.needsReview !== undefined && { needsReview: d.needsReview }),
         accountId: d.accountId,
         activityDate: d.activityDate,
         assetId: d.assetId,
         ...selectedExistingAsset(d.assetId, d.existingAssetId, d.symbolInstrumentType),
         quantity: d.quantity,
         unitPrice: d.unitPrice,
+        amount: d.amount,
         fee: d.fee,
         tax: d.tax,
         subtype: d.subtype ?? undefined,
@@ -186,9 +190,11 @@ export const ACTIVITY_FORM_CONFIG: Record<
               providerSymbol: d.assetMetadata.providerSymbol ?? undefined,
             }
           : undefined,
+        // Always sent for options - the backend merges metadata patches, so
+        // omitting the key would leave a stale non-standard multiplier (e.g.
+        // a mini option corrected back to 100) in force forever.
         ...(d.symbolInstrumentType === InstrumentType.OPTION &&
-          d.contractMultiplier != null &&
-          d.contractMultiplier !== 100 && {
+          d.contractMultiplier != null && {
             metadata: { [METADATA_CONTRACT_MULTIPLIER]: d.contractMultiplier },
           }),
       };
@@ -229,7 +235,8 @@ export const ACTIVITY_FORM_CONFIG: Record<
           strikePrice: parsed?.strikePrice,
           expirationDate: parsed?.expiration,
           optionType: parsed?.optionType,
-          contractMultiplier: 100,
+          contractMultiplier:
+            absNum(activity?.metadata?.[METADATA_CONTRACT_MULTIPLIER] as string | number) ?? 100,
           subtype: activity?.subtype ?? ACTIVITY_SUBTYPES.POSITION_CLOSE,
         };
       }
@@ -248,14 +255,17 @@ export const ACTIVITY_FORM_CONFIG: Record<
       return base;
     },
     toPayload: (data) => {
-      const d = data as SellFormValues;
+      const d = data as SellFormValues & { needsReview?: boolean };
       return {
+        // Set by the form only when the user confirmed a custom total.
+        ...(d.needsReview !== undefined && { needsReview: d.needsReview }),
         accountId: d.accountId,
         activityDate: d.activityDate,
         assetId: d.assetId,
         ...selectedExistingAsset(d.assetId, d.existingAssetId, d.symbolInstrumentType),
         quantity: d.quantity,
         unitPrice: d.unitPrice,
+        amount: d.amount,
         fee: d.fee,
         tax: d.tax,
         subtype: d.subtype ?? undefined,
@@ -276,9 +286,11 @@ export const ACTIVITY_FORM_CONFIG: Record<
               providerSymbol: d.assetMetadata.providerSymbol ?? undefined,
             }
           : undefined,
+        // Always sent for options - the backend merges metadata patches, so
+        // omitting the key would leave a stale non-standard multiplier (e.g.
+        // a mini option corrected back to 100) in force forever.
         ...(d.symbolInstrumentType === InstrumentType.OPTION &&
-          d.contractMultiplier != null &&
-          d.contractMultiplier !== 100 && {
+          d.contractMultiplier != null && {
             metadata: { [METADATA_CONTRACT_MULTIPLIER]: d.contractMultiplier },
           }),
       };

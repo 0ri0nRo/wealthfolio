@@ -1,0 +1,98 @@
+import { calculateTradeFinalAmount } from "@/lib/activity-final-amount";
+import { ActivityType } from "@/lib/constants";
+import { useMemo, useState } from "react";
+
+interface UseTradeTotalOptions {
+  side: "buy" | "sell";
+  isEditing: boolean;
+  /** The stored total when editing an existing activity. */
+  defaultAmount: unknown;
+  /** The resolved asset's instrument type beats the form radio: an option
+   * picked via symbol search must price at its contract multiplier even
+   * when the radio still says "stock". Pass `symbolInstrumentType ?? assetType`. */
+  instrumentType: string;
+  quantity: number | undefined;
+  unitPrice: number | undefined;
+  fee: number | undefined;
+  tax: number | undefined;
+  isOption: boolean;
+  contractMultiplier: number | undefined;
+}
+
+/**
+ * Shared BUY/SELL trade-total policy: the calculated preview, custom-mode
+ * state, and the submit-time amount rewrite. One implementation keeps the
+ * buy and sell forms' semantics provably identical.
+ *
+ * Attestation is NOT decided here: a form save is a review of the whole form
+ * (the total is visible, typed or calculated), so the shared submit layer
+ * attests every form submission - see `useActivityForm` / the mobile form.
+ */
+export function useTradeTotal({
+  side,
+  isEditing,
+  defaultAmount,
+  instrumentType,
+  quantity,
+  unitPrice,
+  fee,
+  tax,
+  isOption,
+  contractMultiplier,
+}: UseTradeTotalOptions) {
+  // Editing starts in custom mode only when the stored total actually
+  // differs from the calculation - a total that equals it was never custom,
+  // and freezing it would let a routine quantity/fee correction resubmit a
+  // stale amount. An explicit stored zero (e.g. gifted shares) is a custom
+  // value, not a missing one. A new activity follows the calculation until
+  // the user takes it over.
+  const [isCustomAmount, setIsCustomAmount] = useState(() => {
+    if (!isEditing) return false;
+    const stored = Number(defaultAmount);
+    if (!Number.isFinite(stored)) return false;
+    const initialCalculated = calculateTradeFinalAmount({
+      activityType: side === "buy" ? ActivityType.BUY : ActivityType.SELL,
+      instrumentType,
+      quantity,
+      unitPrice,
+      fee,
+      tax,
+      contractMultiplier: isOption ? contractMultiplier : undefined,
+    });
+    if (initialCalculated === undefined) return true;
+    // Half a cent, deliberately currency-blind: this only seeds the toggle's
+    // initial UI state (persistence uses the backend's currency-scaled
+    // tolerance), and a JPY/BTC total sitting within half a cent of the
+    // calculation misclassifying the toggle is a population-zero cosmetic.
+    return Math.abs(stored - initialCalculated) > 0.005;
+  });
+
+  const calculatedAmount = useMemo(
+    () =>
+      calculateTradeFinalAmount({
+        activityType: side === "buy" ? ActivityType.BUY : ActivityType.SELL,
+        instrumentType,
+        quantity,
+        unitPrice,
+        fee,
+        tax,
+        // Only options carry a contract multiplier. The field keeps its 100
+        // default for every asset type, so passing it unconditionally would
+        // price a stock at 100x.
+        contractMultiplier: isOption ? contractMultiplier : undefined,
+      }),
+    [side, instrumentType, quantity, unitPrice, fee, tax, isOption, contractMultiplier],
+  );
+
+  /**
+   * Submit-time rewrite. The preview is intentionally not the persistence
+   * authority: the backend uses the resolved asset multiplier unless the user
+   * explicitly entered a custom final total. On an edit, null asks the backend
+   * to recalculate, where omission would silently keep the old stored amount.
+   */
+  const applyTradeTotal = (data: { amount?: number | null }) => {
+    data.amount = isCustomAmount ? (data.amount ?? null) : isEditing ? null : undefined;
+  };
+
+  return { isCustomAmount, onCustomChange: setIsCustomAmount, calculatedAmount, applyTradeTotal };
+}

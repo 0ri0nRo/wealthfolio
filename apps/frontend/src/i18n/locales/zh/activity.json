@@ -1,4 +1,7 @@
 {
+  "needs_review_alert": {
+    "title_other": "{{count}} 条活动需要审核"
+  },
   "activities": "活动",
   "add_activity": "添加活动",
   "add_holdings": "添加持仓",
@@ -553,6 +556,9 @@
     "available_amount": "可用：{{amount}}",
     "total_debit": "借方总额",
     "total_credit": "贷方总额",
+    "help_total_debit": "包含费用和税款的最终支付金额。",
+    "help_total_credit": "扣除费用和税款后的最终收款金额。",
+    "use_calculated_total": "使用计算总额（{{amount}}）",
     "warn_buy_while_short": "您目前持有此股票的空头仓位。请使用“买入回补”来减少空头仓位；仅在空头仓位平仓后才输入普通买入。",
     "warn_cover_without_short": "买入回补需要在所选账户中存在此股票的空头仓位。",
     "warn_cover_quantity_excess": "您正在回补 {{covering}} 股，但当前空头仓位为 {{short}} 股。请将超出部分作为单独的买入活动输入。",
@@ -600,6 +606,7 @@
     "err_amount_number": "金额必须为数字。",
     "err_amount_positive_number": "金额必须为正数。",
     "err_amount_gt_zero": "金额必须大于 0。",
+    "err_amount_non_negative": "金额不能为负数。",
     "err_enter_quantity": "请输入数量。",
     "err_quantity_number": "数量必须为数字。",
     "err_quantity_gt_zero": "数量必须大于 0。",

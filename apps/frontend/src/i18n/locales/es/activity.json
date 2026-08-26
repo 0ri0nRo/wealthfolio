@@ -1,4 +1,8 @@
 {
+  "needs_review_alert": {
+    "title_one": "{{count}} actividad requiere revisión",
+    "title_other": "{{count}} actividades requieren revisión"
+  },
   "activities": "Actividades",
   "add_activity": "Añadir actividad",
   "add_holdings": "Añadir posiciones",
@@ -555,6 +559,9 @@
     "available_amount": "Disponible: {{amount}}",
     "total_debit": "Débito total",
     "total_credit": "Crédito total",
+    "help_total_debit": "Efectivo final pagado, incluidas las comisiones y los impuestos.",
+    "help_total_credit": "Efectivo final recibido, después de comisiones e impuestos.",
+    "use_calculated_total": "Usar el total calculado ({{amount}})",
     "warn_buy_while_short": "Actualmente tienes una posición corta en esta acción. Usa Comprar para cubrir para reducirla; introduce una Compra normal solo después de que la posición corta esté cerrada.",
     "warn_cover_without_short": "Comprar para cubrir requiere una posición corta existente para esta acción en la cuenta seleccionada.",
     "warn_cover_quantity_excess": "Estás cubriendo {{covering}} acciones, pero la posición corta actual es de {{short}} acciones. Introduce cualquier exceso como una actividad de Compra por separado.",
@@ -602,6 +609,7 @@
     "err_amount_number": "El importe debe ser un número.",
     "err_amount_positive_number": "El importe debe ser un número positivo.",
     "err_amount_gt_zero": "El importe debe ser mayor que 0.",
+    "err_amount_non_negative": "El importe no puede ser negativo.",
     "err_enter_quantity": "Introduce una cantidad.",
     "err_quantity_number": "La cantidad debe ser un número.",
     "err_quantity_gt_zero": "La cantidad debe ser mayor que 0.",
