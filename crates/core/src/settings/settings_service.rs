@@ -10,9 +10,15 @@ use std::sync::Arc;
 const SUPPORTED_FORMATTING_REGIONS: &[&str] = &[
     "system", "CA", "US", "GB", "FR", "DE", "ES", "MX", "BR", "PT", "CN", "JP", "KR", "IT",
 ];
-const SUPPORTED_UI_LANGUAGES: &[&str] = &["en", "fr", "de", "es", "pt", "zh", "ja", "ko", "it"];
+const SUPPORTED_UI_LANGUAGES: &[&str] = &[
+    "en", "fr", "de", "es", "pt", "zh", "zh-TW", "ja", "ko", "it",
+];
 
 fn normalize_ui_language(language: &str) -> String {
+    if SUPPORTED_UI_LANGUAGES.contains(&language) {
+        return language.to_string();
+    }
+
     let base = language.split(['-', '_']).next().unwrap_or(language);
     if SUPPORTED_UI_LANGUAGES.contains(&base) {
         base.to_string()
@@ -22,6 +28,10 @@ fn normalize_ui_language(language: &str) -> String {
 }
 
 fn validate_ui_language(language: &str) -> Result<String> {
+    if SUPPORTED_UI_LANGUAGES.contains(&language) {
+        return Ok(language.to_string());
+    }
+
     let base = language.split(['-', '_']).next().unwrap_or(language);
     if SUPPORTED_UI_LANGUAGES.contains(&base) {
         Ok(base.to_string())
@@ -227,6 +237,12 @@ mod tests {
         assert_eq!(normalize_ui_language("fr_CA"), "fr");
         assert_eq!(normalize_ui_language("ja-JP"), "ja");
         assert_eq!(normalize_ui_language("ko_KR"), "ko");
+    }
+
+    #[test]
+    fn preserves_supported_regional_ui_language() {
+        assert_eq!(normalize_ui_language("zh-TW"), "zh-TW");
+        assert_eq!(validate_ui_language("zh-TW").unwrap(), "zh-TW");
     }
 
     #[test]

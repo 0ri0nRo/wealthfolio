@@ -50,6 +50,22 @@ describe("addon translation runtime", () => {
     expect(screen.getByTestId("language")).toHaveTextContent(/^fr$/);
   });
 
+  it("uses a zh-TW add-on bundle when the host selects Traditional Chinese", async () => {
+    const { initSandboxI18n, installAddonTranslationRuntime, setSandboxLanguage } =
+      await loadSandbox();
+    initSandboxI18n("en");
+    installAddonTranslationRuntime("sample-addon");
+    registerTranslations({
+      en: { greeting: "Hello {{name}}" },
+      "zh-TW": { greeting: "你好，{{name}}" },
+    });
+
+    render(<AddonGreeting name="Aziz" />);
+    setSandboxLanguage("zh-TW");
+
+    expect(await screen.findByText("你好，Aziz")).toBeInTheDocument();
+  });
+
   it("cannot read or overwrite the host ui namespace", async () => {
     const { initSandboxI18n, installAddonTranslationRuntime } = await loadSandbox();
     const i18n = initSandboxI18n("en");

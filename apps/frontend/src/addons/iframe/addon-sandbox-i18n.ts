@@ -165,7 +165,10 @@ export function installAddonTranslationRuntime(addonId: string) {
       // Only plain base codes may reach i18next: addResourceBundle
       // reinterprets a dotted lng argument as a resource path, and anything
       // else would be stored under a key that never resolves.
-      if (!/^[a-z]{2,3}$/.test(normalized)) {
+      if (
+        !/^[a-z]{2,3}$/.test(normalized) &&
+        !SUPPORTED_LOCALE_CODES.includes(normalized as LocaleCode)
+      ) {
         console.warn(
           `[addon-sandbox] ignoring translations for invalid language code "${language}"`,
         );
