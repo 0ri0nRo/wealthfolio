@@ -1,0 +1,1241 @@
+//! Removable one-shot compatibility code for legacy activity cash amounts.
+//! Runtime economics must never call this module.
+//!
+//! Deliberate policy decisions:
+//! - No automatic database backup: the rewrite touches only `amount` and
+//!   `needs_review`, and every replaced amount is preserved on the row
+//!   itself (activity metadata `final_cash_migration.legacy_amount`), so a
+//!   full-database copy would block startup for no proportional benefit.
+//! - The migration never changes lifecycle `status`. A Posted trade whose
+//!   final cash cannot be verified keeps `amount = NULL` (zero runtime cash)
+//!   and is flagged for review rather than demoted to Draft.
+//! - Security-transfer rows are never touched, including legacy `amount`
+//!   values that transfer pairing still reads.
+//! - A crash between the row rewrite and the state write re-runs
+//!   classification against migrated rows; that can inflate the impact
+//!   report for bond trades but never re-corrupts data.
+//! - The migration runs per device and its rewrites deliberately emit no
+//!   sync events (every device converges on its own deterministic pass).
+//!   Rows synced in from a not-yet-upgraded device during a version-skew
+//!   window keep old semantics on this device: accepted risk - devices
+//!   sync near-immediately in practice, and fencing a one-shot migration
+//!   is not worth the machinery.
+//! - Charge-amount rewrites do not clear spending splits. Colliding rows
+//!   would need a multi-category split on a disagreeing-column FEE/TAX row
+//!   in a spending-opted account (zero-amount rows cannot be split at all);
+//!   nobody splits a fee, and such rows are review-flagged anyway: accepted.
+//! - Draft rows whose stored amount text is unparseable read as zero and can
+//!   be rewritten to a derived value or "0". Reaching that state requires
+//!   hand-corrupted DB text; such rows are review-flagged (legacy Drafts
+//!   always are) and the original text survives in `legacy_amount`: accepted.
+
+use std::collections::{HashMap, HashSet};
+
+use rust_decimal::Decimal;
+use serde::{Deserialize, Serialize};
+
+use crate::accounts::{account_types, AccountServiceTrait};
+use crate::activities::{
+    Activity, ActivityFinalCashMigrationResult, ActivityFinalCashMigrationUpdate,
+    ActivityRepositoryTrait, ActivityStatus, NewActivity, ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_CREDIT,
+    ACTIVITY_TYPE_DEPOSIT, ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST,
+    ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_SPLIT, ACTIVITY_TYPE_TAX, ACTIVITY_TYPE_TRANSFER_IN,
+    ACTIVITY_TYPE_TRANSFER_OUT, ACTIVITY_TYPE_WITHDRAWAL,
+};
+use crate::assets::AssetServiceTrait;
+use crate::errors::Result;
+use crate::fx::currency::currency_minor_unit;
+use crate::portfolio::economic_events::{ActivityCashInputs, ActivityEconomicsResolver};
+use crate::portfolio::recalculation_gate::PortfolioRecalculationGate;
+use crate::portfolio::snapshot::{SnapshotRecalcMode, SnapshotServiceTrait};
+use crate::portfolio::valuation::{ValuationRecalcMode, ValuationServiceTrait};
+use crate::settings::SettingsServiceTrait;
+
+const MIGRATION_STATE_KEY: &str = "migration.activity_final_cash.v1";
+const PHASE_REWRITE_PENDING: &str = "rewrite_pending";
+const PHASE_REBUILD_PENDING: &str = "rebuild_pending";
+const PHASE_COMPLETE: &str = "complete";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PersistedMigrationState {
+    phase: String,
+    #[serde(default)]
+    pending_account_ids: Vec<String>,
+}
+
+/// Private startup machinery: idempotency, crash recovery, and rebuild
+/// retries. Deliberately not exposed through any activity API - the live
+/// `activities.needs_review` column is the user-facing source of truth.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ActivityFinalCashMigrationStatus {
+    pub complete: bool,
+    pub pending_account_ids: Vec<String>,
+}
+
+impl From<PersistedMigrationState> for ActivityFinalCashMigrationStatus {
+    fn from(state: PersistedMigrationState) -> Self {
+        Self {
+            complete: state.phase == PHASE_COMPLETE,
+            pending_account_ids: state.pending_account_ids,
+        }
+    }
+}
+
+pub fn get_final_cash_migration_status(
+    settings_service: &dyn SettingsServiceTrait,
+) -> Result<ActivityFinalCashMigrationStatus> {
+    Ok(read_migration_state(settings_service)?
+        .map(ActivityFinalCashMigrationStatus::from)
+        .unwrap_or_default())
+}
+
+/// Runs the idempotent one-shot rewrite. Completion is withheld until every
+/// affected account has rebuilt.
+pub async fn run_final_cash_migration(
+    settings_service: &dyn SettingsServiceTrait,
+    activity_repository: &dyn ActivityRepositoryTrait,
+    account_service: &dyn AccountServiceTrait,
+    asset_service: &dyn AssetServiceTrait,
+) -> Result<ActivityFinalCashMigrationStatus> {
+    let mut state = match read_migration_state(settings_service)? {
+        Some(state) => state,
+        None => {
+            let state = PersistedMigrationState {
+                phase: PHASE_REWRITE_PENDING.to_string(),
+                pending_account_ids: Vec::new(),
+            };
+            write_migration_state(settings_service, &state).await?;
+            state
+        }
+    };
+
+    if state.phase == PHASE_REWRITE_PENDING {
+        let result =
+            migrate_activities_to_final_cash(activity_repository, account_service, asset_service)
+                .await?;
+        state.phase = if result.affected_account_ids.is_empty() {
+            PHASE_COMPLETE.to_string()
+        } else {
+            PHASE_REBUILD_PENDING.to_string()
+        };
+        state.pending_account_ids = result.affected_account_ids;
+        if result.changed > 0 {
+            log::info!("Final-cash migration rewrote {} activities", result.changed);
+        }
+        write_migration_state(settings_service, &state).await?;
+    }
+
+    Ok(state.into())
+}
+
+pub async fn record_final_cash_rebuild_attempt(
+    settings_service: &dyn SettingsServiceTrait,
+    succeeded_account_ids: &[String],
+) -> Result<ActivityFinalCashMigrationStatus> {
+    let Some(mut state) = read_migration_state(settings_service)? else {
+        return Ok(ActivityFinalCashMigrationStatus::default());
+    };
+    if state.phase != PHASE_REBUILD_PENDING {
+        return Ok(state.into());
+    }
+
+    let succeeded: HashSet<&str> = succeeded_account_ids.iter().map(String::as_str).collect();
+    state
+        .pending_account_ids
+        .retain(|account_id| !succeeded.contains(account_id.as_str()));
+    if state.pending_account_ids.is_empty() {
+        state.phase = PHASE_COMPLETE.to_string();
+    }
+    write_migration_state(settings_service, &state).await?;
+    Ok(state.into())
+}
+
+/// Attempts every pending account independently. Failed accounts remain
+/// durable and will be retried on the next launch; successful accounts are
+/// removed from the gate immediately after the attempt is persisted.
+pub async fn rebuild_pending_final_cash_accounts(
+    settings_service: &dyn SettingsServiceTrait,
+    snapshot_service: &dyn SnapshotServiceTrait,
+    valuation_service: &dyn ValuationServiceTrait,
+    recalculation_gate: &PortfolioRecalculationGate,
+) -> Result<ActivityFinalCashMigrationStatus> {
+    let status = get_final_cash_migration_status(settings_service)?;
+    let mut succeeded = Vec::new();
+
+    for account_id in &status.pending_account_ids {
+        let account_ids = [account_id.clone()];
+        if let Err(error) = snapshot_service
+            .recalculate_holdings_snapshots(Some(&account_ids), SnapshotRecalcMode::Full)
+            .await
+        {
+            log::warn!(
+                "Final-cash holdings rebuild failed for account {}: {}",
+                account_id,
+                error
+            );
+            continue;
+        }
+
+        match valuation_service
+            .calculate_valuation_histories(&account_ids, ValuationRecalcMode::Full)
+            .await
+        {
+            Ok(outcome) if outcome.failures.is_empty() => succeeded.push(account_id.clone()),
+            Ok(outcome) => log::warn!(
+                "Final-cash valuation rebuild reported {} failure(s) for account {}",
+                outcome.failures.len(),
+                account_id
+            ),
+            Err(error) => log::warn!(
+                "Final-cash valuation rebuild failed for account {}: {}",
+                account_id,
+                error
+            ),
+        }
+    }
+
+    let status = record_final_cash_rebuild_attempt(settings_service, &succeeded).await?;
+    recalculation_gate.replace_pending_accounts(status.pending_account_ids.clone());
+    Ok(status)
+}
+
+fn read_migration_state(
+    settings_service: &dyn SettingsServiceTrait,
+) -> Result<Option<PersistedMigrationState>> {
+    let Some(raw) = settings_service.get_setting_value(MIGRATION_STATE_KEY)? else {
+        return Ok(None);
+    };
+    match serde_json::from_str(&raw) {
+        Ok(state) => Ok(Some(state)),
+        Err(error) => {
+            // A corrupt state value must not brick startup. Treat it as
+            // never-run: the rewrite is idempotent (already-final rows
+            // classify as matching and are left alone) and rewrites its own
+            // state on completion.
+            log::warn!("Ignoring unreadable final-cash migration state: {error}");
+            Ok(None)
+        }
+    }
+}
+
+async fn write_migration_state(
+    settings_service: &dyn SettingsServiceTrait,
+    state: &PersistedMigrationState,
+) -> Result<()> {
+    settings_service
+        .set_setting_value(MIGRATION_STATE_KEY, &serde_json::to_string(state)?)
+        .await
+}
+
+#[derive(Clone)]
+struct AssetCashFacts {
+    unit_multiplier: Decimal,
+    /// Multiplier the PRE-cutover runtime used: explicit metadata/option
+    /// values, otherwise 1 - the old code had no bond percent-of-par default.
+    /// The legacy replay must use this, never `unit_multiplier`, or a changed
+    /// default would alter both sides of the delta and mask the change.
+    legacy_unit_multiplier: Decimal,
+    is_bond: bool,
+    quote_currency: Option<String>,
+    multiplier_is_reliable: bool,
+}
+
+#[derive(Clone)]
+struct AccountCashFacts {
+    is_credit_card: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct LegacyCashDecision {
+    final_amount: Option<Decimal>,
+    needs_review: bool,
+    previous_cash_effect: Decimal,
+    final_cash_effect: Decimal,
+}
+
+pub(crate) async fn migrate_activities_to_final_cash(
+    activity_repository: &dyn ActivityRepositoryTrait,
+    account_service: &dyn AccountServiceTrait,
+    asset_service: &dyn AssetServiceTrait,
+) -> Result<ActivityFinalCashMigrationResult> {
+    let activities = activity_repository.get_activities_including_archived_accounts()?;
+    let mut asset_cache: HashMap<String, Option<AssetCashFacts>> = HashMap::new();
+    let mut account_cache: HashMap<String, AccountCashFacts> = HashMap::new();
+    let mut affected_account_ids = HashSet::new();
+    let mut updates = Vec::new();
+
+    for activity in activities {
+        let asset_facts = activity
+            .asset_id
+            .as_deref()
+            .and_then(|asset_id| cached_asset_facts(asset_id, asset_service, &mut asset_cache));
+        let account_facts = account_cache
+            .entry(activity.account_id.clone())
+            .or_insert_with(|| {
+                account_service
+                    .get_account(&activity.account_id)
+                    .map(|account| AccountCashFacts {
+                        is_credit_card: account.account_type == account_types::CREDIT_CARD,
+                    })
+                    .unwrap_or(AccountCashFacts {
+                        is_credit_card: false,
+                    })
+            })
+            .clone();
+        let Some(decision) = classify_legacy_activity_cash(
+            &activity,
+            asset_facts.unwrap_or(AssetCashFacts {
+                unit_multiplier: Decimal::ONE,
+                legacy_unit_multiplier: Decimal::ONE,
+                is_bond: false,
+                quote_currency: None,
+                multiplier_is_reliable: false,
+            }),
+            &account_facts,
+        ) else {
+            if let Some(update) = unclassified_draft_backfill(&activity) {
+                updates.push(update);
+            }
+            continue;
+        };
+
+        if activity.status == ActivityStatus::Posted
+            && decision.previous_cash_effect != decision.final_cash_effect
+        {
+            affected_account_ids.insert(activity.account_id.clone());
+        }
+
+        let normalized_existing = activity.amount.map(|amount| amount.abs());
+        if normalized_existing != decision.final_amount
+            || activity.needs_review != decision.needs_review
+        {
+            updates.push(ActivityFinalCashMigrationUpdate {
+                id: activity.id,
+                amount: decision.final_amount,
+                needs_review: decision.needs_review,
+            });
+        }
+    }
+
+    let changed = activity_repository
+        .update_activities_for_final_cash_migration(updates)
+        .await?;
+    let mut affected_account_ids: Vec<String> = affected_account_ids.into_iter().collect();
+    affected_account_ids.sort();
+
+    Ok(ActivityFinalCashMigrationResult {
+        changed,
+        affected_account_ids,
+    })
+}
+
+fn cached_asset_facts(
+    asset_id: &str,
+    asset_service: &dyn AssetServiceTrait,
+    cache: &mut HashMap<String, Option<AssetCashFacts>>,
+) -> Option<AssetCashFacts> {
+    if let Some(cached) = cache.get(asset_id) {
+        return cached.clone();
+    }
+    let facts = asset_service
+        .get_asset_by_id(asset_id)
+        .ok()
+        .map(|asset| AssetCashFacts {
+            unit_multiplier: asset.contract_multiplier(),
+            legacy_unit_multiplier: asset.explicit_contract_multiplier().unwrap_or_else(|| {
+                if asset.is_option() {
+                    Decimal::from(100)
+                } else {
+                    Decimal::ONE
+                }
+            }),
+            is_bond: asset.is_bond(),
+            quote_currency: Some(asset.quote_ccy),
+            multiplier_is_reliable: true,
+        });
+    cache.insert(asset_id.to_string(), facts.clone());
+    facts
+}
+
+fn classify_legacy_activity_cash(
+    activity: &Activity,
+    asset_facts: AssetCashFacts,
+    account_facts: &AccountCashFacts,
+) -> Option<LegacyCashDecision> {
+    let activity_type = activity.effective_type();
+    if activity_type == ACTIVITY_TYPE_SPLIT || !is_cash_bearing_type(activity_type) {
+        return None;
+    }
+
+    let is_security_transfer = ActivityEconomicsResolver::is_security_transfer(activity);
+    if is_security_transfer {
+        return None;
+    }
+
+    // Legacy rows were priced under the pre-cutover convention, so deriving
+    // and matching must use the multiplier the old runtime applied - a legacy
+    // dollar-priced bond derives qty x price, not qty x price x 0.01.
+    let inputs = ActivityCashInputs {
+        activity_type,
+        currency: &activity.currency,
+        is_security_transfer: false,
+        quantity: activity.quantity,
+        unit_price: activity.unit_price,
+        amount: None,
+        fee: activity.fee,
+        tax: activity.tax,
+        unit_multiplier: asset_facts.legacy_unit_multiplier,
+    };
+    // The runtime now prices this asset under a different convention (bond
+    // percent-of-par); the row's unit_price meaning changed under it, so any
+    // derived value deserves eyes even though the cash effect is preserved.
+    let multiplier_convention_changed =
+        asset_facts.unit_multiplier != asset_facts.legacy_unit_multiplier;
+    let is_trade = matches!(activity_type, ACTIVITY_TYPE_BUY | ACTIVITY_TYPE_SELL);
+    let is_charge = matches!(activity_type, ACTIVITY_TYPE_FEE | ACTIVITY_TYPE_TAX);
+    let is_composite =
+        NewActivity::is_asset_backed_income_subtype(activity_type, activity.subtype.as_deref());
+    // qty x price is only meaningful when the price is quoted in the
+    // activity's own currency and the multiplier is trustworthy - for trades
+    // and composites alike; charges derive from their own fee/tax columns,
+    // already in the activity currency. The account currency is deliberately
+    // not consulted: the derived final is stored in activity currency, and
+    // booking (with or without fx_rate) happens later.
+    let priced_inputs_are_reliable = asset_facts.multiplier_is_reliable
+        && asset_facts
+            .quote_currency
+            .as_deref()
+            .is_some_and(|currency| currency.eq_ignore_ascii_case(&activity.currency));
+    let derived_final = if is_trade {
+        priced_inputs_are_reliable
+            .then(|| ActivityEconomicsResolver::calculate_trade_final_cash(inputs))
+            .flatten()
+    } else if is_charge {
+        ActivityEconomicsResolver::calculate_standalone_charge_amount(inputs)
+    } else if is_composite {
+        priced_inputs_are_reliable
+            .then(|| {
+                ActivityEconomicsResolver::calculate_composite_final_cash(
+                    activity_type,
+                    activity.subtype.as_deref(),
+                    activity.quantity,
+                    activity.unit_price,
+                    asset_facts.legacy_unit_multiplier,
+                )
+            })
+            .flatten()
+    } else {
+        None
+    };
+    let derived_gross = priced_inputs_are_reliable
+        .then(|| ActivityEconomicsResolver::derived_positive_gross(inputs))
+        .flatten();
+    let supplied = activity.amount.map(|amount| amount.abs());
+    let charges = activity.fee_amt() + activity.tax_amt();
+    let tolerance = currency_minor_unit(&activity.currency);
+
+    let (final_amount, needs_review) = if is_trade {
+        match supplied {
+            None => (derived_final, derived_final.is_none()),
+            Some(amount) if amount.is_zero() => match derived_final {
+                Some(final_amount) if final_amount > tolerance => (Some(final_amount), true),
+                Some(final_amount) => (Some(final_amount), false),
+                None => (Some(Decimal::ZERO), true),
+            },
+            Some(amount) => {
+                let matches_gross =
+                    derived_gross.is_some_and(|gross| close(amount, gross, tolerance));
+                let matches_final = derived_final
+                    .is_some_and(|final_amount| close(amount, final_amount, tolerance));
+                if matches_final || (matches_gross && derived_final.is_some()) {
+                    (derived_final, false)
+                } else {
+                    (Some(amount), true)
+                }
+            }
+        }
+    } else if is_charge {
+        // The legacy runtime charged the tax/fee column first and read the
+        // stored amount only as a fallback (old `charge_amt_for`), so that
+        // effective value - not the raw amount column - is the cash to
+        // preserve. Old imports routinely wrote charges as amount=0 with the
+        // value in fee/tax.
+        let charge_derived = derived_final.filter(|value| !value.is_zero());
+        match charge_derived.or_else(|| supplied.filter(|value| !value.is_zero())) {
+            Some(effective) => {
+                // Replacing a different nonzero stored amount deserves eyes.
+                let replaced_disagreeing_amount = supplied
+                    .filter(|amount| !amount.is_zero())
+                    .is_some_and(|amount| !close(amount, effective, tolerance));
+                (Some(effective), replaced_disagreeing_amount)
+            }
+            None => match supplied {
+                Some(zero) => (Some(zero), false),
+                None => (derived_final, derived_final.is_none()),
+            },
+        }
+    } else if is_composite {
+        match supplied {
+            // A charged composite (e.g. DRIP with withholding) changes its
+            // compiled cash effect under the final contract; surface it.
+            Some(amount) => (Some(amount), !charges.is_zero()),
+            None => (derived_final, derived_final.is_none()),
+        }
+    } else {
+        match supplied {
+            Some(amount) => (Some(amount), !charges.is_zero()),
+            None => (None, true),
+        }
+    };
+
+    let previous_cash_effect =
+        legacy_compiled_cash_effect(activity, &asset_facts, account_facts.is_credit_card);
+    let mut migrated = activity.clone();
+    migrated.amount = final_amount;
+    let final_cash_effect = ActivityEconomicsResolver::resolve_compiled_cash(
+        &migrated,
+        asset_facts.unit_multiplier,
+        account_facts.is_credit_card,
+    )
+    .ok()
+    .and_then(|resolved| resolved.signed_cash_effect)
+    .unwrap_or(Decimal::ZERO);
+
+    // Before the cutover the review queue was `status = DRAFT`; after it,
+    // `needs_review` is the only queue. Flag legacy drafts so they stay
+    // reachable instead of silently sitting excluded from calculations.
+    let is_legacy_draft = activity.status == ActivityStatus::Draft;
+
+    Some(LegacyCashDecision {
+        final_amount,
+        needs_review: needs_review
+            || activity.needs_review
+            || is_legacy_draft
+            || (multiplier_convention_changed && (is_trade || is_composite)),
+        previous_cash_effect,
+        final_cash_effect,
+    })
+}
+
+/// Rows outside the cash classification (splits, security transfers,
+/// non-cash types) still need the legacy-Draft review backfill: the
+/// pre-cutover review queue was `status = DRAFT`, and `needs_review` is the
+/// only queue after the cutover. The amount passes through untouched.
+fn unclassified_draft_backfill(activity: &Activity) -> Option<ActivityFinalCashMigrationUpdate> {
+    (activity.status == ActivityStatus::Draft && !activity.needs_review).then(|| {
+        ActivityFinalCashMigrationUpdate {
+            id: activity.id.clone(),
+            amount: activity.amount,
+            needs_review: true,
+        }
+    })
+}
+
+fn is_cash_bearing_type(activity_type: &str) -> bool {
+    matches!(
+        activity_type,
+        ACTIVITY_TYPE_BUY
+            | ACTIVITY_TYPE_SELL
+            | ACTIVITY_TYPE_DEPOSIT
+            | ACTIVITY_TYPE_WITHDRAWAL
+            | ACTIVITY_TYPE_DIVIDEND
+            | ACTIVITY_TYPE_INTEREST
+            | ACTIVITY_TYPE_CREDIT
+            | ACTIVITY_TYPE_FEE
+            | ACTIVITY_TYPE_TAX
+            | ACTIVITY_TYPE_TRANSFER_IN
+            | ACTIVITY_TYPE_TRANSFER_OUT
+    )
+}
+
+fn close(left: Decimal, right: Decimal, tolerance: Decimal) -> bool {
+    (left - right).abs() <= tolerance
+}
+
+fn legacy_compiled_cash_effect(
+    activity: &Activity,
+    asset_facts: &AssetCashFacts,
+    is_credit_card: bool,
+) -> Decimal {
+    legacy_cash_postings(activity)
+        .iter()
+        .map(|posting| legacy_runtime_cash_effect(posting, asset_facts, is_credit_card))
+        .sum()
+}
+
+/// Reproduces only the pre-cutover asset-income expansion needed to compare
+/// user-visible cash before and after migration. Calling the current compiler
+/// here would evaluate the legacy row under the new final-cash contract and
+/// produce a false rebuild delta for missing DRIP/staking amounts.
+fn legacy_cash_postings(activity: &Activity) -> Vec<Activity> {
+    if !activity.is_posted() {
+        return Vec::new();
+    }
+    if !NewActivity::is_asset_backed_income_subtype(
+        activity.effective_type(),
+        activity.subtype.as_deref(),
+    ) {
+        return vec![activity.clone()];
+    }
+
+    let quantity = activity.quantity.unwrap_or(Decimal::ZERO);
+    let derived_amount = activity.unit_price.map(|unit_price| quantity * unit_price);
+    let income_amount = activity
+        .amount
+        .filter(|amount| !amount.is_zero())
+        .or(derived_amount)
+        .or(activity.amount);
+    let acquisition_unit_price = activity
+        .unit_price
+        .filter(|price| price.is_sign_positive() && !price.is_zero())
+        .or_else(|| {
+            income_amount.and_then(|amount| {
+                let reinvested_amount = amount - activity.fee_amt() - activity.tax_amt();
+                if quantity.is_zero() || reinvested_amount <= Decimal::ZERO {
+                    None
+                } else {
+                    Some(reinvested_amount / quantity)
+                }
+            })
+        })
+        .or(activity.unit_price);
+
+    let mut income_leg = activity.clone();
+    income_leg.activity_type = activity.effective_type().to_string();
+    income_leg.activity_type_override = None;
+    income_leg.subtype = None;
+    income_leg.quantity = None;
+    income_leg.unit_price = None;
+    income_leg.amount = income_amount;
+
+    let mut buy_leg = activity.clone();
+    buy_leg.activity_type = ACTIVITY_TYPE_BUY.to_string();
+    buy_leg.activity_type_override = None;
+    buy_leg.subtype = None;
+    buy_leg.unit_price = acquisition_unit_price;
+    buy_leg.amount = None;
+    buy_leg.fee = Some(Decimal::ZERO);
+    buy_leg.tax = Some(Decimal::ZERO);
+
+    vec![income_leg, buy_leg]
+}
+
+fn legacy_runtime_cash_effect(
+    activity: &Activity,
+    asset_facts: &AssetCashFacts,
+    is_credit_card: bool,
+) -> Decimal {
+    let activity_type = activity.effective_type();
+    let fee = activity.fee_amt();
+    let tax = activity.tax_amt();
+    let amount = activity.amt();
+
+    if is_credit_card && activity_type == ACTIVITY_TYPE_INTEREST {
+        let charge = if !fee.is_zero() { fee } else { amount };
+        return -charge;
+    }
+
+    match activity_type {
+        ACTIVITY_TYPE_BUY | ACTIVITY_TYPE_SELL => {
+            let has_quantity = activity
+                .quantity
+                .is_some_and(|quantity| !quantity.is_zero());
+            let has_unit_price = activity
+                .unit_price
+                .is_some_and(|unit_price| !unit_price.is_zero());
+            let use_amount = activity.amount.is_some_and(|amount| !amount.is_zero())
+                && (asset_facts.is_bond || !has_quantity || !has_unit_price);
+            let gross = if use_amount {
+                amount
+            } else {
+                activity.qty() * activity.price() * asset_facts.legacy_unit_multiplier
+            };
+            if activity_type == ACTIVITY_TYPE_BUY {
+                -(gross + fee + tax)
+            } else {
+                gross - fee - tax
+            }
+        }
+        ACTIVITY_TYPE_DEPOSIT
+        | ACTIVITY_TYPE_DIVIDEND
+        | ACTIVITY_TYPE_INTEREST
+        | ACTIVITY_TYPE_CREDIT
+        | ACTIVITY_TYPE_TRANSFER_IN => amount - fee - tax,
+        ACTIVITY_TYPE_WITHDRAWAL | ACTIVITY_TYPE_TRANSFER_OUT => -amount - fee - tax,
+        ACTIVITY_TYPE_FEE => {
+            let charge = if !fee.is_zero() { fee } else { amount };
+            -charge
+        }
+        ACTIVITY_TYPE_TAX => {
+            let charge = if !tax.is_zero() {
+                tax
+            } else if !fee.is_zero() {
+                fee
+            } else {
+                amount
+            };
+            -charge
+        }
+        _ => Decimal::ZERO,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use async_trait::async_trait;
+    use chrono::Utc;
+    use rust_decimal_macros::dec;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct InMemorySettings {
+        values: Mutex<HashMap<String, String>>,
+    }
+
+    #[async_trait]
+    impl SettingsServiceTrait for InMemorySettings {
+        fn get_settings(&self) -> Result<crate::settings::Settings> {
+            Ok(crate::settings::Settings::default())
+        }
+
+        async fn update_settings(
+            &self,
+            _new_settings: &crate::settings::SettingsUpdate,
+        ) -> Result<()> {
+            Ok(())
+        }
+
+        fn get_base_currency(&self) -> Result<Option<String>> {
+            Ok(None)
+        }
+
+        async fn update_base_currency(&self, _new_base_currency: &str) -> Result<()> {
+            Ok(())
+        }
+
+        fn is_auto_update_check_enabled(&self) -> Result<bool> {
+            Ok(true)
+        }
+
+        fn is_sync_enabled(&self) -> Result<bool> {
+            Ok(false)
+        }
+
+        fn get_setting_value(&self, key: &str) -> Result<Option<String>> {
+            Ok(self.values.lock().unwrap().get(key).cloned())
+        }
+
+        async fn set_setting_value(&self, key: &str, value: &str) -> Result<()> {
+            self.values
+                .lock()
+                .unwrap()
+                .insert(key.to_string(), value.to_string());
+            Ok(())
+        }
+    }
+
+    fn activity(activity_type: &str) -> Activity {
+        Activity {
+            id: "activity-1".to_string(),
+            account_id: "account-1".to_string(),
+            asset_id: None,
+            activity_type: activity_type.to_string(),
+            activity_type_override: None,
+            source_type: None,
+            subtype: None,
+            status: ActivityStatus::Posted,
+            activity_date: Utc::now(),
+            settlement_date: None,
+            quantity: None,
+            unit_price: None,
+            amount: None,
+            fee: None,
+            tax: None,
+            currency: "USD".to_string(),
+            fx_rate: None,
+            notes: None,
+            metadata: None,
+            source_system: None,
+            source_record_id: None,
+            source_group_id: None,
+            idempotency_key: None,
+            import_run_id: None,
+            is_user_modified: false,
+            needs_review: false,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn facts() -> AssetCashFacts {
+        AssetCashFacts {
+            unit_multiplier: Decimal::ONE,
+            legacy_unit_multiplier: Decimal::ONE,
+            is_bond: false,
+            quote_currency: Some("USD".to_string()),
+            multiplier_is_reliable: true,
+        }
+    }
+
+    fn account_facts() -> AccountCashFacts {
+        AccountCashFacts {
+            is_credit_card: false,
+        }
+    }
+
+    #[test]
+    fn corrupt_migration_state_is_treated_as_never_run() {
+        // A hand-edited or truncated state value must not brick startup; the
+        // idempotent rewrite simply re-runs (already-final rows classify as
+        // matching and are left alone).
+        let settings = InMemorySettings::default();
+        settings
+            .values
+            .lock()
+            .unwrap()
+            .insert(MIGRATION_STATE_KEY.to_string(), "{not json".to_string());
+
+        let status = get_final_cash_migration_status(&settings)
+            .expect("corrupt state must not surface as an error");
+        assert_eq!(status, ActivityFinalCashMigrationStatus::default());
+    }
+
+    #[test]
+    fn composite_income_is_not_derived_across_quote_currency_mismatch() {
+        // qty x price is denominated in the asset's quote currency (USD);
+        // booking it as a CAD final cash would store a wrong-currency total.
+        let mut drip = activity(ACTIVITY_TYPE_DIVIDEND);
+        drip.subtype = Some("DRIP".to_string());
+        drip.quantity = Some(dec!(10));
+        drip.unit_price = Some(dec!(5));
+        drip.currency = "CAD".to_string();
+
+        let decision = classify_legacy_activity_cash(&drip, facts(), &account_facts())
+            .expect("dividend rows are classified");
+        assert_eq!(decision.final_amount, None);
+        assert!(decision.needs_review);
+    }
+
+    #[tokio::test]
+    async fn pending_rebuild_state_is_durable_and_completes_incrementally() {
+        let settings = InMemorySettings::default();
+        write_migration_state(
+            &settings,
+            &PersistedMigrationState {
+                phase: PHASE_REBUILD_PENDING.to_string(),
+                pending_account_ids: vec!["account-1".to_string(), "account-2".to_string()],
+            },
+        )
+        .await
+        .unwrap();
+
+        let first = record_final_cash_rebuild_attempt(&settings, &["account-1".to_string()])
+            .await
+            .unwrap();
+        assert!(!first.complete);
+        assert_eq!(first.pending_account_ids, vec!["account-2"]);
+
+        let after_restart = get_final_cash_migration_status(&settings).unwrap();
+        assert_eq!(after_restart, first);
+
+        let complete = record_final_cash_rebuild_attempt(&settings, &["account-2".to_string()])
+            .await
+            .unwrap();
+        assert!(complete.complete);
+        assert!(complete.pending_account_ids.is_empty());
+    }
+
+    #[test]
+    fn ambiguous_charged_dividend_preserves_amount_and_reports_delta() {
+        let mut dividend = activity(ACTIVITY_TYPE_DIVIDEND);
+        dividend.amount = Some(dec!(100));
+        dividend.tax = Some(dec!(15));
+
+        let decision = classify_legacy_activity_cash(&dividend, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(100)));
+        assert!(decision.needs_review);
+        assert_eq!(decision.previous_cash_effect, dec!(85));
+        assert_eq!(decision.final_cash_effect, dec!(100));
+    }
+
+    #[test]
+    fn dividend_quantity_price_match_does_not_reclassify_final_amount_as_gross() {
+        let mut dividend = activity(ACTIVITY_TYPE_DIVIDEND);
+        dividend.quantity = Some(dec!(10));
+        dividend.unit_price = Some(dec!(10));
+        dividend.amount = Some(dec!(100));
+        dividend.tax = Some(dec!(15));
+
+        let decision = classify_legacy_activity_cash(&dividend, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(100)));
+        assert!(decision.needs_review);
+        assert_eq!(decision.final_cash_effect, dec!(100));
+    }
+
+    #[test]
+    fn provable_gross_trade_is_converted_to_final() {
+        let mut buy = activity(ACTIVITY_TYPE_BUY);
+        buy.quantity = Some(dec!(2));
+        buy.unit_price = Some(dec!(10));
+        buy.amount = Some(dec!(20));
+        buy.fee = Some(dec!(1));
+        buy.tax = Some(dec!(2));
+
+        let decision = classify_legacy_activity_cash(&buy, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(23)));
+        assert!(!decision.needs_review);
+        assert_eq!(decision.previous_cash_effect, dec!(-23));
+        assert_eq!(decision.final_cash_effect, dec!(-23));
+    }
+
+    #[test]
+    fn missing_derivable_amount_is_filled_but_runtime_never_derives_it() {
+        let mut sell = activity(ACTIVITY_TYPE_SELL);
+        sell.quantity = Some(dec!(2));
+        sell.unit_price = Some(dec!(10));
+        sell.fee = Some(dec!(1));
+        sell.tax = Some(dec!(2));
+
+        let decision = classify_legacy_activity_cash(&sell, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(17)));
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn already_final_trade_is_normalized_without_review() {
+        let mut sell = activity(ACTIVITY_TYPE_SELL);
+        sell.quantity = Some(dec!(2));
+        sell.unit_price = Some(dec!(10));
+        sell.amount = Some(dec!(17));
+        sell.fee = Some(dec!(1));
+        sell.tax = Some(dec!(2));
+
+        let decision = classify_legacy_activity_cash(&sell, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(17)));
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn custom_trade_total_is_preserved_for_review() {
+        let mut buy = activity(ACTIVITY_TYPE_BUY);
+        buy.quantity = Some(dec!(2));
+        buy.unit_price = Some(dec!(10));
+        buy.amount = Some(dec!(30));
+        buy.fee = Some(dec!(1));
+
+        let decision = classify_legacy_activity_cash(&buy, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(30)));
+        assert!(decision.needs_review);
+    }
+
+    #[test]
+    fn sell_charges_exceeding_proceeds_becomes_an_outflow() {
+        let mut sell = activity(ACTIVITY_TYPE_SELL);
+        sell.quantity = Some(dec!(1));
+        sell.unit_price = Some(dec!(10));
+        sell.amount = Some(dec!(10));
+        sell.fee = Some(dec!(12));
+
+        let decision = classify_legacy_activity_cash(&sell, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(2)));
+        assert_eq!(decision.final_cash_effect, dec!(-2));
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn trade_within_currency_tolerance_is_normalized_exactly() {
+        let mut sell = activity(ACTIVITY_TYPE_SELL);
+        sell.quantity = Some(dec!(2));
+        sell.unit_price = Some(dec!(10));
+        sell.amount = Some(dec!(16.995));
+        sell.fee = Some(dec!(3));
+
+        let decision = classify_legacy_activity_cash(&sell, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(17)));
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn incomplete_charged_trade_preserves_amount_for_review() {
+        let mut sell = activity(ACTIVITY_TYPE_SELL);
+        sell.amount = Some(dec!(100));
+        sell.fee = Some(dec!(5));
+
+        let decision = classify_legacy_activity_cash(&sell, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(100)));
+        assert!(decision.needs_review);
+    }
+
+    #[test]
+    fn cross_currency_trade_derives_final_in_activity_currency() {
+        // The derived final lives in activity currency; the account currency
+        // only affects booking, so a USD trade in a CAD account still
+        // reclassifies its gross amount to final.
+        let mut buy = activity(ACTIVITY_TYPE_BUY);
+        buy.quantity = Some(dec!(2));
+        buy.unit_price = Some(dec!(10));
+        buy.amount = Some(dec!(20));
+        buy.fee = Some(dec!(1));
+        let account = AccountCashFacts {
+            is_credit_card: false,
+        };
+
+        let decision = classify_legacy_activity_cash(&buy, facts(), &account).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(21)));
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn trade_with_unknown_multiplier_is_not_reclassified() {
+        let mut buy = activity(ACTIVITY_TYPE_BUY);
+        buy.quantity = Some(dec!(2));
+        buy.unit_price = Some(dec!(10));
+        buy.amount = Some(dec!(20));
+        buy.fee = Some(dec!(1));
+        let unknown_facts = AssetCashFacts {
+            unit_multiplier: Decimal::ONE,
+            legacy_unit_multiplier: Decimal::ONE,
+            is_bond: false,
+            quote_currency: None,
+            multiplier_is_reliable: false,
+        };
+
+        let decision =
+            classify_legacy_activity_cash(&buy, unknown_facts, &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(20)));
+        assert!(decision.needs_review);
+    }
+
+    #[test]
+    fn ordinary_cash_never_derives_missing_amount() {
+        let mut deposit = activity(ACTIVITY_TYPE_DEPOSIT);
+        deposit.quantity = Some(dec!(2));
+        deposit.unit_price = Some(dec!(10));
+
+        let decision = classify_legacy_activity_cash(&deposit, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, None);
+        assert!(decision.needs_review);
+    }
+
+    #[test]
+    fn explicit_zero_ordinary_cash_is_preserved() {
+        let mut deposit = activity(ACTIVITY_TYPE_DEPOSIT);
+        deposit.amount = Some(Decimal::ZERO);
+
+        let decision = classify_legacy_activity_cash(&deposit, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(Decimal::ZERO));
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn charged_deposit_preserves_final_amount_and_reports_delta() {
+        let mut deposit = activity(ACTIVITY_TYPE_DEPOSIT);
+        deposit.amount = Some(dec!(100));
+        deposit.fee = Some(dec!(5));
+
+        let decision = classify_legacy_activity_cash(&deposit, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(100)));
+        assert!(decision.needs_review);
+        assert_eq!(decision.previous_cash_effect, dec!(95));
+        assert_eq!(decision.final_cash_effect, dec!(100));
+    }
+
+    #[test]
+    fn missing_standalone_charges_copy_their_explicit_component() {
+        let mut fee = activity(ACTIVITY_TYPE_FEE);
+        fee.fee = Some(dec!(4));
+        let fee_decision = classify_legacy_activity_cash(&fee, facts(), &account_facts()).unwrap();
+
+        let mut tax = activity(ACTIVITY_TYPE_TAX);
+        tax.tax = Some(Decimal::ZERO);
+        tax.fee = Some(dec!(7));
+        let tax_decision = classify_legacy_activity_cash(&tax, facts(), &account_facts()).unwrap();
+
+        assert_eq!(fee_decision.final_amount, Some(dec!(4)));
+        assert_eq!(tax_decision.final_amount, Some(dec!(7)));
+        assert!(!fee_decision.needs_review);
+        assert!(!tax_decision.needs_review);
+    }
+
+    #[test]
+    fn legacy_bond_trade_replays_and_derives_under_legacy_multiplier() {
+        // The old runtime priced bonds with multiplier 1; the new runtime
+        // uses 0.01 (percent-of-par). A legacy dollar-priced bond must derive
+        // its final under the OLD convention - and because the convention
+        // changed under the row, it is surfaced for review.
+        let mut buy = activity(ACTIVITY_TYPE_BUY);
+        buy.quantity = Some(dec!(10));
+        buy.unit_price = Some(dec!(985));
+        buy.amount = None;
+        let bond_facts = AssetCashFacts {
+            unit_multiplier: Decimal::new(1, 2),
+            legacy_unit_multiplier: Decimal::ONE,
+            is_bond: true,
+            quote_currency: Some("USD".to_string()),
+            multiplier_is_reliable: true,
+        };
+
+        let decision = classify_legacy_activity_cash(&buy, bond_facts, &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(9850)));
+        assert!(decision.needs_review);
+        // The replay models the old runtime, so previous == final and the
+        // account still rebuilds only if the compiled effects differ; the
+        // point locked here is that neither side uses the new 0.01 scale.
+        assert_eq!(decision.previous_cash_effect, dec!(-9850));
+    }
+
+    #[test]
+    fn zero_amount_charge_derives_from_its_charge_column() {
+        // Old imports wrote charges as amount=0 with the value in fee/tax,
+        // and the legacy runtime charged the fee/tax column first.
+        let mut fee = activity(ACTIVITY_TYPE_FEE);
+        fee.amount = Some(Decimal::ZERO);
+        fee.fee = Some(dec!(15));
+        let decision = classify_legacy_activity_cash(&fee, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(15)));
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn charge_amount_disagreeing_with_charge_column_is_replaced_and_flagged() {
+        // The legacy runtime booked the fee, not the amount column; migrating
+        // to the fee preserves the old cash effect, and replacing a different
+        // nonzero stored amount surfaces for review.
+        let mut fee = activity(ACTIVITY_TYPE_FEE);
+        fee.amount = Some(dec!(100));
+        fee.fee = Some(dec!(2));
+        let decision = classify_legacy_activity_cash(&fee, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(2)));
+        assert!(decision.needs_review);
+    }
+
+    #[test]
+    fn genuinely_zero_charge_stays_zero_without_review() {
+        let mut fee = activity(ACTIVITY_TYPE_FEE);
+        fee.amount = Some(Decimal::ZERO);
+        fee.fee = Some(Decimal::ZERO);
+        let decision = classify_legacy_activity_cash(&fee, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(Decimal::ZERO));
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn missing_drip_amount_uses_only_the_composite_contract() {
+        let mut drip = activity(ACTIVITY_TYPE_DIVIDEND);
+        drip.subtype = Some("DRIP".to_string());
+        drip.quantity = Some(dec!(2));
+        drip.unit_price = Some(dec!(50));
+
+        let decision = classify_legacy_activity_cash(&drip, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(100)));
+        assert_eq!(decision.previous_cash_effect, Decimal::ZERO);
+        assert_eq!(decision.final_cash_effect, Decimal::ZERO);
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn draft_review_row_stays_draft_and_in_review() {
+        let mut deposit = activity(ACTIVITY_TYPE_DEPOSIT);
+        deposit.amount = Some(dec!(100));
+        deposit.status = ActivityStatus::Draft;
+        deposit.needs_review = true;
+
+        let decision = classify_legacy_activity_cash(&deposit, facts(), &account_facts()).unwrap();
+
+        // ActivityFinalCashMigrationUpdate carries no status field, so the
+        // lifecycle is untouchable by construction.
+        assert!(decision.needs_review);
+    }
+
+    #[test]
+    fn legacy_draft_is_backfilled_into_the_review_queue() {
+        // The pre-cutover review queue was `status = DRAFT`. Without the
+        // backfill this row would be excluded from calculations yet invisible
+        // to the needs-review filter.
+        let mut deposit = activity(ACTIVITY_TYPE_DEPOSIT);
+        deposit.amount = Some(dec!(100));
+        deposit.status = ActivityStatus::Draft;
+
+        let decision = classify_legacy_activity_cash(&deposit, facts(), &account_facts()).unwrap();
+
+        assert!(decision.needs_review);
+    }
+
+    #[test]
+    fn posted_lifecycle_does_not_create_review_state() {
+        let mut deposit = activity(ACTIVITY_TYPE_DEPOSIT);
+        deposit.amount = Some(dec!(100));
+
+        let decision = classify_legacy_activity_cash(&deposit, facts(), &account_facts()).unwrap();
+
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn charged_composite_is_flagged_for_review() {
+        let mut drip = activity(ACTIVITY_TYPE_DIVIDEND);
+        drip.subtype = Some("DRIP".to_string());
+        drip.asset_id = Some("asset-1".to_string());
+        drip.quantity = Some(dec!(10));
+        drip.unit_price = Some(dec!(10));
+        drip.amount = Some(dec!(100));
+        drip.tax = Some(dec!(15));
+
+        let decision = classify_legacy_activity_cash(&drip, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(100)));
+        assert!(decision.needs_review);
+        assert_ne!(decision.previous_cash_effect, decision.final_cash_effect);
+    }
+
+    #[test]
+    fn unclassified_legacy_draft_is_backfilled_verbatim() {
+        let mut split = activity(ACTIVITY_TYPE_SPLIT);
+        split.status = ActivityStatus::Draft;
+        split.amount = Some(dec!(2));
+
+        let update = unclassified_draft_backfill(&split).expect("draft split joins the queue");
+        assert_eq!(update.amount, Some(dec!(2)));
+        assert!(update.needs_review);
+
+        split.needs_review = true;
+        assert!(unclassified_draft_backfill(&split).is_none());
+        split.needs_review = false;
+        split.status = ActivityStatus::Posted;
+        assert!(unclassified_draft_backfill(&split).is_none());
+    }
+
+    #[test]
+    fn security_transfer_is_outside_the_migration() {
+        let mut transfer = activity(ACTIVITY_TYPE_TRANSFER_IN);
+        transfer.asset_id = Some("SEC:AAPL:XNAS".to_string());
+        transfer.quantity = Some(dec!(10));
+        transfer.amount = Some(dec!(250));
+
+        assert_eq!(
+            classify_legacy_activity_cash(&transfer, facts(), &account_facts()),
+            None
+        );
+    }
+}

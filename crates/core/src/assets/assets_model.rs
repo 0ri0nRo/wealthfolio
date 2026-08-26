@@ -156,6 +156,24 @@ pub struct OptionSpec {
 /// Top-level asset metadata key for instruments whose value is scaled per contract.
 pub const CONTRACT_MULTIPLIER_METADATA_KEY: &str = "contractMultiplier";
 
+/// Instrument-level default multiplier for assets without an explicit
+/// override. Bonds deliberately default to 1: market-data providers store
+/// bond quotes as a FRACTION of par (percent quotes are divided by 100 at
+/// the provider layer), so a percent-of-par default would double-apply the
+/// /100 and value every existing bond position at 1/100. Percent-of-par
+/// pricing is opt-in per asset via explicit `contractMultiplier` metadata.
+pub fn instrument_default_multiplier(is_option: bool, is_mini_option: bool) -> Decimal {
+    if is_option {
+        if is_mini_option {
+            Decimal::from(10)
+        } else {
+            Decimal::from(100)
+        }
+    } else {
+        Decimal::ONE
+    }
+}
+
 /// Bond specification stored in Asset.metadata["bond"]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -415,26 +433,25 @@ impl Asset {
     /// For options, this is the number of shares per contract (typically 100).
     /// Other contract instruments can provide an explicit multiplier in asset metadata.
     pub fn contract_multiplier(&self) -> Decimal {
+        self.explicit_contract_multiplier()
+            .unwrap_or_else(|| instrument_default_multiplier(self.is_option(), false))
+    }
+
+    /// Returns only a multiplier explicitly carried by the asset.
+    pub fn explicit_contract_multiplier(&self) -> Option<Decimal> {
         if let Some(spec) = self.option_spec() {
-            spec.multiplier
-        } else if let Some(multiplier) = self
-            .metadata
-            .as_ref()
-            .and_then(|metadata| metadata.get(CONTRACT_MULTIPLIER_METADATA_KEY))
-            .and_then(|value| {
-                value
-                    .as_f64()
-                    .and_then(Decimal::from_f64)
-                    .or_else(|| value.as_str().and_then(|raw| raw.parse::<Decimal>().ok()))
-            })
-            .filter(|multiplier| *multiplier > Decimal::ZERO)
-        {
-            multiplier
-        } else if self.is_option() {
-            // Option without metadata — default to standard 100 multiplier
-            Decimal::from(100)
+            Some(spec.multiplier)
         } else {
-            Decimal::ONE
+            self.metadata
+                .as_ref()
+                .and_then(|metadata| metadata.get(CONTRACT_MULTIPLIER_METADATA_KEY))
+                .and_then(|value| {
+                    value
+                        .as_f64()
+                        .and_then(Decimal::from_f64)
+                        .or_else(|| value.as_str().and_then(|raw| raw.parse::<Decimal>().ok()))
+                })
+                .filter(|multiplier| *multiplier > Decimal::ZERO)
         }
     }
 
