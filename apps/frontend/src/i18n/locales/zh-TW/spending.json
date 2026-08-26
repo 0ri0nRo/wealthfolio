@@ -275,7 +275,7 @@
   "overallBudget": {
     "noTarget": "未設定每月預算目標。",
     "setBudget": "設定預算",
-    "title": "總體預算",
+    "title": "整體預算",
     "perMonthTimes_one": "/月 × {{count}} 個月",
     "perMonthTimes_other": "/月 × {{count}} 個月",
     "overAmount": "超支 +{{amount}}",
@@ -321,7 +321,7 @@
   "notableChanges": {
     "comparisonDisabled": "比較已停用——請在標題欄中開啟“上一週期”或“同比”以檢視顯著變化。",
     "noChanges": "與比較週期相比，類別無顯著變化。",
-    "whereItClimbed": "增長之處",
+    "whereItClimbed": "成長之處",
     "whereYouSaved": "節省之處",
     "noNotableChange": "無顯著變化。"
   },
@@ -602,7 +602,7 @@
     "captionInLine": "與您正常的一週基本一致。",
     "captionOneOffSingle": "一次性——{{name}} 導致了這次激增。",
     "captionOneOffDouble": "一次性——{{name1}} 和 {{name2}} 導致了這次激增。",
-    "captionMostly": "主要是 {{name}}——相較正常時段有小幅增長。"
+    "captionMostly": "主要是 {{name}}——相較正常時段有小幅成長。"
   },
   "timeline": {
     "headerSummary": "{{days}} 天內 {{events}} · 按一下任意色帶檢視詳情",
@@ -631,7 +631,7 @@
     "headlineMoreSuffix": "，比{{priorLabel}}多。",
     "headlineLessSuffix": "，比{{priorLabel}}少。",
     "headlineSeveralDrivers": "多個類別的支出均有變化，沒有任何單一類別主導本次變化。",
-    "headlineRiseDriverPrefix": " 增長主要來自",
+    "headlineRiseDriverPrefix": " 成長主要來自",
     "headlineDropDriverPrefix": " 下降主要來自",
     "headlineSentenceEnd": "。",
     "headlineOppositeSuffix": "的變化方向相反。",

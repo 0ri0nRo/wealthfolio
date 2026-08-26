@@ -51,7 +51,7 @@
     "active": "活躍",
     "signOut": "登出",
     "signOutTitle": "退出 Wealthfolio Connect?",
-    "signOutMessage": "您需要重新登入才能訪問已同步的券商帳戶。您的本地資料不會受到影響。",
+    "signOutMessage": "您需要重新登入才能存取已同步的券商帳戶。您的本地資料不會受到影響。",
     "signOutConfirm": "登出",
     "signingOut": "正在登出..."
   },
