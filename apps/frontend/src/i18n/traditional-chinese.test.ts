@@ -45,7 +45,7 @@ describe("Traditional Chinese translations", () => {
   });
 
   it("uses Taiwan terminology instead of Mainland Chinese variants", () => {
-    const prohibitedTerms = ["賬", "轉賬", "對映", "添加", "創建", "自定義", "數據", "默認", "獲取", "當前", "此處", "點選", "重置", "模板", "響應", "退出登入", "儀表盤", "未找到", "程式碼", "通過"];
+    const prohibitedTerms = ["賬", "轉賬", "對映", "添加", "創建", "自定義", "數據", "默認", "獲取", "當前", "此處", "點選", "重置", "模板", "響應", "退出登入", "儀表盤", "未找到", "程式碼", "通過", "返佣", "佣金", "占比", "周期", "周", "余額"];
 
     for (const translation of Object.values(traditionalChinese)) {
       for (const value of flatten(translation).values()) {

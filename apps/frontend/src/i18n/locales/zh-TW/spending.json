@@ -314,13 +314,13 @@
     "dayLongSun": "星期日",
     "heaviest": "最高",
     "avg": "平均",
-    "week": "第{{number}}周",
+    "week": "第{{number}}週",
     "noSpend": "無支出",
     "heaviestDayName": "{{day}}"
   },
   "notableChanges": {
     "comparisonDisabled": "對比已停用——請在標題欄中開啟“上一週期”或“同比”以檢視顯著變化。",
-    "noChanges": "與對比周期相比，類別無顯著變化。",
+    "noChanges": "與對比週期相比，類別無顯著變化。",
     "whereItClimbed": "增長之處",
     "whereYouSaved": "節省之處",
     "noNotableChange": "無顯著變化。"
@@ -387,7 +387,7 @@
   "heatmapSheet": {
     "eyebrow": "何時消費",
     "activity": "活動",
-    "subtitle": "過去 12 周 · 此星期幾 + 時段的支出",
+    "subtitle": "過去 12 週 · 此星期幾 + 時段的支出",
     "total": "合計",
     "tx": "交易",
     "none": "無",
@@ -395,7 +395,7 @@
     "largest": "最大",
     "noSpending": "此時段內無支出。",
     "outlier": "異常值",
-    "weekOf": "{{date}} 所在周"
+    "weekOf": "{{date}} 所在週"
   },
   "split": {
     "title": "拆分交易",
@@ -533,12 +533,12 @@
   },
   "whenYouSpend": {
     "title": "何時消費",
-    "subtitle": "過去 12 周 · 按星期幾和時段劃分的支出強度。",
-    "subtitleShort": "過去 12 周",
-    "noActivity": "過去 12 周內沒有現金活動。",
+    "subtitle": "過去 12 週 · 按星期幾和時段劃分的支出強度。",
+    "subtitleShort": "過去 12 週",
+    "noActivity": "過去 12 週內沒有現金活動。",
     "medianPerWeekday": "各星期幾中位數",
     "noSpend": "無支出",
-    "legendIntro": "每個單元格代表 12 周內某個星期幾的某個時段。",
+    "legendIntro": "每個單元格代表 12 週內某個星期幾的某個時段。",
     "darker": "更深",
     "brighter": "更亮",
     "moreSpend": "= 支出更多。",
@@ -864,7 +864,7 @@
     "seeTrends": "檢視趨勢",
     "avg": "平均",
     "dailyAvg": "日均",
-    "weeklyAvg": "周均",
+    "weeklyAvg": "週平均",
     "monthlyAvg": "月均",
     "noAccountsSelected": "未選擇支出帳戶。",
     "openSpendingSettings": "開啟支出設定 →",

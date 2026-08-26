@@ -33,7 +33,7 @@
   "subtype_dividend_in_kind": "實物股息",
   "subtype_staking_reward": "質押獎勵",
   "subtype_bonus": "贈金",
-  "subtype_rebate": "交易返佣",
+  "subtype_rebate": "交易返傭",
   "subtype_refund": "費用退還",
   "subtype_reimbursement": "報銷",
   "subtype_option_expiry": "期權到期",

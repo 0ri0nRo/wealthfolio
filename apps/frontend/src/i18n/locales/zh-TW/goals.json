@@ -303,7 +303,7 @@
       "income": "收入",
       "none_configured": "未配置退休收入",
       "public_pensions_note": "公共養老金（例如加拿大的 CPP/OAS、美國的 Social Security）不會自動包含在內。如果您希望將其納入預測，請在這裡新增。",
-      "balance_derived_payout": "由余額推算的支付額",
+      "balance_derived_payout": "由餘額推算的支付額",
       "growth_meta": "{{pct}}% 增長",
       "inflation_indexed": "通脹掛鉤",
       "fixed_nominal": "固定名義值",
@@ -573,7 +573,7 @@
     "this_goal": "此目標",
     "free": "空閒",
     "allocation_details": "配置詳情",
-    "allocation_details_description": "按帳戶列出的活躍目標占比。每個帳戶最多可分配 100%。",
+    "allocation_details_description": "按帳戶列出的活躍目標佔比。每個帳戶最多可分配 100%。",
     "no_active_shares": "尚無活躍的帳戶佔比。",
     "tax_bucket": {
       "taxable": "應稅",
