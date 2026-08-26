@@ -69,6 +69,7 @@ describe("locale formatting", () => {
     expect(dateFnsLocaleFor("es-MX").localize.month(0)).toBe("enero");
     expect(dateFnsLocaleFor("es-MX").options?.weekStartsOn).toBe(0);
     expect(dateFnsLocaleFor("zh-TW")).toBe(zhTW);
+    expect(dateFnsLocaleFor("zh-Hant-TW")).toBe(zhTW);
     expect(() => dateFnsLocaleFor(undefined)).toThrow("A resolved formatting locale is required");
   });
 

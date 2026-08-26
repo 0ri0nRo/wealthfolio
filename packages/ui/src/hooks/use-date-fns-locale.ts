@@ -99,6 +99,10 @@ export function dateFnsLocaleFor(locale: string | undefined): Locale {
   if (exact) return exact;
 
   const resolved = new Intl.Locale(locale);
+  if (resolved.language === "zh" && (resolved.region === "TW" || resolved.script === "Hant")) {
+    return zhTW;
+  }
+
   const languageLocale = LANGUAGE_LOCALES[resolved.language];
   const regionLocale = resolved.region ? REGION_LOCALES[resolved.region] : undefined;
   const localeWithWeekInfo = resolved as Intl.Locale & {
