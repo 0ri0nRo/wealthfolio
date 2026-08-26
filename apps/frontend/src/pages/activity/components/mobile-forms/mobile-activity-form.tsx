@@ -439,6 +439,14 @@ export function MobileActivityForm({
   // Transfers may target any account (incl. spending/saving accounts the Spending
   // split hides from `accounts`), so widen the list once the type is a transfer.
   const watchedActivityType = form.watch("activityType");
+  // A type switch re-purposes the amount field (cash total vs trade total):
+  // whatever was typed belonged to the previous type, so amount ownership
+  // resets and the calculated trade total takes over again. Without this, a
+  // deposit amount typed before switching to BUY/SELL would be submitted as
+  // an attested custom trade total.
+  useEffect(() => {
+    amountWasEdited.current = false;
+  }, [watchedActivityType]);
   const effectiveAccounts =
     transferAccounts && TRANSFER_ACTIVITY_TYPES.includes(watchedActivityType ?? "")
       ? transferAccounts
