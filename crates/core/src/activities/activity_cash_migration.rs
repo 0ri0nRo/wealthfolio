@@ -375,7 +375,12 @@ fn classify_legacy_activity_cash(
 
     // Legacy rows were priced under the pre-cutover convention, so deriving
     // and matching must use the multiplier the old runtime applied - a legacy
-    // dollar-priced bond derives qty x price, not qty x price x 0.01.
+    // dollar-priced bond derives qty x price, not qty x price x 0.01. The
+    // activity-level override (mini options) was honored by the old writer
+    // too, so it outranks the asset-derived legacy multiplier here as well.
+    let legacy_unit_multiplier = activity
+        .contract_multiplier_override()
+        .unwrap_or(asset_facts.legacy_unit_multiplier);
     let inputs = ActivityCashInputs {
         activity_type,
         currency: &activity.currency,
@@ -385,7 +390,7 @@ fn classify_legacy_activity_cash(
         amount: None,
         fee: activity.fee,
         tax: activity.tax,
-        unit_multiplier: asset_facts.legacy_unit_multiplier,
+        unit_multiplier: legacy_unit_multiplier,
     };
     // The runtime now prices this asset under a different convention (bond
     // percent-of-par); the row's unit_price meaning changed under it, so any
@@ -421,7 +426,7 @@ fn classify_legacy_activity_cash(
                     activity.subtype.as_deref(),
                     activity.quantity,
                     activity.unit_price,
-                    asset_facts.legacy_unit_multiplier,
+                    legacy_unit_multiplier,
                 )
             })
             .flatten()
@@ -800,6 +805,28 @@ mod tests {
         let status = get_final_cash_migration_status(&settings)
             .expect("corrupt state must not surface as an error");
         assert_eq!(status, ActivityFinalCashMigrationStatus::default());
+    }
+
+    #[test]
+    fn legacy_mini_option_rows_replay_their_activity_multiplier() {
+        // The old writer honored the activity-level override (mini option =
+        // 10), so a legacy gross of 1 x 1 x 10 = 10 must be recognized under
+        // that same override - replaying with the asset's multiplier would
+        // mismatch the stored value and wrongly flag the row for review.
+        let mut buy = activity(ACTIVITY_TYPE_BUY);
+        buy.quantity = Some(dec!(1));
+        buy.unit_price = Some(dec!(1));
+        buy.amount = Some(dec!(10));
+        buy.metadata = Some(serde_json::json!({ "contract_multiplier": 10 }));
+        let mut asset_facts = facts();
+        asset_facts.unit_multiplier = dec!(100);
+        asset_facts.legacy_unit_multiplier = dec!(100);
+
+        let decision = classify_legacy_activity_cash(&buy, asset_facts, &account_facts())
+            .expect("trade rows are classified");
+
+        assert_eq!(decision.final_amount, Some(dec!(10)));
+        assert!(!decision.needs_review);
     }
 
     #[test]

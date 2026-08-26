@@ -201,6 +201,9 @@ impl ActivityService {
         matches!(activity_type, ACTIVITY_TYPE_BUY | ACTIVITY_TYPE_SELL)
     }
 
+    // Thin constructor for `ActivityCashInputs`; the struct itself is the
+    // named-argument form, so widening it past clippy's arity cap is fine.
+    #[allow(clippy::too_many_arguments)]
     fn activity_cash_inputs<'a>(
         activity_type: &'a str,
         currency: &'a str,
@@ -418,8 +421,7 @@ impl ActivityService {
         // computed under and for what the patched row prices at. The patch's
         // metadata is already merged over the stored blob, so its absence
         // means "unchanged", not "cleared".
-        let existing_metadata_multiplier =
-            Self::custom_option_multiplier_value(existing.metadata.as_ref());
+        let existing_metadata_multiplier = existing.contract_multiplier_override();
         let existing_unit_multiplier = existing_metadata_multiplier
             .or_else(|| {
                 existing_asset
@@ -668,7 +670,7 @@ impl ActivityService {
                                     existing.tax,
                                     trade_facts.existing_unit_multiplier,
                                 )
-                                .map_or(true, |expected| {
+                                .is_none_or(|expected| {
                                     (stored - expected).abs()
                                         > currency_minor_unit(&activity.currency) / Decimal::TWO
                                 })
@@ -2209,22 +2211,13 @@ impl ActivityService {
 }
 
 impl ActivityService {
-    /// JSON metadata key for a non-standard option contract multiplier (e.g. mini options = 10).
-    const METADATA_CONTRACT_MULTIPLIER: &'static str = "contract_multiplier";
-
-    /// Extracts a custom contract multiplier from the activity metadata JSON, if present.
+    /// Extracts a custom contract multiplier from the activity metadata JSON,
+    /// if present. Shares the parse with `Activity::contract_multiplier_override`
+    /// so the writer and read sides cannot drift.
     fn custom_option_multiplier(activity_metadata: Option<&str>) -> Option<Decimal> {
         let parsed =
             activity_metadata.and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok());
-        Self::custom_option_multiplier_value(parsed.as_ref())
-    }
-
-    /// Same extraction over already-parsed metadata (stored `Activity` rows).
-    fn custom_option_multiplier_value(metadata: Option<&serde_json::Value>) -> Option<Decimal> {
-        metadata
-            .and_then(|v| v.get(Self::METADATA_CONTRACT_MULTIPLIER)?.as_f64())
-            .and_then(Decimal::from_f64_retain)
-            .filter(|d| d.is_sign_positive() && !d.is_zero())
+        contract_multiplier_override_value(parsed.as_ref())
     }
 
     /// Merges a metadata patch over the stored blob, top-level keys, patch

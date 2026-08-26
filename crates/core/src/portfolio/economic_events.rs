@@ -161,6 +161,12 @@ pub struct ResolvedActivityCash {
 
 impl ActivityEconomicsResolver {
     pub fn resolve_cash(activity: &Activity, unit_multiplier: Decimal) -> ResolvedActivityCash {
+        // The row's own multiplier override (mini options) outranks the
+        // asset-level multiplier the caller passes - the same hierarchy the
+        // writer boundary applies (activities_service ownership table).
+        let unit_multiplier = activity
+            .contract_multiplier_override()
+            .unwrap_or(unit_multiplier);
         Self::resolve_cash_inputs(ActivityCashInputs {
             activity_type: activity.effective_type(),
             currency: &activity.currency,
@@ -433,7 +439,13 @@ impl ActivityEconomicsResolver {
         let activity_currency = normalize_currency_code(&activity.currency).to_string();
         let kind = Self::event_kind(activity, transfer_boundary);
         let is_security_transfer = Self::is_security_transfer(activity);
-        let unit_multiplier = Self::valid_unit_multiplier(unit_multiplier);
+        // The row's own multiplier override (mini options) outranks the
+        // asset-level multiplier the caller passes.
+        let unit_multiplier = Self::valid_unit_multiplier(
+            activity
+                .contract_multiplier_override()
+                .unwrap_or(unit_multiplier),
+        );
         let lot_cost_basis_value = if is_security_transfer {
             Self::lot_cost_basis_value_with_unit_multiplier(activity, unit_multiplier)
         } else {
@@ -752,6 +764,77 @@ mod cash_tests {
             tax: Some(dec!(2)),
             unit_multiplier: Decimal::ONE,
         }
+    }
+
+    fn stored_activity(activity_type: &str) -> Activity {
+        Activity {
+            id: "activity-1".to_string(),
+            account_id: "account-1".to_string(),
+            asset_id: Some("asset-1".to_string()),
+            activity_type: activity_type.to_string(),
+            activity_type_override: None,
+            source_type: None,
+            subtype: None,
+            status: crate::activities::ActivityStatus::Posted,
+            activity_date: chrono::Utc::now(),
+            settlement_date: None,
+            quantity: None,
+            unit_price: None,
+            amount: None,
+            fee: None,
+            tax: None,
+            currency: "USD".to_string(),
+            fx_rate: None,
+            notes: None,
+            metadata: None,
+            source_system: None,
+            source_record_id: None,
+            source_group_id: None,
+            idempotency_key: None,
+            import_run_id: None,
+            is_user_modified: false,
+            needs_review: false,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn activity_multiplier_override_outranks_the_asset_multiplier() {
+        // A mini option (activity metadata 10) recorded against a standard
+        // option asset (100): true gross is 1 x 1 x 10 = 10, so charges of 12
+        // prove the reversal and the stored 2 books as an outflow. Resolving
+        // with the asset's 100 would compute gross 100, reject the reversal,
+        // and flip the cash direction to +2.
+        let mut sell = stored_activity(ACTIVITY_TYPE_SELL);
+        sell.quantity = Some(dec!(1));
+        sell.unit_price = Some(dec!(1));
+        sell.fee = Some(dec!(12));
+        sell.amount = Some(dec!(2));
+        sell.metadata = Some(serde_json::json!({ "contract_multiplier": 10 }));
+
+        let resolved = ActivityEconomicsResolver::resolve_cash(&sell, dec!(100));
+
+        assert_eq!(resolved.signed_cash_effect, Some(dec!(-2)));
+    }
+
+    #[test]
+    fn compiler_honors_activity_multiplier_override_for_transfer_lots() {
+        // Security-transfer lot basis is qty x price x multiplier; the row's
+        // own override must win over the asset multiplier the caller passes.
+        let mut transfer = stored_activity("TRANSFER_IN");
+        transfer.quantity = Some(dec!(1));
+        transfer.unit_price = Some(dec!(5));
+        transfer.metadata = Some(serde_json::json!({ "contract_multiplier": 10 }));
+
+        let compiled = ActivityEconomicsResolver::compile_activity_with_unit_multiplier(
+            &transfer,
+            None,
+            TransferBoundary::External,
+            dec!(100),
+        );
+
+        assert_eq!(compiled.lot_cost_basis_value, dec!(50));
     }
 
     #[test]
