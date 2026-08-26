@@ -35,6 +35,7 @@ type OnboardingSettingsSchema = ReturnType<typeof createOnboardingSettingsSchema
 function detectDefaultCurrency(locale?: string): string | undefined {
   if (!locale && typeof navigator === "undefined") return undefined;
   const lang = locale || navigator.language || navigator.languages[0];
+  const localeTag = lang.replaceAll("_", "-").toLowerCase();
   if (lang.startsWith("en-GB")) return "GBP";
   if (lang.startsWith("en-US")) return "USD";
   if (lang.startsWith("en-CA")) return "CAD";
@@ -46,7 +47,7 @@ function detectDefaultCurrency(locale?: string): string | undefined {
   if (lang.startsWith("es")) return "EUR";
   if (lang.startsWith("it")) return "EUR";
   if (lang.startsWith("ja")) return "JPY";
-  if (lang.startsWith("zh-TW") || lang.startsWith("zh-Hant-TW")) return "TWD";
+  if (localeTag.startsWith("zh-tw") || localeTag.startsWith("zh-hant")) return "TWD";
   if (lang.startsWith("zh")) return "CNY";
   if (lang.startsWith("ko")) return "KRW";
   if (lang.startsWith("ru")) return "RUB";

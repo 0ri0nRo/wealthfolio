@@ -43,7 +43,7 @@
     "classification_legacy_migration": {
       "title_one": "{{count}} 項資產存在舊版分類資料",
       "title_other": "{{count}} 項資產存在舊版分類資料",
-      "message": "部分資產的行業/國家資料來自舊格式。請遷移到新的分類系統，以更好地追蹤資產配置。"
+      "message": "部分資產的產業/國家資料來自舊格式。請遷移到新的分類系統，以更好地追蹤資產配置。"
     },
     "data_orphan_activity_account": {
       "title_one": "交易引用了缺失的帳戶",
@@ -63,7 +63,7 @@
     "data_legacy_classification": {
       "title_one": "{{count}} 項資產存在舊的分類資料",
       "title_other": "{{count}} 項資產存在舊的分類資料",
-      "message": "部分資產存在可遷移到新分類系統的舊版行業/國家資料。"
+      "message": "部分資產存在可遷移到新分類系統的舊版產業/國家資料。"
     },
     "data_negative_account_balance": {
       "title_one": "帳戶的投資組合餘額為負",

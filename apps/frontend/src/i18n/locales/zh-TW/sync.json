@@ -47,9 +47,9 @@
     "pauseSync": "暫停同步",
     "resumeSync": "恢復同步",
     "updating": "正在更新...",
-    "backgroundPaused": "後臺同步已暫停",
-    "backgroundResumed": "後臺同步已恢復",
-    "updateFailed": "更新後臺同步失敗"
+    "backgroundPaused": "背景同步已暫停",
+    "backgroundResumed": "背景同步已恢復",
+    "updateFailed": "更新背景同步失敗"
   },
   "errorState": {
     "failedToInitialize": "初始化裝置同步失敗。",
@@ -88,7 +88,7 @@
   "waitingSnapshot": {
     "otherDeviceFinishing": "您的另一臺裝置仍在完成設定。",
     "setupAlmostDone": "您的設定即將完成。",
-    "trustedHint": "您可以現在加快進度,或稍等,我們將在後臺自動繼續。",
+    "trustedHint": "您可以現在加快進度,或稍等,我們將在背景自動繼續。",
     "untrustedHint": "請先在您的另一臺已連線裝置上完成設定。此頁面將自動更新。",
     "checking": "正在檢查...",
     "checkAgain": "再次檢查",
