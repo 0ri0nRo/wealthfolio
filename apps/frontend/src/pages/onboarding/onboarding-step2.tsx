@@ -46,6 +46,7 @@ function detectDefaultCurrency(locale?: string): string | undefined {
   if (lang.startsWith("es")) return "EUR";
   if (lang.startsWith("it")) return "EUR";
   if (lang.startsWith("ja")) return "JPY";
+  if (lang.startsWith("zh-TW") || lang.startsWith("zh-Hant-TW")) return "TWD";
   if (lang.startsWith("zh")) return "CNY";
   if (lang.startsWith("ko")) return "KRW";
   if (lang.startsWith("ru")) return "RUB";
@@ -79,6 +80,7 @@ const formattingRegions = [
   ["BR", "brazil"],
   ["PT", "portugal"],
   ["CN", "china"],
+  ["TW", "taiwan"],
   ["JP", "japan"],
   ["KR", "southKorea"],
   ["IT", "italy"],
