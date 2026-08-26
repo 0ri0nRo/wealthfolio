@@ -22,7 +22,7 @@
     "deleting": "正在刪除……"
   },
   "refreshDialog": {
-    "title": "刷新歷史",
+    "title": "重新整理歷史",
     "description_named": "這將刪除並以最新資料替換 {{name}} 的所有供應商報價。手動報價將被保留。是否繼續？",
     "description_generic": "這將刪除並以最新資料替換所有供應商報價。手動報價將被保留。是否繼續？",
     "refresh": "重新整理"
@@ -176,7 +176,7 @@
     "record_transaction": "記錄交易",
     "valuation": "估值",
     "update_price": "更新價格",
-    "refresh_history": "刷新歷史",
+    "refresh_history": "重新整理歷史",
     "edit": "編輯",
     "update_value": "更新價值",
     "edit_details": "編輯詳情",

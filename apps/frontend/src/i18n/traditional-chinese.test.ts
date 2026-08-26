@@ -45,11 +45,12 @@ describe("Traditional Chinese translations", () => {
   });
 
   it("uses Taiwan terminology instead of Mainland Chinese variants", () => {
-    const prohibitedTerms = ["賬", "轉賬", "對映", "添加", "創建", "自定義", "數據", "默認", "獲取", "當前", "此處", "點選", "重置", "模板", "響應", "退出登入", "儀表盤", "未找到", "程式碼", "通過", "返佣", "佣金", "占比", "周期", "周", "余額", "校驗", "跟蹤", "通脹", "供款", "收益率", "構建", "對比", "常規", "高階", "提供商", "期權", "倉位", "情景", "養老", "提取", "增長", "訪問", "例項", "令牌", "許可權", "作用域", "運行", "新建", "移動端", "檢測", "請求頭", "總體", "識別", "資料質量", "單元格", "身份驗證", "身份", "行業", "後臺"];
+    const prohibitedTerms = ["賬", "轉賬", "對映", "添加", "創建", "自定義", "數據", "默認", "獲取", "當前", "此處", "點選", "重置", "模板", "響應", "退出登入", "儀表盤", "未找到", "程式碼", "通過", "返佣", "佣金", "占比", "周期", "周", "余額", "校驗", "跟蹤", "通脹", "供款", "收益率", "構建", "對比", "常規", "高階", "提供商", "期權", "倉位", "情景", "養老", "提取", "增長", "訪問", "例項", "令牌", "許可權", "作用域", "運行", "移動端", "檢測", "請求頭", "總體", "識別", "資料質量", "單元格", "身份驗證", "身份", "行業", "後臺", "會話", "徽標", "電子郵箱", "刷新", "列表", "客戶端"];
 
     for (const translation of Object.values(traditionalChinese)) {
       for (const value of flatten(translation).values()) {
         for (const term of prohibitedTerms) expect(value).not.toContain(term);
+        expect(value).not.toMatch(/(?<!重)新建/);
         expect(value).not.toBe("應用");
       }
     }
@@ -71,5 +72,12 @@ describe("Traditional Chinese translations", () => {
     const settings = flatten(traditionalChinese["./locales/zh-TW/settings.json"]);
 
     expect(settings.get("agentAccess.dialog_client_config_desc")).toMatch(/^可直接貼上/);
+  });
+
+  it("keeps rebuild wording valid", () => {
+    const settings = flatten(traditionalChinese["./locales/zh-TW/settings.json"]);
+
+    expect(settings.get("accounts.mode_switch_description")).toContain("重新建構");
+    expect(settings.get("fx_delete_warning")).toContain("重新建立");
   });
 });

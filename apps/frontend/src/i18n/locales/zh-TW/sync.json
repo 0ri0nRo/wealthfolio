@@ -177,7 +177,7 @@
     "computingSecurityCode": "正在計算安全碼...",
     "finishingSetup": "正在完成設定...",
     "finishingSetupDescription": "正在為新裝置準備您的資料",
-    "sessionExpired": "會話已過期",
+    "sessionExpired": "工作階段已過期",
     "connecting": "正在連線...",
     "verifySecurityCode": "驗證安全碼",
     "syncingData": "正在同步您的資料...",

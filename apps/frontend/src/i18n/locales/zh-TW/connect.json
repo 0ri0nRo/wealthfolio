@@ -235,7 +235,7 @@
     "yearlyBilling": "按年計費",
     "alreadySubscribed": "已訂閱?",
     "connectionIssueTitle": "連線問題",
-    "connectionIssueDescription": "我們連線您的帳戶時遇到問題。如果您的會話已過期,可能會出現這種情況。",
+    "connectionIssueDescription": "我們連線您的帳戶時遇到問題。如果您的工作階段已過期，可能會出現這種情況。",
     "unableToLoadTitle": "無法載入方案",
     "unableToLoadDescription": "我們暫時無法取得訂閱方案。這通常是暫時性問題。",
     "contactSupport": "聯絡支援",
@@ -249,7 +249,7 @@
     "completing": "正在完成登入..."
   },
   "authErrors": {
-    "noSessionReturned": "完成登入後未返回會話。",
+    "noSessionReturned": "完成登入後未傳回工作階段。",
     "completeSignInFailed": "完成登入失敗",
     "signInFailed": "登入失敗",
     "signUpFailed": "註冊失敗",

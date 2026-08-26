@@ -401,7 +401,7 @@
     "status_hint": "選擇接下來的操作：繼續進行、標記為已完成，或將其從活躍規劃中隱藏。",
     "lifecycle_active_label": "活躍",
     "lifecycle_active_hint": "仍在進行中",
-    "lifecycle_active_description": "顯示在規劃、進度和活躍目標列表中。",
+    "lifecycle_active_description": "顯示在規劃、進度和進行中的目標清單中。",
     "lifecycle_achieved_label": "已完成",
     "lifecycle_achieved_hint": "目標已達成",
     "lifecycle_achieved_description": "將目標標記為完成，並釋放其已分配的帳戶佔比。",
