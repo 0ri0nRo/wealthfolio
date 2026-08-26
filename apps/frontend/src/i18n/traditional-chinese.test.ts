@@ -54,4 +54,10 @@ describe("Traditional Chinese translations", () => {
       }
     }
   });
+
+  it("uses the correct stock-split direction in the help text", () => {
+    const activity = flatten(traditionalChinese["./locales/zh-TW/activity.json"]);
+
+    expect(activity.get("type_split_desc")).toContain("1 拆 2");
+  });
 });
