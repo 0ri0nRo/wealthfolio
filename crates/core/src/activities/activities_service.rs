@@ -623,96 +623,94 @@ impl ActivityService {
                 || Self::decimal_patch_changes(activity.fee, existing.fee)
                 || Self::decimal_patch_changes(activity.tax, existing.tax);
 
-            {
-                let explicit_amount = activity.amount.flatten();
-                let amount_patch_changed =
-                    Self::decimal_patch_changes(activity.amount, existing.amount);
-                let explicit_clear = matches!(activity.amount, Some(None));
-                if quote_ccy_conflicts {
-                    // Keep the stored amount untouched and surface any
-                    // economics or amount change for review - it cannot be
-                    // derived or verified here. An explicit clear falls
-                    // through with no amount and fails the final-cash
-                    // requirement below, asking the user for the actual
-                    // total.
-                    if (economics_changed || amount_patch_changed)
-                        && activity.needs_review != Some(false)
-                    {
-                        activity.needs_review = Some(true);
-                    }
-                } else {
-                    let should_recalculate =
-                        explicit_amount.is_none() && (economics_changed || explicit_clear);
-                    if should_recalculate {
-                        if let Some(calculated) = Self::calculated_missing_final_amount(
-                            &activity.activity_type,
-                            effective_subtype,
-                            quantity,
-                            unit_price,
-                            fee,
-                            tax,
-                            unit_multiplier,
-                        ) {
-                            // An economics-only patch that never mentioned the
-                            // amount may be replacing a deliberate custom total;
-                            // surface that instead of letting it vanish silently.
-                            // An explicit clear is the user choosing the
-                            // calculation and stays quiet.
-                            let replaces_custom_total = !explicit_clear
-                                && existing_amount.is_some_and(|stored| {
-                                    Self::calculated_missing_final_amount(
-                                        existing.effective_type(),
-                                        existing.subtype.as_deref(),
-                                        existing.quantity,
-                                        existing.unit_price,
-                                        existing.fee,
-                                        existing.tax,
-                                        trade_facts.existing_unit_multiplier,
-                                    )
-                                    .map_or(true, |expected| {
-                                        (stored - expected).abs()
-                                            > currency_minor_unit(&activity.currency) / Decimal::TWO
-                                    })
-                                });
-                            if replaces_custom_total && activity.needs_review != Some(false) {
-                                activity.needs_review = Some(true);
-                            }
-                            activity.amount = Some(Some(calculated));
-                            amount = Some(calculated);
-                        }
-                    }
-
-                    if let Some(current_amount) = explicit_amount.or(amount) {
-                        let inputs = Self::activity_cash_inputs(
-                            &activity.activity_type,
-                            &activity.currency,
-                            quantity,
-                            unit_price,
-                            Some(current_amount),
-                            fee,
-                            tax,
-                            unit_multiplier,
-                        );
-                        let (canonical, needs_review) = Self::mark_trade_amount_confidence(
-                            &activity.currency,
-                            current_amount,
-                            inputs,
-                            activity.needs_review != Some(false),
-                        );
-                        if explicit_amount.is_some() || should_recalculate {
-                            activity.amount = Some(Some(canonical));
-                            amount = Some(canonical);
-                        }
-                        // An explicit clear is a human approval and outranks the
-                        // recomputed confidence flag. A patch that touched neither
-                        // the total nor its economics keeps the reviewed state
-                        // instead of re-entering the queue.
-                        if needs_review
-                            && activity.needs_review != Some(false)
-                            && (economics_changed || amount_patch_changed)
-                        {
+            let explicit_amount = activity.amount.flatten();
+            let amount_patch_changed =
+                Self::decimal_patch_changes(activity.amount, existing.amount);
+            let explicit_clear = matches!(activity.amount, Some(None));
+            if quote_ccy_conflicts {
+                // Keep the stored amount untouched and surface any
+                // economics or amount change for review - it cannot be
+                // derived or verified here. An explicit clear falls
+                // through with no amount and fails the final-cash
+                // requirement below, asking the user for the actual
+                // total.
+                if (economics_changed || amount_patch_changed)
+                    && activity.needs_review != Some(false)
+                {
+                    activity.needs_review = Some(true);
+                }
+            } else {
+                let should_recalculate =
+                    explicit_amount.is_none() && (economics_changed || explicit_clear);
+                if should_recalculate {
+                    if let Some(calculated) = Self::calculated_missing_final_amount(
+                        &activity.activity_type,
+                        effective_subtype,
+                        quantity,
+                        unit_price,
+                        fee,
+                        tax,
+                        unit_multiplier,
+                    ) {
+                        // An economics-only patch that never mentioned the
+                        // amount may be replacing a deliberate custom total;
+                        // surface that instead of letting it vanish silently.
+                        // An explicit clear is the user choosing the
+                        // calculation and stays quiet.
+                        let replaces_custom_total = !explicit_clear
+                            && existing_amount.is_some_and(|stored| {
+                                Self::calculated_missing_final_amount(
+                                    existing.effective_type(),
+                                    existing.subtype.as_deref(),
+                                    existing.quantity,
+                                    existing.unit_price,
+                                    existing.fee,
+                                    existing.tax,
+                                    trade_facts.existing_unit_multiplier,
+                                )
+                                .map_or(true, |expected| {
+                                    (stored - expected).abs()
+                                        > currency_minor_unit(&activity.currency) / Decimal::TWO
+                                })
+                            });
+                        if replaces_custom_total && activity.needs_review != Some(false) {
                             activity.needs_review = Some(true);
                         }
+                        activity.amount = Some(Some(calculated));
+                        amount = Some(calculated);
+                    }
+                }
+
+                if let Some(current_amount) = explicit_amount.or(amount) {
+                    let inputs = Self::activity_cash_inputs(
+                        &activity.activity_type,
+                        &activity.currency,
+                        quantity,
+                        unit_price,
+                        Some(current_amount),
+                        fee,
+                        tax,
+                        unit_multiplier,
+                    );
+                    let (canonical, needs_review) = Self::mark_trade_amount_confidence(
+                        &activity.currency,
+                        current_amount,
+                        inputs,
+                        activity.needs_review != Some(false),
+                    );
+                    if explicit_amount.is_some() || should_recalculate {
+                        activity.amount = Some(Some(canonical));
+                        amount = Some(canonical);
+                    }
+                    // An explicit clear is a human approval and outranks the
+                    // recomputed confidence flag. A patch that touched neither
+                    // the total nor its economics keeps the reviewed state
+                    // instead of re-entering the queue.
+                    if needs_review
+                        && activity.needs_review != Some(false)
+                        && (economics_changed || amount_patch_changed)
+                    {
+                        activity.needs_review = Some(true);
                     }
                 }
             }
