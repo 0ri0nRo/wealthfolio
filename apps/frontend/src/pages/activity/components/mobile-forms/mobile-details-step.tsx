@@ -1,7 +1,6 @@
 import { restrictionAllowsType } from "@/lib/activity-restrictions";
 import { ACTIVITY_SUBTYPES, ActivityType, QuoteMode } from "@/lib/constants";
 import { useSettingsContext } from "@/lib/settings-provider";
-import { roundDecimal } from "@/lib/utils";
 import {
   Button,
   DatePickerInput,
@@ -29,7 +28,7 @@ import { Label } from "@wealthfolio/ui/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@wealthfolio/ui/components/ui/radio-group";
 import { ScrollArea } from "@wealthfolio/ui/components/ui/scroll-area";
 import { Textarea } from "@wealthfolio/ui/components/ui/textarea";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import { useFormContext } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import {
@@ -44,11 +43,14 @@ import {
   type AssetType,
 } from "../forms/fields";
 import type { NewActivityFormValues } from "../forms/schemas";
+import { calculateIncomeFinalAmount, calculateTradeFinalAmount } from "@/lib/activity-final-amount";
 
 interface MobileDetailsStepProps {
   accounts: AccountSelectOption[];
   activityType: string;
   isEditing?: boolean;
+  /** Owned by the form root; true only after the user types in the amount field. */
+  amountWasEdited: RefObject<boolean>;
 }
 
 const INCOME_MODE_CASH = "CASH";
@@ -109,7 +111,12 @@ function FmvPerUnitLabel() {
   );
 }
 
-export function MobileDetailsStep({ accounts, activityType, isEditing }: MobileDetailsStepProps) {
+export function MobileDetailsStep({
+  accounts,
+  activityType,
+  isEditing,
+  amountWasEdited,
+}: MobileDetailsStepProps) {
   const { t } = useTranslation();
   const formatting = useNumberFormatting();
   const { control, getFieldState, getValues, watch, setValue, register } =
@@ -137,6 +144,7 @@ export function MobileDetailsStep({ accounts, activityType, isEditing }: MobileD
   // BUY/SELL asset type (stock/option/bond)
   const isBuyOrSell = TRADE_ACTIVITY_TYPES.includes(activityType);
   const assetType = isBuyOrSell ? ((watch("assetType" as any) as string) ?? "stock") : "stock";
+  const symbolInstrumentType = watch("symbolInstrumentType" as any) as string | undefined;
   const isOption = assetType === "option";
   const isBond = assetType === "bond";
   const isManualForType = isManualAsset && !isBond;
@@ -196,6 +204,7 @@ export function MobileDetailsStep({ accounts, activityType, isEditing }: MobileD
     (isSecuritiesTransfer && isExternal && direction === "in");
   const needsInternalCashTransferAmounts = isCashTransfer && !isExternal;
   const needsAmount =
+    isBuyOrSell ||
     AMOUNT_FIELD_ACTIVITY_TYPES.includes(activityType) ||
     (isCashTransfer && !needsInternalCashTransferAmounts);
   const needsFee =
@@ -412,24 +421,49 @@ export function MobileDetailsStep({ accounts, activityType, isEditing }: MobileD
   };
 
   useEffect(() => {
-    if (!isAssetBackedIncome) return;
-    const q = Number(quantity);
-    const p = Number(unitPrice);
-    const currentAmount = Number(getValues("amount"));
-    const quantityIsDirty = getFieldState("quantity").isDirty;
-    const unitPriceIsDirty = getFieldState("unitPrice").isDirty;
-    const shouldAutoSetAmount =
-      quantityIsDirty || unitPriceIsDirty || !(Number.isFinite(currentAmount) && currentAmount > 0);
-    if (q > 0 && p > 0 && shouldAutoSetAmount) {
-      const computedAmount = roundDecimal(q * p);
-      if (currentAmount !== computedAmount) {
-        setValue("amount" as any, computedAmount, {
-          shouldDirty: quantityIsDirty || unitPriceIsDirty,
-          shouldValidate: false,
-        });
-      }
-    }
-  }, [getFieldState, getValues, isAssetBackedIncome, quantity, setValue, unitPrice]);
+    if (amountWasEdited.current || (!isBuyOrSell && !isAssetBackedIncome)) return;
+    const shouldDirty = ["quantity", "unitPrice", "fee", "tax", "contractMultiplier"].some(
+      (field) => getFieldState(field as any).isDirty,
+    );
+    // An existing final amount remains authoritative until the user changes an
+    // input that participates in the session-local calculation.
+    if (isEditing && !shouldDirty) return;
+    const computedAmount = isBuyOrSell
+      ? calculateTradeFinalAmount({
+          activityType: activityType === ActivityType.BUY ? ActivityType.BUY : ActivityType.SELL,
+          // The resolved asset's instrument type beats the form radio.
+          instrumentType: symbolInstrumentType ?? assetType,
+          quantity,
+          unitPrice,
+          fee: optFee,
+          tax: optTax,
+          // Only options carry a contract multiplier. Passing the non-option
+          // fallback of 1 would override the canonical bond multiplier.
+          contractMultiplier: isOption ? optMultiplier : undefined,
+        })
+      : calculateIncomeFinalAmount(quantity, unitPrice, symbolInstrumentType);
+    if (computedAmount === undefined || Number(getValues("amount")) === computedAmount) return;
+    setValue("amount" as any, computedAmount, {
+      shouldDirty,
+      shouldValidate: false,
+    });
+  }, [
+    activityType,
+    assetType,
+    symbolInstrumentType,
+    getFieldState,
+    getValues,
+    isAssetBackedIncome,
+    isBuyOrSell,
+    isEditing,
+    isOption,
+    optFee,
+    optMultiplier,
+    optTax,
+    quantity,
+    setValue,
+    unitPrice,
+  ]);
 
   // Quantity label adapts to asset type
   const quantityLabel = isAssetBackedIncome
@@ -893,7 +927,13 @@ export function MobileDetailsStep({ accounts, activityType, isEditing }: MobileD
                                 : t("activity:form.label_amount")}
                       </FormLabel>
                       <FormControl>
-                        <MoneyInput {...field} />
+                        <MoneyInput
+                          {...field}
+                          onValueChange={(value, isUserEdit) => {
+                            field.onChange(value);
+                            if (isUserEdit) amountWasEdited.current = true;
+                          }}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
