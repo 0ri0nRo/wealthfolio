@@ -26,7 +26,7 @@
   "type_fee": "費用",
   "type_tax": "稅費",
   "type_split": "拆股",
-  "type_credit": "補貼",
+  "type_credit": "貸記",
   "type_adjustment": "調整",
   "type_unknown": "未知",
   "subtype_drip": "股息再投資（DRIP）",

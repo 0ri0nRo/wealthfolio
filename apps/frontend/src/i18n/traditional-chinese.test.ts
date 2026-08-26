@@ -80,4 +80,13 @@ describe("Traditional Chinese translations", () => {
     expect(settings.get("accounts.mode_switch_description")).toContain("重新建構");
     expect(settings.get("fx_delete_warning")).toContain("重新建立");
   });
+
+  it("labels generic credits and retirement inputs accurately", () => {
+    const activity = flatten(traditionalChinese["./locales/zh-TW/activity.json"]);
+    const goals = flatten(traditionalChinese["./locales/zh-TW/goals.json"]);
+
+    expect(activity.get("type_credit")).toBe("貸記");
+    expect(goals.get("dashboard.progress.capital_needed_tip_traditional")).toContain("已納入");
+    expect(goals.get("dashboard.progress.capital_needed_tip_fire")).toContain("已納入");
+  });
 });

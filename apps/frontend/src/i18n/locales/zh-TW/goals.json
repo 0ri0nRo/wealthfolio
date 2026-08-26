@@ -151,8 +151,8 @@
       "portfolio_today": "目前投資組合",
       "required_at_age": "{{age}} 歲時所需",
       "target_at_age": "{{age}} 歲時目標",
-      "capital_needed_tip_traditional": "在扣除支出、收入、稅費、退休期報酬率和費用後，退休年齡時所需的資本。以{{valueLabel}}顯示。",
-      "capital_needed_tip_fire": "在扣除支出、收入、稅費、退休期報酬率和費用後，您期望退休年齡時所需的資本。以{{valueLabel}}顯示。",
+      "capital_needed_tip_traditional": "計算退休年齡所需資本時，已納入支出、收入、稅費、退休期報酬率及費用。以{{valueLabel}}顯示。",
+      "capital_needed_tip_fire": "計算您期望退休年齡所需資本時，已納入支出、收入、稅費、退休期報酬率及費用。以{{valueLabel}}顯示。",
       "not_available": "不可用",
       "funded_pct": "已達標 {{pct}}%"
     },
