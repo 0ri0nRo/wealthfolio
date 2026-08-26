@@ -30,8 +30,8 @@
     "portfolio": "投資組合"
   },
   "vsTarget": {
-    "title": "配置對比目標",
-    "description": "{{taxonomyLabel}} · 目前配置對比 {{targetLabel}}",
+    "title": "配置比較目標",
+    "description": "{{taxonomyLabel}} · 目前配置比較 {{targetLabel}}",
     "category": "類別",
     "currentAllocation": "目前配置",
     "current": "目前",
@@ -81,7 +81,7 @@
     "currentAllocationDescription": "從您今日的持倉開始",
     "noCurrentHoldings": "無目前持倉",
     "moreTemplates": "更多範本",
-    "buildFromScratch": "從零開始構建"
+    "buildFromScratch": "從零開始建構"
   },
   "mode": {
     "cashFlowOnly": "僅現金流",
@@ -254,7 +254,7 @@
     "over": "超出 +{{value}}%",
     "under": "不足 {{value}}%",
     "assetClass": "資產類別",
-    "todayVsTarget": "今日對比目標",
+    "todayVsTarget": "今日比較目標",
     "current": "目前",
     "target": "目標",
     "drift": "偏離",

@@ -20,9 +20,9 @@
     "hideSidebar": "隱藏側邊欄"
   },
   "empty": {
-    "noProviderTitle": "未配置 AI 提供商",
+    "noProviderTitle": "未設定 AI 提供商",
     "noProviderDescription": "連線一個 AI 提供商，即可開始與您的個人理財助手對話。您的資料將保持私密和安全。",
-    "configureProviders": "配置 AI 提供商"
+    "configureProviders": "設定 AI 提供商"
   },
   "model": {
     "noModel": "無模型",
@@ -31,7 +31,7 @@
     "addModels": "新增模型..."
   },
   "provider": {
-    "noProvidersConfigured": "未配置提供商"
+    "noProvidersConfigured": "未設定提供商"
   },
   "reasoning": {
     "thinking": "思考中...",
@@ -137,7 +137,7 @@
     "count_other": "{{count}} 個帳戶",
     "of": "共 {{count}}",
     "empty": "找不到帳戶。",
-    "emptyHint": "在設定中新增帳戶以跟蹤您的投資。",
+    "emptyHint": "在設定中新增帳戶以追蹤您的投資。",
     "error": "載入帳戶失敗",
     "currencyCount": "{{count}} {{currency}}",
     "unknown": "未知",
@@ -267,7 +267,7 @@
     "selectAllRows": "選擇所有行",
     "selectAll": "全選（{{selected}}/{{total}}）",
     "selectHighConfidence": "選擇 ≥ 85%",
-    "noTaxonomies": "未配置消費分類體系。",
+    "noTaxonomies": "未設定消費分類體系。",
     "noTransactions": "無符合請求的交易。",
     "selectRow": "選擇行",
     "noNotes": "無備註",
@@ -322,7 +322,7 @@
     "fetched_other": "已取得 {{count}} 個目標",
     "untitled": "未命名目標",
     "empty": "尚未設定目標。",
-    "emptyHint": "在設定中建立投資目標以跟蹤您的進度。",
+    "emptyHint": "在設定中建立投資目標以追蹤您的進度。",
     "error": "載入目標失敗",
     "title": "目標",
     "count_one": "{{count}} 個目標",
@@ -566,7 +566,7 @@
     "recommended": "推薦",
     "otherAvailable": "其他可用",
     "noModelsSelected": "未選擇模型。按一下“新增”以新增模型。",
-    "config": "配置",
+    "config": "設定",
     "tools": "工具",
     "vision": "視覺",
     "thinking": "思考",

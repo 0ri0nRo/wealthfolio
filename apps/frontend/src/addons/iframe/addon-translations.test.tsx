@@ -66,6 +66,24 @@ describe("addon translation runtime", () => {
     expect(await screen.findByText("你好，Aziz")).toBeInTheDocument();
   });
 
+  it("falls back to English instead of zh for missing zh-TW add-on strings", async () => {
+    const { initSandboxI18n, installAddonTranslationRuntime, setSandboxLanguage } =
+      await loadSandbox();
+    initSandboxI18n("en");
+    installAddonTranslationRuntime("sample-addon");
+
+    registerTranslations({
+      en: { greeting: "Hello {{name}}" },
+      zh: { greeting: "你好，{{name}}" },
+      "zh-TW": { other: "繁體中文" },
+    });
+
+    render(<AddonGreeting name="Aziz" />);
+    setSandboxLanguage("zh-TW");
+
+    expect(await screen.findByText("Hello Aziz")).toBeInTheDocument();
+  });
+
   it("cannot read or overwrite the host ui namespace", async () => {
     const { initSandboxI18n, installAddonTranslationRuntime } = await loadSandbox();
     const i18n = initSandboxI18n("en");

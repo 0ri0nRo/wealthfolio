@@ -107,7 +107,7 @@
     "momentum": {
       "title": "動能",
       "all_time": "全部時間",
-      "vs_prior": "對比上一 {{period}}",
+      "vs_prior": "比較上一 {{period}}",
       "beat_prior": "超出上一期 ",
       "behind_prior": "落後上一期 ",
       "now": "目前"

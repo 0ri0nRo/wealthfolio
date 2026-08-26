@@ -11,7 +11,7 @@
     "noBrokeragesConnected": "尚未連線券商",
     "noBrokeragesDescription": "關聯一家券商以開始同步您的帳戶。",
     "noDevicesSyncing": "尚無裝置在同步",
-    "noDevicesDescription": "在設定中配置裝置同步,以在各裝置間保持資料同步。",
+    "noDevicesDescription": "在設定中設定裝置同步,以在各裝置間保持資料同步。",
     "noActivity": "暫無活動",
     "noActivityDescription": "資料開始同步後,更新將顯示在這裡。"
   },
@@ -262,12 +262,12 @@
   },
   "newAccounts": {
     "title": "發現新帳戶",
-    "description": "選擇如何跟蹤每個帳戶。您可以稍後更改。",
-    "trackingInfo": "<strong>交易</strong>模式跟蹤每一筆交易,提供完整的表現分析。<strong>持倉</strong>模式僅匯入快照,指標有限。<docsLink>瞭解更多</docsLink>",
+    "description": "選擇如何追蹤每個帳戶。您可以稍後更改。",
+    "trackingInfo": "<strong>交易</strong>模式追蹤每一筆交易,提供完整的表現分析。<strong>持倉</strong>模式僅匯入快照,指標有限。<docsLink>瞭解更多</docsLink>",
     "accountName": "帳戶名稱",
     "group": "分組(可選)",
     "groupPlaceholder": "例如:退休",
-    "trackingMode": "跟蹤模式",
+    "trackingMode": "追蹤模式",
     "transactions": "交易",
     "transactionsDescription": "完整表現分析",
     "holdings": "持倉",
@@ -276,7 +276,7 @@
     "notNow": "暫不",
     "saving": "正在儲存...",
     "saveAndSync": "儲存並同步",
-    "configured": "帳戶已配置",
+    "configured": "帳戶已設定",
     "configuredDescription": "正在使用您選擇的設定開始同步...",
     "saveFailed": "儲存帳戶失敗"
   },

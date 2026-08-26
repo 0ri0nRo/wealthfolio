@@ -107,16 +107,16 @@
       "message_other": "選擇追蹤模式以開始同步資料。"
     },
     "account_timezone_missing": {
-      "title": "未配置時區",
+      "title": "未設定時區",
       "message": "請在“常規”設定中設定您的時區，以確保日期與您所在的地區匹配。"
     },
     "account_timezone_invalid": {
-      "title": "所配置的時區無效",
-      "message": "所配置的時區“{{timezone}}”無效。請在“常規”設定中更新它。"
+      "title": "所設定的時區無效",
+      "message": "所設定的時區“{{timezone}}”無效。請在“常規”設定中更新它。"
     },
     "account_timezone_mismatch": {
       "title": "瀏覽器時區與應用程式時區不一致",
-      "message": "所配置的時區為“{{configured}}”，但瀏覽器時區為“{{browser}}”。日期以所配置的時區為準。"
+      "message": "所設定的時區為“{{configured}}”，但瀏覽器時區為“{{browser}}”。日期以所設定的時區為準。"
     },
     "quote_sync_error": {
       "title_one": "{{symbol}} 的報價同步失敗",
@@ -166,7 +166,7 @@
     "to_taxonomies": "檢視分類",
     "to_market_data": "檢視市場資料",
     "to_general_settings": "開啟常規設定",
-    "to_connect": "配置帳戶",
+    "to_connect": "設定帳戶",
     "review_transfers": "檢查轉帳"
   },
   "updatedAt": "更新於 {{time}}",
@@ -212,7 +212,7 @@
       },
       "accountConfiguration": {
         "label": "帳戶設定",
-        "description": "部分帳戶需要先完成配置才能同步資料。請設定追蹤模式以開始匯入資料。"
+        "description": "部分帳戶需要先完成設定才能同步資料。請設定追蹤模式以開始匯入資料。"
       },
       "settingsConfiguration": {
         "label": "設定",
@@ -224,7 +224,7 @@
       },
       "timezoneInvalid": {
         "label": "時區設定",
-        "description": "您所配置的時區無效。請在“常規”設定中更新它，以恢復一致的日期處理。"
+        "description": "您所設定的時區無效。請在“常規”設定中更新它，以恢復一致的日期處理。"
       },
       "timezoneMismatch": {
         "label": "時區設定",

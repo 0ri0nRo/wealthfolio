@@ -96,7 +96,7 @@
     "updateRule": "更新規則",
     "createRule": "建立規則",
     "scopeLabel": "適用於",
-    "scopeHint": "將此規則限定為單個帳戶，或套用於所有已跟蹤的支出帳戶。",
+    "scopeHint": "將此規則限定為單個帳戶，或套用於所有已追蹤的支出帳戶。",
     "scopedToAccount": "僅適用於 {{name}}",
     "unknownAccount": "未知帳戶",
     "amountLabel": "金額",
@@ -286,12 +286,12 @@
   "comparison": {
     "netSavings": "淨儲蓄",
     "savingsRate": "儲蓄率",
-    "versus": "對比 {{label}}",
+    "versus": "比較 {{label}}",
     "was": "（此前為 {{value}}）",
     "mode": {
       "prior": "上一週期",
       "yoy": "去年同期",
-      "none": "不對比"
+      "none": "不比較"
     }
   },
   "sparkline": {
@@ -319,8 +319,8 @@
     "heaviestDayName": "{{day}}"
   },
   "notableChanges": {
-    "comparisonDisabled": "對比已停用——請在標題欄中開啟“上一週期”或“同比”以檢視顯著變化。",
-    "noChanges": "與對比週期相比，類別無顯著變化。",
+    "comparisonDisabled": "比較已停用——請在標題欄中開啟“上一週期”或“同比”以檢視顯著變化。",
+    "noChanges": "與比較週期相比，類別無顯著變化。",
     "whereItClimbed": "增長之處",
     "whereYouSaved": "節省之處",
     "noNotableChange": "無顯著變化。"
@@ -419,7 +419,7 @@
     "expandAll": "全部展開",
     "spentBudget": "已花費 / 預算",
     "progress": "進度",
-    "deltaVsPrior": "Δ 對比上期",
+    "deltaVsPrior": "Δ 比較上期",
     "total": "合計",
     "noBudgetSet": "未設定預算",
     "toggleSubcategories": "切換子類別"
@@ -564,11 +564,11 @@
     "acrossTransactions_other": "涉及 {{count}} 筆交易",
     "liftShort": "增幅",
     "liftVsNormal": "相對正常水平的增幅",
-    "vsLabel": "對比",
+    "vsLabel": "比較",
     "expected": "預期",
     "dailyShort": "每日",
     "dailyDuring": "期間每日",
-    "dailyDeltaVs": "{{sign}}{{pct}}% 對比 {{baseline}}",
+    "dailyDeltaVs": "{{sign}}{{pct}}% 比較 {{baseline}}",
     "noBaseline": "無可用基準",
     "peakDay": "高峰日",
     "takeaway": "要點",
@@ -650,8 +650,8 @@
     "deltaDollar": "Δ 金額",
     "impact": "影響",
     "deltaPct": "Δ %",
-    "combinedVs": "{{current}} 對比 {{prior}}",
-    "combinedMonths": "{{months}} 個月 對比 上一 {{months}} 個月",
+    "combinedVs": "{{current}} 比較 {{prior}}",
+    "combinedMonths": "{{months}} 個月 比較 上一 {{months}} 個月",
     "showMore_other": "再顯示 {{count}} 項 →",
     "showMore_one": "再顯示 {{count}} 項 →"
   },
@@ -686,8 +686,8 @@
     "spentThisMonth": "本月已花費",
     "spentThisPeriod": "本週期已花費",
     "spentMonths": "已花費 · {{months}} 個月",
-    "vsMonth": "對比 {{month}}",
-    "vsPrior": "對比上期",
+    "vsMonth": "比較 {{month}}",
+    "vsPrior": "比較上期",
     "moreCount": "+{{count}} 項",
     "netCashflow": "淨現金流",
     "leftOver": "剩餘 {{pct}}",
@@ -747,7 +747,7 @@
     "spentUpper": "已花費",
     "forecastUpper": "預測",
     "result": "結果",
-    "vsLast3Months": "對比過去 3 個月",
+    "vsLast3Months": "比較過去 3 個月",
     "atCurrentPace": "按目前進度",
     "moreDataNeeded": "需要更多資料",
     "byCategory": "按類別",
@@ -946,7 +946,7 @@
     "revertAll": "全部還原",
     "revertThisOverride": "還原此覆蓋設定",
     "groupBufferName": "{{name}} · 分組緩衝",
-    "vs": "對比",
+    "vs": "比較",
     "copyPlanTitle": "從另一個月份複製計劃",
     "copyPlanDesc": "將源月份的所有覆蓋設定複製到本月份。",
     "copyOverwrite": "本月現有的覆蓋設定將被替換。",

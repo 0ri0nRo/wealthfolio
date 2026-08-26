@@ -135,6 +135,7 @@ export function installAddonTranslationRuntime(addonId: string) {
     void addonI18n.init({
       lng: sandboxI18n.language || DEFAULT_LOCALE,
       fallbackLng: DEFAULT_LOCALE,
+      load: "currentOnly",
       ns: [namespace],
       defaultNS: namespace,
       resources: {},

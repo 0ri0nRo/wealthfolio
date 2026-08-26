@@ -32,7 +32,7 @@
   "account_deleted": "帳戶刪除成功",
   "account_error": "儲存帳戶時出錯",
   "no_accounts": "找不到帳戶",
-  "no_accounts_desc": "建立一個帳戶以開始跟蹤您的投資。",
+  "no_accounts_desc": "建立一個帳戶以開始追蹤您的投資。",
   "account_required": "帳戶名稱為必填項",
   "account_type_required": "帳戶型別為必填項",
   "platform": "平臺",
@@ -62,8 +62,8 @@
   "limit": "限額",
   "to_this_account_in": "至此帳戶於",
   "your_total_is": "您的總計為",
-  "time_weighted_return": "時間加權收益率",
-  "money_weighted_return": "資金加權收益率",
+  "time_weighted_return": "時間加權報酬率",
+  "money_weighted_return": "資金加權報酬率",
   "volatility": "波動率",
   "max_drawdown": "最大回撤",
   "contribution": {
@@ -92,7 +92,7 @@
   "unrealized_pnl": "未實現盈虧",
   "not_available": "不適用",
   "more_count": "+{{count}} 更多",
-  "twr_irr_require_transactions": "TWR 和 IRR 需要交易跟蹤。",
+  "twr_irr_require_transactions": "TWR 和 IRR 需要交易追蹤。",
   "last_updated": "最後更新：{{date}}",
   "from_to": "從 {{start}} 至 {{end}}",
   "snapshot": {

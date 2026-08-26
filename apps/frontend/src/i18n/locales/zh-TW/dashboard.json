@@ -3,7 +3,7 @@
   "welcome_message": "歡迎使用 Wealthfolio",
   "total_value": "總價值",
   "total_gain": "總收益",
-  "total_gain_percent": "總收益率",
+  "total_gain_percent": "總報酬率",
   "today_gain": "今日收益",
   "net_deposit": "淨存入",
   "cash_balance": "現金餘額",
@@ -36,7 +36,7 @@
   "could_not_load_goals": "無法載入儲蓄目標資料。",
   "please_try_again_later": "請稍後重試。",
   "no_saving_goals_set": "尚未設定儲蓄目標",
-  "create_goal_to_track": "建立一個目標以開始跟蹤您的進度",
+  "create_goal_to_track": "建立一個目標以開始追蹤您的進度",
   "goal_data_not_available": "目標資料尚不可用。",
   "progress": "進度",
   "current_value": "目前價值",
@@ -50,7 +50,7 @@
     "sync_devices": "同步裝置",
     "update_prices": "更新價格",
     "rebuild_full_history": "重建完整歷史",
-    "verify_data": "校驗資料"
+    "verify_data": "驗證資料"
   },
   "update": {
     "as_of": "截至：",
@@ -96,8 +96,8 @@
     "more_one": "還有 {{count}} 項"
   },
   "summary": {
-    "return_unavailable_holdings": "收益率不可用——缺少成本基礎或期初持倉價值。",
-    "return_unavailable_activity": "收益率不可用——活動歷史可能存在不一致。",
+    "return_unavailable_holdings": "報酬率不可用——缺少成本基礎或期初持倉價值。",
+    "return_unavailable_activity": "報酬率不可用——活動歷史可能存在不一致。",
     "unexpected_error": "發生了意外錯誤",
     "values_without_returns": "帳戶價值顯示為不含期間收益。",
     "failed_to_load": "載入帳戶失敗",
