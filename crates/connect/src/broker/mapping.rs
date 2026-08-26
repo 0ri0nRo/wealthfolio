@@ -15,6 +15,7 @@ use super::models::AccountUniversalActivity;
 use wealthfolio_core::activities::{self, AssetResolutionInput, NewActivity};
 use wealthfolio_core::assets::{parse_crypto_pair_symbol, parse_symbol_with_known_exchange};
 use wealthfolio_core::fx::currency::{get_normalization_rule, normalize_amount, resolve_currency};
+use wealthfolio_core::portfolio::economic_events::{ActivityCashInputs, ActivityEconomicsResolver};
 
 /// Minimum confidence score to consider a mapping reliable
 const CONFIDENCE_THRESHOLD: f64 = 0.7;
@@ -117,6 +118,18 @@ fn normalize_source_system(value: Option<&str>) -> Option<String> {
 /// Extracts relevant fields from the API metadata and formats them for storage.
 pub fn build_activity_metadata(activity: &AccountUniversalActivity) -> Option<String> {
     let mut metadata = serde_json::Map::new();
+
+    // Mini options represent 10 underlying units rather than the standard
+    // 100. Carry the exact multiplier through the existing asset-creation
+    // metadata path so cash and valuation share one instrument fact.
+    if activity
+        .option_symbol
+        .as_ref()
+        .and_then(|option| option.is_mini_option)
+        == Some(true)
+    {
+        metadata.insert("contract_multiplier".to_string(), serde_json::json!(10));
+    }
 
     // Preserve an explicit performance-boundary classification from the provider.
     if let Some(ref mapping_meta) = activity.mapping_metadata {
@@ -379,28 +392,26 @@ pub fn normalize_broker_symbol(
 
 fn normalized_trade_amount(
     activity_type: &str,
+    currency: &str,
     quantity: Option<Decimal>,
     unit_price: Option<Decimal>,
     amount: Option<Decimal>,
-    is_option_activity: bool,
-    is_crypto: bool,
-    is_bond: bool,
+    fee: Option<Decimal>,
+    unit_multiplier: Decimal,
 ) -> Option<Decimal> {
-    if matches!(
-        activity_type,
-        activities::ACTIVITY_TYPE_BUY | activities::ACTIVITY_TYPE_SELL
-    ) && !is_option_activity
-        && !is_crypto
-        && !is_bond
-    {
-        if let (Some(quantity), Some(unit_price)) = (quantity, unit_price) {
-            if !quantity.is_zero() && !unit_price.is_zero() {
-                return Some(quantity * unit_price);
-            }
-        }
-    }
-
-    amount
+    amount.or_else(|| {
+        ActivityEconomicsResolver::calculate_trade_final_cash(ActivityCashInputs {
+            activity_type,
+            currency,
+            is_security_transfer: false,
+            quantity,
+            unit_price,
+            amount: None,
+            fee,
+            tax: None,
+            unit_multiplier,
+        })
+    })
 }
 
 /// Maps a broker API activity into a `NewActivity` with unresolved `AssetResolutionInput`.
@@ -449,7 +460,7 @@ pub fn map_broker_activity(
         NewActivity::canonicalize_subtype_for_activity(&activity_type, subtype.as_deref());
 
     // Calculate needs_review flag
-    let needs_review_flag = needs_review(activity);
+    let mut needs_review_flag = needs_review(activity);
 
     // Build metadata JSON
     let metadata = build_activity_metadata(activity);
@@ -523,6 +534,14 @@ pub fn map_broker_activity(
         .filter(|t| !t.trim().is_empty())
         .map(|t| wealthfolio_core::utils::occ_symbol::normalize_option_symbol(&t).unwrap_or(t));
     let is_option_activity = option_symbol.is_some() || option_leg_type.is_some();
+    let unit_multiplier = wealthfolio_core::assets::instrument_default_multiplier(
+        is_option_activity,
+        activity
+            .option_symbol
+            .as_ref()
+            .and_then(|option| option.is_mini_option)
+            == Some(true),
+    );
     // Option contracts are uniquely identified by OCC ticker; adding underlying MIC can fragment identity.
     let exchange_mic = if is_option_activity {
         None
@@ -591,14 +610,30 @@ pub fn map_broker_activity(
     let unit_price = activity.price.and_then(Decimal::from_f64).map(|d| d.abs());
     let fee = activity.fee.and_then(Decimal::from_f64).map(|d| d.abs());
     let amount = activity.amount.and_then(Decimal::from_f64).map(|d| d.abs());
+    let is_trade = matches!(
+        activity_type.as_str(),
+        activities::ACTIVITY_TYPE_BUY | activities::ACTIVITY_TYPE_SELL
+    );
+    let can_compile_trade_final = quantity.is_some_and(|value| !value.is_zero())
+        && unit_price.is_some_and(|value| !value.is_zero());
+    if is_trade
+        && !can_compile_trade_final
+        && amount.is_some()
+        && fee.is_some_and(|value| !value.is_zero())
+    {
+        // With incomplete trade economics, a charged provider amount cannot be
+        // proven gross or final. Preserve it as final and keep it calculated,
+        // but surface the ambiguity for user review.
+        needs_review_flag = true;
+    }
     let amount = normalized_trade_amount(
         &activity_type,
+        &currency_code,
         quantity,
         unit_price,
         amount,
-        is_option_activity,
-        is_crypto,
-        is_bond,
+        fee,
+        unit_multiplier,
     );
     let fx_rate = activity.fx_rate.and_then(Decimal::from_f64);
 
@@ -620,13 +655,6 @@ pub fn map_broker_activity(
             (unit_price, quantity, fee, amount, currency_code)
         };
 
-    // Determine status
-    let status = if needs_review_flag {
-        wealthfolio_core::activities::ActivityStatus::Draft
-    } else {
-        wealthfolio_core::activities::ActivityStatus::Posted
-    };
-
     Some(NewActivity {
         id: Some(activity_id),
         account_id: account_id.to_string(),
@@ -640,7 +668,9 @@ pub fn map_broker_activity(
         fee,
         tax: None,
         amount,
-        status: Some(status),
+        // Review confidence is orthogonal to lifecycle. A review flag must not
+        // silently remove an otherwise posted broker event from calculations.
+        status: Some(wealthfolio_core::activities::ActivityStatus::Posted),
         notes: activity
             .description
             .clone()
@@ -747,6 +777,25 @@ mod tests {
     }
 
     #[test]
+    fn review_flag_does_not_change_broker_activity_lifecycle() {
+        let activity = AccountUniversalActivity {
+            id: Some("review-activity".to_string()),
+            activity_type: Some(activities::ACTIVITY_TYPE_DEPOSIT.to_string()),
+            amount: Some(100.0),
+            needs_review: true,
+            ..Default::default()
+        };
+
+        let mapped = map_test_activity(&activity);
+
+        assert_eq!(
+            mapped.status,
+            Some(wealthfolio_core::activities::ActivityStatus::Posted)
+        );
+        assert_eq!(mapped.needs_review, Some(true));
+    }
+
+    #[test]
     fn test_needs_review_high_confidence() {
         let activity = AccountUniversalActivity {
             activity_type: Some("BUY".to_string()),
@@ -792,7 +841,7 @@ mod tests {
     }
 
     #[test]
-    fn test_map_broker_activity_trade_amount_policy_recomputes_plain_trade_amount() {
+    fn test_map_broker_activity_preserves_explicit_final_trade_amount() {
         let activity = AccountUniversalActivity {
             id: Some("act-equity-buy".to_string()),
             activity_type: Some("BUY".to_string()),
@@ -806,7 +855,7 @@ mod tests {
 
         let mapped = map_test_activity(&activity);
 
-        assert_eq!(mapped.amount.unwrap().round_dp(4), decimal("997.6000"));
+        assert_eq!(mapped.amount.unwrap().round_dp(4), decimal("9976.0000"));
         assert_eq!(mapped.fee.unwrap().round_dp(4), decimal("4.9000"));
         assert_eq!(mapped.tax, None);
     }
@@ -832,7 +881,7 @@ mod tests {
     }
 
     #[test]
-    fn test_map_broker_activity_trade_amount_policy_preserves_option_amount() {
+    fn test_map_broker_activity_derives_standard_option_final_cash() {
         let activity = AccountUniversalActivity {
             id: Some("act-option-buy".to_string()),
             activity_type: Some("BUY".to_string()),
@@ -842,13 +891,58 @@ mod tests {
             }),
             units: Some(2.0),
             price: Some(3.0),
-            amount: Some(600.0),
+            amount: None,
             ..Default::default()
         };
 
         let mapped = map_test_activity(&activity);
 
         assert_eq!(mapped.amount.unwrap().round_dp(2), decimal("600.00"));
+    }
+
+    #[test]
+    fn test_map_broker_activity_uses_mini_option_multiplier_for_final_cash() {
+        let activity = AccountUniversalActivity {
+            id: Some("act-mini-option-buy".to_string()),
+            activity_type: Some("BUY".to_string()),
+            option_symbol: Some(AccountUniversalActivityOptionSymbol {
+                ticker: Some("AAPL7 260116C00200000".to_string()),
+                is_mini_option: Some(true),
+                ..Default::default()
+            }),
+            units: Some(2.0),
+            price: Some(3.0),
+            amount: None,
+            fee: Some(1.0),
+            ..Default::default()
+        };
+
+        let mapped = map_test_activity(&activity);
+
+        assert_eq!(mapped.amount, Some(decimal("61")));
+        let metadata: serde_json::Value =
+            serde_json::from_str(mapped.metadata.as_deref().unwrap()).unwrap();
+        assert_eq!(metadata["contract_multiplier"], 10);
+    }
+
+    #[test]
+    fn incomplete_charged_trade_preserves_amount_and_needs_review() {
+        let activity = AccountUniversalActivity {
+            id: Some("act-incomplete-buy".to_string()),
+            activity_type: Some("BUY".to_string()),
+            amount: Some(100.0),
+            fee: Some(5.0),
+            ..Default::default()
+        };
+
+        let mapped = map_test_activity(&activity);
+
+        assert_eq!(mapped.amount, Some(decimal("100")));
+        assert_eq!(mapped.needs_review, Some(true));
+        assert_eq!(
+            mapped.status,
+            Some(wealthfolio_core::activities::ActivityStatus::Posted)
+        );
     }
 
     #[test]
