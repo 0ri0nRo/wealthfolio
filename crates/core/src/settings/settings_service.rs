@@ -14,7 +14,17 @@ const SUPPORTED_UI_LANGUAGES: &[&str] = &[
     "en", "fr", "de", "es", "pt", "zh", "zh-TW", "ja", "ko", "it",
 ];
 
+fn is_traditional_chinese_alias(language: &str) -> bool {
+    let mut parts = language.split(['-', '_']);
+    matches!(parts.next(), Some(part) if part.eq_ignore_ascii_case("zh"))
+        && parts.any(|part| part.eq_ignore_ascii_case("hant") || part.eq_ignore_ascii_case("tw"))
+}
+
 fn normalize_ui_language(language: &str) -> String {
+    if is_traditional_chinese_alias(language) {
+        return "zh-TW".to_string();
+    }
+
     if SUPPORTED_UI_LANGUAGES.contains(&language) {
         return language.to_string();
     }
@@ -28,6 +38,10 @@ fn normalize_ui_language(language: &str) -> String {
 }
 
 fn validate_ui_language(language: &str) -> Result<String> {
+    if is_traditional_chinese_alias(language) {
+        return Ok("zh-TW".to_string());
+    }
+
     if SUPPORTED_UI_LANGUAGES.contains(&language) {
         return Ok(language.to_string());
     }
@@ -243,6 +257,15 @@ mod tests {
     fn preserves_supported_regional_ui_language() {
         assert_eq!(normalize_ui_language("zh-TW"), "zh-TW");
         assert_eq!(validate_ui_language("zh-TW").unwrap(), "zh-TW");
+    }
+
+    #[test]
+    fn normalizes_traditional_chinese_aliases() {
+        for language in ["zh-Hant-TW", "zh_TW", "zh-Hant", "ZH_hant_tw"] {
+            assert_eq!(normalize_ui_language(language), "zh-TW");
+            assert_eq!(validate_ui_language(language).unwrap(), "zh-TW");
+        }
+        assert_eq!(normalize_ui_language("zh-Hans-CN"), "zh");
     }
 
     #[test]

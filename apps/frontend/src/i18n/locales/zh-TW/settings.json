@@ -136,7 +136,7 @@
   "goals_add_aria": "新增目標",
   "goals_section_title": "目標",
   "goals_allocations_title": "配置",
-  "goals_allocations_description": "按一下單元格以指定每個帳戶對您目標的配置百分比。",
+  "goals_allocations_description": "按一下儲存格以指定每個帳戶對您目標的配置百分比。",
   "goals_empty_title": "尚未新增目標！",
   "goals_empty_description": "您還沒有任何目標。開始新增您的投資目標吧。",
   "goals_add_first": "新增目標",

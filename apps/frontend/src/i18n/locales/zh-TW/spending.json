@@ -538,7 +538,7 @@
     "noActivity": "過去 12 週內沒有現金活動。",
     "medianPerWeekday": "各星期幾中位數",
     "noSpend": "無支出",
-    "legendIntro": "每個單元格代表 12 週內某個星期幾的某個時段。",
+    "legendIntro": "每個儲存格代表 12 週內某個星期幾的某個時段。",
     "darker": "更深",
     "brighter": "更亮",
     "moreSpend": "= 支出更多。",

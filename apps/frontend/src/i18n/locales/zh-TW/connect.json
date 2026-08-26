@@ -245,7 +245,7 @@
     "refreshPage": "重新整理頁面"
   },
   "authCallback": {
-    "processing": "正在處理身份驗證...",
+    "processing": "正在處理身分驗證...",
     "completing": "正在完成登入..."
   },
   "authErrors": {

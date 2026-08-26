@@ -22,7 +22,7 @@
     "clear": "清除",
     "clearAll": "全部清除",
     "deleteRows": "刪除行",
-    "cellsCleared": "已清除 {{count}} 個單元格",
+    "cellsCleared": "已清除 {{count}} 個儲存格",
     "rowsDeleted": "已刪除 {{count}} 行",
     "enterText": "輸入文本...",
     "search": "搜尋...",
