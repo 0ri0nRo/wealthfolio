@@ -1321,7 +1321,7 @@ export function SidebarConfigurator({
                                 label={t("goals:sidebar.income.fund_return_during_payout")}
                                 value={payoutPhaseReturn(s, draft)}
                                 onChange={(v) => updateStream(s.id, { postPayoutReturn: v })}
-                                min={0}
+                                min={MIN_RETIREMENT_RETURN}
                                 max={rateSliderMaxFor(
                                   payoutPhaseReturn(s, draft),
                                   DEFAULT_RETURN_SLIDER_MAX,

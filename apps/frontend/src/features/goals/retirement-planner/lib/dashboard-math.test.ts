@@ -207,6 +207,54 @@ describe("retirement dashboard math", () => {
     ).toBeCloseTo(7_200, 6);
   });
 
+  it("starts drawdown growth after the first payout", () => {
+    const indexed = planWithFund({
+      payoutMode: "drawdown",
+      payoutRate: 0.1,
+      adjustForInflation: true,
+    });
+    expect(projectedAnnualIncomeNominalAtAge(indexed, 65, 65)).toBeCloseTo(12_000, 6);
+    expect(projectedAnnualIncomeNominalAtAge(indexed, 66, 65)).toBeCloseTo(
+      12_000 * (1 + indexed.investment.inflationRate),
+      6,
+    );
+
+    const customGrowth = planWithFund({
+      payoutMode: "drawdown",
+      payoutRate: 0.1,
+      annualGrowthRate: 0.1,
+    });
+    expect(projectedAnnualIncomeNominalAtAge(customGrowth, 65, 65)).toBeCloseTo(12_000, 6);
+    expect(projectedAnnualIncomeNominalAtAge(customGrowth, 66, 65)).toBeCloseTo(13_200, 6);
+
+    const alreadyStarted = planWithFund({
+      startAge: 60,
+      payoutMode: "drawdown",
+      payoutRate: 0.1,
+      adjustForInflation: true,
+    });
+    alreadyStarted.personal.currentAge = 65;
+    expect(projectedAnnualIncomeNominalAtAge(alreadyStarted, 65, 65)).toBeCloseTo(12_000, 6);
+  });
+
+  it("compounds contributions when a fund has a negative return", () => {
+    const plan = planWithFund({
+      currentValue: 0,
+      monthlyContribution: 500,
+      accumulationReturn: -0.1,
+      payoutRate: 0.05,
+    });
+    const monthlyGrowth = Math.pow(0.9, 1 / 12);
+    const monthlyReturn = monthlyGrowth - 1;
+    const annualContributionEndValue = (500 * (Math.pow(monthlyGrowth, 12) - 1)) / monthlyReturn;
+    let balance = 0;
+    for (let year = 0; year < 20; year += 1) {
+      balance = balance * 0.9 + annualContributionEndValue;
+    }
+
+    expect(projectedAnnualIncomeNominalAtAge(plan, 65, 65)).toBeCloseTo(balance * 0.05, 6);
+  });
+
   it("shows portfolio draw rate only when meaningful", () => {
     expect(
       resolvePortfolioDrawRate({

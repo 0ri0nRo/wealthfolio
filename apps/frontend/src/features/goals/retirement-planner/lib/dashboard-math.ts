@@ -93,7 +93,7 @@ function projectedDcMonthlyPayout(
       ? monthly * 12
       : (monthly * (Math.pow(monthlyGrowth, 12) - 1)) / monthlyReturn;
   const fvAnnuityAtStop =
-    r > 1e-9
+    Math.abs(r) > 1e-9
       ? (annualContributionEndValue * (Math.pow(1 + r, contribYears) - 1)) / r
       : monthly * 12 * contribYears;
   const fvAnnuity = fvAnnuityAtStop * Math.pow(1 + r, growthOnlyYears);
@@ -110,6 +110,11 @@ export function projectedAnnualIncomeNominalAtAge(
   return plan.incomeStreams.reduce((sum, stream) => {
     if (age < stream.startAge) return sum;
 
+    const growthYears =
+      stream.streamType === "dc" && stream.payoutMode === "drawdown"
+        ? Math.max(0, age - Math.max(stream.startAge, plan.personal.currentAge))
+        : yearsFromNow;
+
     const baseMonthly =
       stream.streamType === "dc"
         ? projectedDcMonthlyPayout(
@@ -122,10 +127,10 @@ export function projectedAnnualIncomeNominalAtAge(
     const annual = baseMonthly * 12;
 
     if (stream.annualGrowthRate !== undefined) {
-      return sum + annual * Math.pow(1 + stream.annualGrowthRate, yearsFromNow);
+      return sum + annual * Math.pow(1 + stream.annualGrowthRate, growthYears);
     }
     if (stream.adjustForInflation) {
-      return sum + annual * Math.pow(1 + plan.investment.inflationRate, yearsFromNow);
+      return sum + annual * Math.pow(1 + plan.investment.inflationRate, growthYears);
     }
     return sum + annual;
   }, 0);

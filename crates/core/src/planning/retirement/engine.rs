@@ -307,12 +307,21 @@ pub(crate) fn drawdown_income_at_age(
         .iter()
         .filter(|s| s.is_drawdown() && age >= s.start_age)
         .map(|s| {
+            let modeled_start_age = age.saturating_sub(years_from_now);
+            let growth_years = age.saturating_sub(s.start_age.max(modeled_start_age));
+            let cumulative_inflation_since_start =
+                if s.annual_growth_rate.is_none() && s.adjust_for_inflation {
+                    cumulative_inflation
+                        .map(|cumulative| ledger.inflation_since_start(&s.id, cumulative))
+                } else {
+                    None
+                };
             let scheduled = scheduled_stream_annual_income(
                 s,
                 resolved_payouts,
-                years_from_now,
+                growth_years,
                 inflation_rate,
-                cumulative_inflation,
+                cumulative_inflation_since_start,
             );
             let post_payout_return = s
                 .post_payout_return
@@ -384,7 +393,7 @@ pub(crate) fn projected_dc_balance_at_start(
     let monthly_contrib = s.monthly_contribution.unwrap_or(0.0);
     let fv_lump = initial * (1.0 + r).powi(total_years as i32);
     let annual_contrib_end_value = end_of_year_value_of_monthly_contributions(monthly_contrib, r);
-    let fv_annuity_at_stop = if r > 1e-9 {
+    let fv_annuity_at_stop = if r.abs() > 1e-9 {
         annual_contrib_end_value * ((1.0 + r).powi(contrib_years as i32) - 1.0) / r
     } else {
         monthly_contrib * 12.0 * contrib_years as f64
@@ -432,6 +441,7 @@ pub(crate) fn resolve_plan_dc_payouts(
 pub(crate) struct DrawdownLedger {
     balances: HashMap<String, f64>,
     exhausted_ages: HashMap<String, u32>,
+    cumulative_inflation_at_start: HashMap<String, f64>,
 }
 
 impl DrawdownLedger {
@@ -458,6 +468,16 @@ impl DrawdownLedger {
     /// What is left in the fund, as at the start of the year.
     pub(crate) fn balance(&self, stream_id: &str) -> f64 {
         self.balances.get(stream_id).copied().unwrap_or(0.0)
+    }
+
+    /// Rebase a stochastic inflation path to the first modelled withdrawal so the
+    /// opening draw is the payout rate itself and only later draws are escalated.
+    fn inflation_since_start(&mut self, stream_id: &str, cumulative_inflation: f64) -> f64 {
+        let at_start = self
+            .cumulative_inflation_at_start
+            .entry(stream_id.to_string())
+            .or_insert(cumulative_inflation);
+        cumulative_inflation / *at_start
     }
 
     /// Take this year's withdrawal, capped at what is actually there, then grow
@@ -1781,6 +1801,106 @@ mod tests {
         assert!(
             (income_at(&projection, 65) - 0.05 * at_start).abs() < 1e-6,
             "the first payout is the rate applied to the balance the chart shows"
+        );
+    }
+
+    #[test]
+    fn an_escalating_drawdown_starts_at_the_payout_rate() {
+        for (indexed, custom_growth, expected_second_draw) in
+            [(true, None, 12_240.0), (false, Some(0.10), 13_200.0)]
+        {
+            let mut plan = plan_with_fund(0.12, Some(PayoutMode::Drawdown), 0.0, indexed);
+            plan.income_streams[0].annual_growth_rate = custom_growth;
+            let projection = project_retirement(&plan, 5_000_000.0);
+
+            assert!(
+                (income_at(&projection, 65) - 12_000.0).abs() < 1e-6,
+                "the first draw must be 12% of the 100k opening balance"
+            );
+            assert!(
+                (income_at(&projection, 66) - expected_second_draw).abs() < 1e-6,
+                "growth should begin in the year after the fund starts paying"
+            );
+        }
+
+        let mut already_started = plan_with_fund(0.12, Some(PayoutMode::Drawdown), 0.0, true);
+        already_started.personal.current_age = 65;
+        already_started.income_streams[0].start_age = 60;
+        let projection = project_retirement(&already_started, 5_000_000.0);
+        assert!((income_at(&projection, 65) - 12_000.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn stochastic_inflation_escalates_drawdown_from_its_start_age() {
+        let mut plan = plan_with_fund(0.12, Some(PayoutMode::Drawdown), 0.0, true);
+        plan.personal.current_age = 60;
+        let stream = &plan.income_streams[0];
+        let payouts = resolve_plan_dc_payouts(
+            &plan.income_streams,
+            plan.personal.current_age,
+            plan.personal.target_retirement_age,
+            0.0,
+        );
+        let mut ledger = DrawdownLedger::default();
+        ledger.open_if_due(stream, 65, || 100_000.0);
+
+        let first = drawdown_income_at_age(
+            &plan.income_streams,
+            &payouts,
+            &mut ledger,
+            65,
+            5,
+            0.02,
+            Some(1.25),
+            0.0,
+        );
+        let second = drawdown_income_at_age(
+            &plan.income_streams,
+            &payouts,
+            &mut ledger,
+            66,
+            6,
+            0.02,
+            Some(1.275),
+            0.0,
+        );
+
+        assert!((first - 12_000.0).abs() < 1e-6);
+        assert!((second - 12_240.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_fund_balance_is_continuous_with_a_negative_return() {
+        let mut plan = base_plan();
+        plan.personal.current_age = 60;
+        plan.personal.target_retirement_age = 65;
+        plan.personal.planning_horizon_age = 95;
+        plan.investment.monthly_contribution = 0.0;
+        plan.income_streams.push(RetirementIncomeStream {
+            id: "dc-negative".into(),
+            label: "RRSP".into(),
+            stream_type: StreamKind::DefinedContribution,
+            start_age: 65,
+            adjust_for_inflation: false,
+            annual_growth_rate: None,
+            monthly_amount: None,
+            linked_account_id: None,
+            current_value: Some(200_000.0),
+            monthly_contribution: Some(500.0),
+            accumulation_return: Some(-0.10),
+            payout_rate: Some(0.05),
+            payout_mode: Some(PayoutMode::Drawdown),
+            post_payout_return: Some(0.0),
+        });
+
+        let projection = project_retirement(&plan, 5_000_000.0);
+        let before = pension_assets_at(&projection, 64);
+        let at_start = pension_assets_at(&projection, 65);
+        let expected = before * 0.90 + end_of_year_value_of_monthly_contributions(500.0, -0.10);
+
+        assert!(
+            (at_start - expected).abs() < 1e-6,
+            "the negative-return pot should continue from {before} to {expected}, not {at_start}"
         );
     }
 
