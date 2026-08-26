@@ -1,4 +1,4 @@
-import { ACTIVITY_SUBTYPES, ActivityType } from "@/lib/constants";
+import { ACTIVITY_SUBTYPES, ActivityStatus, ActivityType } from "@/lib/constants";
 import type { Account } from "@/lib/types";
 import { describe, expect, it } from "vitest";
 import {
@@ -336,6 +336,192 @@ describe("activity-utils", () => {
       expect(result.updates).toHaveLength(1);
       expect(result.creates[0].id).toBe("temp-new-1");
       expect(result.updates[0].id).toBe("existing-1");
+    });
+
+    it("should persist an explicit review approval on an existing transaction", () => {
+      const result = buildSavePayload(
+        [createMockTransaction({ id: "review-1", isNew: false, needsReview: false })],
+        new Set(["review-1"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      expect(result.updates).toHaveLength(1);
+      expect(result.updates[0].needsReview).toBe(false);
+    });
+
+    it("omits the amount for an untouched existing trade and sends it once edited", () => {
+      const result = buildSavePayload(
+        [
+          createMockTransaction({ id: "untouched", isNew: false, _amountEdited: false }),
+          createMockTransaction({ id: "edited", isNew: false, _amountEdited: true }),
+        ],
+        new Set(["untouched", "edited"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      const byId = new Map(result.updates.map((update) => [update.id, update]));
+      expect(byId.get("untouched")?.amount).toBeUndefined();
+      expect(byId.get("edited")?.amount).toBe("1000");
+    });
+
+    it("applies the same amount-ownership rule to new trades", () => {
+      const result = buildSavePayload(
+        [
+          createMockTransaction({ id: "temp-auto", isNew: true, _amountEdited: false }),
+          createMockTransaction({ id: "temp-typed", isNew: true, _amountEdited: true }),
+        ],
+        new Set(["temp-auto", "temp-typed"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      const byId = new Map(result.creates.map((create) => [create.id, create]));
+      expect(byId.get("temp-auto")?.amount).toBeUndefined();
+      expect(byId.get("temp-typed")?.amount).toBe("1000");
+    });
+
+    it("always sends the amount for asset-backed income composites", () => {
+      const result = buildSavePayload(
+        [
+          createMockTransaction({
+            id: "drip-1",
+            isNew: false,
+            activityType: ActivityType.DIVIDEND,
+            subtype: ACTIVITY_SUBTYPES.DRIP,
+            _amountEdited: false,
+          }),
+        ],
+        new Set(["drip-1"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      expect(result.updates[0].amount).toBe("1000");
+    });
+
+    it("omits needsReview when it matches the server value", () => {
+      const result = buildSavePayload(
+        [
+          createMockTransaction({
+            id: "unchanged-review",
+            isNew: false,
+            needsReview: false,
+            _originalNeedsReview: false,
+          }),
+        ],
+        new Set(["unchanged-review"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      expect(result.updates[0].needsReview).toBeUndefined();
+    });
+
+    it("attests a trade total the user typed this session", () => {
+      const result = buildSavePayload(
+        [
+          createMockTransaction({
+            id: "typed-total",
+            isNew: false,
+            status: ActivityStatus.POSTED,
+            needsReview: false,
+            _originalNeedsReview: false,
+            _amountEdited: true,
+          }),
+        ],
+        new Set(["typed-total"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      expect(result.updates[0].needsReview).toBe(false);
+    });
+
+    it("attests a typed trade total on a new row", () => {
+      const result = buildSavePayload(
+        [
+          createMockTransaction({
+            id: "temp-typed-review",
+            isNew: true,
+            _amountEdited: true,
+          }),
+        ],
+        new Set(["temp-typed-review"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      expect(result.creates[0].needsReview).toBe(false);
+    });
+
+    it("does not attest a typed total on a Draft — it stays in its queue", () => {
+      const result = buildSavePayload(
+        [
+          createMockTransaction({
+            id: "draft-typed",
+            isNew: false,
+            status: ActivityStatus.DRAFT,
+            needsReview: true,
+            _originalNeedsReview: true,
+            _amountEdited: true,
+          }),
+        ],
+        new Set(["draft-typed"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      expect(result.updates[0].needsReview).toBeUndefined();
+    });
+
+    it("does not attest a non-trade amount edit", () => {
+      const result = buildSavePayload(
+        [
+          createMockTransaction({
+            id: "deposit-typed",
+            isNew: false,
+            activityType: ActivityType.DEPOSIT,
+            status: ActivityStatus.POSTED,
+            needsReview: true,
+            _originalNeedsReview: true,
+            _amountEdited: true,
+          }),
+        ],
+        new Set(["deposit-typed"]),
+        new Set(),
+        mockResolveTransactionCurrency,
+        dirtyCurrencyLookup,
+        assetCurrencyLookup,
+        "USD",
+      );
+
+      expect(result.updates[0].needsReview).toBeUndefined();
     });
 
     it("should include exchangeMic and quoteCcy hints for new market activities", () => {
@@ -873,6 +1059,92 @@ describe("activity-utils", () => {
       });
 
       expect(updated.amount).toBe("0.02");
+    });
+
+    it("keeps asset-backed income charges separate from the final amount", () => {
+      const accountLookup = new Map<string, { id: string; name: string; currency: string }>([
+        ["account-1", { id: "account-1", name: "Test Account", currency: "USD" }],
+      ]);
+      const tx = createMockTransaction({
+        activityType: ActivityType.DIVIDEND,
+        subtype: ACTIVITY_SUBTYPES.DRIP,
+        quantity: "2",
+        unitPrice: "50",
+        amount: "100",
+        tax: "15",
+      });
+
+      const updated = applyTransactionUpdate({
+        transaction: tx,
+        field: "tax",
+        value: "20",
+        accountLookup,
+        assetCurrencyLookup: new Map<string, string>(),
+        fallbackCurrency: "USD",
+        resolveTransactionCurrency: () => "USD",
+      });
+
+      expect(updated.amount).toBe("100");
+      expect(updated.tax).toBe("20");
+    });
+
+    it("stops automatic totals after the user explicitly edits amount", () => {
+      const accountLookup = new Map<string, { id: string; name: string; currency: string }>([
+        ["account-1", { id: "account-1", name: "Test Account", currency: "USD" }],
+      ]);
+      const common = {
+        accountLookup,
+        assetCurrencyLookup: new Map<string, string>(),
+        fallbackCurrency: "USD",
+        resolveTransactionCurrency: () => "USD",
+      };
+      const tx = createMockTransaction({
+        activityType: ActivityType.DIVIDEND,
+        subtype: ACTIVITY_SUBTYPES.DRIP,
+        quantity: "2",
+        unitPrice: "50",
+        amount: "100",
+      });
+      const explicitlyEdited = applyTransactionUpdate({
+        transaction: tx,
+        field: "amount",
+        value: "90",
+        ...common,
+      });
+
+      const quantityChanged = applyTransactionUpdate({
+        transaction: explicitlyEdited,
+        field: "quantity",
+        value: "3",
+        ...common,
+      });
+
+      expect(quantityChanged.amount).toBe("90");
+    });
+
+    it("preserves a stored custom trade amount for non-economic edits", () => {
+      const tx = createMockTransaction({
+        activityType: ActivityType.BUY,
+        quantity: "10",
+        unitPrice: "100",
+        fee: "5",
+        amount: "975",
+        _amountEdited: false,
+      });
+
+      const updated = applyTransactionUpdate({
+        transaction: tx,
+        field: "comment",
+        value: "reviewed total",
+        accountLookup: new Map([
+          ["account-1", { id: "account-1", name: "Test Account", currency: "USD" }],
+        ]),
+        assetCurrencyLookup: new Map<string, string>(),
+        fallbackCurrency: "USD",
+        resolveTransactionCurrency: () => "USD",
+      });
+
+      expect(updated.amount).toBe("975");
     });
 
     it("should keep staking rewards asset-backed when subtype is selected", () => {
