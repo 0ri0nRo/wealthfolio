@@ -1,7 +1,7 @@
 # Self-Directed Rebalancing — Design Document
 
-Status: Source of truth for allocation rebalancing Date: 2026-08-25 Authors:
-@Jonjon-prog Reviewers: @afadil, @marcoscale98
+Status: Source of truth for allocation rebalancing, no open questions Date:
+2026-08-27 Authors: @Jonjon-prog Reviewers: @afadil, @marcoscale98
 
 Context: [PR #1486](https://github.com/wealthfolio/wealthfolio/pull/1486)
 discussion.
@@ -173,7 +173,9 @@ In order:
    account it is drawn from.
 3. **Rounding.** Under whole-unit policy, quantities are floored. Amounts stay
    primary and quantities remain estimates.
-4. **Minimum line size.** Lines below the target's minimum are removed.
+4. **Minimum line size.** Lines below the target's minimum are reported as below
+   minimum rather than silently dropped. Nothing is re-rounded to lift them over
+   the threshold; the user removes or edits them.
 5. **Remaining cash.** Whatever is left after 3 and 4 is reported as remaining
    cash. It is not redistributed — redistribution is another round of
    construction.
@@ -187,16 +189,23 @@ values comes from.
 
 - **Adjust positions** opens prefilled with the calculated adjustments instead
   of empty. Every line uses the same controls as a user-entered line: amount or
-  Final %, same editor, same removal, same reset.
-- The live portfolio-impact preview, the debounced authoritative core
-  calculation, and the muted stale-result behaviour are unchanged.
+  Final %, same editor, same removal.
+- **Once prefilled, the worksheet is the source of truth.** Editing a line
+  updates the live portfolio-impact preview and nothing else. The debounced core
+  calculation still runs to validate the edited worksheet and produce that
+  preview; it does not re-derive the adjustments.
+- **Adjustments are regenerated only on an explicit user action**, of which
+  there are exactly two: **Recalculate from target**, which rebuilds them from
+  the current target, eligible securities and allocation rule, and **Reset to
+  calculated adjustments**, which restores the last generated set and discards
+  edits.
+- Changing an input the calculation depends on — cash to deploy, account scope,
+  eligible securities, the target itself — marks the worksheet as no longer
+  matching those inputs and offers **Recalculate from target**. It never
+  regenerates on its own, so an edited worksheet is never overwritten without
+  the user asking.
 - **Review adjustments** stays the validated account-level view and remains the
   only place copy and CSV can be produced.
-- **Reset changes** returns to the calculated prefill, and clearing a line
-  removes it entirely.
-- Recalculating with different inputs replaces the prefill; user edits to lines
-  the recalculation still produces are preserved where the security and account
-  match, and the user is told when a line was replaced.
 
 Copy that describes the worksheet as entirely user-entered has to change,
 starting with `worksheet.reviewDisclaimer` ("These are the changes you
@@ -231,6 +240,10 @@ nothing.
 Reuse the neutral vocabulary already on the worksheet branch: **Rebalancing
 worksheet**, **Adjust positions**, **Review adjustments**, **Increase /
 Reduce**, **Current · Projected · Target**, **Calculated change**.
+
+Two actions are new and carry the regeneration rule from §5: **Recalculate from
+target** and **Reset to calculated adjustments**. They replace the branch's
+single **Reset changes**, which no longer describes what happens.
 
 | Use                                | Avoid                                     |
 | ---------------------------------- | ----------------------------------------- |
@@ -293,11 +306,24 @@ prefill presents it.
 
 ## 10. Example weights
 
-Already implemented on the worksheet branch and adopted here as-is: quantitative
-titles generated from the weights, no risk or featured metadata, alphabetical
-order, optional factual source and effective date, and the disclosure "Example
+Taken from the worksheet branch: quantitative titles generated from the weights,
+no risk or featured metadata, alphabetical order, and the disclosure "Example
 weights only. They are not recommendations, and Wealthfolio has not assessed
 whether they fit you."
+
+Two changes against that branch:
+
+- **No source or effective-date metadata.** The `sourceLabel` and
+  `effectiveDate` fields and the `presets.sourceLine` copy are dropped. Examples
+  stay purely quantitative.
+- **No claim that an example reproduces anything external.** No wording that
+  ties a set of weights to a current index, a market allocation or a published
+  portfolio, since keeping such a claim true over time is a commitment we cannot
+  meet.
+
+Existing target names are left alone. The quantitative naming applies only to
+examples selected from now on, so nothing a user already saved is rewritten
+underneath them.
 
 Saving the edited target is the user's affirmative action; no extra checkbox.
 Internal preset IDs are unchanged since users never see them.
@@ -324,11 +350,11 @@ asset-scoped action rather than a new table.
 
 Three shipments.
 
-| #      | Content                                                                                                            | Verify                                                                                                                                                                                                                                                                                                                             |
-| ------ | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M0     | Rebase, verify and merge #1486 (eligible securities)                                                               | rebased on `main`, existing suites green                                                                                                                                                                                                                                                                                           |
-| M1     | The complete calculated worksheet: copy, calculation, prefill, account allocation, preview, export (§4 to §8, §10) | core tests for proportional split, multi-category combination, funding scale, held-quantity cap, rounding residue and unresolved amounts; prefill keeps user edits across recalculation; increase with several eligible accounts stays unallocated; copy-contract test and i18n parity; export snapshot from a fresh review result |
-| Future | Optional security-level targets (§9)                                                                               | after the main workflow is stable                                                                                                                                                                                                                                                                                                  |
+| #      | Content                                                                                                            | Verify                                                                                                                                                                                                                                                                                                                                             |
+| ------ | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0     | Rebase, verify and merge #1486 (eligible securities)                                                               | rebased on `main`, existing suites green                                                                                                                                                                                                                                                                                                           |
+| M1     | The complete calculated worksheet: copy, calculation, prefill, account allocation, preview, export (§4 to §8, §10) | core tests for proportional split, multi-category combination, funding scale, held-quantity cap, rounding residue and unresolved amounts; edits never trigger regeneration and both explicit actions do; increase with several eligible accounts stays unallocated; copy-contract test and i18n parity; export snapshot from a fresh review result |
+| Future | Optional security-level targets (§9)                                                                               | after the main workflow is stable                                                                                                                                                                                                                                                                                                                  |
 
 Implementation branches from the latest `main` and copies the worksheet UI,
 account allocation, copy, exports and example-weight work from
@@ -337,25 +363,23 @@ it is not rebased, extended or merged.
 
 ---
 
-## 13. Open questions
+## 13. Settled questions
 
-1. **Editing across recalculation (§5).** Preserving user edits when a
-   recalculation still produces the same security/account line is the
-   friendliest behaviour, but it makes "what am I looking at" harder to state.
-   The alternative is a clean replace with a warning. Recommendation: preserve,
-   and mark replaced lines.
-2. **Minimum line size and rounding order.** Removing sub-minimum lines after
-   rounding can leave a category short, and proportional scaling under a funding
-   shortfall makes that more likely. Report only, or re-round? Recommendation:
-   report only.
-3. **Example weights source/date.** Which examples carry a factual source line,
-   and where does that text come from?
-4. **Existing targets.** Targets created from the old named presets keep their
-   name. Migrate the label, or leave it as user-owned text?
+Nothing is open. The decisions taken during review, with the section that
+carries each one:
 
-Settled in review: single-pass calculation with no automatic iteration,
-proportional scaling of increases on a funding shortfall with the scaling shown,
-and unresolved amounts exported as `Status: Unresolved` rows.
+| Question                             | Decision                                                                            | Section |
+| ------------------------------------ | ----------------------------------------------------------------------------------- | ------- |
+| Iterate after combining intents?     | No. Single pass, show the projection, let the user edit                             | §4.5    |
+| Funding shortfall                    | Scale every increase proportionally and state that the scaling was applied          | §4.6    |
+| Sub-minimum lines and remaining cash | Report both. No re-rounding, no redistribution                                      | §4.6    |
+| Editing after prefill                | The worksheet becomes the source of truth; editing only updates the preview         | §5      |
+| Regenerating adjustments             | Only on **Recalculate from target** or **Reset to calculated adjustments**          | §5      |
+| Account attribution                  | Auto-assign only when exactly one account is eligible, otherwise the user allocates | §6      |
+| Unresolved amounts in the export     | Same table, `Status: Unresolved`, category and amount only                          | §8      |
+| Example weights metadata             | No source or effective date, no external-index claim                                | §10     |
+| Existing target names                | Left unchanged; quantitative naming applies to new selections only                  | §10     |
+| Configuration persistence            | Saved configuration, not result reproduction, and out of the first release          | §11     |
 
 ---
 
