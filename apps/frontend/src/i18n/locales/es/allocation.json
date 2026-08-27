@@ -113,7 +113,7 @@
   "eligibleHoldings": {
     "label": "Posiciones elegibles",
     "triggerLabel": "{{label}}: {{summary}}",
-    "rowLabel": "{{symbol}} {{name}} — {{state}}",
+    "rowLabel": "{{symbol}} {{name}} {{details}} — {{state}}",
     "selected": "seleccionada",
     "notSelected": "no seleccionada",
     "allSelected": "Todas las posiciones seleccionadas",

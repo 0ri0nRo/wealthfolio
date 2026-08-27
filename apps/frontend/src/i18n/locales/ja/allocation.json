@@ -110,7 +110,7 @@
   "eligibleHoldings": {
     "label": "購入対象の保有銘柄",
     "triggerLabel": "{{label}}：{{summary}}",
-    "rowLabel": "{{symbol}} {{name}} — {{state}}",
+    "rowLabel": "{{symbol}} {{name}} {{details}} — {{state}}",
     "selected": "選択中",
     "notSelected": "未選択",
     "allSelected": "すべての保有銘柄を選択中",

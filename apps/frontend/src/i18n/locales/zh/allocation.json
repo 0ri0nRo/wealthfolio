@@ -110,7 +110,7 @@
   "eligibleHoldings": {
     "label": "可买入的持仓",
     "triggerLabel": "{{label}}：{{summary}}",
-    "rowLabel": "{{symbol}} {{name}} — {{state}}",
+    "rowLabel": "{{symbol}} {{name}} {{details}} — {{state}}",
     "selected": "已选择",
     "notSelected": "未选择",
     "allSelected": "已选择全部持仓",

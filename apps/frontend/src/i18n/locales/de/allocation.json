@@ -113,7 +113,7 @@
   "eligibleHoldings": {
     "label": "Geeignete Bestände",
     "triggerLabel": "{{label}}: {{summary}}",
-    "rowLabel": "{{symbol}} {{name}} — {{state}}",
+    "rowLabel": "{{symbol}} {{name}} {{details}} — {{state}}",
     "selected": "ausgewählt",
     "notSelected": "nicht ausgewählt",
     "allSelected": "Alle Bestände ausgewählt",

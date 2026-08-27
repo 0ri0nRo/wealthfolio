@@ -4,6 +4,8 @@ export interface EligibleHolding {
   assetId: string;
   symbol: string;
   name?: string | null;
+  currency: string;
+  exchangeMic?: string | null;
   instrumentType?: string | null;
 }
 
@@ -26,6 +28,8 @@ export function getEligibleHoldings(holdings: Holding[]): EligibleHolding[] {
           assetId: instrument.id,
           symbol: instrument.symbol,
           name: instrument.name,
+          currency: instrument.currency,
+          exchangeMic: instrument.exchangeMic,
           instrumentType: instrument.instrumentType,
         },
       ];

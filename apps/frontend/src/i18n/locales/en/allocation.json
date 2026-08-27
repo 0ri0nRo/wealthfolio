@@ -113,7 +113,7 @@
   "eligibleHoldings": {
     "label": "Eligible holdings",
     "triggerLabel": "{{label}}: {{summary}}",
-    "rowLabel": "{{symbol}} {{name}} — {{state}}",
+    "rowLabel": "{{symbol}} {{name}} {{details}} — {{state}}",
     "selected": "selected",
     "notSelected": "not selected",
     "allSelected": "All holdings selected",

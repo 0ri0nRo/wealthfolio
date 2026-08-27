@@ -103,14 +103,24 @@ export function EligibleHoldingsSelector({
                 <CommandGroup key={group.key} heading={groupLabel(group.key, t)}>
                   {group.holdings.map((holding) => {
                     const selected = !excludedAssetIds.has(holding.assetId);
+                    const details = [holding.exchangeMic, holding.currency]
+                      .filter((value): value is string => Boolean(value))
+                      .join(" · ");
                     return (
                       <CommandItem
                         key={holding.assetId}
-                        value={`${holding.symbol} ${holding.name ?? ""}`}
+                        value={holding.assetId}
+                        keywords={[
+                          holding.symbol,
+                          holding.name ?? "",
+                          holding.exchangeMic ?? "",
+                          holding.currency,
+                        ]}
                         onSelect={() => onToggle(holding.assetId)}
                         aria-label={t("allocation:eligibleHoldings.rowLabel", {
                           symbol: holding.symbol,
                           name: holding.name ?? "",
+                          details,
                           state: t(
                             selected
                               ? "allocation:eligibleHoldings.selected"
@@ -129,6 +139,9 @@ export function EligibleHoldingsSelector({
                               {holding.name}
                             </span>
                           )}
+                          <span className="text-muted-foreground/80 block truncate font-mono text-[11px]">
+                            {details}
+                          </span>
                         </span>
                       </CommandItem>
                     );

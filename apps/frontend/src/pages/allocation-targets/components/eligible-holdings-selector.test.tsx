@@ -32,6 +32,8 @@ function holding(
   name: string,
   instrumentType?: string,
   holdingType: Holding["holdingType"] = HoldingType.SECURITY,
+  currency = "USD",
+  exchangeMic?: string,
 ): Holding {
   return {
     id: `${assetId}-${symbol}`,
@@ -41,8 +43,9 @@ function holding(
       id: assetId,
       symbol,
       name,
-      currency: "USD",
+      currency,
       quoteMode: "MARKET",
+      exchangeMic,
       instrumentType,
     },
   } as Holding;
@@ -130,6 +133,43 @@ describe("EligibleHoldingsSelector", () => {
     await user.click(screen.getByRole("option", { name: /VTI.*Vanguard Total Stock/i }));
     expect(screen.getByRole("button", { name: /Eligible holdings/ })).toHaveTextContent(
       "2 of 3 selected",
+    );
+  });
+
+  it("disambiguates duplicate labels and reaches each row from the keyboard", async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        holdings={[
+          holding("asset-xnas", "ABC", "Acme Corp", "EQUITY", HoldingType.SECURITY, "USD", "XNAS"),
+          holding("asset-xtse", "ABC", "Acme Corp", "EQUITY", HoldingType.SECURITY, "CAD", "XTSE"),
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Eligible holdings/ }));
+    expect(
+      screen.getByRole("option", { name: /ABC.*Acme Corp.*XNAS.*USD.*selected/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /ABC.*Acme Corp.*XTSE.*CAD.*selected/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("XNAS · USD")).toBeInTheDocument();
+    expect(screen.getByText("XTSE · CAD")).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("option")
+        .filter((option) => option.getAttribute("aria-selected") === "true"),
+    ).toHaveLength(1);
+
+    await user.click(screen.getByPlaceholderText("Search holdings"));
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(
+      screen.getByRole("option", { name: /ABC.*Acme Corp.*XTSE.*CAD.*not selected/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Eligible holdings/ })).toHaveTextContent(
+      "1 of 2 selected",
     );
   });
 

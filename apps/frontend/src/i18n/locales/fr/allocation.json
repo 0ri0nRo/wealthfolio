@@ -113,7 +113,7 @@
   "eligibleHoldings": {
     "label": "Titres éligibles",
     "triggerLabel": "{{label}} : {{summary}}",
-    "rowLabel": "{{symbol}} {{name}} — {{state}}",
+    "rowLabel": "{{symbol}} {{name}} {{details}} — {{state}}",
     "selected": "sélectionné",
     "notSelected": "non sélectionné",
     "allSelected": "Tous les titres sélectionnés",
