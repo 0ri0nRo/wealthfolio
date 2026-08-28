@@ -1,6 +1,7 @@
 {
   "name": "Wealthfolio",
   "short_name": "Wealthfolio",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#09090b",
