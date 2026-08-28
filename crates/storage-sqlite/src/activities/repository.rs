@@ -17,10 +17,11 @@ use wealthfolio_core::activities::ActivityError;
 use wealthfolio_core::activities::{
     import_type, is_cash_symbol, violates_final_cash_floor, Activity,
     ActivityBulkIdentifierMapping, ActivityBulkMutationResult, ActivityDetails,
-    ActivityFinalCashMigrationUpdate, ActivityRepositoryTrait, ActivitySearchResponse,
-    ActivitySearchResponseMeta, ActivityUpdate, ActivityUpsert, BulkUpsertResult, ImportMapping,
-    ImportTemplate, IncomeData, NewActivity, Sort, ACTIVITY_TYPE_TRANSFER_IN,
-    ACTIVITY_TYPE_TRANSFER_OUT, INCOME_ACTIVITY_TYPES, TRADING_ACTIVITY_TYPES,
+    ActivityFinalCashMigrationUpdate, ActivityFinalCashMigrationWriteResult,
+    ActivityRepositoryTrait, ActivitySearchResponse, ActivitySearchResponseMeta, ActivityUpdate,
+    ActivityUpsert, BulkUpsertResult, ImportMapping, ImportTemplate, IncomeData, NewActivity, Sort,
+    ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT, INCOME_ACTIVITY_TYPES,
+    TRADING_ACTIVITY_TYPES,
 };
 use wealthfolio_core::assets::{contract_multiplier_from_asset_metadata, InstrumentType};
 use wealthfolio_core::limits::ContributionActivity;
@@ -2108,13 +2109,13 @@ impl ActivityRepositoryTrait for ActivityRepository {
     async fn update_activities_for_final_cash_migration(
         &self,
         updates: Vec<ActivityFinalCashMigrationUpdate>,
-    ) -> Result<usize> {
+    ) -> Result<ActivityFinalCashMigrationWriteResult> {
         if updates.is_empty() {
-            return Ok(0);
+            return Ok(ActivityFinalCashMigrationWriteResult::default());
         }
 
         self.writer
-            .exec_tx(move |tx| -> Result<usize> {
+            .exec_tx(move |tx| -> Result<ActivityFinalCashMigrationWriteResult> {
                 let update_ids: Vec<String> =
                     updates.iter().map(|update| update.id.clone()).collect();
                 let mut current_by_id: HashMap<String, (Option<String>, i32, Option<String>)> =
@@ -2137,6 +2138,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                     ));
                 }
                 let mut changed = 0;
+                let mut unapplied_amount_update_ids = Vec::new();
                 let updated_at = Utc::now().to_rfc3339();
                 for update in updates {
                     // Classified amounts are already absolute; backfilled
@@ -2190,6 +2192,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                                 "Final-cash migration cannot record the legacy amount of activity {}; keeping it for review",
                                 update.id
                             );
+                            unapplied_amount_update_ids.push(update.id.clone());
                             diesel::update(activities::table.find(&update.id))
                                 .set((
                                     activities::needs_review.eq(1),
@@ -2200,7 +2203,10 @@ impl ActivityRepositoryTrait for ActivityRepository {
                         }
                     };
                 }
-                Ok(changed)
+                Ok(ActivityFinalCashMigrationWriteResult {
+                    changed,
+                    unapplied_amount_update_ids,
+                })
             })
             .await
     }
@@ -4412,12 +4418,12 @@ mod tests {
             amount: Some(Decimal::new(125, 0)),
             needs_review: true,
         }];
-        assert_eq!(
-            repo.update_activities_for_final_cash_migration(updates.clone())
-                .await
-                .expect("migration update"),
-            1
-        );
+        let result = repo
+            .update_activities_for_final_cash_migration(updates.clone())
+            .await
+            .expect("migration update");
+        assert_eq!(result.changed, 1);
+        assert!(result.unapplied_amount_update_ids.is_empty());
 
         let mut conn = get_connection(&pool).expect("conn");
         let (amount, unit_price, needs_review, metadata): (
@@ -4449,12 +4455,12 @@ mod tests {
         assert_eq!(sync_outbox_count(&mut conn), 0);
         drop(conn);
 
-        assert_eq!(
-            repo.update_activities_for_final_cash_migration(updates)
-                .await
-                .expect("idempotent migration update"),
-            0
-        );
+        let result = repo
+            .update_activities_for_final_cash_migration(updates)
+            .await
+            .expect("idempotent migration update");
+        assert_eq!(result.changed, 0);
+        assert!(result.unapplied_amount_update_ids.is_empty());
         let mut conn = get_connection(&pool).expect("conn");
         assert_eq!(sync_outbox_count(&mut conn), 0);
         drop(conn);
@@ -4471,18 +4477,16 @@ mod tests {
             None,
         );
         drop(conn);
-        assert_eq!(
-            repo.update_activities_for_final_cash_migration(vec![
-                ActivityFinalCashMigrationUpdate {
-                    id: "activity-review-only".to_string(),
-                    amount: Some(Decimal::new(100, 0)),
-                    needs_review: true,
-                }
-            ])
+        let result = repo
+            .update_activities_for_final_cash_migration(vec![ActivityFinalCashMigrationUpdate {
+                id: "activity-review-only".to_string(),
+                amount: Some(Decimal::new(100, 0)),
+                needs_review: true,
+            }])
             .await
-            .expect("review-only update"),
-            1
-        );
+            .expect("review-only update");
+        assert_eq!(result.changed, 1);
+        assert!(result.unapplied_amount_update_ids.is_empty());
         let mut conn = get_connection(&pool).expect("conn");
         let (amount, metadata): (Option<String>, Option<String>) = activities::table
             .find("activity-review-only")
@@ -4491,6 +4495,59 @@ mod tests {
             .expect("review-only activity");
         assert_eq!(amount.as_deref(), Some("100"));
         assert!(metadata.is_none(), "unchanged amount writes no breadcrumb");
+    }
+
+    #[tokio::test]
+    async fn final_cash_migration_reports_amounts_it_cannot_safely_replace() {
+        let (pool, writer) = setup_db();
+        let repo = ActivityRepository::new(pool.clone(), writer);
+        {
+            let mut conn = get_connection(&pool).expect("conn");
+            insert_account(&mut conn, "acc-unrecordable");
+            insert_activity_with_subtype(
+                &mut conn,
+                "activity-unrecordable",
+                "acc-unrecordable",
+                "BUY",
+                None,
+                None,
+            );
+            diesel::update(activities::table.find("activity-unrecordable"))
+                .set(activities::metadata.eq(serde_json::json!("opaque").to_string()))
+                .execute(&mut conn)
+                .expect("set non-object metadata");
+        }
+
+        let result = repo
+            .update_activities_for_final_cash_migration(vec![ActivityFinalCashMigrationUpdate {
+                id: "activity-unrecordable".to_string(),
+                amount: Some(Decimal::new(125, 0)),
+                needs_review: false,
+            }])
+            .await
+            .expect("migration update");
+
+        assert_eq!(result.changed, 1);
+        assert_eq!(
+            result.unapplied_amount_update_ids,
+            vec!["activity-unrecordable"]
+        );
+
+        let mut conn = get_connection(&pool).expect("conn");
+        let (amount, needs_review, metadata): (Option<String>, i32, Option<String>) =
+            activities::table
+                .find("activity-unrecordable")
+                .select((
+                    activities::amount,
+                    activities::needs_review,
+                    activities::metadata,
+                ))
+                .first(&mut conn)
+                .expect("preserved activity");
+        assert_eq!(amount.as_deref(), Some("100"));
+        assert_eq!(needs_review, 1);
+        assert_eq!(metadata.as_deref(), Some("\"opaque\""));
+        assert_eq!(sync_outbox_count(&mut conn), 0);
     }
 
     #[tokio::test]

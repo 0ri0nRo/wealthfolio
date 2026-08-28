@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calculateTradeFinalAmount,
   calculateTradeFinalCash,
+  isStoredTradeAmountCustom,
   resolveActivityCashMultiplier,
 } from "./activity-final-amount";
 import { ActivityType } from "./constants";
@@ -67,5 +68,47 @@ describe("calculateTradeFinalCash direction", () => {
         contractMultiplier: 100,
       }),
     ).toBe(-1);
+  });
+});
+
+describe("isStoredTradeAmountCustom", () => {
+  const trade = {
+    activityType: ActivityType.BUY,
+    instrumentType: "EQUITY",
+    quantity: 2,
+    unitPrice: 60,
+    fee: 3,
+    tax: 2,
+  };
+
+  it("lets an existing calculated total continue following the calculation", () => {
+    expect(isStoredTradeAmountCustom({ ...trade, storedAmount: 125 })).toBe(false);
+  });
+
+  it("preserves an existing custom total and an explicit zero", () => {
+    expect(isStoredTradeAmountCustom({ ...trade, storedAmount: 99 })).toBe(true);
+    expect(isStoredTradeAmountCustom({ ...trade, storedAmount: 0 })).toBe(true);
+  });
+
+  it("preserves a stored total when the initial calculation is incomplete", () => {
+    expect(
+      isStoredTradeAmountCustom({
+        ...trade,
+        storedAmount: 99,
+        quantity: undefined,
+      }),
+    ).toBe(true);
+  });
+
+  it("uses the resolved option multiplier when determining ownership", () => {
+    expect(
+      isStoredTradeAmountCustom({
+        ...trade,
+        storedAmount: 105,
+        instrumentType: "OPTION",
+        unitPrice: 5,
+        contractMultiplier: 10,
+      }),
+    ).toBe(false);
   });
 });

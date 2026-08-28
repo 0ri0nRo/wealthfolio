@@ -50,7 +50,7 @@ interface MobileDetailsStepProps {
   accounts: AccountSelectOption[];
   activityType: string;
   isEditing?: boolean;
-  /** Owned by the form root; true only after the user types in the amount field. */
+  /** Owned by the form root; true for a stored or session-entered custom amount. */
   amountWasEdited: RefObject<boolean>;
 }
 

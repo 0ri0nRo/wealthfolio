@@ -734,6 +734,15 @@ pub struct ActivityFinalCashMigrationUpdate {
     pub needs_review: bool,
 }
 
+/// What storage actually persisted during the final-cash rewrite. Rejected
+/// amount replacements are reported so core can rebuild from the value that
+/// remains authoritative on the row.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ActivityFinalCashMigrationWriteResult {
+    pub changed: usize,
+    pub unapplied_amount_update_ids: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ActivityFinalCashMigrationResult {
     pub changed: usize,

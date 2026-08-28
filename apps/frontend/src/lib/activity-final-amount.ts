@@ -28,6 +28,10 @@ interface TradeCashInputs {
   contractMultiplier?: unknown;
 }
 
+interface StoredTradeAmountInputs extends TradeCashInputs {
+  storedAmount: unknown;
+}
+
 /**
  * Signed cash effect of a trade: negative is cash out. A BUY is always a
  * debit; a SELL whose charges exceed its proceeds is one too, which is why
@@ -64,6 +68,27 @@ export function calculateTradeFinalCash({
 export function calculateTradeFinalAmount(inputs: TradeCashInputs): number | undefined {
   const cash = calculateTradeFinalCash(inputs);
   return cash === undefined ? undefined : Math.abs(cash);
+}
+
+/**
+ * Whether an existing trade total must remain user-owned when an edit form
+ * opens. A matching stored total follows future calculation changes; a
+ * different total is authoritative until the user explicitly opts back in.
+ */
+export function isStoredTradeAmountCustom({
+  storedAmount,
+  ...cashInputs
+}: StoredTradeAmountInputs): boolean {
+  if (storedAmount === null || storedAmount === undefined || storedAmount === "") return false;
+  const stored = Number(storedAmount);
+  if (!Number.isFinite(stored)) return false;
+
+  const calculated = calculateTradeFinalAmount(cashInputs);
+  if (calculated === undefined) return true;
+
+  // This only seeds form ownership. Backend persistence applies its
+  // currency-scaled tolerance when deciding whether a total needs review.
+  return Math.abs(stored - calculated) > 0.005;
 }
 
 export function calculateIncomeFinalAmount(

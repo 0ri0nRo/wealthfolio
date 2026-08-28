@@ -232,7 +232,7 @@ pub trait ActivityRepositoryTrait: Send + Sync {
     async fn update_activities_for_final_cash_migration(
         &self,
         updates: Vec<ActivityFinalCashMigrationUpdate>,
-    ) -> Result<usize> {
+    ) -> Result<ActivityFinalCashMigrationWriteResult> {
         let _ = updates;
         Err(crate::Error::Unexpected(
             "Activity repository does not support the final-cash migration".to_string(),

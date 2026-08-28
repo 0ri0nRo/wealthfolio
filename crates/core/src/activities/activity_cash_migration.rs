@@ -265,6 +265,7 @@ pub(crate) async fn migrate_activities_to_final_cash(
     let mut asset_cache: HashMap<String, Option<AssetCashFacts>> = HashMap::new();
     let mut account_cache: HashMap<String, AccountCashFacts> = HashMap::new();
     let mut affected_account_ids = HashSet::new();
+    let mut posted_account_by_activity_id = HashMap::new();
     let mut updates = Vec::new();
 
     for activity in activities {
@@ -311,6 +312,10 @@ pub(crate) async fn migrate_activities_to_final_cash(
         if normalized_existing != decision.final_amount
             || activity.needs_review != decision.needs_review
         {
+            if activity.status == ActivityStatus::Posted {
+                posted_account_by_activity_id
+                    .insert(activity.id.clone(), activity.account_id.clone());
+            }
             updates.push(ActivityFinalCashMigrationUpdate {
                 id: activity.id,
                 amount: decision.final_amount,
@@ -319,14 +324,23 @@ pub(crate) async fn migrate_activities_to_final_cash(
         }
     }
 
-    let changed = activity_repository
+    let write_result = activity_repository
         .update_activities_for_final_cash_migration(updates)
         .await?;
+    // Storage can intentionally preserve an amount when its undo breadcrumb
+    // cannot be recorded. The new runtime then books that preserved value,
+    // not the classifier's proposed value, so the account must rebuild even
+    // when the legacy and proposed cash effects happened to match.
+    for activity_id in write_result.unapplied_amount_update_ids {
+        if let Some(account_id) = posted_account_by_activity_id.get(&activity_id) {
+            affected_account_ids.insert(account_id.clone());
+        }
+    }
     let mut affected_account_ids: Vec<String> = affected_account_ids.into_iter().collect();
     affected_account_ids.sort();
 
     Ok(ActivityFinalCashMigrationResult {
-        changed,
+        changed: write_result.changed,
         affected_account_ids,
     })
 }

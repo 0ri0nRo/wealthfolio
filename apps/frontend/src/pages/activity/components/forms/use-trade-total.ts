@@ -1,4 +1,4 @@
-import { calculateTradeFinalAmount, calculateTradeFinalCash } from "@/lib/activity-final-amount";
+import { calculateTradeFinalCash, isStoredTradeAmountCustom } from "@/lib/activity-final-amount";
 import { ActivityType } from "@/lib/constants";
 import { useMemo, useState } from "react";
 
@@ -46,26 +46,20 @@ export function useTradeTotal({
   // stale amount. An explicit stored zero (e.g. gifted shares) is a custom
   // value, not a missing one. A new activity follows the calculation until
   // the user takes it over.
-  const [isCustomAmount, setIsCustomAmount] = useState(() => {
-    if (!isEditing) return false;
-    const stored = Number(defaultAmount);
-    if (!Number.isFinite(stored)) return false;
-    const initialCalculated = calculateTradeFinalAmount({
-      activityType: side === "buy" ? ActivityType.BUY : ActivityType.SELL,
-      instrumentType,
-      quantity,
-      unitPrice,
-      fee,
-      tax,
-      contractMultiplier: isOption ? contractMultiplier : undefined,
-    });
-    if (initialCalculated === undefined) return true;
-    // Half a cent, deliberately currency-blind: this only seeds the toggle's
-    // initial UI state (persistence uses the backend's currency-scaled
-    // tolerance), and a JPY/BTC total sitting within half a cent of the
-    // calculation misclassifying the toggle is a population-zero cosmetic.
-    return Math.abs(stored - initialCalculated) > 0.005;
-  });
+  const [isCustomAmount, setIsCustomAmount] = useState(
+    () =>
+      isEditing &&
+      isStoredTradeAmountCustom({
+        storedAmount: defaultAmount,
+        activityType: side === "buy" ? ActivityType.BUY : ActivityType.SELL,
+        instrumentType,
+        quantity,
+        unitPrice,
+        fee,
+        tax,
+        contractMultiplier: isOption ? contractMultiplier : undefined,
+      }),
+  );
 
   const calculatedCash = useMemo(
     () =>

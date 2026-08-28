@@ -36,7 +36,7 @@ import { useActivityMutations } from "../../hooks/use-activity-mutations";
 import { showValidationToast, type AccountSelectOption } from "../forms/fields";
 import { newActivitySchema, type NewActivityFormValues } from "../forms/schemas";
 import { MobileActivitySteps } from "./mobile-activity-steps";
-import { getMobileActivityAssetId } from "./mobile-activity-utils";
+import { getMobileActivityAssetId, hasStoredCustomTradeAmount } from "./mobile-activity-utils";
 
 interface MobileActivityFormProps {
   accounts: AccountSelectOption[];
@@ -298,8 +298,9 @@ export function MobileActivityForm({
   const shouldStartOnDetails = Boolean(activity?.id || startOnDetails);
   const initialStep = shouldStartOnDetails ? 2 : 1;
   const [currentStep, setCurrentStep] = useState(initialStep);
-  // True only after the user types in the amount field. Owned here so step
-  // navigation cannot reset it before submit reads it.
+  // True when an existing stored total is custom or after the user types in
+  // the amount field. Owned here so step navigation cannot reset it before
+  // submit reads it.
   const amountWasEdited = useRef(false);
   const {
     addActivityMutation,
@@ -424,6 +425,7 @@ export function MobileActivityForm({
     defaultValues: defaultValues as any,
   });
   const { reset } = form;
+  const storedAmountIsCustom = useMemo(() => hasStoredCustomTradeAmount(activity), [activity]);
 
   useEffect(() => {
     if (!open) return;
@@ -432,10 +434,10 @@ export function MobileActivityForm({
       ? defaultValues
       : { ...defaultValues, activityDate: new Date() };
 
-    amountWasEdited.current = false;
+    amountWasEdited.current = storedAmountIsCustom;
     reset(nextDefaultValues);
     setCurrentStep(shouldStartOnDetails ? 2 : 1);
-  }, [activity?.date, defaultValues, open, reset, shouldStartOnDetails]);
+  }, [activity?.date, defaultValues, open, reset, shouldStartOnDetails, storedAmountIsCustom]);
 
   // Transfers may target any account (incl. spending/saving accounts the Spending
   // split hides from `accounts`), so widen the list once the type is a transfer.
@@ -446,8 +448,10 @@ export function MobileActivityForm({
   // deposit amount typed before switching to BUY/SELL would be submitted as
   // an attested custom trade total.
   useEffect(() => {
-    amountWasEdited.current = false;
-  }, [watchedActivityType]);
+    if (form.getFieldState("activityType").isDirty) {
+      amountWasEdited.current = false;
+    }
+  }, [form, watchedActivityType]);
   const effectiveAccounts =
     transferAccounts && TRANSFER_ACTIVITY_TYPES.includes(watchedActivityType ?? "")
       ? transferAccounts
