@@ -9,6 +9,10 @@
 //! - The migration never changes lifecycle `status`. A Posted trade whose
 //!   final cash cannot be verified keeps `amount = NULL` (zero runtime cash)
 //!   and is flagged for review rather than demoted to Draft.
+//! - A legacy trade whose stored amount is zero treats that zero like a
+//!   missing value when complete, trustworthy inputs can derive final cash.
+//!   If derivation is unavailable, the zero stays reviewable. This migration
+//!   rule does not change the runtime contract for user-confirmed zero totals.
 //! - Security-transfer rows are never touched, including legacy `amount`
 //!   values that transfer pairing still reads.
 //! - A crash between the row rewrite and the state write re-runs
@@ -440,7 +444,6 @@ fn classify_legacy_activity_cash(
         match supplied {
             None => (derived_final, derived_final.is_none()),
             Some(amount) if amount.is_zero() => match derived_final {
-                Some(final_amount) if final_amount > tolerance => (Some(final_amount), true),
                 Some(final_amount) => (Some(final_amount), false),
                 None => (Some(Decimal::ZERO), true),
             },
@@ -1032,6 +1035,25 @@ mod tests {
     }
 
     #[test]
+    fn zero_trade_with_unknown_multiplier_stays_reviewable() {
+        let mut buy = activity(ACTIVITY_TYPE_BUY);
+        buy.quantity = Some(dec!(2));
+        buy.unit_price = Some(dec!(10));
+        buy.amount = Some(Decimal::ZERO);
+        let unknown_facts = AssetCashFacts {
+            unit_multiplier: Decimal::ONE,
+            is_bond: false,
+            multiplier_is_reliable: false,
+        };
+
+        let decision =
+            classify_legacy_activity_cash(&buy, unknown_facts, &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(Decimal::ZERO));
+        assert!(decision.needs_review);
+    }
+
+    #[test]
     fn ordinary_cash_never_derives_missing_amount() {
         let mut deposit = activity(ACTIVITY_TYPE_DEPOSIT);
         deposit.quantity = Some(dec!(2));
@@ -1333,7 +1355,7 @@ mod tests {
         let zero =
             classify_legacy_activity_cash(&sell, usd_asset_facts(), &account_facts()).unwrap();
         assert_eq!(zero.final_amount, Some(dec!(19)));
-        assert!(zero.needs_review);
+        assert!(!zero.needs_review);
 
         sell.amount = Some(dec!(20));
         let gross =
