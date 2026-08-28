@@ -10,6 +10,7 @@ use crate::assets::assets_model::{AssetKind, InstrumentType};
 use crate::taxonomies::{Category, NewAssetTaxonomyAssignment, TaxonomyServiceTrait};
 use log::{debug, warn};
 use std::{collections::BTreeMap, sync::Arc};
+use wealthfolio_market_data::to_iso_alpha2;
 
 const AUTO_SOURCE: &str = "AUTO";
 const ASSET_CLASSES_TAXONOMY: &str = "asset_classes";
@@ -321,55 +322,6 @@ fn map_sector_to_gics(sector: &str) -> Option<&'static str> {
     }
 }
 
-/// Maps a provider country spelling to its ISO 3166-1 alpha-2 code, for the
-/// names the seeded regions taxonomy carries under a different one.
-///
-/// The taxonomy uses UN names ("Russian Federation", "Czechia", "Viet Nam"),
-/// providers use colloquial ones ("Russia", "Czech Republic", "Vietnam"), and
-/// neither is wrong. Only aliases are listed here — a country whose provider
-/// spelling already matches the taxonomy needs no entry.
-fn country_alias_to_iso_code(country_lower: &str) -> Option<&'static str> {
-    match country_lower {
-        "usa" | "u.s." | "u.s.a." | "united states of america" => Some("US"),
-        "uk" | "u.k." | "great britain" | "england" | "scotland" | "wales" | "northern ireland" => {
-            Some("GB")
-        }
-        "south korea" | "korea" | "republic of korea" | "대한민국" => Some("KR"),
-        "north korea" => Some("KP"),
-        "russia" => Some("RU"),
-        "czech republic" => Some("CZ"),
-        "vietnam" => Some("VN"),
-        "macau" => Some("MO"),
-        "holland" => Some("NL"),
-        "deutschland" => Some("DE"),
-        "españa" => Some("ES"),
-        "italia" => Some("IT"),
-        "schweiz" => Some("CH"),
-        "sverige" => Some("SE"),
-        "danmark" => Some("DK"),
-        "norge" => Some("NO"),
-        "suomi" => Some("FI"),
-        "österreich" => Some("AT"),
-        "polska" => Some("PL"),
-        "méxico" => Some("MX"),
-        "brasil" => Some("BR"),
-        "türkiye" => Some("TR"),
-        "laos" => Some("LA"),
-        "burma" => Some("MM"),
-        "swaziland" => Some("SZ"),
-        "cape verde" => Some("CV"),
-        "east timor" => Some("TL"),
-        "brunei" => Some("BN"),
-        "syria" => Some("SY"),
-        "日本" => Some("JP"),
-        "中国" => Some("CN"),
-        "香港" => Some("HK"),
-        "臺灣" | "台湾" => Some("TW"),
-        "भारत" => Some("IN"),
-        _ => None,
-    }
-}
-
 /// Resolves a provider country string against the regions taxonomy.
 ///
 /// The seeded taxonomy is three levels — continent, sub-region, country — and
@@ -380,12 +332,16 @@ fn country_alias_to_iso_code(country_lower: &str) -> Option<&'static str> {
 ///
 /// Matching the taxonomy's own categories rather than a hard-coded table also
 /// means a country the user adds by hand resolves without a code change.
+///
+/// The providers normalise to alpha-2 on the way out, so a freshly enriched
+/// asset takes the first branch. The rest answers for what normalisation cannot
+/// reach: profiles already on disk, hand-entered spellings, and categories the
+/// user added.
 fn resolve_country_category(country: &str, categories: &[Category]) -> Option<String> {
     let country = country.trim();
     if country.is_empty() {
         return None;
     }
-    let country_lower = country.to_lowercase();
 
     let country_id = |code: &str| {
         let id = format!("country_{}", code.to_ascii_uppercase());
@@ -395,14 +351,9 @@ fn resolve_country_category(country: &str, categories: &[Category]) -> Option<St
             .then_some(id)
     };
 
-    // A bare ISO code, which is what several providers send instead of a name.
-    if country.len() == 2 && country.chars().all(|c| c.is_ascii_alphabetic()) {
-        if let Some(id) = country_id(country) {
-            return Some(id);
-        }
-    }
-
-    if let Some(id) = country_alias_to_iso_code(&country_lower).and_then(country_id) {
+    // A bare ISO code, which is what the providers now send, and the same table
+    // they normalise against for a name they still spell their own way.
+    if let Some(id) = to_iso_alpha2(country).and_then(country_id) {
         return Some(id);
     }
 
