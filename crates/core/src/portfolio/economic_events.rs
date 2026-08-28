@@ -1,10 +1,10 @@
 use crate::activities::{
-    is_cash_symbol, Activity, ActivityCompiler, DefaultActivityCompiler, ACTIVITY_SUBTYPE_BONUS,
-    ACTIVITY_SUBTYPE_DIVIDEND_IN_KIND, ACTIVITY_SUBTYPE_DRIP, ACTIVITY_SUBTYPE_STAKING_REWARD,
-    ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_CREDIT, ACTIVITY_TYPE_DEPOSIT, ACTIVITY_TYPE_DIVIDEND,
-    ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_SPLIT,
-    ACTIVITY_TYPE_TAX, ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT,
-    ACTIVITY_TYPE_WITHDRAWAL,
+    is_securities_transfer, Activity, ActivityCompiler, DefaultActivityCompiler,
+    ACTIVITY_SUBTYPE_BONUS, ACTIVITY_SUBTYPE_DIVIDEND_IN_KIND, ACTIVITY_SUBTYPE_DRIP,
+    ACTIVITY_SUBTYPE_STAKING_REWARD, ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_CREDIT,
+    ACTIVITY_TYPE_DEPOSIT, ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST,
+    ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_SPLIT, ACTIVITY_TYPE_TAX, ACTIVITY_TYPE_TRANSFER_IN,
+    ACTIVITY_TYPE_TRANSFER_OUT, ACTIVITY_TYPE_WITHDRAWAL,
 };
 use crate::fx::currency::{currency_minor_unit, normalize_amount, normalize_currency_code};
 use crate::portfolio::valuation::ExternalFlowSource;
@@ -161,12 +161,6 @@ pub struct ResolvedActivityCash {
 
 impl ActivityEconomicsResolver {
     pub fn resolve_cash(activity: &Activity, unit_multiplier: Decimal) -> ResolvedActivityCash {
-        // The row's own multiplier override (mini options) outranks the
-        // asset-level multiplier the caller passes - the same hierarchy the
-        // writer boundary applies (activities_service ownership table).
-        let unit_multiplier = activity
-            .contract_multiplier_override()
-            .unwrap_or(unit_multiplier);
         Self::resolve_cash_inputs(ActivityCashInputs {
             activity_type: activity.effective_type(),
             currency: &activity.currency,
@@ -439,13 +433,7 @@ impl ActivityEconomicsResolver {
         let activity_currency = normalize_currency_code(&activity.currency).to_string();
         let kind = Self::event_kind(activity, transfer_boundary);
         let is_security_transfer = Self::is_security_transfer(activity);
-        // The row's own multiplier override (mini options) outranks the
-        // asset-level multiplier the caller passes.
-        let unit_multiplier = Self::valid_unit_multiplier(
-            activity
-                .contract_multiplier_override()
-                .unwrap_or(unit_multiplier),
-        );
+        let unit_multiplier = Self::valid_unit_multiplier(unit_multiplier);
         let lot_cost_basis_value = if is_security_transfer {
             Self::lot_cost_basis_value_with_unit_multiplier(activity, unit_multiplier)
         } else {
@@ -630,13 +618,7 @@ impl ActivityEconomicsResolver {
     }
 
     pub fn is_security_transfer(activity: &Activity) -> bool {
-        matches!(
-            activity.effective_type(),
-            ACTIVITY_TYPE_TRANSFER_IN | ACTIVITY_TYPE_TRANSFER_OUT
-        ) && activity.asset_id.as_deref().is_some_and(|asset_id| {
-            let asset_id = asset_id.trim();
-            !asset_id.is_empty() && !is_cash_symbol(asset_id)
-        })
+        is_securities_transfer(activity.effective_type(), activity.asset_id.as_deref())
     }
 
     pub fn lot_cost_basis_value(activity: &Activity) -> Decimal {
@@ -800,38 +782,34 @@ mod cash_tests {
     }
 
     #[test]
-    fn activity_multiplier_override_outranks_the_asset_multiplier() {
-        // A mini option (activity metadata 10) recorded against a standard
-        // option asset (100): true gross is 1 x 1 x 10 = 10, so charges of 12
-        // prove the reversal and the stored 2 books as an outflow. Resolving
-        // with the asset's 100 would compute gross 100, reject the reversal,
-        // and flip the cash direction to +2.
+    fn charges_exceeding_gross_reverse_a_sell_at_a_non_unit_multiplier() {
+        // Gross is 1 x 1 x 10 = 10, so charges of 12 prove the reversal and
+        // the stored 2 books as an outflow. The multiplier comes from the
+        // asset the caller passes - the row owns no multiplier of its own.
         let mut sell = stored_activity(ACTIVITY_TYPE_SELL);
         sell.quantity = Some(dec!(1));
         sell.unit_price = Some(dec!(1));
         sell.fee = Some(dec!(12));
         sell.amount = Some(dec!(2));
-        sell.metadata = Some(serde_json::json!({ "contract_multiplier": 10 }));
 
-        let resolved = ActivityEconomicsResolver::resolve_cash(&sell, dec!(100));
+        let resolved = ActivityEconomicsResolver::resolve_cash(&sell, dec!(10));
 
         assert_eq!(resolved.signed_cash_effect, Some(dec!(-2)));
     }
 
     #[test]
-    fn compiler_honors_activity_multiplier_override_for_transfer_lots() {
-        // Security-transfer lot basis is qty x price x multiplier; the row's
-        // own override must win over the asset multiplier the caller passes.
+    fn transfer_lot_basis_applies_the_asset_multiplier() {
+        // Security-transfer lot basis is qty x price x multiplier, taken from
+        // the asset multiplier the caller passes.
         let mut transfer = stored_activity("TRANSFER_IN");
         transfer.quantity = Some(dec!(1));
         transfer.unit_price = Some(dec!(5));
-        transfer.metadata = Some(serde_json::json!({ "contract_multiplier": 10 }));
 
         let compiled = ActivityEconomicsResolver::compile_activity_with_unit_multiplier(
             &transfer,
             None,
             TransferBoundary::External,
-            dec!(100),
+            dec!(10),
         );
 
         assert_eq!(compiled.lot_cost_basis_value, dec!(50));

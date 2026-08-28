@@ -212,19 +212,6 @@ pub struct Activity {
     pub updated_at: DateTime<Utc>,
 }
 
-/// JSON metadata key for a non-standard contract multiplier stored on the
-/// activity row itself (e.g. mini options = 10).
-pub const METADATA_CONTRACT_MULTIPLIER: &str = "contract_multiplier";
-
-/// Extracts the per-activity contract-multiplier override from parsed
-/// activity metadata: positive and non-zero, or `None`.
-pub fn contract_multiplier_override_value(metadata: Option<&Value>) -> Option<Decimal> {
-    metadata
-        .and_then(|value| value.get(METADATA_CONTRACT_MULTIPLIER)?.as_f64())
-        .and_then(Decimal::from_f64_retain)
-        .filter(|d| d.is_sign_positive() && !d.is_zero())
-}
-
 impl Activity {
     /// Returns the effective activity type, respecting user overrides.
     /// This is what the compiler and calculator should use.
@@ -232,13 +219,6 @@ impl Activity {
         self.activity_type_override
             .as_deref()
             .unwrap_or(&self.activity_type)
-    }
-
-    /// Per-activity contract-multiplier override (mini options carry their 10
-    /// here). Outranks the asset multiplier on every read and write surface -
-    /// see the ownership table in `activities_service`.
-    pub fn contract_multiplier_override(&self) -> Option<Decimal> {
-        contract_multiplier_override_value(self.metadata.as_ref())
     }
 
     /// Returns the effective date for this activity
@@ -871,6 +851,8 @@ pub struct ActivityDetails {
     pub exchange_mic: Option<String>,
     pub asset_pricing_mode: String, // MARKET, MANUAL, DERIVED, NONE
     pub instrument_type: Option<String>,
+    /// Effective multiplier resolved from the asset, never from activity metadata.
+    pub asset_contract_multiplier: Option<String>,
     // Sync/source metadata
     pub source_system: Option<String>,
     pub source_record_id: Option<String>,

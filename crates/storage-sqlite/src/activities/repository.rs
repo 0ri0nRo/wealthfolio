@@ -15,13 +15,14 @@ use uuid::Uuid;
 use wealthfolio_core::accounts::{account_supports_purpose, AccountPurpose};
 use wealthfolio_core::activities::ActivityError;
 use wealthfolio_core::activities::{
-    import_type, is_cash_symbol, Activity, ActivityBulkIdentifierMapping,
-    ActivityBulkMutationResult, ActivityDetails, ActivityFinalCashMigrationUpdate,
-    ActivityRepositoryTrait, ActivitySearchResponse, ActivitySearchResponseMeta, ActivityUpdate,
-    ActivityUpsert, BulkUpsertResult, ImportMapping, ImportTemplate, IncomeData, NewActivity, Sort,
-    ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT, INCOME_ACTIVITY_TYPES,
-    TRADING_ACTIVITY_TYPES,
+    import_type, is_cash_symbol, violates_final_cash_floor, Activity,
+    ActivityBulkIdentifierMapping, ActivityBulkMutationResult, ActivityDetails,
+    ActivityFinalCashMigrationUpdate, ActivityRepositoryTrait, ActivitySearchResponse,
+    ActivitySearchResponseMeta, ActivityUpdate, ActivityUpsert, BulkUpsertResult, ImportMapping,
+    ImportTemplate, IncomeData, NewActivity, Sort, ACTIVITY_TYPE_TRANSFER_IN,
+    ACTIVITY_TYPE_TRANSFER_OUT, INCOME_ACTIVITY_TYPES, TRADING_ACTIVITY_TYPES,
 };
+use wealthfolio_core::assets::{contract_multiplier_from_asset_metadata, InstrumentType};
 use wealthfolio_core::limits::ContributionActivity;
 use wealthfolio_core::{Error, Result};
 
@@ -537,48 +538,71 @@ impl ActivityRepository {
 
         let results_db = create_base_query(&conn)
             .select((
-                activities::id,
-                activities::account_id,
-                activities::asset_id,
-                sql::<Text>(
-                    "COALESCE(activities.activity_type_override, activities.activity_type)",
+                (
+                    activities::id,
+                    activities::account_id,
+                    activities::asset_id,
+                    sql::<Text>(
+                        "COALESCE(activities.activity_type_override, activities.activity_type)",
+                    ),
+                    activities::subtype,
+                    activities::status,
+                    activities::activity_date,
+                    activities::quantity,
+                    activities::unit_price,
+                    activities::currency,
+                    activities::fee,
+                    activities::tax,
+                    activities::amount,
+                    activities::notes,
+                    activities::fx_rate,
+                    activities::needs_review,
+                    activities::is_user_modified,
+                    activities::source_system,
+                    activities::source_record_id,
+                    activities::source_group_id,
+                    activities::idempotency_key,
+                    activities::import_run_id,
+                    activities::created_at,
+                    activities::updated_at,
+                    accounts::name,
+                    accounts::currency,
+                    assets::display_code.nullable(),
+                    assets::name.nullable(),
+                    assets::instrument_exchange_mic.nullable(),
+                    assets::quote_mode.nullable(),
+                    assets::instrument_type.nullable(),
+                    activities::metadata,
                 ),
-                activities::subtype,
-                activities::status,
-                activities::activity_date,
-                activities::quantity,
-                activities::unit_price,
-                activities::currency,
-                activities::fee,
-                activities::tax,
-                activities::amount,
-                activities::notes,
-                activities::fx_rate,
-                activities::needs_review,
-                activities::is_user_modified,
-                activities::source_system,
-                activities::source_record_id,
-                activities::source_group_id,
-                activities::idempotency_key,
-                activities::import_run_id,
-                activities::created_at,
-                activities::updated_at,
-                accounts::name,
-                accounts::currency,
-                assets::display_code.nullable(),
-                assets::name.nullable(),
-                assets::instrument_exchange_mic.nullable(),
-                assets::quote_mode.nullable(),
-                assets::instrument_type.nullable(),
-                activities::metadata,
+                assets::metadata.nullable(),
             ))
             .limit(page_size)
             .offset(offset)
-            .load::<ActivityDetailsDB>(&mut conn)
+            .load::<(ActivityDetailsDB, Option<String>)>(&mut conn)
             .map_err(StorageError::from)?;
 
-        let results: Vec<ActivityDetails> =
-            results_db.into_iter().map(ActivityDetails::from).collect();
+        let results: Vec<ActivityDetails> = results_db
+            .into_iter()
+            .map(|(db, asset_metadata)| {
+                let has_asset = db.asset_id.is_some();
+                let instrument_type = db
+                    .instrument_type
+                    .as_deref()
+                    .and_then(InstrumentType::from_db_str);
+                let asset_metadata: Option<serde_json::Value> = asset_metadata
+                    .as_deref()
+                    .and_then(|value| serde_json::from_str(value).ok());
+                let mut activity = ActivityDetails::from(db);
+                activity.asset_contract_multiplier = has_asset.then(|| {
+                    contract_multiplier_from_asset_metadata(
+                        instrument_type.as_ref(),
+                        asset_metadata.as_ref(),
+                    )
+                    .to_string()
+                });
+                activity
+            })
+            .collect();
 
         Ok(ActivitySearchResponse {
             data: results,
@@ -625,6 +649,38 @@ fn final_cash_legacy_metadata(existing: Option<&str>, legacy_amount: &str) -> Le
         serde_json::Value::String(legacy_amount.to_string()),
     );
     LegacyBreadcrumb::Write(serde_json::Value::Object(metadata).to_string())
+}
+
+/// Final-cash floor (see `violates_final_cash_floor` in core): refuses to
+/// persist a POSTED cash-bearing row that has no amount and no review flag.
+/// Applied at every repository write door; the migration door is exempt by
+/// design (its rewrites always flag the rows they cannot verify).
+fn assert_final_cash_floor(activity_db: &ActivityDB) -> Result<()> {
+    let effective_type = activity_db
+        .activity_type_override
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&activity_db.activity_type);
+    let has_amount = activity_db
+        .amount
+        .as_deref()
+        .is_some_and(|amount| !amount.trim().is_empty());
+    if violates_final_cash_floor(
+        effective_type,
+        activity_db.asset_id.as_deref(),
+        &activity_db.status,
+        has_amount,
+        activity_db.needs_review != 0,
+    ) {
+        return Err(Error::Validation(
+            wealthfolio_core::errors::ValidationError::InvalidInput(format!(
+                "Refusing to persist activity '{}': a posted {} with no final cash amount must be flagged for review",
+                activity_db.id, effective_type
+            )),
+        ));
+    }
+    Ok(())
 }
 
 // Implement the trait for the repository
@@ -793,6 +849,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
             .exec_tx(move |tx| -> Result<Activity> {
                 let mut activity_to_insert = activity_db_owned;
                 activity_to_insert.id = Uuid::new_v4().to_string();
+                assert_final_cash_floor(&activity_to_insert)?;
                 let inserted_activity = diesel::insert_into(activities::table)
                     .values(&activity_to_insert)
                     .get_result::<ActivityDB>(tx.conn())
@@ -910,6 +967,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                     provider_account_id.as_deref(),
                 );
                 activity_to_update.updated_at = chrono::Utc::now().to_rfc3339();
+                assert_final_cash_floor(&activity_to_update)?;
 
                 let updated_activity =
                     diesel::update(activities::table.find(&activity_to_update.id))
@@ -1324,6 +1382,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                         provider_account_id.as_deref(),
                     );
                     activity_db.updated_at = chrono::Utc::now().to_rfc3339();
+                    assert_final_cash_floor(&activity_db)?;
 
                     let updated_activity = diesel::update(activities::table.find(&activity_db.id))
                         .set(&activity_db)
@@ -1351,6 +1410,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                     // Always generate a new UUID for created activities
                     let generated_id = Uuid::new_v4().to_string();
                     activity_db.id = generated_id.clone();
+                    assert_final_cash_floor(&activity_db)?;
                     let inserted_activity = diesel::insert_into(activities::table)
                         .values(&activity_db)
                         .get_result::<ActivityDB>(tx.conn())
@@ -2025,6 +2085,9 @@ impl ActivityRepositoryTrait for ActivityRepository {
                 db
             })
             .collect();
+        for activity_db in &activities_db_owned {
+            assert_final_cash_floor(activity_db)?;
+        }
 
         self.writer
             .exec_tx(move |tx| -> Result<usize> {
@@ -2911,6 +2974,7 @@ impl ActivityRepositoryTrait for ActivityRepository {
                         }
                     }
 
+                    assert_final_cash_floor(&activity_db)?;
                     match diesel::insert_into(activities::table)
                         .values(&activity_db)
                         .on_conflict(activities::id)
@@ -3741,6 +3805,71 @@ mod tests {
             .expect("search by subtype keyword");
         assert_eq!(subtype_match.data.len(), 1);
         assert_eq!(subtype_match.data[0].id, "broker-buy-override");
+    }
+
+    #[tokio::test]
+    async fn search_activities_returns_the_asset_contract_multiplier() {
+        let (pool, writer) = setup_db();
+        let repo = ActivityRepository::new(pool.clone(), writer);
+
+        {
+            let mut conn = get_connection(&pool).expect("conn");
+            insert_account(&mut conn, "option-account");
+            diesel::sql_query(
+                r#"INSERT INTO assets
+                   (id, kind, name, display_code, metadata, is_active, quote_mode, quote_ccy,
+                    instrument_type, instrument_symbol, created_at, updated_at)
+                   VALUES
+                   ('option-mini', 'INVESTMENT', 'Mini option', 'AAPL7',
+                    '{"option":{"underlyingAssetId":"AAPL","expiration":"2026-12-18","right":"CALL","strike":"150","multiplier":"10"}}',
+                    1, 'MARKET', 'USD', 'OPTION', 'AAPL7 261218C00150000', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                   ('option-standard', 'INVESTMENT', 'Standard option', 'AAPL', NULL,
+                    1, 'MARKET', 'USD', 'OPTION', 'AAPL 261218C00150000', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"#,
+            )
+            .execute(&mut conn)
+            .expect("insert option assets");
+            diesel::sql_query(
+                "INSERT INTO activities
+                 (id, account_id, asset_id, activity_type, status, activity_date, quantity,
+                  unit_price, amount, currency, is_user_modified, needs_review, created_at, updated_at)
+                 VALUES
+                 ('mini-buy', 'option-account', 'option-mini', 'BUY', 'POSTED',
+                  '2026-01-01T00:00:00Z', '1', '5', '50', 'USD', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                 ('standard-buy', 'option-account', 'option-standard', 'BUY', 'POSTED',
+                  '2026-01-02T00:00:00Z', '1', '5', '500', 'USD', 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+            )
+            .execute(&mut conn)
+            .expect("insert option activities");
+        }
+
+        let results = repo
+            .search_activities(
+                0,
+                10,
+                Some(vec!["option-account".to_string()]),
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .expect("search option activities");
+
+        let multipliers: HashMap<&str, Option<&str>> = results
+            .data
+            .iter()
+            .map(|activity| {
+                (
+                    activity.id.as_str(),
+                    activity.asset_contract_multiplier.as_deref(),
+                )
+            })
+            .collect();
+        assert_eq!(multipliers.get("mini-buy"), Some(&Some("10")));
+        assert_eq!(multipliers.get("standard-buy"), Some(&Some("100")));
     }
 
     #[tokio::test]
@@ -5674,5 +5803,112 @@ mod tests {
         assert_eq!(rows[0].2.as_deref(), Some("SNAPTRADE"));
         assert_eq!(rows[0].3.as_deref(), Some("txn-1"));
         assert_eq!(rows[0].4.as_deref(), Some("idemp-2"));
+    }
+    fn qa_floor_new_activity(activity_type: &str) -> NewActivity {
+        NewActivity {
+            id: None,
+            account_id: "acc-floor".to_string(),
+            asset: None,
+            activity_type: activity_type.to_string(),
+            subtype: None,
+            activity_date: "2024-03-01T00:00:00Z".to_string(),
+            quantity: Some(Decimal::new(10, 0)),
+            unit_price: Some(Decimal::new(50, 0)),
+            currency: "USD".to_string(),
+            fee: None,
+            tax: None,
+            amount: None,
+            status: None,
+            notes: None,
+            fx_rate: None,
+            metadata: None,
+            needs_review: None,
+            source_system: None,
+            source_record_id: None,
+            source_group_id: None,
+            idempotency_key: None,
+            import_run_id: None,
+        }
+    }
+
+    /// The repository floor: a POSTED cash-bearing row with no amount and no
+    /// review flag must be refused at every write door - it would book zero
+    /// cash silently (the CSV-import bypass class, PR #1571).
+    #[tokio::test]
+    async fn create_refuses_posted_cash_row_without_amount_or_flag() {
+        let (pool, writer) = setup_db();
+        let repo = ActivityRepository::new(pool.clone(), writer);
+        {
+            let mut conn = get_connection(&pool).expect("conn");
+            insert_account(&mut conn, "acc-floor");
+        }
+
+        let bare_trade = qa_floor_new_activity("BUY");
+        let error = repo
+            .create_activities(vec![bare_trade.clone()])
+            .await
+            .expect_err("silent-zero trade must be refused");
+        assert!(error.to_string().contains("flagged for review"));
+
+        let error = repo
+            .create_activity(bare_trade)
+            .await
+            .expect_err("single-create door enforces the same floor");
+        assert!(error.to_string().contains("flagged for review"));
+
+        let error = repo
+            .bulk_mutate_activities(
+                vec![qa_floor_new_activity("DEPOSIT")],
+                Vec::new(),
+                Vec::new(),
+            )
+            .await
+            .expect_err("bulk-mutate create door enforces the same floor");
+        assert!(error.to_string().contains("flagged for review"));
+    }
+
+    #[tokio::test]
+    async fn create_allows_flagged_missing_amount_and_security_transfers() {
+        let (pool, writer) = setup_db();
+        let repo = ActivityRepository::new(pool.clone(), writer);
+        {
+            let mut conn = get_connection(&pool).expect("conn");
+            insert_account(&mut conn, "acc-floor");
+            diesel::insert_into(assets::table)
+                .values((
+                    assets::id.eq("asset-floor".to_string()),
+                    assets::kind.eq("INVESTMENT".to_string()),
+                    assets::is_active.eq(1),
+                    assets::quote_mode.eq("MANUAL".to_string()),
+                    assets::quote_ccy.eq("USD".to_string()),
+                    assets::created_at.eq("2024-01-15T00:00:00+00:00".to_string()),
+                    assets::updated_at.eq("2024-01-15T00:00:00+00:00".to_string()),
+                ))
+                .execute(&mut conn)
+                .expect("insert asset");
+        }
+
+        // Flagged missing amount: legal (the review queue owns it).
+        let mut flagged = qa_floor_new_activity("SELL");
+        flagged.needs_review = Some(true);
+        assert_eq!(
+            repo.create_activities(vec![flagged])
+                .await
+                .expect("flagged row is legal"),
+            1
+        );
+
+        // Security transfer: lot-only, exempt from the amount requirement.
+        let mut transfer = qa_floor_new_activity("TRANSFER_IN");
+        transfer.asset = Some(wealthfolio_core::activities::AssetResolutionInput {
+            id: Some("asset-floor".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(
+            repo.create_activities(vec![transfer])
+                .await
+                .expect("security transfer with no amount is legal"),
+            1
+        );
     }
 }

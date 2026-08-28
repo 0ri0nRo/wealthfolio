@@ -312,7 +312,6 @@ impl From<ActivityDetailsDB> for wealthfolio_core::activities::ActivityDetails {
             "VOID" => ActivityStatus::Void,
             _ => ActivityStatus::Posted, // Default to Posted for unknown values
         };
-
         Self {
             id: db.id,
             account_id: db.account_id,
@@ -341,6 +340,7 @@ impl From<ActivityDetailsDB> for wealthfolio_core::activities::ActivityDetails {
                 .asset_pricing_mode
                 .unwrap_or_else(|| "MARKET".to_string()),
             instrument_type: db.instrument_type,
+            asset_contract_multiplier: None,
             source_system: db.source_system,
             source_record_id: db.source_record_id,
             source_group_id: db.source_group_id,

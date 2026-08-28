@@ -240,15 +240,45 @@ mod tests {
             _activity_repository: &dyn crate::activities::ActivityRepositoryTrait,
         ) -> Result<crate::assets::EnsureAssetsResult> {
             let mut result = crate::assets::EnsureAssetsResult::default();
-            let assets = self.assets.lock().unwrap();
+            let mut assets = self.assets.lock().unwrap();
 
-            // Look up existing assets by spec ID
             for spec in specs {
                 if let Some(ref id) = spec.id {
+                    // Look up existing assets by spec ID
                     if let Some(asset) = assets.iter().find(|a| a.id == *id) {
                         result.assets.insert(id.clone(), asset.clone());
                     }
+                    continue;
                 }
+                // Natural-identity spec: create the asset, mirroring the real
+                // service, so symbol-only import rows resolve in tests.
+                let instrument_key = spec.instrument_key();
+                if let Some(existing) = assets
+                    .iter()
+                    .find(|a| a.instrument_key.is_some() && a.instrument_key == instrument_key)
+                {
+                    result.assets.insert(existing.id.clone(), existing.clone());
+                    continue;
+                }
+                let symbol = spec
+                    .display_code
+                    .clone()
+                    .or_else(|| spec.instrument_symbol.clone())
+                    .unwrap_or_else(|| "CREATED".to_string());
+                let created = Asset {
+                    id: format!("created-{}", symbol),
+                    display_code: Some(symbol.clone()),
+                    instrument_symbol: spec.instrument_symbol.clone(),
+                    quote_ccy: spec.quote_ccy.clone(),
+                    kind: spec.kind,
+                    instrument_type: spec.instrument_type,
+                    instrument_key,
+                    metadata: spec.metadata,
+                    ..Default::default()
+                };
+                result.created_ids.push(created.id.clone());
+                result.assets.insert(created.id.clone(), created.clone());
+                assets.push(created);
             }
 
             Ok(result)
@@ -1611,7 +1641,7 @@ mod tests {
                     idempotency_key: new_activity.idempotency_key,
                     import_run_id: new_activity.import_run_id,
                     is_user_modified: false,
-                    needs_review: false,
+                    needs_review: new_activity.needs_review.unwrap_or(false),
                     created_at: Utc::now(),
                     updated_at: Utc::now(),
                 });
@@ -2931,10 +2961,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_honors_activity_metadata_multiplier_over_asset_default() {
-        // A mini option (contract multiplier 10) recorded against a plain
-        // option asset carries its multiplier in ACTIVITY metadata; a recalc
-        // must use that 10, not the asset's 100 default.
+    async fn test_update_uses_the_asset_multiplier_not_activity_metadata() {
+        // A row carrying `contract_multiplier: 10` against a standard
+        // 100-multiplier option asset: the asset wins. The metadata is a
+        // creation-time seed, and this asset already exists.
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let activity_repository = Arc::new(MockActivityRepository::new());
@@ -2986,15 +3016,81 @@ mod tests {
             .await
             .expect("update should succeed");
 
-        // 2 x 7 x 10, not 2 x 7 x 100.
-        assert_eq!(updated.amount, Some(dec!(140)));
-        // The stored total matched the old calculation under the same
-        // metadata multiplier, so nothing custom was replaced.
-        assert!(!updated.needs_review);
+        // The ASSET owns the multiplier: 2 x 7 x 100, not 2 x 7 x 10. A row
+        // whose metadata disagrees with its asset is a misconfigured asset,
+        // not a per-row override.
+        assert_eq!(updated.amount, Some(dec!(1400)));
     }
 
     #[tokio::test]
-    async fn test_create_honors_activity_metadata_multiplier_over_asset_default() {
+    async fn test_create_on_a_mini_option_asset_uses_the_assets_multiplier() {
+        // The regression this ownership model exists for: a mini-option ASSET
+        // carries multiplier 10, and a later trade entered without touching
+        // the form's multiplier field must still price at 10 - never at the
+        // form's 100 default. Nothing the row carries can outrank the asset.
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        account_service.add_account(create_test_account("acc-usd", "USD"));
+        let mut mini = create_test_asset_with_instrument(
+            "asset-mini",
+            "XSP240119C00500000",
+            Some("XCBO"),
+            Some(InstrumentType::Option),
+            "USD",
+        );
+        mini.metadata = Some(serde_json::json!({
+            crate::assets::CONTRACT_MULTIPLIER_METADATA_KEY: 10
+        }));
+        asset_service.add_asset(mini);
+        let activity_service = ActivityService::new(
+            activity_repository,
+            account_service,
+            asset_service,
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        );
+
+        let created = activity_service
+            .create_activity(NewActivity {
+                id: None,
+                account_id: "acc-usd".to_string(),
+                asset: Some(AssetResolutionInput {
+                    id: Some("asset-mini".to_string()),
+                    ..Default::default()
+                }),
+                activity_type: "BUY".to_string(),
+                subtype: None,
+                activity_date: "2024-01-15".to_string(),
+                quantity: Some(dec!(2)),
+                unit_price: Some(dec!(7)),
+                currency: "USD".to_string(),
+                fee: Some(dec!(1)),
+                tax: None,
+                amount: None,
+                status: None,
+                notes: None,
+                fx_rate: None,
+                // No multiplier metadata: the form no longer sends its
+                // untouched 100 default.
+                metadata: None,
+                needs_review: None,
+                source_system: None,
+                source_record_id: None,
+                source_group_id: None,
+                idempotency_key: None,
+                import_run_id: None,
+            })
+            .await
+            .expect("create should succeed");
+
+        // 2 x 7 x 10 + 1 fee.
+        assert_eq!(created.amount, Some(dec!(141)));
+        assert!(!created.needs_review);
+    }
+
+    #[tokio::test]
+    async fn test_create_uses_the_asset_multiplier_not_activity_metadata() {
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let activity_repository = Arc::new(MockActivityRepository::new());
@@ -3045,8 +3141,10 @@ mod tests {
             .await
             .expect("create should succeed");
 
-        // 2 x 7 x 10 + 1 fee, not 2 x 7 x 100 + 1.
-        assert_eq!(created.amount, Some(dec!(141)));
+        // The ASSET owns the multiplier: 2 x 7 x 100 + 1 fee. The row's own
+        // `contract_multiplier` seeds a brand-new asset and nothing else, so
+        // against this pre-existing 100-multiplier asset it is inert.
+        assert_eq!(created.amount, Some(dec!(1401)));
     }
 
     #[tokio::test]
@@ -3113,8 +3211,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_metadata_patch_merges_into_existing_metadata() {
-        // An option edit sends only its contract multiplier; the migration's
-        // legacy_amount breadcrumb stored on the row must survive the patch.
+        // A legacy client may still send the creation-time multiplier key;
+        // the migration breadcrumb stored beside it must survive the patch.
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let activity_repository = Arc::new(MockActivityRepository::new());
@@ -3865,6 +3963,71 @@ mod tests {
         let prepared = &result.prepared[0].activity;
         assert_eq!(prepared.needs_review, Some(true));
         assert_eq!(prepared.amount, Some(dec!(150)));
+    }
+
+    #[tokio::test]
+    async fn sync_prepare_seeds_a_new_mini_option_asset_before_deriving_cash() {
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let account = create_test_account("acc-usd", "USD");
+        account_service.add_account(account.clone());
+        let activity_service = ActivityService::new(
+            Arc::new(MockActivityRepository::new()),
+            account_service,
+            asset_service.clone(),
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        );
+
+        let result = activity_service
+            .prepare_activities_for_sync(
+                vec![NewActivity {
+                    id: Some("sync-mini-buy".to_string()),
+                    account_id: "acc-usd".to_string(),
+                    asset: Some(AssetResolutionInput {
+                        symbol: Some("XSP  240119C00500000".to_string()),
+                        quote_ccy: Some("USD".to_string()),
+                        instrument_type: Some("OPTION".to_string()),
+                        ..Default::default()
+                    }),
+                    activity_type: "BUY".to_string(),
+                    subtype: None,
+                    activity_date: "2024-01-15".to_string(),
+                    quantity: Some(dec!(2)),
+                    unit_price: Some(dec!(7)),
+                    currency: "USD".to_string(),
+                    fee: Some(dec!(1)),
+                    tax: None,
+                    amount: None,
+                    status: Some(ActivityStatus::Posted),
+                    notes: None,
+                    fx_rate: None,
+                    metadata: Some(r#"{"contract_multiplier": 10}"#.to_string()),
+                    needs_review: None,
+                    source_system: Some("SNAPTRADE".to_string()),
+                    source_record_id: Some("sync-mini-buy".to_string()),
+                    source_group_id: None,
+                    idempotency_key: None,
+                    import_run_id: None,
+                }],
+                &account,
+            )
+            .await
+            .expect("sync preparation");
+
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
+        assert_eq!(result.prepared[0].activity.amount, Some(dec!(141)));
+        let asset_id = result.prepared[0]
+            .resolved_asset_id
+            .as_deref()
+            .expect("asset resolved");
+        assert_eq!(
+            asset_service
+                .get_asset_by_id(asset_id)
+                .expect("created asset")
+                .contract_multiplier(),
+            dec!(10)
+        );
     }
 
     #[tokio::test]
@@ -10486,7 +10649,7 @@ mod tests {
         let activity_service = ActivityService::new(
             activity_repository.clone(),
             account_service,
-            asset_service,
+            asset_service.clone(),
             fx_service,
             quote_service,
         );
@@ -10540,10 +10703,19 @@ mod tests {
             .get_activities()
             .expect("stored activities should be readable");
         assert_eq!(stored.len(), 1);
-        assert!(
-            stored[0].asset_id.is_none(),
-            "import apply should not live-resolve missing MIC during persistence"
-        );
+        // The writer boundary now ensures the asset during import (a manual
+        // asset is created from the row's own facts); what still must NOT
+        // happen is a live provider MIC resolution during persistence -
+        // ImportApply mode forbids live resolution, so the created asset
+        // carries no exchange MIC.
+        let asset_id = stored[0]
+            .asset_id
+            .as_deref()
+            .expect("symbol-only import rows resolve their asset before persistence");
+        let created = asset_service
+            .get_asset_by_id(asset_id)
+            .expect("created asset should be readable");
+        assert!(created.instrument_exchange_mic.is_none());
     }
 
     #[tokio::test]
@@ -14104,5 +14276,321 @@ mod tests {
             }
             event => panic!("expected ActivitiesChanged, got {event:?}"),
         }
+    }
+    // ───────────────────────────────────────────────────────────────────
+    // Import writer-boundary policy — one test per policy-table behavior,
+    // through the REAL entry point (`import_activities`), asserting the
+    // persisted amount and review flag. These are the cases the CSV-import
+    // bypass shipped without (PR #1571 review).
+    // ───────────────────────────────────────────────────────────────────
+
+    fn qa_import_row(account_id: &str, activity_type: &str, currency: &str) -> ActivityImport {
+        ActivityImport {
+            id: None,
+            date: "2024-02-01".to_string(),
+            symbol: String::new(),
+            activity_type: activity_type.to_string(),
+            quantity: None,
+            unit_price: None,
+            currency: currency.to_string(),
+            fee: None,
+            tax: None,
+            amount: None,
+            comment: None,
+            account_id: Some(account_id.to_string()),
+            account_name: None,
+            symbol_name: None,
+            exchange_mic: None,
+            quote_ccy: None,
+            instrument_type: None,
+            quote_mode: None,
+            provider_id: None,
+            provider_symbol: None,
+            errors: None,
+            warnings: None,
+            duplicate_of_id: None,
+            duplicate_of_line_number: None,
+            is_draft: false,
+            is_valid: true,
+            line_number: Some(1),
+            fx_rate: None,
+            subtype: None,
+            asset_id: None,
+            isin: None,
+            force_import: false,
+            is_external: None,
+        }
+    }
+
+    fn qa_import_service(
+        account_currency: &str,
+        assets: Vec<Asset>,
+    ) -> (ActivityService, Arc<MockActivityRepository>, Account) {
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let fx_service = Arc::new(MockFxService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        let account = create_test_account("qa-acc", account_currency);
+        account_service.add_account(account.clone());
+        for asset in assets {
+            asset_service.add_asset(asset);
+        }
+        let service = ActivityService::new(
+            activity_repository.clone(),
+            account_service,
+            asset_service,
+            fx_service,
+            Arc::new(MockQuoteService),
+        );
+        (service, activity_repository, account)
+    }
+
+    /// The trade-total policy table (module docs in activities_service.rs),
+    /// driven through the real import path. Every case is the same MSFT buy —
+    /// 10 x $50 with a $5 fee, final cash $505 — and differs only in the total
+    /// the file supplied.
+    #[tokio::test]
+    async fn import_applies_the_trade_total_policy_table() {
+        let cases = [
+            ("missing total is derived", None, dec!(505), false),
+            (
+                "exact final total is preserved",
+                Some(dec!(505)),
+                dec!(505),
+                false,
+            ),
+            (
+                "gross total is canonicalized to final",
+                Some(dec!(500)),
+                dec!(505),
+                false,
+            ),
+            (
+                "contradicting total is kept and flagged",
+                Some(dec!(999)),
+                dec!(999),
+                true,
+            ),
+        ];
+
+        for (case, supplied, expected_amount, expected_review) in cases {
+            let asset = create_test_asset_with_instrument(
+                "qa-msft",
+                "MSFT",
+                Some("XNAS"),
+                Some(InstrumentType::Equity),
+                "USD",
+            );
+            let (service, repository, _) = qa_import_service("USD", vec![asset]);
+            let mut row = qa_import_row("qa-acc", "BUY", "USD");
+            row.symbol = "MSFT".to_string();
+            row.asset_id = Some("qa-msft".to_string());
+            row.quantity = Some(dec!(10));
+            row.unit_price = Some(dec!(50));
+            row.fee = Some(dec!(5));
+            row.amount = supplied;
+
+            let result = service.import_activities(vec![row]).await.expect("import");
+
+            assert!(result.summary.success, "{case}: import must succeed");
+            assert_eq!(result.summary.imported, 1, "{case}: one row imported");
+            let stored = repository.get_activities().expect("stored");
+            assert_eq!(stored.len(), 1, "{case}: one row stored");
+            assert_eq!(
+                stored[0].amount,
+                Some(expected_amount),
+                "{case}: stored final cash"
+            );
+            assert_eq!(
+                stored[0].needs_review, expected_review,
+                "{case}: review flag"
+            );
+            assert_eq!(
+                stored[0].status,
+                ActivityStatus::Posted,
+                "{case}: stays posted"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn import_derives_zero_amount_charge_from_its_charge_column() {
+        let (service, repository, _) = qa_import_service("USD", Vec::new());
+        let mut row = qa_import_row("qa-acc", "FEE", "USD");
+        row.amount = Some(Decimal::ZERO);
+        row.fee = Some(dec!(9.99));
+
+        service.import_activities(vec![row]).await.expect("import");
+
+        let stored = repository.get_activities().expect("stored");
+        assert_eq!(stored[0].amount, Some(dec!(9.99)));
+        assert!(!stored[0].needs_review);
+    }
+
+    #[tokio::test]
+    async fn import_demotes_unverifiable_cross_currency_trade() {
+        // Asset quoted in USD, activity in CAD, no amount supplied: qty x
+        // price is meaningless in the activity currency, so the row must NOT
+        // book a derived wrong-scale total (and must not book silent zero).
+        let asset = create_test_asset_with_instrument(
+            "qa-msft",
+            "MSFT",
+            Some("XNAS"),
+            Some(InstrumentType::Equity),
+            "USD",
+        );
+        let (service, repository, _) = qa_import_service("CAD", vec![asset]);
+        let mut row = qa_import_row("qa-acc", "BUY", "CAD");
+        row.symbol = "MSFT".to_string();
+        row.asset_id = Some("qa-msft".to_string());
+        row.quantity = Some(dec!(10));
+        row.unit_price = Some(dec!(50));
+
+        let result = service.import_activities(vec![row]).await.expect("import");
+
+        assert!(result.summary.success);
+        let stored = repository.get_activities().expect("stored");
+        assert_eq!(stored[0].amount, None);
+        assert!(stored[0].needs_review);
+        assert_eq!(stored[0].status, ActivityStatus::Draft);
+        // The result row tells the user what happened.
+        assert!(result.activities[0].is_draft);
+    }
+
+    #[tokio::test]
+    async fn import_preserves_cross_currency_supplied_total_untouched() {
+        let asset = create_test_asset_with_instrument(
+            "qa-msft",
+            "MSFT",
+            Some("XNAS"),
+            Some(InstrumentType::Equity),
+            "USD",
+        );
+        let (service, repository, _) = qa_import_service("CAD", vec![asset]);
+        let mut row = qa_import_row("qa-acc", "BUY", "CAD");
+        row.symbol = "MSFT".to_string();
+        row.asset_id = Some("qa-msft".to_string());
+        row.quantity = Some(dec!(10));
+        row.unit_price = Some(dec!(50));
+        row.amount = Some(dec!(700));
+
+        service.import_activities(vec![row]).await.expect("import");
+
+        let stored = repository.get_activities().expect("stored");
+        assert_eq!(stored[0].amount, Some(dec!(700)));
+        assert_eq!(stored[0].status, ActivityStatus::Posted);
+    }
+
+    #[tokio::test]
+    async fn import_resolves_symbol_only_rows_before_persistence() {
+        let (service, repository, _) = qa_import_service("USD", Vec::new());
+        let mut row = qa_import_row("qa-acc", "BUY", "USD");
+        row.symbol = "NEWCO".to_string();
+        row.quote_ccy = Some("USD".to_string());
+        row.instrument_type = Some("EQUITY".to_string());
+        row.quote_mode = Some("MANUAL".to_string());
+        row.quantity = Some(dec!(4));
+        row.unit_price = Some(dec!(25));
+        row.fee = Some(dec!(1));
+
+        let result = service.import_activities(vec![row]).await.expect("import");
+
+        assert_eq!(result.summary.imported, 1);
+        assert_eq!(result.summary.assets_created, 1);
+        let stored = repository.get_activities().expect("stored");
+        assert!(stored[0].asset_id.is_some());
+        assert_eq!(stored[0].amount, Some(dec!(101)));
+        assert!(!stored[0].needs_review);
+    }
+
+    #[tokio::test]
+    async fn import_allows_security_transfer_without_amount() {
+        let asset = create_test_asset_with_instrument(
+            "qa-msft",
+            "MSFT",
+            Some("XNAS"),
+            Some(InstrumentType::Equity),
+            "USD",
+        );
+        let (service, repository, _) = qa_import_service("USD", vec![asset]);
+        let mut row = qa_import_row("qa-acc", "TRANSFER_IN", "USD");
+        row.symbol = "MSFT".to_string();
+        row.asset_id = Some("qa-msft".to_string());
+        row.quantity = Some(dec!(3));
+        row.unit_price = Some(dec!(90));
+
+        let result = service.import_activities(vec![row]).await.expect("import");
+
+        assert_eq!(result.summary.imported, 1);
+        let stored = repository.get_activities().expect("stored");
+        assert_eq!(stored[0].amount, None);
+        assert!(!stored[0].needs_review);
+        assert_eq!(stored[0].status, ActivityStatus::Posted);
+    }
+
+    #[tokio::test]
+    async fn import_books_the_expected_ledger_effect() {
+        // The ledger test the review demanded: import a mixed batch and
+        // assert the resulting CASH, not row counts. Every stored row is
+        // resolved through the runtime resolver (final-only), so this fails
+        // if any writer stores a silent-zero or a gross total.
+        let asset = create_test_asset_with_instrument(
+            "qa-msft",
+            "MSFT",
+            Some("XNAS"),
+            Some(InstrumentType::Equity),
+            "USD",
+        );
+        let (service, repository, _) = qa_import_service("USD", vec![asset]);
+
+        let mut buy = qa_import_row("qa-acc", "BUY", "USD");
+        buy.symbol = "MSFT".to_string();
+        buy.asset_id = Some("qa-msft".to_string());
+        buy.quantity = Some(dec!(10));
+        buy.unit_price = Some(dec!(50));
+        buy.fee = Some(dec!(5));
+        buy.line_number = Some(1);
+
+        let mut sell = qa_import_row("qa-acc", "SELL", "USD");
+        sell.date = "2024-02-02".to_string();
+        sell.symbol = "MSFT".to_string();
+        sell.asset_id = Some("qa-msft".to_string());
+        sell.quantity = Some(dec!(5));
+        sell.unit_price = Some(dec!(60));
+        sell.fee = Some(dec!(3));
+        sell.tax = Some(dec!(1));
+        sell.line_number = Some(2);
+
+        let mut deposit = qa_import_row("qa-acc", "DEPOSIT", "USD");
+        deposit.date = "2024-02-03".to_string();
+        deposit.amount = Some(dec!(1000));
+        deposit.line_number = Some(3);
+
+        let mut fee = qa_import_row("qa-acc", "FEE", "USD");
+        fee.date = "2024-02-04".to_string();
+        fee.amount = Some(Decimal::ZERO);
+        fee.fee = Some(dec!(9.99));
+        fee.line_number = Some(4);
+
+        let result = service
+            .import_activities(vec![buy, sell, deposit, fee])
+            .await
+            .expect("import");
+        assert_eq!(result.summary.imported, 4);
+
+        let stored = repository.get_activities().expect("stored");
+        let booked: Decimal = stored
+            .iter()
+            .map(|activity| {
+                crate::portfolio::economic_events::ActivityEconomicsResolver::resolve_cash(
+                    activity,
+                    Decimal::ONE,
+                )
+                .signed_cash_effect
+                .unwrap_or(Decimal::ZERO)
+            })
+            .sum();
+        // 1000 - 505 + 296 - 9.99
+        assert_eq!(booked, dec!(781.01));
     }
 }

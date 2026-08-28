@@ -174,6 +174,44 @@ pub fn instrument_default_multiplier(is_option: bool, is_mini_option: bool) -> D
     }
 }
 
+fn explicit_contract_multiplier_from_asset_metadata(
+    instrument_type: Option<&InstrumentType>,
+    metadata: Option<&Value>,
+) -> Option<Decimal> {
+    (instrument_type == Some(&InstrumentType::Option))
+        .then(|| {
+            metadata
+                .and_then(|value| value.get("option"))
+                .and_then(|value| serde_json::from_value::<OptionSpec>(value.clone()).ok())
+                .map(|spec| spec.multiplier)
+        })
+        .flatten()
+        .or_else(|| {
+            metadata
+                .and_then(|value| value.get(CONTRACT_MULTIPLIER_METADATA_KEY))
+                .and_then(|value| {
+                    value
+                        .as_f64()
+                        .and_then(Decimal::from_f64)
+                        .or_else(|| value.as_str().and_then(|raw| raw.parse::<Decimal>().ok()))
+                })
+                .filter(|multiplier| *multiplier > Decimal::ZERO)
+        })
+}
+
+/// Resolves the effective multiplier directly from persisted asset fields.
+///
+/// This is the field-level equivalent of [`Asset::contract_multiplier`] for
+/// projections that already joined the asset but do not need the full model.
+pub fn contract_multiplier_from_asset_metadata(
+    instrument_type: Option<&InstrumentType>,
+    metadata: Option<&Value>,
+) -> Decimal {
+    let is_option = instrument_type == Some(&InstrumentType::Option);
+    explicit_contract_multiplier_from_asset_metadata(instrument_type, metadata)
+        .unwrap_or_else(|| instrument_default_multiplier(is_option, false))
+}
+
 /// Bond specification stored in Asset.metadata["bond"]
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -433,26 +471,18 @@ impl Asset {
     /// For options, this is the number of shares per contract (typically 100).
     /// Other contract instruments can provide an explicit multiplier in asset metadata.
     pub fn contract_multiplier(&self) -> Decimal {
-        self.explicit_contract_multiplier()
-            .unwrap_or_else(|| instrument_default_multiplier(self.is_option(), false))
+        contract_multiplier_from_asset_metadata(
+            self.instrument_type.as_ref(),
+            self.metadata.as_ref(),
+        )
     }
 
     /// Returns only a multiplier explicitly carried by the asset.
     pub fn explicit_contract_multiplier(&self) -> Option<Decimal> {
-        if let Some(spec) = self.option_spec() {
-            Some(spec.multiplier)
-        } else {
-            self.metadata
-                .as_ref()
-                .and_then(|metadata| metadata.get(CONTRACT_MULTIPLIER_METADATA_KEY))
-                .and_then(|value| {
-                    value
-                        .as_f64()
-                        .and_then(Decimal::from_f64)
-                        .or_else(|| value.as_str().and_then(|raw| raw.parse::<Decimal>().ok()))
-                })
-                .filter(|multiplier| *multiplier > Decimal::ZERO)
-        }
+        explicit_contract_multiplier_from_asset_metadata(
+            self.instrument_type.as_ref(),
+            self.metadata.as_ref(),
+        )
     }
 
     /// Get option metadata if this is an option (instrument_type = OPTION)

@@ -12,8 +12,8 @@
 //! - Security-transfer rows are never touched, including legacy `amount`
 //!   values that transfer pairing still reads.
 //! - A crash between the row rewrite and the state write re-runs
-//!   classification against migrated rows; that can inflate the impact
-//!   report for bond trades but never re-corrupts data.
+//!   classification against migrated rows; already-final rows classify as
+//!   matching, so the re-run never re-corrupts data.
 //! - The migration runs per device and its rewrites deliberately emit no
 //!   sync events (every device converges on its own deterministic pass).
 //!   Rows synced in from a not-yet-upgraded device during a version-skew
@@ -36,11 +36,12 @@ use serde::{Deserialize, Serialize};
 
 use crate::accounts::{account_types, AccountServiceTrait};
 use crate::activities::{
-    Activity, ActivityFinalCashMigrationResult, ActivityFinalCashMigrationUpdate,
-    ActivityRepositoryTrait, ActivityStatus, NewActivity, ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_CREDIT,
-    ACTIVITY_TYPE_DEPOSIT, ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST,
-    ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_SPLIT, ACTIVITY_TYPE_TAX, ACTIVITY_TYPE_TRANSFER_IN,
-    ACTIVITY_TYPE_TRANSFER_OUT, ACTIVITY_TYPE_WITHDRAWAL,
+    requires_final_cash_amount, Activity, ActivityFinalCashMigrationResult,
+    ActivityFinalCashMigrationUpdate, ActivityRepositoryTrait, ActivityStatus, NewActivity,
+    ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_CREDIT, ACTIVITY_TYPE_DEPOSIT, ACTIVITY_TYPE_DIVIDEND,
+    ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL, ACTIVITY_TYPE_SPLIT,
+    ACTIVITY_TYPE_TAX, ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT,
+    ACTIVITY_TYPE_WITHDRAWAL,
 };
 use crate::assets::AssetServiceTrait;
 use crate::errors::Result;
@@ -69,14 +70,15 @@ struct PersistedMigrationState {
 /// `activities.needs_review` column is the user-facing source of truth.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ActivityFinalCashMigrationStatus {
-    pub complete: bool,
+    /// Accounts still awaiting their post-rewrite rebuild; empty once the
+    /// migration is complete. This is the only signal production consumes
+    /// (it seeds the recalculation gate and the background rebuild).
     pub pending_account_ids: Vec<String>,
 }
 
 impl From<PersistedMigrationState> for ActivityFinalCashMigrationStatus {
     fn from(state: PersistedMigrationState) -> Self {
         Self {
-            complete: state.phase == PHASE_COMPLETE,
             pending_account_ids: state.pending_account_ids,
         }
     }
@@ -230,12 +232,12 @@ async fn write_migration_state(
 
 #[derive(Clone)]
 struct AssetCashFacts {
+    /// The asset's multiplier, which is the only owner of that convention on
+    /// both sides of the cutover - so one value serves the legacy replay and
+    /// the final contract. If an instrument default ever diverges again,
+    /// resurrect a separate legacy replay multiplier here or the delta will
+    /// be masked.
     unit_multiplier: Decimal,
-    /// Multiplier the PRE-cutover runtime used: explicit metadata/option
-    /// values, otherwise 1 - the old code had no bond percent-of-par default.
-    /// The legacy replay must use this, never `unit_multiplier`, or a changed
-    /// default would alter both sides of the delta and mask the change.
-    legacy_unit_multiplier: Decimal,
     is_bond: bool,
     quote_currency: Option<String>,
     multiplier_is_reliable: bool,
@@ -287,7 +289,6 @@ pub(crate) async fn migrate_activities_to_final_cash(
             &activity,
             asset_facts.unwrap_or(AssetCashFacts {
                 unit_multiplier: Decimal::ONE,
-                legacy_unit_multiplier: Decimal::ONE,
                 is_bond: false,
                 quote_currency: None,
                 multiplier_is_reliable: false,
@@ -341,21 +342,21 @@ fn cached_asset_facts(
     let facts = asset_service
         .get_asset_by_id(asset_id)
         .ok()
-        .map(|asset| AssetCashFacts {
-            unit_multiplier: asset.contract_multiplier(),
-            legacy_unit_multiplier: asset.explicit_contract_multiplier().unwrap_or_else(|| {
-                if asset.is_option() {
-                    Decimal::from(100)
-                } else {
-                    Decimal::ONE
-                }
-            }),
-            is_bond: asset.is_bond(),
-            quote_currency: Some(asset.quote_ccy),
-            multiplier_is_reliable: true,
-        });
+        .map(asset_cash_facts_from_asset);
     cache.insert(asset_id.to_string(), facts.clone());
     facts
+}
+
+/// The one constructor turning a real [`Asset`] into migration facts. Tests
+/// must build facts through this function, never as struct literals - a
+/// hand-built `AssetCashFacts` can encode states no real asset produces.
+fn asset_cash_facts_from_asset(asset: crate::assets::Asset) -> AssetCashFacts {
+    AssetCashFacts {
+        unit_multiplier: asset.contract_multiplier(),
+        is_bond: asset.is_bond(),
+        quote_currency: Some(asset.quote_ccy),
+        multiplier_is_reliable: true,
+    }
 }
 
 fn classify_legacy_activity_cash(
@@ -364,23 +365,16 @@ fn classify_legacy_activity_cash(
     account_facts: &AccountCashFacts,
 ) -> Option<LegacyCashDecision> {
     let activity_type = activity.effective_type();
-    if activity_type == ACTIVITY_TYPE_SPLIT || !is_cash_bearing_type(activity_type) {
-        return None;
-    }
-
     let is_security_transfer = ActivityEconomicsResolver::is_security_transfer(activity);
-    if is_security_transfer {
+    if activity_type == ACTIVITY_TYPE_SPLIT
+        || !requires_final_cash_amount(activity_type, is_security_transfer)
+    {
         return None;
     }
 
-    // Legacy rows were priced under the pre-cutover convention, so deriving
-    // and matching must use the multiplier the old runtime applied - a legacy
-    // dollar-priced bond derives qty x price, not qty x price x 0.01. The
-    // activity-level override (mini options) was honored by the old writer
-    // too, so it outranks the asset-derived legacy multiplier here as well.
-    let legacy_unit_multiplier = activity
-        .contract_multiplier_override()
-        .unwrap_or(asset_facts.legacy_unit_multiplier);
+    // The asset owns the multiplier, so derivation and the legacy replay read
+    // the same value (see AssetCashFacts).
+    let unit_multiplier = asset_facts.unit_multiplier;
     let inputs = ActivityCashInputs {
         activity_type,
         currency: &activity.currency,
@@ -390,13 +384,8 @@ fn classify_legacy_activity_cash(
         amount: None,
         fee: activity.fee,
         tax: activity.tax,
-        unit_multiplier: legacy_unit_multiplier,
+        unit_multiplier,
     };
-    // The runtime now prices this asset under a different convention (bond
-    // percent-of-par); the row's unit_price meaning changed under it, so any
-    // derived value deserves eyes even though the cash effect is preserved.
-    let multiplier_convention_changed =
-        asset_facts.unit_multiplier != asset_facts.legacy_unit_multiplier;
     let is_trade = matches!(activity_type, ACTIVITY_TYPE_BUY | ACTIVITY_TYPE_SELL);
     let is_charge = matches!(activity_type, ACTIVITY_TYPE_FEE | ACTIVITY_TYPE_TAX);
     let is_composite =
@@ -426,7 +415,7 @@ fn classify_legacy_activity_cash(
                     activity.subtype.as_deref(),
                     activity.quantity,
                     activity.unit_price,
-                    legacy_unit_multiplier,
+                    unit_multiplier,
                 )
             })
             .flatten()
@@ -438,7 +427,7 @@ fn classify_legacy_activity_cash(
         .flatten();
     let supplied = activity.amount.map(|amount| amount.abs());
     let charges = activity.fee_amt() + activity.tax_amt();
-    let tolerance = currency_minor_unit(&activity.currency);
+    let tolerance = currency_minor_unit(&activity.currency) / Decimal::TWO;
 
     let (final_amount, needs_review) = if is_trade {
         match supplied {
@@ -514,10 +503,7 @@ fn classify_legacy_activity_cash(
 
     Some(LegacyCashDecision {
         final_amount,
-        needs_review: needs_review
-            || activity.needs_review
-            || is_legacy_draft
-            || (multiplier_convention_changed && (is_trade || is_composite)),
+        needs_review: needs_review || activity.needs_review || is_legacy_draft,
         previous_cash_effect,
         final_cash_effect,
     })
@@ -535,23 +521,6 @@ fn unclassified_draft_backfill(activity: &Activity) -> Option<ActivityFinalCashM
             needs_review: true,
         }
     })
-}
-
-fn is_cash_bearing_type(activity_type: &str) -> bool {
-    matches!(
-        activity_type,
-        ACTIVITY_TYPE_BUY
-            | ACTIVITY_TYPE_SELL
-            | ACTIVITY_TYPE_DEPOSIT
-            | ACTIVITY_TYPE_WITHDRAWAL
-            | ACTIVITY_TYPE_DIVIDEND
-            | ACTIVITY_TYPE_INTEREST
-            | ACTIVITY_TYPE_CREDIT
-            | ACTIVITY_TYPE_FEE
-            | ACTIVITY_TYPE_TAX
-            | ACTIVITY_TYPE_TRANSFER_IN
-            | ACTIVITY_TYPE_TRANSFER_OUT
-    )
 }
 
 fn close(left: Decimal, right: Decimal, tolerance: Decimal) -> bool {
@@ -654,7 +623,7 @@ fn legacy_runtime_cash_effect(
             let gross = if use_amount {
                 amount
             } else {
-                activity.qty() * activity.price() * asset_facts.legacy_unit_multiplier
+                activity.qty() * activity.price() * asset_facts.unit_multiplier
             };
             if activity_type == ACTIVITY_TYPE_BUY {
                 -(gross + fee + tax)
@@ -777,7 +746,6 @@ mod tests {
     fn facts() -> AssetCashFacts {
         AssetCashFacts {
             unit_multiplier: Decimal::ONE,
-            legacy_unit_multiplier: Decimal::ONE,
             is_bond: false,
             quote_currency: Some("USD".to_string()),
             multiplier_is_reliable: true,
@@ -808,11 +776,13 @@ mod tests {
     }
 
     #[test]
-    fn legacy_mini_option_rows_replay_their_activity_multiplier() {
-        // The old writer honored the activity-level override (mini option =
-        // 10), so a legacy gross of 1 x 1 x 10 = 10 must be recognized under
-        // that same override - replaying with the asset's multiplier would
-        // mismatch the stored value and wrongly flag the row for review.
+    fn legacy_rows_disagreeing_with_their_asset_multiplier_are_flagged() {
+        // A row stored at a 10x scale against a 100x asset. The asset owns
+        // the multiplier, so derivation gives 100 and cannot confirm the
+        // stored 10: keep the user's number and route it to review rather
+        // than rescale it. Such a row already priced at 100 before the
+        // cutover - the disagreement is a misconfigured asset, not a
+        // per-row convention.
         let mut buy = activity(ACTIVITY_TYPE_BUY);
         buy.quantity = Some(dec!(1));
         buy.unit_price = Some(dec!(1));
@@ -820,13 +790,12 @@ mod tests {
         buy.metadata = Some(serde_json::json!({ "contract_multiplier": 10 }));
         let mut asset_facts = facts();
         asset_facts.unit_multiplier = dec!(100);
-        asset_facts.legacy_unit_multiplier = dec!(100);
 
         let decision = classify_legacy_activity_cash(&buy, asset_facts, &account_facts())
             .expect("trade rows are classified");
 
         assert_eq!(decision.final_amount, Some(dec!(10)));
-        assert!(!decision.needs_review);
+        assert!(decision.needs_review);
     }
 
     #[test]
@@ -861,7 +830,6 @@ mod tests {
         let first = record_final_cash_rebuild_attempt(&settings, &["account-1".to_string()])
             .await
             .unwrap();
-        assert!(!first.complete);
         assert_eq!(first.pending_account_ids, vec!["account-2"]);
 
         let after_restart = get_final_cash_migration_status(&settings).unwrap();
@@ -870,7 +838,6 @@ mod tests {
         let complete = record_final_cash_rebuild_attempt(&settings, &["account-2".to_string()])
             .await
             .unwrap();
-        assert!(complete.complete);
         assert!(complete.pending_account_ids.is_empty());
     }
 
@@ -993,6 +960,20 @@ mod tests {
     }
 
     #[test]
+    fn trade_one_minor_unit_from_calculation_preserves_supplied_amount_for_review() {
+        let mut sell = activity(ACTIVITY_TYPE_SELL);
+        sell.quantity = Some(dec!(2));
+        sell.unit_price = Some(dec!(10));
+        sell.amount = Some(dec!(16.99));
+        sell.fee = Some(dec!(3));
+
+        let decision = classify_legacy_activity_cash(&sell, facts(), &account_facts()).unwrap();
+
+        assert_eq!(decision.final_amount, Some(dec!(16.99)));
+        assert!(decision.needs_review);
+    }
+
+    #[test]
     fn incomplete_charged_trade_preserves_amount_for_review() {
         let mut sell = activity(ACTIVITY_TYPE_SELL);
         sell.amount = Some(dec!(100));
@@ -1033,7 +1014,6 @@ mod tests {
         buy.fee = Some(dec!(1));
         let unknown_facts = AssetCashFacts {
             unit_multiplier: Decimal::ONE,
-            legacy_unit_multiplier: Decimal::ONE,
             is_bond: false,
             quote_currency: None,
             multiplier_is_reliable: false,
@@ -1101,18 +1081,16 @@ mod tests {
     }
 
     #[test]
-    fn legacy_bond_trade_replays_and_derives_under_legacy_multiplier() {
-        // The old runtime priced bonds with multiplier 1; the new runtime
-        // uses 0.01 (percent-of-par). A legacy dollar-priced bond must derive
-        // its final under the OLD convention - and because the convention
-        // changed under the row, it is surfaced for review.
+    fn legacy_bond_trade_derives_under_the_shared_default_multiplier() {
+        // Bonds default to multiplier 1 pre- and post-cutover (percent-of-par
+        // is per-asset opt-in), so a legacy dollar-priced bond derives
+        // qty x price - never qty x price x 0.01 - and needs no review.
         let mut buy = activity(ACTIVITY_TYPE_BUY);
         buy.quantity = Some(dec!(10));
         buy.unit_price = Some(dec!(985));
         buy.amount = None;
         let bond_facts = AssetCashFacts {
-            unit_multiplier: Decimal::new(1, 2),
-            legacy_unit_multiplier: Decimal::ONE,
+            unit_multiplier: Decimal::ONE,
             is_bond: true,
             quote_currency: Some("USD".to_string()),
             multiplier_is_reliable: true,
@@ -1121,11 +1099,9 @@ mod tests {
         let decision = classify_legacy_activity_cash(&buy, bond_facts, &account_facts()).unwrap();
 
         assert_eq!(decision.final_amount, Some(dec!(9850)));
-        assert!(decision.needs_review);
-        // The replay models the old runtime, so previous == final and the
-        // account still rebuilds only if the compiled effects differ; the
-        // point locked here is that neither side uses the new 0.01 scale.
+        assert!(!decision.needs_review);
         assert_eq!(decision.previous_cash_effect, dec!(-9850));
+        assert_eq!(decision.final_cash_effect, dec!(-9850));
     }
 
     #[test]
@@ -1264,5 +1240,65 @@ mod tests {
             classify_legacy_activity_cash(&transfer, facts(), &account_facts()),
             None
         );
+    }
+    #[test]
+    fn real_asset_facts_flow_through_classification() {
+        use crate::assets::{Asset, InstrumentType};
+
+        // Bare bond: multiplier 1 end to end (never 0.01) - a legacy
+        // dollar-priced bond derives qty x price and is not flagged.
+        let bond = Asset {
+            instrument_type: Some(InstrumentType::Bond),
+            quote_ccy: "USD".to_string(),
+            ..Default::default()
+        };
+        let mut bond_buy = activity(ACTIVITY_TYPE_BUY);
+        bond_buy.quantity = Some(dec!(10));
+        bond_buy.unit_price = Some(dec!(985));
+        let decision = classify_legacy_activity_cash(
+            &bond_buy,
+            asset_cash_facts_from_asset(bond),
+            &account_facts(),
+        )
+        .unwrap();
+        assert_eq!(decision.final_amount, Some(dec!(9850)));
+        assert!(!decision.needs_review);
+
+        // Standard option: 100 from the instrument default.
+        let option = Asset {
+            instrument_type: Some(InstrumentType::Option),
+            quote_ccy: "USD".to_string(),
+            ..Default::default()
+        };
+        let mut option_buy = activity(ACTIVITY_TYPE_BUY);
+        option_buy.quantity = Some(dec!(2));
+        option_buy.unit_price = Some(dec!(5.5));
+        let decision = classify_legacy_activity_cash(
+            &option_buy,
+            asset_cash_facts_from_asset(option),
+            &account_facts(),
+        )
+        .unwrap();
+        assert_eq!(decision.final_amount, Some(dec!(1100.0)));
+        assert!(!decision.needs_review);
+
+        // Quote-currency conflict from a REAL asset refuses derivation.
+        let usd_equity = Asset {
+            instrument_type: Some(InstrumentType::Equity),
+            quote_ccy: "USD".to_string(),
+            ..Default::default()
+        };
+        let mut cad_buy = activity(ACTIVITY_TYPE_BUY);
+        cad_buy.quantity = Some(dec!(10));
+        cad_buy.unit_price = Some(dec!(50));
+        cad_buy.currency = "CAD".to_string();
+        let decision = classify_legacy_activity_cash(
+            &cad_buy,
+            asset_cash_facts_from_asset(usd_equity),
+            &account_facts(),
+        )
+        .unwrap();
+        assert_eq!(decision.final_amount, None);
+        assert!(decision.needs_review);
     }
 }

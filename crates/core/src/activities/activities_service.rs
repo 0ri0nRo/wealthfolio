@@ -28,9 +28,8 @@
 //!   and the migration's `trade_inputs_are_reliable` all refuse the same
 //!   inputs); otherwise a supplied amount is authoritative as-is and a missing
 //!   trade/composite amount is an error, never a wrong-currency derivation.
-//! - The unit multiplier resolves activity metadata (`contract_multiplier`,
-//!   e.g. mini options) first, then the asset, then the instrument default -
-//!   on every surface.
+//! - The resolved asset owns the unit multiplier on every read path. Activity
+//!   metadata can seed a newly created asset, but does not override it later.
 //! - Drafts stay in the review queue until explicitly approved and posted.
 
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
@@ -41,9 +40,9 @@ use std::sync::{Arc, RwLock};
 
 use crate::accounts::{account_types, Account, AccountServiceTrait};
 use crate::activities::activities_constants::{
-    classify_import_activity, is_cash_symbol, is_garbage_symbol, requires_symbol,
-    ImportSymbolDisposition, ACTIVITY_TYPE_BUY, ACTIVITY_TYPE_CREDIT, ACTIVITY_TYPE_DEPOSIT,
-    ACTIVITY_TYPE_DIVIDEND, ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL,
+    classify_import_activity, is_cash_symbol, is_garbage_symbol, is_securities_transfer,
+    requires_final_cash_amount, requires_symbol, ImportSymbolDisposition, ACTIVITY_TYPE_BUY,
+    ACTIVITY_TYPE_CREDIT, ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL,
     ACTIVITY_TYPE_SPLIT, ACTIVITY_TYPE_TAX, ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT,
     ACTIVITY_TYPE_WITHDRAWAL, PRICE_BEARING_ACTIVITY_TYPES,
 };
@@ -82,17 +81,6 @@ type QuoteCcyCache = HashMap<(String, Option<String>, Option<String>), Option<St
 type SymbolResolutionKey = (String, String, Option<String>);
 use uuid::Uuid;
 use wealthfolio_market_data::mic_to_currency;
-
-/// A TRANSFER_IN/TRANSFER_OUT that moves a security rather than cash.
-fn is_securities_transfer(activity_type: &str, resolved_asset_id: Option<&str>) -> bool {
-    if activity_type != ACTIVITY_TYPE_TRANSFER_IN && activity_type != ACTIVITY_TYPE_TRANSFER_OUT {
-        return false;
-    }
-    // Keep in lockstep with ActivityEconomicsResolver::is_security_transfer.
-    resolved_asset_id
-        .map(str::trim)
-        .is_some_and(|id| !id.is_empty() && !is_cash_symbol(id))
-}
 
 /// A complete trade is identified by quantity and unit price. Its final cash
 /// amount is derived accounting data and may legitimately change when charges
@@ -416,28 +404,18 @@ impl ActivityService {
             .asset_id
             .as_deref()
             .and_then(|asset_id| self.asset_service.get_asset_by_id(asset_id).ok());
-        // The row's own metadata multiplier (mini options carry 10 there)
-        // outranks the asset default - both for what the stored amount was
-        // computed under and for what the patched row prices at. The patch's
-        // metadata is already merged over the stored blob, so its absence
-        // means "unchanged", not "cleared".
-        let existing_metadata_multiplier = existing.contract_multiplier_override();
-        let existing_unit_multiplier = existing_metadata_multiplier
-            .or_else(|| {
-                existing_asset
-                    .as_ref()
-                    .map(|asset| asset.contract_multiplier())
-            })
+        // The asset owns the contract multiplier, so an edit reprices at the
+        // asset's value and never at the row's metadata: that metadata is a
+        // creation-time seed, not a standing override.
+        let existing_unit_multiplier = existing_asset
+            .as_ref()
+            .map(|asset| asset.contract_multiplier())
             .unwrap_or(Decimal::ONE);
-        let patched_metadata_multiplier =
-            Self::custom_option_multiplier(activity.metadata.as_deref())
-                .or(existing_metadata_multiplier);
 
         if let Some(asset_id) = activity.get_symbol_id() {
             if Some(asset_id) == existing.asset_id.as_deref() {
                 return UpdateTradeFacts {
-                    unit_multiplier: patched_metadata_multiplier
-                        .unwrap_or(existing_unit_multiplier),
+                    unit_multiplier: existing_unit_multiplier,
                     existing_unit_multiplier,
                     quote_currency: existing_asset.map(|asset| asset.quote_ccy),
                     replaces_asset: false,
@@ -445,8 +423,9 @@ impl ActivityService {
             }
             let asset = self.asset_service.get_asset_by_id(asset_id).ok();
             return UpdateTradeFacts {
-                unit_multiplier: patched_metadata_multiplier
-                    .or_else(|| asset.as_ref().map(|asset| asset.contract_multiplier()))
+                unit_multiplier: asset
+                    .as_ref()
+                    .map(|asset| asset.contract_multiplier())
                     .unwrap_or(Decimal::ONE),
                 existing_unit_multiplier,
                 quote_currency: asset.map(|asset| asset.quote_ccy),
@@ -473,12 +452,10 @@ impl ActivityService {
             });
             if !names_current_asset {
                 let instrument_type = activity.get_instrument_type().unwrap_or_default();
-                let unit_multiplier = patched_metadata_multiplier.unwrap_or_else(|| {
-                    crate::assets::instrument_default_multiplier(
-                        instrument_type.eq_ignore_ascii_case("OPTION"),
-                        false,
-                    )
-                });
+                let unit_multiplier = crate::assets::instrument_default_multiplier(
+                    instrument_type.eq_ignore_ascii_case("OPTION"),
+                    false,
+                );
                 return UpdateTradeFacts {
                     unit_multiplier,
                     existing_unit_multiplier,
@@ -489,29 +466,11 @@ impl ActivityService {
             }
         }
         UpdateTradeFacts {
-            unit_multiplier: patched_metadata_multiplier.unwrap_or(existing_unit_multiplier),
+            unit_multiplier: existing_unit_multiplier,
             existing_unit_multiplier,
             quote_currency: existing_asset.map(|asset| asset.quote_ccy),
             replaces_asset: false,
         }
-    }
-
-    fn requires_final_cash_amount(activity_type: &str, is_security_transfer: bool) -> bool {
-        !is_security_transfer
-            && matches!(
-                activity_type,
-                ACTIVITY_TYPE_BUY
-                    | ACTIVITY_TYPE_SELL
-                    | ACTIVITY_TYPE_DEPOSIT
-                    | ACTIVITY_TYPE_WITHDRAWAL
-                    | ACTIVITY_TYPE_DIVIDEND
-                    | ACTIVITY_TYPE_INTEREST
-                    | ACTIVITY_TYPE_CREDIT
-                    | ACTIVITY_TYPE_FEE
-                    | ACTIVITY_TYPE_TAX
-                    | ACTIVITY_TYPE_TRANSFER_IN
-                    | ACTIVITY_TYPE_TRANSFER_OUT
-            )
     }
 
     fn missing_final_cash_error(activity_type: &str) -> crate::errors::Error {
@@ -528,7 +487,7 @@ impl ActivityService {
     ) -> Result<()> {
         let is_security_transfer =
             is_securities_transfer(&activity.activity_type, resolved_asset_id);
-        if Self::requires_final_cash_amount(&activity.activity_type, is_security_transfer)
+        if requires_final_cash_amount(&activity.activity_type, is_security_transfer)
             && activity.amount.is_none()
         {
             return Err(Self::missing_final_cash_error(&activity.activity_type));
@@ -757,7 +716,7 @@ impl ActivityService {
                 "Approving a Draft must clear its review flag",
             ));
         }
-        if Self::requires_final_cash_amount(&activity.activity_type, is_security_transfer)
+        if requires_final_cash_amount(&activity.activity_type, is_security_transfer)
             && amount.is_none()
             && (effective_status == ActivityStatus::Posted || !effective_review)
         {
@@ -2211,13 +2170,19 @@ impl ActivityService {
 }
 
 impl ActivityService {
-    /// Extracts a custom contract multiplier from the activity metadata JSON,
-    /// if present. Shares the parse with `Activity::contract_multiplier_override`
-    /// so the writer and read sides cannot drift.
+    /// JSON metadata key carrying a non-standard contract multiplier on a new
+    /// activity (e.g. mini options = 10).
+    const METADATA_CONTRACT_MULTIPLIER: &'static str = "contract_multiplier";
+
+    /// The creation-time multiplier seed an activity may carry. Read ONLY when
+    /// this row creates its asset; the asset owns the multiplier from then on,
+    /// so nothing downstream consults this.
     fn custom_option_multiplier(activity_metadata: Option<&str>) -> Option<Decimal> {
-        let parsed =
-            activity_metadata.and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok());
-        contract_multiplier_override_value(parsed.as_ref())
+        activity_metadata
+            .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
+            .and_then(|v| v.get(Self::METADATA_CONTRACT_MULTIPLIER)?.as_f64())
+            .and_then(Decimal::from_f64_retain)
+            .filter(|d| d.is_sign_positive() && !d.is_zero())
     }
 
     /// Merges a metadata patch over the stored blob, top-level keys, patch
@@ -2951,14 +2916,13 @@ impl ActivityService {
             activity.currency = normalized_currency;
         }
 
-        // Multiplier hierarchy: activity metadata (mini options carry their
-        // 10 there) beats the asset, which beats the instrument default.
-        let unit_multiplier = Self::custom_option_multiplier(activity.metadata.as_deref())
-            .or_else(|| {
-                resolved_asset_cash_facts
-                    .as_ref()
-                    .map(|(multiplier, _)| *multiplier)
-            })
+        // The asset owns the contract multiplier. Activity metadata only
+        // seeds a brand-new asset (see the ensure/create branch above), and
+        // that seed is already reflected here because the asset is resolved
+        // or created before these facts are read.
+        let unit_multiplier = resolved_asset_cash_facts
+            .as_ref()
+            .map(|(multiplier, _)| *multiplier)
             .unwrap_or(Decimal::ONE);
         let quote_ccy_conflicts = resolved_asset_cash_facts
             .as_ref()
@@ -3493,6 +3457,22 @@ impl ActivityService {
                 ) {
                     return Ok(None);
                 }
+                // The import contract accepts symbol-less DIVIDEND/ADJUSTMENT
+                // rows as plain cash income (classify_import_symbol_disposition
+                // → CashMovement); honor that here so ImportApply preparation
+                // accepts what import validation accepts. Asset-backed income
+                // subtypes still classify as ResolveAsset and fall through.
+                if matches!(mode, PreparationMode::ImportApply)
+                    && Self::classify_import_symbol_disposition(
+                        &activity.activity_type,
+                        activity.subtype.as_deref(),
+                        "",
+                        activity.quantity,
+                        activity.unit_price,
+                    ) == ImportSymbolDisposition::CashMovement
+                {
+                    return Ok(None);
+                }
                 return Err(ActivityError::InvalidData(
                     "Asset-backed activity needs symbol or asset_id".to_string(),
                 )
@@ -3662,6 +3642,13 @@ impl ActivityService {
                 Some(&asset_currency),
             )
             .or(submitted_asset_id);
+        let asset_metadata = if is_option {
+            Self::custom_option_multiplier(activity.metadata.as_deref()).and_then(|multiplier| {
+                crate::assets::build_option_metadata(&normalized_symbol, multiplier)
+            })
+        } else {
+            None
+        };
 
         Ok(Some(AssetSpec {
             id: existing_id,
@@ -3683,7 +3670,7 @@ impl ActivityService {
                 .asset
                 .as_ref()
                 .and_then(|asset| asset.provider_symbol.clone()),
-            metadata: None,
+            metadata: asset_metadata,
         }))
     }
 
@@ -5476,11 +5463,16 @@ impl ActivityServiceTrait for ActivityService {
 
         let mut account_currencies: HashMap<String, String> =
             HashMap::with_capacity(unique_account_ids.len());
+        // The accounts themselves are kept: step 4.5 needs them for the writer
+        // boundary, and re-fetching would be a second query per account.
+        let mut accounts: HashMap<String, Account> =
+            HashMap::with_capacity(unique_account_ids.len());
 
         for account_id in &unique_account_ids {
             let account = self.account_service.get_account(account_id)?;
             let currency = resolve_currency(&[&account.currency, &base_ccy]);
             account_currencies.insert(account_id.clone(), currency);
+            accounts.insert(account_id.clone(), account);
         }
 
         // ── 3. Normalize + convert each activity ─────────────────────────────
@@ -5552,7 +5544,8 @@ impl ActivityServiceTrait for ActivityService {
                 continue;
             }
             // Symbol-required rows with no asset_id need quote_ccy + instrument_type
-            // so the asset can be created or matched on first portfolio calculation.
+            // so the asset can be created or matched by the writer boundary in
+            // step 4.5, before any row is persisted.
             if matches!(symbol_disposition, ImportSymbolDisposition::ResolveAsset)
                 && !has_asset_id
                 && has_symbol
@@ -5636,11 +5629,26 @@ impl ActivityServiceTrait for ActivityService {
             new_act.idempotency_key = Self::build_import_idempotency_key(src, &new_act.account_id);
         }
 
+        // ── 4.5 Writer boundary: run ImportApply preparation on every row ────
+        // Ordering matters: the import idempotency keys above are computed from
+        // the raw file values and preparation preserves explicit keys, so
+        // duplicate detection in step 5 stays stable across re-imports.
+        let (policy_failed_positions, assets_created_count) = self
+            .apply_import_writer_policy(
+                &mut new_activities,
+                &mut import_activities_indexed,
+                &accounts,
+            )
+            .await;
+
         // ── 5. Partition hard duplicates before insert ───────────────────────
         let mut first_index_by_key: HashMap<String, usize> = HashMap::new();
         let mut batch_dup_sources: HashMap<usize, usize> = HashMap::new();
 
         for (position, activity) in new_activities.iter().enumerate() {
+            if policy_failed_positions.contains(&position) {
+                continue;
+            }
             let Some(key) = activity.idempotency_key.as_ref() else {
                 continue;
             };
@@ -5662,6 +5670,9 @@ impl ActivityServiceTrait for ActivityService {
         let mut insertable_positions: Vec<usize> = Vec::with_capacity(new_activities.len());
 
         for (position, activity) in new_activities.iter_mut().enumerate() {
+            if policy_failed_positions.contains(&position) {
+                continue;
+            }
             // Clone to avoid holding a borrow on `activity` across the mutable
             // `activity.idempotency_key = None` needed for force-import.
             let Some(key) = activity.idempotency_key.clone() else {
@@ -5869,11 +5880,11 @@ impl ActivityServiceTrait for ActivityService {
                 fetched: total as u32,
                 inserted: inserted_count,
                 updated: 0,
-                skipped: duplicate_count,
+                skipped: duplicate_count + policy_failed_positions.len() as u32,
                 warnings: duplicate_count,
-                errors: 0,
+                errors: policy_failed_positions.len() as u32,
                 removed: 0,
-                assets_created: 0,
+                assets_created: assets_created_count,
             });
             if let Err(e) = repo.update(completed_run).await {
                 warn!("Failed to update import run with success status: {}", e);
@@ -5896,9 +5907,9 @@ impl ActivityServiceTrait for ActivityService {
             summary: ImportActivitiesSummary {
                 total: total as u32,
                 imported: inserted_count,
-                skipped: duplicate_count,
+                skipped: duplicate_count + policy_failed_positions.len() as u32,
                 duplicates: duplicate_count,
-                assets_created: 0,
+                assets_created: assets_created_count,
                 success: true,
                 error_message: None,
             },
@@ -6234,6 +6245,138 @@ impl ActivityServiceTrait for ActivityService {
 
 // Private helper methods for ActivityService
 impl ActivityService {
+    /// Marks import rows as rejected by the writer boundary: the reason lands
+    /// on the row the user sees, and the position is recorded so the caller
+    /// skips it at insert time.
+    fn fail_import_positions(
+        failed: &mut HashSet<usize>,
+        import_activities_indexed: &mut [(usize, ActivityImport)],
+        positions: &[usize],
+        field: &str,
+        message: &str,
+    ) {
+        for &position in positions {
+            if let Some((_, import_activity)) = import_activities_indexed.get_mut(position) {
+                Self::add_activity_error(import_activity, field, message);
+            }
+            failed.insert(position);
+        }
+    }
+
+    /// Step 4.5 of [`Self::import_activities`]: put every row through the same
+    /// ImportApply writer boundary that every other entry surface takes (see
+    /// the ownership table in this module's docs). Assets are resolved or
+    /// created, a missing final cash amount is derived, a gross total is
+    /// canonicalized, a contradictory total is kept but flagged, and a row
+    /// whose final cash cannot be established is demoted to a review draft
+    /// instead of silently booking zero.
+    ///
+    /// Prepared rows are written back into `new_activities` in place. Returns
+    /// the positions the policy rejected — which the caller must not insert —
+    /// and the number of assets created.
+    async fn apply_import_writer_policy(
+        &self,
+        new_activities: &mut [NewActivity],
+        import_activities_indexed: &mut [(usize, ActivityImport)],
+        accounts: &HashMap<String, Account>,
+    ) -> (HashSet<usize>, u32) {
+        let mut failed: HashSet<usize> = HashSet::new();
+        let mut assets_created = 0u32;
+
+        // Preparation is per-account, so group positions by account while
+        // preserving input order within each group.
+        let mut grouped: Vec<(String, Vec<usize>)> = Vec::new();
+        let mut group_positions: HashMap<String, usize> = HashMap::new();
+        for (position, activity) in new_activities.iter().enumerate() {
+            let account_id = activity.account_id.clone();
+            let group = match group_positions.get(&account_id) {
+                Some(group) => *group,
+                None => {
+                    group_positions.insert(account_id.clone(), grouped.len());
+                    grouped.push((account_id, Vec::new()));
+                    grouped.len() - 1
+                }
+            };
+            grouped[group].1.push(position);
+        }
+
+        for (account_id, positions) in grouped {
+            let Some(account) = accounts.get(&account_id) else {
+                Self::fail_import_positions(
+                    &mut failed,
+                    import_activities_indexed,
+                    &positions,
+                    "accountId",
+                    "Account could not be resolved for this activity.",
+                );
+                continue;
+            };
+
+            let batch: Vec<NewActivity> = positions
+                .iter()
+                .map(|&position| new_activities[position].clone())
+                .collect();
+            let prepare_result = match self.prepare_activities_for_import(batch, account).await {
+                Ok(result) => result,
+                Err(error) => {
+                    Self::fail_import_positions(
+                        &mut failed,
+                        import_activities_indexed,
+                        &positions,
+                        "general",
+                        &format!("Preparation failed: {}", error),
+                    );
+                    continue;
+                }
+            };
+
+            assets_created += prepare_result.assets_created;
+
+            let failed_offsets: HashSet<usize> = prepare_result
+                .errors
+                .iter()
+                .map(|(offset, _)| *offset)
+                .collect();
+            for (offset, message) in &prepare_result.errors {
+                if let Some(&position) = positions.get(*offset) {
+                    Self::fail_import_positions(
+                        &mut failed,
+                        import_activities_indexed,
+                        &[position],
+                        "general",
+                        message,
+                    );
+                }
+            }
+
+            // Preparation yields one prepared row per non-errored input, in
+            // input order; walk the surviving offsets to put each prepared
+            // activity back at its original position.
+            let mut prepared = prepare_result.prepared.into_iter();
+            for (offset, &position) in positions.iter().enumerate() {
+                if failed_offsets.contains(&offset) {
+                    continue;
+                }
+                let Some(prepared_activity) = prepared.next() else {
+                    break;
+                };
+                if prepared_activity.activity.status == Some(ActivityStatus::Draft) {
+                    if let Some((_, import_activity)) = import_activities_indexed.get_mut(position)
+                    {
+                        import_activity.is_draft = true;
+                        Self::add_activity_warning(
+                            import_activity,
+                            "amount",
+                            "Final cash amount could not be established; imported as a draft for review.",
+                        );
+                    }
+                }
+                new_activities[position] = prepared_activity.activity;
+            }
+        }
+
+        (failed, assets_created)
+    }
     async fn prepare_activities_internal(
         &self,
         activities: Vec<NewActivity>,
@@ -6606,10 +6749,10 @@ impl ActivityService {
             let prepared_asset = resolved_asset_id
                 .as_ref()
                 .and_then(|asset_id| ensure_result.assets.get(asset_id));
-            // Multiplier hierarchy: activity metadata (mini options carry
-            // their 10 there) beats the asset, which beats the default.
-            let unit_multiplier = Self::custom_option_multiplier(activity.metadata.as_deref())
-                .or_else(|| prepared_asset.map(|asset| asset.contract_multiplier()))
+            // The asset owns the contract multiplier; `ensure_assets` above
+            // has already applied any creation-time seed from this row.
+            let unit_multiplier = prepared_asset
+                .map(|asset| asset.contract_multiplier())
                 .unwrap_or(Decimal::ONE);
             let quote_ccy_conflicts = prepared_asset
                 .is_some_and(|asset| !asset.quote_ccy.eq_ignore_ascii_case(&activity.currency));

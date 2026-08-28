@@ -42,26 +42,12 @@ impl AssetPositionInfo {
     }
 }
 
-/// The multiplier governing one activity's economics: the row's own override
-/// (mini options) outranks the asset multiplier.
-#[inline]
-pub(crate) fn activity_contract_multiplier(
-    activity: &Activity,
-    asset_info: &AssetPositionInfo,
-) -> Decimal {
-    activity
-        .contract_multiplier_override()
-        .unwrap_or(asset_info.contract_multiplier)
-}
-
 /// Gross trade value (pre-charge) reverse-derived from authoritative final cash.
 /// Security transfers remain lot-only and therefore use quantity * unit price.
 #[inline]
 pub(crate) fn gross_trade_amount(activity: &Activity, asset_info: &AssetPositionInfo) -> Decimal {
     if ActivityEconomicsResolver::is_security_transfer(activity) {
-        return activity.qty()
-            * activity.price()
-            * activity_contract_multiplier(activity, asset_info);
+        return activity.qty() * activity.price() * asset_info.contract_multiplier;
     }
 
     ActivityEconomicsResolver::resolve_cash(activity, asset_info.contract_multiplier)
@@ -107,7 +93,7 @@ pub(crate) fn effective_unit_price(activity: &Activity, asset_info: &AssetPositi
     if !qty.is_zero() && !gross.is_zero() {
         gross / qty
     } else {
-        activity.price() * activity_contract_multiplier(activity, asset_info)
+        activity.price() * asset_info.contract_multiplier
     }
 }
 
