@@ -745,7 +745,9 @@
     "instrument_auto": "自动",
     "unit_price_help": "对于买入和卖出，请输入交易价格。对于质押奖励和实物股息，请输入收到时每单位的公允市值；它决定收入金额和成本基础。",
     "warn_dates_differ_other": "日期相差 {{count}} 天。",
-    "approve_count_other": "批准 {{count}}"
+    "approve_count_other": "批准 {{count}}",
+    "approve_missing_amount_other": "{{count}} 笔活动仍缺少最终现金金额",
+    "approve_missing_amount_description": "请为每笔空白或金额为零的交易输入正确的最终现金金额，然后再批准。"
   },
   "table": {
     "cash": "现金",

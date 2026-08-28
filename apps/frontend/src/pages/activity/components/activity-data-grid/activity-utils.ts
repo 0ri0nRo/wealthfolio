@@ -3,6 +3,7 @@ import {
   isAssetIdentityRequired,
   isCashActivity,
   isCashTransfer,
+  isSecuritiesTransfer,
 } from "@/lib/activity-utils";
 import { buildAssetResolutionInput, normalizeOptionalString } from "@/lib/asset-resolution-input";
 import { ActivityStatus, ActivityType, SUBTYPES_BY_ACTIVITY_TYPE } from "@/lib/constants";
@@ -32,6 +33,19 @@ const FINAL_AMOUNT_INPUT_FIELDS = new Set([
   "tax",
   "instrumentType",
 ]);
+const FINAL_CASH_ACTIVITY_TYPES = new Set<string>([
+  ActivityType.BUY,
+  ActivityType.SELL,
+  ActivityType.DEPOSIT,
+  ActivityType.WITHDRAWAL,
+  ActivityType.DIVIDEND,
+  ActivityType.INTEREST,
+  ActivityType.CREDIT,
+  ActivityType.FEE,
+  ActivityType.TAX,
+  ActivityType.TRANSFER_IN,
+  ActivityType.TRANSFER_OUT,
+]);
 
 const isTransferActivity = (activityType: string | undefined): boolean => {
   return activityType === ActivityType.TRANSFER_IN || activityType === ActivityType.TRANSFER_OUT;
@@ -60,6 +74,46 @@ const isAlwaysCashActivity = (
     !isAssetBackedIncomeSubtype(activityType, subtype)
   );
 };
+
+/**
+ * Returns whether a review row has the authoritative cash amount required to
+ * approve it. Security transfers are exempt because only their fee moves cash.
+ */
+export function hasFinalCashAmountForApproval(transaction: LocalTransaction): boolean {
+  if (
+    !FINAL_CASH_ACTIVITY_TYPES.has(transaction.activityType) ||
+    isSecuritiesTransfer(transaction.activityType, transaction.assetSymbol, transaction.assetId)
+  ) {
+    return true;
+  }
+  const amount = normalizeDecimalString(transaction.amount);
+  if (amount === undefined) {
+    return false;
+  }
+  const isTrade =
+    transaction.activityType === ActivityType.BUY || transaction.activityType === ActivityType.SELL;
+  return !isTrade || Number(amount) !== 0 || transaction._amountEdited === true;
+}
+
+export function partitionReviewRowsForApproval(transactions: LocalTransaction[]): {
+  approvable: LocalTransaction[];
+  incomplete: LocalTransaction[];
+} {
+  return transactions.reduce<{
+    approvable: LocalTransaction[];
+    incomplete: LocalTransaction[];
+  }>(
+    (partition, transaction) => {
+      if (hasFinalCashAmountForApproval(transaction)) {
+        partition.approvable.push(transaction);
+      } else {
+        partition.incomplete.push(transaction);
+      }
+      return partition;
+    },
+    { approvable: [], incomplete: [] },
+  );
+}
 
 /**
  * Converts a value to a string for API payloads.
@@ -790,6 +844,18 @@ function validateTransaction(transaction: LocalTransaction): TransactionValidati
         message: "Either income amount or FMV per unit is required",
       });
     }
+  }
+
+  if (
+    transaction._originalNeedsReview === true &&
+    transaction.needsReview === false &&
+    !hasFinalCashAmountForApproval(transaction)
+  ) {
+    errors.push({
+      transactionId: transaction.id,
+      field: "amount",
+      message: "Final cash amount is required before approval",
+    });
   }
 
   // Validate non-negative values for certain fields

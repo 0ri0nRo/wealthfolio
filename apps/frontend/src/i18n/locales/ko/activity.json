@@ -745,7 +745,9 @@
     "instrument_auto": "자동",
     "unit_price_help": "매수·매도의 경우 거래 가격을 입력하세요. 스테이킹 보상과 현물 배당의 경우 수령 시점의 단위당 공정시장가치를 입력하세요. 이 값이 수익 금액과 취득원가를 결정합니다.",
     "warn_dates_differ_other": "날짜가 {{count}}일 차이 납니다.",
-    "approve_count_other": "{{count}}건 승인"
+    "approve_count_other": "{{count}}건 승인",
+    "approve_missing_amount_other": "{{count}}개 활동에 최종 현금 금액이 아직 없습니다",
+    "approve_missing_amount_description": "비어 있거나 0인 각 거래에 올바른 최종 현금 금액을 입력한 후 승인하세요."
   },
   "table": {
     "cash": "현금",

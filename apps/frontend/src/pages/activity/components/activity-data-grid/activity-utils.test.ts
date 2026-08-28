@@ -6,6 +6,8 @@ import {
   buildSavePayload,
   createCurrencyResolver,
   createDraftTransaction,
+  hasFinalCashAmountForApproval,
+  partitionReviewRowsForApproval,
   resolveAssetIdForTransaction,
   TRACKED_FIELDS,
   validateTransactionsForSave,
@@ -1306,6 +1308,41 @@ describe("activity-utils", () => {
   });
 
   describe("validateTransactionsForSave", () => {
+    it("rejects approval when a final-cash activity still has no amount", () => {
+      const transaction = createMockTransaction({
+        id: "sell-missing-final",
+        activityType: ActivityType.SELL,
+        amount: null,
+        needsReview: false,
+        _originalNeedsReview: true,
+      });
+
+      const result = validateTransactionsForSave([transaction], new Set(["sell-missing-final"]));
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({
+          transactionId: "sell-missing-final",
+          field: "amount",
+          message: "Final cash amount is required before approval",
+        }),
+      );
+    });
+
+    it("allows the unresolved activity to remain in review", () => {
+      const transaction = createMockTransaction({
+        id: "sell-still-reviewing",
+        activityType: ActivityType.SELL,
+        amount: null,
+        needsReview: true,
+        _originalNeedsReview: true,
+      });
+
+      const result = validateTransactionsForSave([transaction], new Set(["sell-still-reviewing"]));
+
+      expect(result.isValid).toBe(true);
+    });
+
     it("should require asset-backed income fields for staking rewards", () => {
       const transactions: LocalTransaction[] = [
         createMockTransaction({
@@ -1370,6 +1407,77 @@ describe("activity-utils", () => {
       expect(result.errors).toEqual(
         expect.arrayContaining([expect.objectContaining({ field: "unitPrice" })]),
       );
+    });
+  });
+
+  describe("hasFinalCashAmountForApproval", () => {
+    it("rejects a cash-bearing activity with no final amount", () => {
+      expect(
+        hasFinalCashAmountForApproval(
+          createMockTransaction({ activityType: ActivityType.SELL, amount: null }),
+        ),
+      ).toBe(false);
+    });
+
+    it("rejects an untouched legacy zero on a trade", () => {
+      expect(
+        hasFinalCashAmountForApproval(
+          createMockTransaction({ activityType: ActivityType.SELL, amount: "0" }),
+        ),
+      ).toBe(false);
+    });
+
+    it("accepts a zero trade total explicitly confirmed this session", () => {
+      expect(
+        hasFinalCashAmountForApproval(
+          createMockTransaction({
+            activityType: ActivityType.SELL,
+            amount: "0",
+            _amountEdited: true,
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it("does not require an amount for a securities transfer", () => {
+      expect(
+        hasFinalCashAmountForApproval(
+          createMockTransaction({
+            activityType: ActivityType.TRANSFER_OUT,
+            assetId: "asset-aapl",
+            assetSymbol: "AAPL",
+            amount: null,
+          }),
+        ),
+      ).toBe(true);
+    });
+  });
+
+  describe("partitionReviewRowsForApproval", () => {
+    it("separates complete and incomplete rows from one bulk selection", () => {
+      const complete = createMockTransaction({
+        id: "complete-sell",
+        activityType: ActivityType.SELL,
+        amount: "125",
+      });
+      const missing = createMockTransaction({
+        id: "missing-sell",
+        activityType: ActivityType.SELL,
+        amount: null,
+      });
+      const untouchedZero = createMockTransaction({
+        id: "zero-buy",
+        activityType: ActivityType.BUY,
+        amount: "0",
+      });
+
+      const result = partitionReviewRowsForApproval([complete, missing, untouchedZero]);
+
+      expect(result.approvable.map((transaction) => transaction.id)).toEqual(["complete-sell"]);
+      expect(result.incomplete.map((transaction) => transaction.id)).toEqual([
+        "missing-sell",
+        "zero-buy",
+      ]);
     });
   });
 

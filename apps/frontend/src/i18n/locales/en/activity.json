@@ -751,7 +751,10 @@
     "warn_dates_differ_one": "Dates differ by {{count}} day.",
     "warn_dates_differ_other": "Dates differ by {{count}} days.",
     "approve_count_one": "Approve {{count}}",
-    "approve_count_other": "Approve {{count}}"
+    "approve_count_other": "Approve {{count}}",
+    "approve_missing_amount_one": "{{count}} activity still needs a final cash amount",
+    "approve_missing_amount_other": "{{count}} activities still need final cash amounts",
+    "approve_missing_amount_description": "Enter the correct final cash amount for each blank or zero trade before approving it."
   },
   "table": {
     "cash": "Cash",

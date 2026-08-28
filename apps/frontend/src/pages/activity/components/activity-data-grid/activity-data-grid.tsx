@@ -23,6 +23,7 @@ import {
   applyTransactionUpdate,
   createCurrencyResolver,
   createDraftTransaction,
+  partitionReviewRowsForApproval,
   PINNED_COLUMNS,
   TRACKED_FIELDS,
   valuesAreEqual,
@@ -726,29 +727,41 @@ export function ActivityDataGrid({
 
     if (pendingToApprove.length === 0) return;
 
+    const { approvable, incomplete } = partitionReviewRowsForApproval(pendingToApprove);
+    const approvableIds = new Set(approvable.map((transaction) => transaction.id));
+
     // Draft review rows require an explicit lifecycle transition. Posted and
     // Pending rows keep their existing lifecycle.
-    setLocalTransactions((prev) =>
-      prev.map((transaction) => {
-        const shouldApprove = pendingToApprove.some((p) => p.id === transaction.id);
-        if (shouldApprove) {
-          return {
-            ...transaction,
-            needsReview: false,
-            status:
-              transaction.status === ActivityStatus.DRAFT
-                ? ActivityStatus.POSTED
-                : transaction.status,
-          };
-        }
-        return transaction;
-      }),
-    );
+    if (approvable.length > 0) {
+      setLocalTransactions((prev) =>
+        prev.map((transaction) => {
+          if (approvableIds.has(transaction.id)) {
+            return {
+              ...transaction,
+              needsReview: false,
+              status:
+                transaction.status === ActivityStatus.DRAFT
+                  ? ActivityStatus.POSTED
+                  : transaction.status,
+            };
+          }
+          return transaction;
+        }),
+      );
 
-    // Mark them as dirty so they will be saved
-    markDirtyBatch(pendingToApprove.map((transaction) => transaction.id));
+      // Mark only complete approvals as dirty so unresolved rows remain in review.
+      markDirtyBatch(approvable.map((transaction) => transaction.id));
+    }
     dataGrid.table.resetRowSelection();
-  }, [dataGrid.table, markDirtyBatch, setLocalTransactions]);
+
+    if (incomplete.length > 0) {
+      toast({
+        title: t("activity:datagrid.approve_missing_amount", { count: incomplete.length }),
+        description: t("activity:datagrid.approve_missing_amount_description"),
+        variant: "destructive",
+      });
+    }
+  }, [dataGrid.table, markDirtyBatch, setLocalTransactions, t]);
 
   // Save activities hook with validation and error handling
   const { saveActivities, isSaving } = useSaveActivities({

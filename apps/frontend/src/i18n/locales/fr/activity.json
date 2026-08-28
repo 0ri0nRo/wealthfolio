@@ -751,7 +751,10 @@
     "warn_dates_differ_one": "Les dates diffèrent de {{count}} jour.",
     "warn_dates_differ_other": "Les dates diffèrent de {{count}} jours.",
     "approve_count_one": "Approuver {{count}}",
-    "approve_count_other": "Approuver {{count}}"
+    "approve_count_other": "Approuver {{count}}",
+    "approve_missing_amount_one": "{{count}} activité nécessite encore un montant de trésorerie final",
+    "approve_missing_amount_other": "{{count}} activités nécessitent encore un montant de trésorerie final",
+    "approve_missing_amount_description": "Saisissez le montant de trésorerie final correct pour chaque transaction vide ou nulle avant de l’approuver."
   },
   "table": {
     "cash": "Espèces",

@@ -646,7 +646,10 @@
     "warn_dates_differ_one": "Die Daten unterscheiden sich um {{count}} Tag.",
     "warn_dates_differ_other": "Die Daten unterscheiden sich um {{count}} Tage.",
     "approve_count_one": "{{count}} genehmigen",
-    "approve_count_other": "{{count}} genehmigen"
+    "approve_count_other": "{{count}} genehmigen",
+    "approve_missing_amount_one": "Für {{count}} Aktivität fehlt noch der endgültige Barbetrag",
+    "approve_missing_amount_other": "Für {{count}} Aktivitäten fehlen noch die endgültigen Barbeträge",
+    "approve_missing_amount_description": "Geben Sie für jeden leeren oder nullwertigen Trade den korrekten endgültigen Barbetrag ein, bevor Sie ihn genehmigen."
   },
   "table": {
     "cash": "Bargeld",

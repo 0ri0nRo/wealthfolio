@@ -745,7 +745,9 @@
     "instrument_auto": "自動",
     "unit_price_help": "買付・売却では約定価格を入力してください。ステーキング報酬や現物配当では、受取時の1単位あたり公正市場価値を入力してください。収入額と取得原価の設定に使用されます。",
     "warn_dates_differ_other": "日付が{{count}}日ずれています。",
-    "approve_count_other": "{{count}}件を承認"
+    "approve_count_other": "{{count}}件を承認",
+    "approve_missing_amount_other": "{{count}}件の取引に最終現金額がまだありません",
+    "approve_missing_amount_description": "空欄またはゼロの取引には、正しい最終現金額を入力してから承認してください。"
   },
   "table": {
     "cash": "現金",
