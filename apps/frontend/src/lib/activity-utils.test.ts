@@ -286,6 +286,20 @@ describe("Activity Utilities", () => {
       expect(calculateActivityCashImpact({ ...activity, amount: "20" })).toBe(20);
     });
 
+    it("uses the resolved asset multiplier when proving a negative option sell", () => {
+      const activity = createActivity({
+        activityType: ActivityType.SELL,
+        instrumentType: "OPTION",
+        assetContractMultiplier: "10",
+        quantity: "1",
+        unitPrice: "1",
+        fee: "15",
+        amount: "5",
+      });
+
+      expect(calculateActivityCashImpact(activity)).toBe(-5);
+    });
+
     it("keeps the outflow direction within the shared epsilon", () => {
       // Same vector as negative_sell_direction_survives_sub_cent_rounding in
       // crates/core/src/portfolio/economic_events.rs — keep them identical.

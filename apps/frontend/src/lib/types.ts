@@ -227,6 +227,8 @@ export interface ActivityDetails {
   /** Canonical exchange MIC code for asset identification */
   exchangeMic?: string;
   instrumentType?: string;
+  /** Effective multiplier owned by the resolved asset. */
+  assetContractMultiplier?: string | null;
   // Sync/source metadata
   sourceSystem?: string;
   sourceRecordId?: string;

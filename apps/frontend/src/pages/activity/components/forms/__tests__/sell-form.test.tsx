@@ -293,6 +293,29 @@ describe("SellForm", () => {
       );
     });
 
+    it("uses the existing asset multiplier as read-only when editing an option", async () => {
+      render(
+        <SellForm
+          accounts={mockAccounts}
+          onSubmit={mockOnSubmit}
+          isEditing
+          defaultValues={{
+            assetType: "option",
+            symbolInstrumentType: "OPTION",
+            contractMultiplier: 10,
+            quantity: 1,
+            unitPrice: 12,
+            amount: 120,
+          }}
+        />,
+      );
+
+      expect(screen.getByLabelText(/contract multiplier/i)).toHaveAttribute("readonly");
+      await waitFor(() =>
+        expect(screen.getByTestId("input-amount")).toHaveAttribute("data-calculated-amount", "120"),
+      );
+    });
+
     it("submits a user-typed custom total verbatim", async () => {
       const user = userEvent.setup();
       render(

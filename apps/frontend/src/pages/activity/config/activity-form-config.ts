@@ -139,8 +139,7 @@ export const ACTIVITY_FORM_CONFIG: Record<
           strikePrice: parsed?.strikePrice,
           expirationDate: parsed?.expiration,
           optionType: parsed?.optionType,
-          contractMultiplier:
-            absNum(activity?.metadata?.[METADATA_CONTRACT_MULTIPLIER] as string | number) ?? 100,
+          contractMultiplier: absNum(activity?.assetContractMultiplier) ?? 100,
           subtype: activity?.subtype ?? ACTIVITY_SUBTYPES.POSITION_OPEN,
         };
       }
@@ -190,11 +189,13 @@ export const ACTIVITY_FORM_CONFIG: Record<
               providerSymbol: d.assetMetadata.providerSymbol ?? undefined,
             }
           : undefined,
-        // Always sent for options - the backend merges metadata patches, so
-        // omitting the key would leave a stale non-standard multiplier (e.g.
-        // a mini option corrected back to 100) in force forever.
+        // Only a NON-STANDARD multiplier is sent: the asset owns the
+        // multiplier, and this metadata exists solely to seed a brand-new
+        // option asset at creation. Sending the default would write an
+        // override the asset never asked for.
         ...(d.symbolInstrumentType === InstrumentType.OPTION &&
-          d.contractMultiplier != null && {
+          d.contractMultiplier != null &&
+          d.contractMultiplier !== 100 && {
             metadata: { [METADATA_CONTRACT_MULTIPLIER]: d.contractMultiplier },
           }),
       };
@@ -235,8 +236,7 @@ export const ACTIVITY_FORM_CONFIG: Record<
           strikePrice: parsed?.strikePrice,
           expirationDate: parsed?.expiration,
           optionType: parsed?.optionType,
-          contractMultiplier:
-            absNum(activity?.metadata?.[METADATA_CONTRACT_MULTIPLIER] as string | number) ?? 100,
+          contractMultiplier: absNum(activity?.assetContractMultiplier) ?? 100,
           subtype: activity?.subtype ?? ACTIVITY_SUBTYPES.POSITION_CLOSE,
         };
       }
@@ -286,11 +286,13 @@ export const ACTIVITY_FORM_CONFIG: Record<
               providerSymbol: d.assetMetadata.providerSymbol ?? undefined,
             }
           : undefined,
-        // Always sent for options - the backend merges metadata patches, so
-        // omitting the key would leave a stale non-standard multiplier (e.g.
-        // a mini option corrected back to 100) in force forever.
+        // Only a NON-STANDARD multiplier is sent: the asset owns the
+        // multiplier, and this metadata exists solely to seed a brand-new
+        // option asset at creation. Sending the default would write an
+        // override the asset never asked for.
         ...(d.symbolInstrumentType === InstrumentType.OPTION &&
-          d.contractMultiplier != null && {
+          d.contractMultiplier != null &&
+          d.contractMultiplier !== 100 && {
             metadata: { [METADATA_CONTRACT_MULTIPLIER]: d.contractMultiplier },
           }),
       };

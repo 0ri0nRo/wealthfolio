@@ -296,46 +296,6 @@ export const formatSplitRatio = (amount: number): string => {
 };
 
 /**
- * Gets the fee amount from an activity
- * @param activity The activity to get the fee from
- * @returns The fee amount
- */
-export const getFee = (activity: ActivityDetails): number => {
-  return Number(activity.fee ?? 0);
-};
-
-export const getTax = (activity: ActivityDetails): number => {
-  return Number(activity.tax ?? 0);
-};
-
-/**
- * Gets the amount from an activity, with a fallback to 0 if not provided
- * @param activity The activity to get the amount from
- * @returns The amount or 0 if not provided
- */
-export const getAmount = (activity: ActivityDetails): number => {
-  return Number(activity.amount ?? 0);
-};
-
-/**
- * Gets the quantity from an activity
- * @param activity The activity to get the quantity from
- * @returns The quantity
- */
-export const getQuantity = (activity: ActivityDetails): number => {
-  return Number(activity.quantity);
-};
-
-/**
- * Gets the unit price from an activity
- * @param activity The activity to get the unit price from
- * @returns The unit price
- */
-export const getUnitPrice = (activity: ActivityDetails): number => {
-  return Number(activity.unitPrice);
-};
-
-/**
  * Returns the authoritative stored activity amount for display. Ledger views
  * use `calculateActivityCashImpact` instead.
  */
@@ -475,10 +435,15 @@ function currencyMinorUnit(currency: string | undefined): number {
   return unit;
 }
 
+/**
+ * Uses the asset-owned multiplier, with the activity's creation seed as a
+ * compatibility fallback for older payloads. Presentation only: never let
+ * this decide a persisted amount.
+ */
 function activityCashMultiplier(activity: ActivityDetails): number {
   return resolveActivityCashMultiplier(
     activity.instrumentType,
-    activity.metadata?.[METADATA_CONTRACT_MULTIPLIER],
+    activity.assetContractMultiplier ?? activity.metadata?.[METADATA_CONTRACT_MULTIPLIER],
   );
 }
 

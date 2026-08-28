@@ -525,6 +525,7 @@ export function BuyForm({
                   <input
                     type="number"
                     {...form.register("contractMultiplier", { valueAsNumber: true })}
+                    readOnly={isEditing}
                     className="hover:border-input focus:border-input focus:bg-background focus:ring-ring h-5 w-14 rounded border border-transparent bg-transparent px-1 text-center text-xs tabular-nums focus:outline-none focus:ring-1"
                     aria-label={t("activity:form.contract_multiplier")}
                   />

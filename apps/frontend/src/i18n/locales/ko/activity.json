@@ -1,6 +1,7 @@
 {
   "needs_review_alert": {
-    "title_other": "{{count}}개 활동에 검토가 필요합니다"
+    "title_other": "{{count}}개 활동에 검토가 필요합니다",
+    "description": "각 거래의 자산, 유형, 최종 금액을 확인하세요."
   },
   "activities": "활동",
   "add_activity": "활동 추가",

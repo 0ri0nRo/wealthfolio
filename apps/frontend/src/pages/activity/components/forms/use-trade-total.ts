@@ -1,4 +1,4 @@
-import { calculateTradeFinalAmount } from "@/lib/activity-final-amount";
+import { calculateTradeFinalAmount, calculateTradeFinalCash } from "@/lib/activity-final-amount";
 import { ActivityType } from "@/lib/constants";
 import { useMemo, useState } from "react";
 
@@ -67,9 +67,9 @@ export function useTradeTotal({
     return Math.abs(stored - initialCalculated) > 0.005;
   });
 
-  const calculatedAmount = useMemo(
+  const calculatedCash = useMemo(
     () =>
-      calculateTradeFinalAmount({
+      calculateTradeFinalCash({
         activityType: side === "buy" ? ActivityType.BUY : ActivityType.SELL,
         instrumentType,
         quantity,
@@ -83,6 +83,11 @@ export function useTradeTotal({
       }),
     [side, instrumentType, quantity, unitPrice, fee, tax, isOption, contractMultiplier],
   );
+  const calculatedAmount = calculatedCash === undefined ? undefined : Math.abs(calculatedCash);
+  // A sell whose charges exceed its proceeds is cash OUT: the field is a
+  // debit even though the side is "sell", and the label must not promise a
+  // credit the ledger will book as a debit.
+  const isDebit = calculatedCash === undefined ? side === "buy" : calculatedCash < 0;
 
   /**
    * Submit-time rewrite. The preview is intentionally not the persistence
@@ -94,5 +99,11 @@ export function useTradeTotal({
     data.amount = isCustomAmount ? (data.amount ?? null) : isEditing ? null : undefined;
   };
 
-  return { isCustomAmount, onCustomChange: setIsCustomAmount, calculatedAmount, applyTradeTotal };
+  return {
+    isCustomAmount,
+    onCustomChange: setIsCustomAmount,
+    calculatedAmount,
+    applyTradeTotal,
+    isDebit,
+  };
 }

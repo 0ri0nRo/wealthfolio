@@ -18,15 +18,7 @@ export function resolveActivityCashMultiplier(
   return normalizedType === InstrumentType.OPTION ? 100 : 1;
 }
 
-export function calculateTradeFinalAmount({
-  activityType,
-  instrumentType,
-  quantity,
-  unitPrice,
-  fee,
-  tax,
-  contractMultiplier,
-}: {
+interface TradeCashInputs {
   activityType: ActivityType;
   instrumentType: string;
   quantity: unknown;
@@ -34,15 +26,44 @@ export function calculateTradeFinalAmount({
   fee: unknown;
   tax: unknown;
   contractMultiplier?: unknown;
-}): number | undefined {
+}
+
+/**
+ * Signed cash effect of a trade: negative is cash out. A BUY is always a
+ * debit; a SELL whose charges exceed its proceeds is one too, which is why
+ * the sign lives here rather than being re-derived per call site. Mirrors the
+ * SELL reversal in economic_events.rs.
+ */
+export function calculateTradeFinalCash({
+  activityType,
+  instrumentType,
+  quantity,
+  unitPrice,
+  fee,
+  tax,
+  contractMultiplier,
+}: TradeCashInputs): number | undefined {
   const q = Number(quantity);
   const price = Number(unitPrice);
   if (!(q > 0) || !(price > 0)) return undefined;
 
   const gross = q * price * resolveActivityCashMultiplier(instrumentType, contractMultiplier);
   const charges = Math.abs(Number(fee) || 0) + Math.abs(Number(tax) || 0);
-  const final = activityType === ActivityType.BUY ? gross + charges : Math.abs(gross - charges);
-  return roundDecimal(final);
+  const signed = activityType === ActivityType.BUY ? -(gross + charges) : gross - charges;
+  // Round the magnitude, then re-apply the sign: roundDecimal breaks ties
+  // upward, so rounding the signed value would round a debit and a credit of
+  // the same size to different magnitudes.
+  const magnitude = roundDecimal(Math.abs(signed));
+  return signed < 0 ? -magnitude : magnitude;
+}
+
+/**
+ * The magnitude a trade's `amount` column stores. Direction is carried by the
+ * activity type, so persistence only ever sees the absolute value.
+ */
+export function calculateTradeFinalAmount(inputs: TradeCashInputs): number | undefined {
+  const cash = calculateTradeFinalCash(inputs);
+  return cash === undefined ? undefined : Math.abs(cash);
 }
 
 export function calculateIncomeFinalAmount(

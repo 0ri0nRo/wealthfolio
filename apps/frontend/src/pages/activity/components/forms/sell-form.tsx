@@ -320,18 +320,19 @@ export function SellForm({
   const symbolInstrumentType = watch("symbolInstrumentType");
   const optQuantity = watch("quantity");
   const optMultiplier = watch("contractMultiplier");
-  const { isCustomAmount, onCustomChange, calculatedAmount, applyTradeTotal } = useTradeTotal({
-    side: "sell",
-    isEditing,
-    defaultAmount: defaultValues?.amount,
-    instrumentType: symbolInstrumentType ?? assetType,
-    quantity: optQuantity,
-    unitPrice: watch("unitPrice"),
-    fee: watch("fee"),
-    tax: watch("tax"),
-    isOption,
-    contractMultiplier: optMultiplier,
-  });
+  const { isCustomAmount, onCustomChange, calculatedAmount, applyTradeTotal, isDebit } =
+    useTradeTotal({
+      side: "sell",
+      isEditing,
+      defaultAmount: defaultValues?.amount,
+      instrumentType: symbolInstrumentType ?? assetType,
+      quantity: optQuantity,
+      unitPrice: watch("unitPrice"),
+      fee: watch("fee"),
+      tax: watch("tax"),
+      isOption,
+      contractMultiplier: optMultiplier,
+    });
 
   const handleAssetTypeChange = (value: AssetType) => {
     if (value === "option") {
@@ -592,6 +593,7 @@ export function SellForm({
                   <input
                     type="number"
                     {...form.register("contractMultiplier", { valueAsNumber: true })}
+                    readOnly={isEditing}
                     className="hover:border-input focus:border-input focus:bg-background focus:ring-ring h-5 w-14 rounded border border-transparent bg-transparent px-1 text-center text-xs tabular-nums focus:outline-none focus:ring-1"
                     aria-label={t("activity:form.contract_multiplier")}
                   />
@@ -628,6 +630,7 @@ export function SellForm({
             isCustom={isCustomAmount}
             onCustomChange={onCustomChange}
             currency={currency}
+            isDebit={isDebit}
           />
 
           {/* Warning for selling more than holdings */}

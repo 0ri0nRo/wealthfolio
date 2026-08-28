@@ -16,6 +16,10 @@ interface TradeTotalInputProps {
   isCustom: boolean;
   onCustomChange: (isCustom: boolean) => void;
   currency?: string;
+  /** Computed cash direction: a sell whose charges exceed proceeds is a
+   * debit, and the label must say so. Defaults to the side's usual
+   * direction when not provided. */
+  isDebit?: boolean;
 }
 
 /**
@@ -33,6 +37,7 @@ export function TradeTotalInput({
   isCustom,
   onCustomChange,
   currency,
+  isDebit,
 }: TradeTotalInputProps) {
   const { t } = useTranslation(["activity"]);
   const { formatAmount } = useAmountFormatting();
@@ -52,9 +57,9 @@ export function TradeTotalInput({
     onCustomChange(false);
   };
 
-  const label = side === "buy" ? "activity:form.total_debit" : "activity:form.total_credit";
-  const helpText =
-    side === "buy" ? "activity:form.help_total_debit" : "activity:form.help_total_credit";
+  const debit = isDebit ?? side === "buy";
+  const label = debit ? "activity:form.total_debit" : "activity:form.total_credit";
+  const helpText = debit ? "activity:form.help_total_debit" : "activity:form.help_total_credit";
   const formattedCalculatedAmount =
     calculatedAmount === undefined
       ? null

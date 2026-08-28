@@ -218,6 +218,12 @@ function applySplitDefaults(transaction: LocalTransaction): LocalTransaction {
   };
 }
 
+/**
+ * Fills the amount cell with a preview. The multiplier here is the row's
+ * creation-time seed falling back to the instrument default - an approximation
+ * of the asset's, which the grid does not have. That is why a trade preview is
+ * NOT submitted (see `sendsAmount`): the backend re-derives from the asset.
+ */
 function applyAutomaticFinalAmount(transaction: LocalTransaction): LocalTransaction {
   if (transaction._amountEdited) return transaction;
 
@@ -325,12 +331,17 @@ export function applyTransactionUpdate(params: TransactionUpdateParams): LocalTr
     const nextSubtype = isSubtypeAllowedForActivityType(nextActivityType, updated.subtype)
       ? updated.subtype
       : undefined;
+    const nextHasAutomaticAmount =
+      nextActivityType === ActivityType.BUY ||
+      nextActivityType === ActivityType.SELL ||
+      isAssetBackedIncomeSubtype(nextActivityType, nextSubtype);
 
     updated = {
       ...updated,
       activityType: nextActivityType,
       subtype: nextSubtype,
-      _amountEdited: false,
+      amount: nextHasAutomaticAmount ? null : updated.amount,
+      _amountEdited: !nextHasAutomaticAmount,
     };
     if (wasAssetBacked && !isAssetBackedIncomeSubtype(nextActivityType, nextSubtype)) {
       updated = { ...updated, quantity: null, unitPrice: null };
@@ -360,11 +371,16 @@ export function applyTransactionUpdate(params: TransactionUpdateParams): LocalTr
   } else if (field === "subtype") {
     const wasAssetBacked = isAssetBackedIncomeSubtype(updated.activityType, updated.subtype);
     const newSubtype = typeof value === "string" && value ? value : undefined;
-    updated = { ...updated, subtype: newSubtype, _amountEdited: false };
-    if (
-      isAssetBackedIncomeSubtype(updated.activityType, newSubtype) &&
-      updated.assetSymbol === "CASH"
-    ) {
+    const isAssetBacked = isAssetBackedIncomeSubtype(updated.activityType, newSubtype);
+    updated = { ...updated, subtype: newSubtype };
+    if (wasAssetBacked !== isAssetBacked) {
+      updated = {
+        ...updated,
+        amount: isAssetBacked ? null : updated.amount,
+        _amountEdited: !isAssetBacked,
+      };
+    }
+    if (isAssetBacked && updated.assetSymbol === "CASH") {
       updated = { ...updated, assetSymbol: "", assetId: "" };
     }
     if (wasAssetBacked && !isAssetBackedIncomeSubtype(updated.activityType, newSubtype)) {

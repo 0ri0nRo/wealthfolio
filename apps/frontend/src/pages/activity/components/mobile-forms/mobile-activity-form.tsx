@@ -408,7 +408,7 @@ export function MobileActivityForm({
         strikePrice: parsedOcc?.strikePrice,
         expirationDate: parsedOcc?.expiration,
         optionType: parsedOcc?.optionType,
-        contractMultiplier: Number(activity?.metadata?.[METADATA_CONTRACT_MULTIPLIER]) || 100,
+        contractMultiplier: Number(activity?.assetContractMultiplier) || 100,
       }),
       // Bond defaults when editing a bond activity
       ...(isBondActivity && {
@@ -432,6 +432,7 @@ export function MobileActivityForm({
       ? defaultValues
       : { ...defaultValues, activityDate: new Date() };
 
+    amountWasEdited.current = false;
     reset(nextDefaultValues);
     setCurrentStep(shouldStartOnDetails ? 2 : 1);
   }, [activity?.date, defaultValues, open, reset, shouldStartOnDetails]);

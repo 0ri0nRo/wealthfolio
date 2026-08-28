@@ -28,11 +28,16 @@ export function NeedsReviewBanner({ accountIds, onReview }: NeedsReviewBannerPro
 
   return (
     <div className="border-warning/30 bg-warning/5 flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-      <div className="flex min-w-0 items-center gap-2">
-        <Icons.AlertTriangle className="text-warning h-4 w-4 shrink-0" />
-        <p className="text-sm">
-          {t("activity:needs_review_alert.title", { count: totalRowCount })}
-        </p>
+      <div className="flex min-w-0 items-start gap-2">
+        <Icons.AlertTriangle className="text-warning mt-0.5 h-4 w-4 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-sm">
+            {t("activity:needs_review_alert.title", { count: totalRowCount })}
+          </p>
+          <p className="text-muted-foreground text-xs">
+            {t("activity:needs_review_alert.description")}
+          </p>
+        </div>
       </div>
       <Button size="sm" className="shrink-0" onClick={onReview}>
         {t("common:review")}

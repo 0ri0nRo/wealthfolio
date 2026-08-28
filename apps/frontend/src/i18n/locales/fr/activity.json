@@ -1,7 +1,8 @@
 {
   "needs_review_alert": {
     "title_one": "{{count}} activité doit être révisée",
-    "title_other": "{{count}} activités doivent être révisées"
+    "title_other": "{{count}} activités doivent être révisées",
+    "description": "Vérifiez l'actif, le type et le montant final de chaque transaction."
   },
   "activities": "Activités",
   "add_activity": "Ajouter une activité",

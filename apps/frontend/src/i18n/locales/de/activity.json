@@ -1,7 +1,8 @@
 {
   "needs_review_alert": {
     "title_one": "{{count}} Aktivität muss geprüft werden",
-    "title_other": "{{count}} Aktivitäten müssen geprüft werden"
+    "title_other": "{{count}} Aktivitäten müssen geprüft werden",
+    "description": "Prüfen Sie bei jeder Transaktion Vermögenswert, Typ und Endbetrag."
   },
   "activities": "Aktivitäten",
   "add_activity": "Aktivität hinzufügen",

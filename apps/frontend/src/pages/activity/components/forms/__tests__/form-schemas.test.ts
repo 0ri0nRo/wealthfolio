@@ -14,7 +14,7 @@ import { ACTIVITY_FORM_CONFIG } from "../../../config/activity-form-config";
 import { ACTIVITY_SUBTYPES, ActivityType, METADATA_CONTRACT_MULTIPLIER } from "@/lib/constants";
 
 describe("Form Schemas Validation", () => {
-  it("preserves a non-standard option multiplier in trade edit defaults", () => {
+  it("uses the asset-owned option multiplier in trade edit defaults", () => {
     for (const activityType of [ActivityType.BUY, ActivityType.SELL] as const) {
       const defaults = ACTIVITY_FORM_CONFIG[activityType].getDefaults(
         {
@@ -23,7 +23,8 @@ describe("Form Schemas Validation", () => {
           date: new Date(),
           assetSymbol: "AAPL7 260116C00200000",
           instrumentType: "OPTION",
-          metadata: { [METADATA_CONTRACT_MULTIPLIER]: 10 },
+          assetContractMultiplier: "10",
+          metadata: { [METADATA_CONTRACT_MULTIPLIER]: 100 },
           amount: "61",
           currency: "USD",
         },

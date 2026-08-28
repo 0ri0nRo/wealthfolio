@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { calculateTradeFinalAmount, resolveActivityCashMultiplier } from "./activity-final-amount";
+import {
+  calculateTradeFinalAmount,
+  calculateTradeFinalCash,
+  resolveActivityCashMultiplier,
+} from "./activity-final-amount";
 import { ActivityType } from "./constants";
 
 describe("resolveActivityCashMultiplier", () => {
@@ -47,5 +51,21 @@ describe("calculateTradeFinalAmount for bonds", () => {
         contractMultiplier: 0.01,
       }),
     ).toBe(9_855);
+  });
+});
+
+describe("calculateTradeFinalCash direction", () => {
+  it("treats a sell whose charges exceed its proceeds as a debit", () => {
+    expect(
+      calculateTradeFinalCash({
+        activityType: ActivityType.SELL,
+        instrumentType: "OPTION",
+        quantity: 1,
+        unitPrice: 0.01,
+        fee: 2,
+        tax: 0,
+        contractMultiplier: 100,
+      }),
+    ).toBe(-1);
   });
 });

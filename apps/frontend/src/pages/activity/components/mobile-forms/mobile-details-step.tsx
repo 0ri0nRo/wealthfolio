@@ -31,6 +31,7 @@ import { Textarea } from "@wealthfolio/ui/components/ui/textarea";
 import { useEffect, useMemo, useState, type RefObject } from "react";
 import { useFormContext } from "react-hook-form";
 import { useTranslation } from "react-i18next";
+import { useAmountFormatting } from "@wealthfolio/ui";
 import {
   AdvancedOptionsSection,
   AssetTypeSelector,
@@ -43,7 +44,7 @@ import {
   type AssetType,
 } from "../forms/fields";
 import type { NewActivityFormValues } from "../forms/schemas";
-import { calculateIncomeFinalAmount, calculateTradeFinalAmount } from "@/lib/activity-final-amount";
+import { calculateIncomeFinalAmount, calculateTradeFinalCash } from "@/lib/activity-final-amount";
 
 interface MobileDetailsStepProps {
   accounts: AccountSelectOption[];
@@ -156,16 +157,6 @@ export function MobileDetailsStep({
   const optTax = isBuyOrSell ? watch("tax") : undefined;
   const optMultiplier = isOption ? ((watch("contractMultiplier" as any) as number) ?? 100) : 1;
 
-  const optionTotal = useMemo(() => {
-    if (!isOption || !optQuantity || !optUnitPrice) return 0;
-    const q = Number(optQuantity) || 0;
-    const p = Number(optUnitPrice) || 0;
-    const f = Number(optFee) || 0;
-    const t = Number(optTax) || 0;
-    const m = Number(optMultiplier) || 100;
-    return activityType === ActivityType.BUY ? q * p * m + f + t : q * p * m - f - t;
-  }, [isOption, optQuantity, optUnitPrice, optFee, optTax, optMultiplier, activityType]);
-
   // Transfer state
   const isTransfer = TRANSFER_ACTIVITY_TYPES.includes(activityType);
   const transferMode = isTransfer ? ((watch("transferMode" as any) as string) ?? "cash") : null;
@@ -207,6 +198,47 @@ export function MobileDetailsStep({
     isBuyOrSell ||
     AMOUNT_FIELD_ACTIVITY_TYPES.includes(activityType) ||
     (isCashTransfer && !needsInternalCashTransferAmounts);
+  const { formatAmount } = useAmountFormatting();
+  // One calculation feeds both the auto-fill effect below and the "use
+  // calculated total" affordance that mirrors the desktop TradeTotalInput.
+  const calculatedTradeCash = useMemo(
+    () =>
+      isBuyOrSell
+        ? calculateTradeFinalCash({
+            activityType: activityType === ActivityType.BUY ? ActivityType.BUY : ActivityType.SELL,
+            instrumentType: symbolInstrumentType ?? assetType,
+            quantity,
+            unitPrice,
+            fee: optFee,
+            tax: optTax,
+            contractMultiplier: isOption ? optMultiplier : undefined,
+          })
+        : undefined,
+    [
+      isBuyOrSell,
+      activityType,
+      symbolInstrumentType,
+      assetType,
+      quantity,
+      unitPrice,
+      optFee,
+      optTax,
+      isOption,
+      optMultiplier,
+    ],
+  );
+  const calculatedTradeAmount =
+    calculatedTradeCash === undefined ? undefined : Math.abs(calculatedTradeCash);
+  const isTradeDebit =
+    calculatedTradeCash === undefined ? activityType === ActivityType.BUY : calculatedTradeCash < 0;
+  const applyCalculatedTradeTotal = () => {
+    if (calculatedTradeAmount === undefined) return;
+    amountWasEdited.current = false;
+    setValue("amount", calculatedTradeAmount, {
+      shouldDirty: true,
+      shouldValidate: false,
+    });
+  };
   const needsFee =
     FEE_FIELD_ACTIVITY_TYPES.includes(activityType) && !needsInternalCashTransferAmounts;
 
@@ -429,18 +461,7 @@ export function MobileDetailsStep({
     // input that participates in the session-local calculation.
     if (isEditing && !shouldDirty) return;
     const computedAmount = isBuyOrSell
-      ? calculateTradeFinalAmount({
-          activityType: activityType === ActivityType.BUY ? ActivityType.BUY : ActivityType.SELL,
-          // The resolved asset's instrument type beats the form radio.
-          instrumentType: symbolInstrumentType ?? assetType,
-          quantity,
-          unitPrice,
-          fee: optFee,
-          tax: optTax,
-          // Only options carry a contract multiplier. Passing the non-option
-          // fallback of 1 would override the canonical bond multiplier.
-          contractMultiplier: isOption ? optMultiplier : undefined,
-        })
+      ? calculatedTradeAmount
       : calculateIncomeFinalAmount(quantity, unitPrice, symbolInstrumentType);
     if (computedAmount === undefined || Number(getValues("amount")) === computedAmount) return;
     setValue("amount" as any, computedAmount, {
@@ -448,18 +469,13 @@ export function MobileDetailsStep({
       shouldValidate: false,
     });
   }, [
-    activityType,
-    assetType,
+    calculatedTradeAmount,
     symbolInstrumentType,
     getFieldState,
     getValues,
     isAssetBackedIncome,
     isBuyOrSell,
     isEditing,
-    isOption,
-    optFee,
-    optMultiplier,
-    optTax,
     quantity,
     setValue,
     unitPrice,
@@ -860,6 +876,7 @@ export function MobileDetailsStep({
                       <input
                         type="number"
                         {...register("contractMultiplier" as any, { valueAsNumber: true })}
+                        readOnly={isEditing}
                         className="hover:border-input focus:border-input focus:bg-background focus:ring-ring h-5 w-14 rounded border border-transparent bg-transparent px-1 text-center text-xs tabular-nums focus:outline-none focus:ring-1"
                         aria-label={t("activity:form.contract_multiplier")}
                       />
@@ -875,7 +892,7 @@ export function MobileDetailsStep({
                   <div className="flex items-center justify-between">
                     <div className="min-w-0 flex-1">
                       <span className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-                        {activityType === ActivityType.BUY
+                        {isTradeDebit
                           ? t("activity:form.total_debit")
                           : t("activity:form.total_credit")}
                       </span>
@@ -897,7 +914,7 @@ export function MobileDetailsStep({
                       </p>
                     </div>
                     <span className="text-lg font-semibold tabular-nums">
-                      {formatting.formatDecimal(optionTotal, {
+                      {formatting.formatDecimal(calculatedTradeAmount ?? 0, {
                         style: currency ? "currency" : "decimal",
                         currency: currency || undefined,
                         minimumFractionDigits: 2,
@@ -935,6 +952,23 @@ export function MobileDetailsStep({
                           }}
                         />
                       </FormControl>
+                      {isBuyOrSell &&
+                        amountWasEdited.current &&
+                        calculatedTradeAmount !== undefined && (
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+                            onClick={applyCalculatedTradeTotal}
+                          >
+                            {t("activity:form.use_calculated_total", {
+                              amount: formatAmount(
+                                calculatedTradeAmount,
+                                currency ?? "",
+                                Boolean(currency),
+                              ),
+                            })}
+                          </button>
+                        )}
                       <FormMessage />
                     </FormItem>
                   )}

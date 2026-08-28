@@ -1206,6 +1206,7 @@ describe("activity-utils", () => {
       expect(updated.quantity).toBeNull();
       expect(updated.unitPrice).toBeNull();
       expect(updated.amount).toBe("200");
+      expect(updated._amountEdited).toBe(true);
     });
 
     it("should clear invalid staking subtype fields when changing to dividend", () => {
@@ -1238,6 +1239,7 @@ describe("activity-utils", () => {
       expect(updated.quantity).toBeNull();
       expect(updated.unitPrice).toBeNull();
       expect(updated.amount).toBe("750");
+      expect(updated._amountEdited).toBe(true);
       expect(updated.assetSymbol).toBe("ETH");
       expect(updated.assetId).toBe("ETH");
     });
@@ -1271,7 +1273,8 @@ describe("activity-utils", () => {
       expect(updated.subtype).toBeUndefined();
       expect(updated.quantity).toBeNull();
       expect(updated.unitPrice).toBeNull();
-      expect(updated.amount).toBe("200");
+      expect(updated.amount).toBeNull();
+      expect(updated._amountEdited).toBe(false);
       expect(updated.assetSymbol).toBe("AAPL");
       expect(updated.assetId).toBe("AAPL");
     });
