@@ -15,7 +15,6 @@ use super::models::AccountUniversalActivity;
 use wealthfolio_core::activities::{self, AssetResolutionInput, NewActivity};
 use wealthfolio_core::assets::{parse_crypto_pair_symbol, parse_symbol_with_known_exchange};
 use wealthfolio_core::fx::currency::{get_normalization_rule, normalize_amount, resolve_currency};
-use wealthfolio_core::portfolio::economic_events::{ActivityCashInputs, ActivityEconomicsResolver};
 
 /// Minimum confidence score to consider a mapping reliable
 const CONFIDENCE_THRESHOLD: f64 = 0.7;
@@ -390,30 +389,6 @@ pub fn normalize_broker_symbol(
     })
 }
 
-fn normalized_trade_amount(
-    activity_type: &str,
-    currency: &str,
-    quantity: Option<Decimal>,
-    unit_price: Option<Decimal>,
-    amount: Option<Decimal>,
-    fee: Option<Decimal>,
-    unit_multiplier: Decimal,
-) -> Option<Decimal> {
-    amount.or_else(|| {
-        ActivityEconomicsResolver::calculate_trade_final_cash(ActivityCashInputs {
-            activity_type,
-            currency,
-            is_security_transfer: false,
-            quantity,
-            unit_price,
-            amount: None,
-            fee,
-            tax: None,
-            unit_multiplier,
-        })
-    })
-}
-
 /// Maps a broker API activity into a `NewActivity` with unresolved `AssetResolutionInput`.
 ///
 /// The returned `NewActivity` has `AssetResolutionInput { symbol, exchange_mic, kind }` set
@@ -534,14 +509,6 @@ pub fn map_broker_activity(
         .filter(|t| !t.trim().is_empty())
         .map(|t| wealthfolio_core::utils::occ_symbol::normalize_option_symbol(&t).unwrap_or(t));
     let is_option_activity = option_symbol.is_some() || option_leg_type.is_some();
-    let unit_multiplier = wealthfolio_core::assets::instrument_default_multiplier(
-        is_option_activity,
-        activity
-            .option_symbol
-            .as_ref()
-            .and_then(|option| option.is_mini_option)
-            == Some(true),
-    );
     // Option contracts are uniquely identified by OCC ticker; adding underlying MIC can fragment identity.
     let exchange_mic = if is_option_activity {
         None
@@ -609,6 +576,8 @@ pub fn map_broker_activity(
     let quantity = activity.units.and_then(Decimal::from_f64).map(|d| d.abs());
     let unit_price = activity.price.and_then(Decimal::from_f64).map(|d| d.abs());
     let fee = activity.fee.and_then(Decimal::from_f64).map(|d| d.abs());
+    // Preserve provider provenance: preparation derives a missing total only
+    // after resolving the asset's multiplier and quote currency.
     let amount = activity.amount.and_then(Decimal::from_f64).map(|d| d.abs());
     let is_trade = matches!(
         activity_type.as_str(),
@@ -626,15 +595,6 @@ pub fn map_broker_activity(
         // but surface the ambiguity for user review.
         needs_review_flag = true;
     }
-    let amount = normalized_trade_amount(
-        &activity_type,
-        &currency_code,
-        quantity,
-        unit_price,
-        amount,
-        fee,
-        unit_multiplier,
-    );
     let fx_rate = activity.fx_rate.and_then(Decimal::from_f64);
 
     // Normalize minor currency units (e.g., GBp -> GBP) and convert amounts
@@ -881,7 +841,7 @@ mod tests {
     }
 
     #[test]
-    fn test_map_broker_activity_derives_standard_option_final_cash() {
+    fn test_map_broker_activity_leaves_missing_standard_option_amount_for_preparation() {
         let activity = AccountUniversalActivity {
             id: Some("act-option-buy".to_string()),
             activity_type: Some("BUY".to_string()),
@@ -897,11 +857,11 @@ mod tests {
 
         let mapped = map_test_activity(&activity);
 
-        assert_eq!(mapped.amount.unwrap().round_dp(2), decimal("600.00"));
+        assert_eq!(mapped.amount, None);
     }
 
     #[test]
-    fn test_map_broker_activity_uses_mini_option_multiplier_for_final_cash() {
+    fn test_map_broker_activity_leaves_missing_mini_option_amount_for_preparation() {
         let activity = AccountUniversalActivity {
             id: Some("act-mini-option-buy".to_string()),
             activity_type: Some("BUY".to_string()),
@@ -919,7 +879,7 @@ mod tests {
 
         let mapped = map_test_activity(&activity);
 
-        assert_eq!(mapped.amount, Some(decimal("61")));
+        assert_eq!(mapped.amount, None);
         let metadata: serde_json::Value =
             serde_json::from_str(mapped.metadata.as_deref().unwrap()).unwrap();
         assert_eq!(metadata["contract_multiplier"], 10);
