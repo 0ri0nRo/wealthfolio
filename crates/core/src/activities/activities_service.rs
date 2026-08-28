@@ -23,11 +23,11 @@
 //!   review state. A currency-only edit is deliberately not an economics
 //!   change: it is a label correction on real data, and re-deriving from
 //!   qty x price would replace an already-correct total.
-//! - qty x price is only derived or verified when the asset's quote currency
-//!   matches the activity currency (create/import prepare, `update_trade_facts`,
-//!   and the migration's `trade_inputs_are_reliable` all refuse the same
-//!   inputs); otherwise a supplied amount is authoritative as-is and a missing
-//!   trade/composite amount is an error, never a wrong-currency derivation.
+//! - `unit_price`, `amount`, `fee`, and `tax` are all denominated in the
+//!   activity currency. The asset quote currency belongs to market valuation,
+//!   not transaction arithmetic; only the resolved asset multiplier affects
+//!   qty x price. FX converts the resolved activity-currency cash effect into
+//!   account currency later when required.
 //! - The resolved asset owns the unit multiplier on every read path. Activity
 //!   metadata can seed a newly created asset, but does not override it later.
 //! - Drafts stay in the review queue until explicitly approved and posted.
@@ -153,8 +153,6 @@ struct UpdateTradeFacts {
     unit_multiplier: Decimal,
     /// Multiplier of the row's current asset, for judging the stored amount.
     existing_unit_multiplier: Decimal,
-    /// Quote currency of the effective asset when known.
-    quote_currency: Option<String>,
     /// The patch swaps the instrument - by a different resolved id, or by a
     /// bare symbol that names something other than the current asset. An
     /// economics change even though `get_symbol_id()` may be empty (bare
@@ -294,19 +292,13 @@ impl ActivityService {
     /// confirmed the custom total against the calculated one; import and sync
     /// carry no such attestation and always flag a mismatch.
     ///
-    /// `quote_ccy_conflicts` reports that the resolved asset's quote currency
-    /// differs from the activity currency: qty x price is then meaningless in
-    /// the activity currency, so a supplied amount stands untouched (it is the
-    /// authoritative final cash and there is nothing valid to verify it
-    /// against), and a missing trade/composite amount stays missing (the
-    /// final-cash requirement surfaces it) instead of being derived at the
-    /// wrong scale. Charges are exempt: their derivation reads the fee/tax
-    /// columns, already denominated in the activity currency.
+    /// All monetary inputs are denominated in `activity.currency`; the asset
+    /// quote currency is deliberately irrelevant here. The resolved asset is
+    /// consulted only for its contract multiplier.
     fn ensure_new_activity_final_amount(
         activity: &mut NewActivity,
         resolved_asset_id: Option<&str>,
         unit_multiplier: Decimal,
-        quote_ccy_conflicts: bool,
         honor_explicit_review_clear: bool,
     ) {
         if activity.activity_type == ACTIVITY_TYPE_SPLIT {
@@ -319,9 +311,6 @@ impl ActivityService {
 
         if let Some(amount) = activity.amount {
             if Self::is_trade_type(&activity.activity_type) {
-                if quote_ccy_conflicts {
-                    return;
-                }
                 let inputs = Self::activity_cash_inputs(
                     &activity.activity_type,
                     &activity.currency,
@@ -369,15 +358,6 @@ impl ActivityService {
             return;
         }
 
-        if quote_ccy_conflicts
-            && !matches!(
-                activity.activity_type.as_str(),
-                ACTIVITY_TYPE_FEE | ACTIVITY_TYPE_TAX
-            )
-        {
-            return;
-        }
-
         activity.amount = Self::calculated_missing_final_amount(
             &activity.activity_type,
             activity.subtype.as_deref(),
@@ -417,7 +397,6 @@ impl ActivityService {
                 return UpdateTradeFacts {
                     unit_multiplier: existing_unit_multiplier,
                     existing_unit_multiplier,
-                    quote_currency: existing_asset.map(|asset| asset.quote_ccy),
                     replaces_asset: false,
                 };
             }
@@ -428,7 +407,6 @@ impl ActivityService {
                     .map(|asset| asset.contract_multiplier())
                     .unwrap_or(Decimal::ONE),
                 existing_unit_multiplier,
-                quote_currency: asset.map(|asset| asset.quote_ccy),
                 replaces_asset: true,
             };
         }
@@ -459,8 +437,6 @@ impl ActivityService {
                 return UpdateTradeFacts {
                     unit_multiplier,
                     existing_unit_multiplier,
-                    // A not-yet-resolved asset only has the patch's own facts.
-                    quote_currency: activity.get_quote_ccy().map(str::to_string),
                     replaces_asset: true,
                 };
             }
@@ -468,7 +444,6 @@ impl ActivityService {
         UpdateTradeFacts {
             unit_multiplier: existing_unit_multiplier,
             existing_unit_multiplier,
-            quote_currency: existing_asset.map(|asset| asset.quote_ccy),
             replaces_asset: false,
         }
     }
@@ -565,14 +540,6 @@ impl ActivityService {
         } else if Self::is_trade_type(&activity.activity_type) {
             let trade_facts = self.update_trade_facts(activity, existing);
             let unit_multiplier = trade_facts.unit_multiplier;
-            // qty x price is denominated in the asset's quote currency;
-            // deriving or verifying a total across a differing activity
-            // currency is meaningless (the migration refuses the same
-            // inputs). Unknown quote currency stays optimistic.
-            let quote_ccy_conflicts = trade_facts
-                .quote_currency
-                .as_deref()
-                .is_some_and(|quote| !quote.eq_ignore_ascii_case(&activity.currency));
             // The activity currency is deliberately absent from this list: a
             // currency-only edit is a label correction on real data, and
             // treating it as an economics change would re-derive a total
@@ -588,91 +555,77 @@ impl ActivityService {
             let amount_patch_changed =
                 Self::decimal_patch_changes(activity.amount, existing.amount);
             let explicit_clear = matches!(activity.amount, Some(None));
-            if quote_ccy_conflicts {
-                // Keep the stored amount untouched and surface any
-                // economics or amount change for review - it cannot be
-                // derived or verified here. An explicit clear falls
-                // through with no amount and fails the final-cash
-                // requirement below, asking the user for the actual
-                // total.
-                if (economics_changed || amount_patch_changed)
-                    && activity.needs_review != Some(false)
-                {
-                    activity.needs_review = Some(true);
-                }
-            } else {
-                let should_recalculate =
-                    explicit_amount.is_none() && (economics_changed || explicit_clear);
-                if should_recalculate {
-                    if let Some(calculated) = Self::calculated_missing_final_amount(
-                        &activity.activity_type,
-                        effective_subtype,
-                        quantity,
-                        unit_price,
-                        fee,
-                        tax,
-                        unit_multiplier,
-                    ) {
-                        // An economics-only patch that never mentioned the
-                        // amount may be replacing a deliberate custom total;
-                        // surface that instead of letting it vanish silently.
-                        // An explicit clear is the user choosing the
-                        // calculation and stays quiet.
-                        let replaces_custom_total = !explicit_clear
-                            && existing_amount.is_some_and(|stored| {
-                                Self::calculated_missing_final_amount(
-                                    existing.effective_type(),
-                                    existing.subtype.as_deref(),
-                                    existing.quantity,
-                                    existing.unit_price,
-                                    existing.fee,
-                                    existing.tax,
-                                    trade_facts.existing_unit_multiplier,
-                                )
-                                .is_none_or(|expected| {
-                                    (stored - expected).abs()
-                                        > currency_minor_unit(&activity.currency) / Decimal::TWO
-                                })
-                            });
-                        if replaces_custom_total && activity.needs_review != Some(false) {
-                            activity.needs_review = Some(true);
-                        }
-                        activity.amount = Some(Some(calculated));
-                        amount = Some(calculated);
-                    }
-                }
-
-                if let Some(current_amount) = explicit_amount.or(amount) {
-                    let inputs = Self::activity_cash_inputs(
-                        &activity.activity_type,
-                        &activity.currency,
-                        quantity,
-                        unit_price,
-                        Some(current_amount),
-                        fee,
-                        tax,
-                        unit_multiplier,
-                    );
-                    let (canonical, needs_review) = Self::mark_trade_amount_confidence(
-                        &activity.currency,
-                        current_amount,
-                        inputs,
-                        activity.needs_review != Some(false),
-                    );
-                    if explicit_amount.is_some() || should_recalculate {
-                        activity.amount = Some(Some(canonical));
-                        amount = Some(canonical);
-                    }
-                    // An explicit clear is a human approval and outranks the
-                    // recomputed confidence flag. A patch that touched neither
-                    // the total nor its economics keeps the reviewed state
-                    // instead of re-entering the queue.
-                    if needs_review
-                        && activity.needs_review != Some(false)
-                        && (economics_changed || amount_patch_changed)
-                    {
+            let should_recalculate =
+                explicit_amount.is_none() && (economics_changed || explicit_clear);
+            if should_recalculate {
+                if let Some(calculated) = Self::calculated_missing_final_amount(
+                    &activity.activity_type,
+                    effective_subtype,
+                    quantity,
+                    unit_price,
+                    fee,
+                    tax,
+                    unit_multiplier,
+                ) {
+                    // An economics-only patch that never mentioned the
+                    // amount may be replacing a deliberate custom total;
+                    // surface that instead of letting it vanish silently.
+                    // An explicit clear is the user choosing the
+                    // calculation and stays quiet.
+                    let replaces_custom_total = !explicit_clear
+                        && existing_amount.is_some_and(|stored| {
+                            Self::calculated_missing_final_amount(
+                                existing.effective_type(),
+                                existing.subtype.as_deref(),
+                                existing.quantity,
+                                existing.unit_price,
+                                existing.fee,
+                                existing.tax,
+                                trade_facts.existing_unit_multiplier,
+                            )
+                            .is_none_or(|expected| {
+                                (stored - expected).abs()
+                                    > currency_minor_unit(&activity.currency) / Decimal::TWO
+                            })
+                        });
+                    if replaces_custom_total && activity.needs_review != Some(false) {
                         activity.needs_review = Some(true);
                     }
+                    activity.amount = Some(Some(calculated));
+                    amount = Some(calculated);
+                }
+            }
+
+            if let Some(current_amount) = explicit_amount.or(amount) {
+                let inputs = Self::activity_cash_inputs(
+                    &activity.activity_type,
+                    &activity.currency,
+                    quantity,
+                    unit_price,
+                    Some(current_amount),
+                    fee,
+                    tax,
+                    unit_multiplier,
+                );
+                let (canonical, needs_review) = Self::mark_trade_amount_confidence(
+                    &activity.currency,
+                    current_amount,
+                    inputs,
+                    activity.needs_review != Some(false),
+                );
+                if explicit_amount.is_some() || should_recalculate {
+                    activity.amount = Some(Some(canonical));
+                    amount = Some(canonical);
+                }
+                // An explicit clear is a human approval and outranks the
+                // recomputed confidence flag. A patch that touched neither
+                // the total nor its economics keeps the reviewed state
+                // instead of re-entering the queue.
+                if needs_review
+                    && activity.needs_review != Some(false)
+                    && (economics_changed || amount_patch_changed)
+                {
+                    activity.needs_review = Some(true);
                 }
             }
         } else if amount.is_none() {
@@ -2783,7 +2736,7 @@ impl ActivityService {
 
         // Facts the final-amount boundary needs from the resolved asset,
         // captured while it is in scope so it is fetched exactly once.
-        let mut resolved_asset_cash_facts: Option<(Decimal, String)> = None;
+        let mut resolved_asset_multiplier: Option<Decimal> = None;
 
         // Process asset if asset_id is resolved
         if let Some(ref asset_id) = resolved_asset_id {
@@ -2826,8 +2779,7 @@ impl ActivityService {
                 }
             }
 
-            resolved_asset_cash_facts =
-                Some((asset.contract_multiplier(), asset.quote_ccy.clone()));
+            resolved_asset_multiplier = Some(asset.contract_multiplier());
 
             // Create a quote from the activity price as a fallback, but only
             // for MANUAL-mode assets. For MARKET-mode assets the unit price is
@@ -2920,18 +2872,11 @@ impl ActivityService {
         // seeds a brand-new asset (see the ensure/create branch above), and
         // that seed is already reflected here because the asset is resolved
         // or created before these facts are read.
-        let unit_multiplier = resolved_asset_cash_facts
-            .as_ref()
-            .map(|(multiplier, _)| *multiplier)
-            .unwrap_or(Decimal::ONE);
-        let quote_ccy_conflicts = resolved_asset_cash_facts
-            .as_ref()
-            .is_some_and(|(_, quote_ccy)| !quote_ccy.eq_ignore_ascii_case(&activity.currency));
+        let unit_multiplier = resolved_asset_multiplier.unwrap_or(Decimal::ONE);
         Self::ensure_new_activity_final_amount(
             &mut activity,
             resolved_asset_id.as_deref(),
             unit_multiplier,
-            quote_ccy_conflicts,
             true,
         );
         Self::validate_new_activity_final_amount(&activity, resolved_asset_id.as_deref())?;
@@ -6754,13 +6699,10 @@ impl ActivityService {
             let unit_multiplier = prepared_asset
                 .map(|asset| asset.contract_multiplier())
                 .unwrap_or(Decimal::ONE);
-            let quote_ccy_conflicts = prepared_asset
-                .is_some_and(|asset| !asset.quote_ccy.eq_ignore_ascii_case(&activity.currency));
             Self::ensure_new_activity_final_amount(
                 &mut activity,
                 resolved_asset_id.as_deref(),
                 unit_multiplier,
-                quote_ccy_conflicts,
                 matches!(mode, PreparationMode::Save),
             );
             if let Err(error) =

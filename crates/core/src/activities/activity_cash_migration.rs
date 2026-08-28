@@ -239,7 +239,6 @@ struct AssetCashFacts {
     /// be masked.
     unit_multiplier: Decimal,
     is_bond: bool,
-    quote_currency: Option<String>,
     multiplier_is_reliable: bool,
 }
 
@@ -291,7 +290,6 @@ pub(crate) async fn migrate_activities_to_final_cash(
             asset_facts.unwrap_or(AssetCashFacts {
                 unit_multiplier: Decimal::ONE,
                 is_bond: false,
-                quote_currency: None,
                 multiplier_is_reliable: false,
             }),
             &account_facts,
@@ -368,7 +366,6 @@ fn asset_cash_facts_from_asset(asset: crate::assets::Asset) -> AssetCashFacts {
     AssetCashFacts {
         unit_multiplier: asset.contract_multiplier(),
         is_bond: asset.is_bond(),
-        quote_currency: Some(asset.quote_ccy),
         multiplier_is_reliable: true,
     }
 }
@@ -404,17 +401,13 @@ fn classify_legacy_activity_cash(
     let is_charge = matches!(activity_type, ACTIVITY_TYPE_FEE | ACTIVITY_TYPE_TAX);
     let is_composite =
         NewActivity::is_asset_backed_income_subtype(activity_type, activity.subtype.as_deref());
-    // qty x price is only meaningful when the price is quoted in the
-    // activity's own currency and the multiplier is trustworthy - for trades
-    // and composites alike; charges derive from their own fee/tax columns,
-    // already in the activity currency. The account currency is deliberately
-    // not consulted: the derived final is stored in activity currency, and
-    // booking (with or without fx_rate) happens later.
-    let priced_inputs_are_reliable = asset_facts.multiplier_is_reliable
-        && asset_facts
-            .quote_currency
-            .as_deref()
-            .is_some_and(|currency| currency.eq_ignore_ascii_case(&activity.currency));
+    // Every monetary activity input is denominated in activity currency, so
+    // the asset quote currency does not participate in transaction arithmetic.
+    // The account currency is also deliberately absent: booking converts the
+    // derived activity-currency final later, with or without an explicit FX
+    // rate. Only the asset-owned multiplier needs an independent reliability
+    // check here.
+    let priced_inputs_are_reliable = asset_facts.multiplier_is_reliable;
     let derived_final = if is_trade {
         priced_inputs_are_reliable
             .then(|| ActivityEconomicsResolver::calculate_trade_final_cash(inputs))
@@ -761,7 +754,6 @@ mod tests {
         AssetCashFacts {
             unit_multiplier: Decimal::ONE,
             is_bond: false,
-            quote_currency: Some("USD".to_string()),
             multiplier_is_reliable: true,
         }
     }
@@ -813,9 +805,9 @@ mod tests {
     }
 
     #[test]
-    fn composite_income_is_not_derived_across_quote_currency_mismatch() {
-        // qty x price is denominated in the asset's quote currency (USD);
-        // booking it as a CAD final cash would store a wrong-currency total.
+    fn composite_income_derives_in_activity_currency() {
+        // The activity declares CAD, so its quantity and price produce a CAD
+        // final even when the asset itself is quoted in another currency.
         let mut drip = activity(ACTIVITY_TYPE_DIVIDEND);
         drip.subtype = Some("DRIP".to_string());
         drip.quantity = Some(dec!(10));
@@ -824,8 +816,8 @@ mod tests {
 
         let decision = classify_legacy_activity_cash(&drip, facts(), &account_facts())
             .expect("dividend rows are classified");
-        assert_eq!(decision.final_amount, None);
-        assert!(decision.needs_review);
+        assert_eq!(decision.final_amount, Some(dec!(50)));
+        assert!(!decision.needs_review);
     }
 
     #[tokio::test]
@@ -1029,7 +1021,6 @@ mod tests {
         let unknown_facts = AssetCashFacts {
             unit_multiplier: Decimal::ONE,
             is_bond: false,
-            quote_currency: None,
             multiplier_is_reliable: false,
         };
 
@@ -1106,7 +1097,6 @@ mod tests {
         let bond_facts = AssetCashFacts {
             unit_multiplier: Decimal::ONE,
             is_bond: true,
-            quote_currency: Some("USD".to_string()),
             multiplier_is_reliable: true,
         };
 
@@ -1296,7 +1286,8 @@ mod tests {
         assert_eq!(decision.final_amount, Some(dec!(1100.0)));
         assert!(!decision.needs_review);
 
-        // Quote-currency conflict from a REAL asset refuses derivation.
+        // The real asset's quote currency is for valuation only. The activity
+        // declares CAD, so its price and derived final are CAD.
         let usd_equity = Asset {
             instrument_type: Some(InstrumentType::Equity),
             quote_ccy: "USD".to_string(),
@@ -1312,7 +1303,54 @@ mod tests {
             &account_facts(),
         )
         .unwrap();
-        assert_eq!(decision.final_amount, None);
-        assert!(decision.needs_review);
+        assert_eq!(decision.final_amount, Some(dec!(500)));
+        assert!(!decision.needs_review);
+    }
+
+    #[test]
+    fn quote_currency_does_not_change_legacy_trade_classification() {
+        use crate::assets::{Asset, InstrumentType};
+
+        let usd_asset_facts = || {
+            asset_cash_facts_from_asset(Asset {
+                instrument_type: Some(InstrumentType::Equity),
+                quote_ccy: "USD".to_string(),
+                ..Default::default()
+            })
+        };
+        let mut sell = activity(ACTIVITY_TYPE_SELL);
+        sell.quantity = Some(dec!(2));
+        sell.unit_price = Some(dec!(10));
+        sell.fee = Some(dec!(1));
+        sell.currency = "CAD".to_string();
+
+        let missing =
+            classify_legacy_activity_cash(&sell, usd_asset_facts(), &account_facts()).unwrap();
+        assert_eq!(missing.final_amount, Some(dec!(19)));
+        assert!(!missing.needs_review);
+
+        sell.amount = Some(Decimal::ZERO);
+        let zero =
+            classify_legacy_activity_cash(&sell, usd_asset_facts(), &account_facts()).unwrap();
+        assert_eq!(zero.final_amount, Some(dec!(19)));
+        assert!(zero.needs_review);
+
+        sell.amount = Some(dec!(20));
+        let gross =
+            classify_legacy_activity_cash(&sell, usd_asset_facts(), &account_facts()).unwrap();
+        assert_eq!(gross.final_amount, Some(dec!(19)));
+        assert!(!gross.needs_review);
+
+        sell.amount = Some(dec!(19));
+        let final_total =
+            classify_legacy_activity_cash(&sell, usd_asset_facts(), &account_facts()).unwrap();
+        assert_eq!(final_total.final_amount, Some(dec!(19)));
+        assert!(!final_total.needs_review);
+
+        sell.amount = Some(dec!(25));
+        let contradictory =
+            classify_legacy_activity_cash(&sell, usd_asset_facts(), &account_facts()).unwrap();
+        assert_eq!(contradictory.final_amount, Some(dec!(25)));
+        assert!(contradictory.needs_review);
     }
 }

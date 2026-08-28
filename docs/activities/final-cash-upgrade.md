@@ -18,13 +18,17 @@ notice:
 - Flagged rows appear in the review banner on the Activities page; open each one
   and confirm its asset, type, and final amount.
 
-## Unverifiable activities require review
+## Activity and asset currencies
 
-A trade priced in a different currency than the activity (for example, a
-USD-quoted asset recorded in CAD) cannot be verified against quantity × price.
-If it also has no stored amount, it books **no cash** until you supply the real
-total — it sits in the review queue rather than silently booking a wrong-scale
-number.
+The activity currency denominates every monetary transaction field, including
+unit price, amount, fee, and tax. The asset quote currency is independent market
+valuation metadata, so a CAD activity for a USD-quoted asset still derives its
+final cash from its CAD quantity, price, and charges. FX is only used later when
+the activity cash must be converted into the account currency.
+
+An activity still requires review when its final cash cannot be established from
+complete inputs and a trustworthy asset multiplier. The migration never guesses
+a missing option or bond scale.
 
 ## Fees on plain cash entries no longer subtract
 

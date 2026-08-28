@@ -2761,11 +2761,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_preserves_trade_amount_when_quote_currency_differs() {
-        // qty x price is denominated in the asset's quote currency (USD);
-        // deriving it onto a CAD-denominated activity would store a
-        // wrong-currency total, so the stored amount is preserved and the
-        // economics change is surfaced for review instead.
+    async fn test_update_recalculates_trade_in_activity_currency_when_quote_currency_differs() {
+        // The patch declares CAD, so its quantity and unit price recalculate a
+        // CAD final. The asset's USD quote currency is valuation metadata.
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let fx_service = Arc::new(MockFxService::new());
@@ -2828,8 +2826,8 @@ mod tests {
             .expect("update should succeed");
 
         assert_eq!(updated.account_id, "acc-cad");
-        assert_eq!(updated.amount, Some(dec!(100)));
-        assert!(updated.needs_review);
+        assert_eq!(updated.amount, Some(dec!(140)));
+        assert!(!updated.needs_review);
         assert_eq!(updated.quantity, Some(dec!(2)));
         assert_eq!(updated.unit_price, Some(dec!(70)));
     }
@@ -2891,13 +2889,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_update_bond_trade_uses_cash_multiplier_when_amount_is_omitted() {
+    async fn test_update_cross_quote_bond_uses_cash_multiplier_when_amount_is_omitted() {
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let fx_service = Arc::new(MockFxService::new());
         let activity_repository = Arc::new(MockActivityRepository::new());
 
-        account_service.add_account(create_test_account("acc-usd", "USD"));
+        account_service.add_account(create_test_account("acc-cad", "CAD"));
         // Percent-of-par pricing is opt-in via explicit metadata; a default
         // bond stays at multiplier 1 (provider quotes are fraction-of-par).
         let mut bond = create_test_asset_with_instrument(
@@ -2910,10 +2908,11 @@ mod tests {
         bond.metadata = Some(serde_json::json!({ "contractMultiplier": "0.01" }));
         asset_service.add_asset(bond);
 
-        let mut existing = create_stored_activity("activity-1", "acc-usd", Some("asset-bond"));
+        let mut existing = create_stored_activity("activity-1", "acc-cad", Some("asset-bond"));
         existing.amount = Some(dec!(990));
         existing.quantity = Some(dec!(1000));
         existing.unit_price = Some(dec!(99));
+        existing.currency = "CAD".to_string();
         activity_repository
             .activities
             .lock()
@@ -2932,7 +2931,7 @@ mod tests {
         let updated = activity_service
             .update_activity(ActivityUpdate {
                 id: "activity-1".to_string(),
-                account_id: "acc-usd".to_string(),
+                account_id: "acc-cad".to_string(),
                 asset: Some(AssetResolutionInput {
                     id: Some("asset-bond".to_string()),
                     ..Default::default()
@@ -2942,7 +2941,7 @@ mod tests {
                 activity_date: "2024-01-15".to_string(),
                 quantity: Some(Some(dec!(1000))),
                 unit_price: Some(Some(dec!(98))),
-                currency: "USD".to_string(),
+                currency: "CAD".to_string(),
                 fee: Some(Some(dec!(0))),
                 tax: None,
                 amount: None,
@@ -3023,7 +3022,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_on_a_mini_option_asset_uses_the_assets_multiplier() {
+    async fn test_create_cross_quote_mini_option_uses_the_assets_multiplier() {
         // The regression this ownership model exists for: a mini-option ASSET
         // carries multiplier 10, and a later trade entered without touching
         // the form's multiplier field must still price at 10 - never at the
@@ -3031,7 +3030,7 @@ mod tests {
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let activity_repository = Arc::new(MockActivityRepository::new());
-        account_service.add_account(create_test_account("acc-usd", "USD"));
+        account_service.add_account(create_test_account("acc-cad", "CAD"));
         let mut mini = create_test_asset_with_instrument(
             "asset-mini",
             "XSP240119C00500000",
@@ -3054,7 +3053,7 @@ mod tests {
         let created = activity_service
             .create_activity(NewActivity {
                 id: None,
-                account_id: "acc-usd".to_string(),
+                account_id: "acc-cad".to_string(),
                 asset: Some(AssetResolutionInput {
                     id: Some("asset-mini".to_string()),
                     ..Default::default()
@@ -3064,7 +3063,7 @@ mod tests {
                 activity_date: "2024-01-15".to_string(),
                 quantity: Some(dec!(2)),
                 unit_price: Some(dec!(7)),
-                currency: "USD".to_string(),
+                currency: "CAD".to_string(),
                 fee: Some(dec!(1)),
                 tax: None,
                 amount: None,
@@ -3280,10 +3279,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_preserves_trade_amount_when_quote_currency_differs() {
-        // qty x price is denominated in the asset's quote currency (USD);
-        // verifying a CAD-denominated total against it is meaningless, so the
-        // supplied final cash stands untouched and unflagged.
+    async fn test_create_preserves_attested_custom_total_when_quote_currency_differs() {
+        // The form attests this custom CAD total. Its disagreement with the
+        // calculated CAD total is preserved regardless of USD asset quotes.
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let activity_repository = Arc::new(MockActivityRepository::new());
@@ -3324,7 +3322,7 @@ mod tests {
                 notes: None,
                 fx_rate: None,
                 metadata: None,
-                needs_review: None,
+                needs_review: Some(false),
                 source_system: None,
                 source_record_id: None,
                 source_group_id: None,
@@ -3339,10 +3337,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_rejects_missing_trade_amount_when_quote_currency_differs() {
-        // With mismatched currencies the total cannot be derived from
-        // qty x price; silently storing a USD-scale number as CAD final cash
-        // is worse than asking the user for the actual total.
+    async fn test_create_derives_missing_trade_amount_when_quote_currency_differs() {
+        // The activity declares CAD, so quantity and unit price derive a CAD
+        // final even though the asset is quoted in USD.
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let activity_repository = Arc::new(MockActivityRepository::new());
@@ -3362,7 +3359,7 @@ mod tests {
             Arc::new(MockQuoteService),
         );
 
-        let result = activity_service
+        let created = activity_service
             .create_activity(NewActivity {
                 id: None,
                 account_id: "acc-cad".to_string(),
@@ -3390,13 +3387,11 @@ mod tests {
                 idempotency_key: None,
                 import_run_id: None,
             })
-            .await;
+            .await
+            .expect("activity-currency derivation should succeed");
 
-        let error = result.expect_err("cross-currency derivation must be refused");
-        assert!(
-            error.to_string().contains("final cash amount"),
-            "unexpected error: {error}"
-        );
+        assert_eq!(created.amount, Some(dec!(140)));
+        assert!(!created.needs_review);
     }
 
     #[tokio::test]
@@ -3966,10 +3961,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn sync_prepare_seeds_a_new_mini_option_asset_before_deriving_cash() {
+    async fn sync_prepare_cross_quote_mini_option_derives_in_activity_currency() {
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
-        let account = create_test_account("acc-usd", "USD");
+        let account = create_test_account("acc-cad", "CAD");
         account_service.add_account(account.clone());
         let activity_service = ActivityService::new(
             Arc::new(MockActivityRepository::new()),
@@ -3983,7 +3978,7 @@ mod tests {
             .prepare_activities_for_sync(
                 vec![NewActivity {
                     id: Some("sync-mini-buy".to_string()),
-                    account_id: "acc-usd".to_string(),
+                    account_id: "acc-cad".to_string(),
                     asset: Some(AssetResolutionInput {
                         symbol: Some("XSP  240119C00500000".to_string()),
                         quote_ccy: Some("USD".to_string()),
@@ -3995,7 +3990,7 @@ mod tests {
                     activity_date: "2024-01-15".to_string(),
                     quantity: Some(dec!(2)),
                     unit_price: Some(dec!(7)),
-                    currency: "USD".to_string(),
+                    currency: "CAD".to_string(),
                     fee: Some(dec!(1)),
                     tax: None,
                     amount: None,
@@ -14428,10 +14423,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn import_demotes_unverifiable_cross_currency_trade() {
-        // Asset quoted in USD, activity in CAD, no amount supplied: qty x
-        // price is meaningless in the activity currency, so the row must NOT
-        // book a derived wrong-scale total (and must not book silent zero).
+    async fn import_derives_missing_trade_total_in_activity_currency() {
+        // Asset quote currency is valuation metadata. The imported monetary
+        // inputs declare CAD and therefore derive a CAD final total.
         let asset = create_test_asset_with_instrument(
             "qa-msft",
             "MSFT",
@@ -14450,11 +14444,10 @@ mod tests {
 
         assert!(result.summary.success);
         let stored = repository.get_activities().expect("stored");
-        assert_eq!(stored[0].amount, None);
-        assert!(stored[0].needs_review);
-        assert_eq!(stored[0].status, ActivityStatus::Draft);
-        // The result row tells the user what happened.
-        assert!(result.activities[0].is_draft);
+        assert_eq!(stored[0].amount, Some(dec!(500)));
+        assert!(!stored[0].needs_review);
+        assert_eq!(stored[0].status, ActivityStatus::Posted);
+        assert!(!result.activities[0].is_draft);
     }
 
     #[tokio::test]
@@ -14478,6 +14471,33 @@ mod tests {
 
         let stored = repository.get_activities().expect("stored");
         assert_eq!(stored[0].amount, Some(dec!(700)));
+        assert!(stored[0].needs_review);
+        assert_eq!(stored[0].status, ActivityStatus::Posted);
+    }
+
+    #[tokio::test]
+    async fn import_converts_cross_quote_gross_total_to_final() {
+        let asset = create_test_asset_with_instrument(
+            "qa-msft",
+            "MSFT",
+            Some("XNAS"),
+            Some(InstrumentType::Equity),
+            "USD",
+        );
+        let (service, repository, _) = qa_import_service("CAD", vec![asset]);
+        let mut row = qa_import_row("qa-acc", "BUY", "CAD");
+        row.symbol = "MSFT".to_string();
+        row.asset_id = Some("qa-msft".to_string());
+        row.quantity = Some(dec!(10));
+        row.unit_price = Some(dec!(50));
+        row.fee = Some(dec!(5));
+        row.amount = Some(dec!(500));
+
+        service.import_activities(vec![row]).await.expect("import");
+
+        let stored = repository.get_activities().expect("stored");
+        assert_eq!(stored[0].amount, Some(dec!(505)));
+        assert!(!stored[0].needs_review);
         assert_eq!(stored[0].status, ActivityStatus::Posted);
     }
 
