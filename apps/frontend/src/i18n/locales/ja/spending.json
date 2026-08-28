@@ -749,7 +749,7 @@
   "cashForm": {
     "accountRequired": "口座を選択してください。",
     "pickDate": "日付を選択",
-    "amountPositive": "金額は0より大きい値である必要があります。",
+    "amountNonNegative": "金額は0以上である必要があります。",
     "descDeposit": "この口座への入金",
     "descWithdrawal": "この口座からの支払い・支出",
     "descInterest": "この口座で得た利息",
