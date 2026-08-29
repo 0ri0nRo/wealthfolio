@@ -192,8 +192,11 @@ function driftDriverSentence(driftReport: DriftReport, t: TFunction): string | n
       : "allocation:planner.driverSentenceUnder",
     {
       name: top.name,
-      current: (top.cur / 100).toFixed(0),
-      target: (top.tgt / 100).toFixed(0),
+      // 1 decimal, matching the drift figures shown beside this sentence —
+      // at 0 decimals "is at 20%, above a 20% target" reads as a contradiction
+      // whenever current and target round to the same integer.
+      current: pp1(top.cur),
+      target: pp1(top.tgt),
     },
   );
 }

@@ -108,7 +108,7 @@ export function DataGridColumnHeader<TData, TValue>({
                   <columnVariant.icon className="text-muted-foreground size-3.5 shrink-0" />
                 </TooltipTrigger>
                 <TooltipContent side="top">
-                  <p>{columnVariant.label}</p>
+                  <p>{t(columnVariant.labelKey, columnVariant.label)}</p>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -218,6 +218,7 @@ interface DataGridColumnResizerProps<TData, TValue> extends DataGridColumnHeader
 }
 
 function DataGridColumnResizerImpl<TData, TValue>({ header, table, label }: DataGridColumnResizerProps<TData, TValue>) {
+  const { t } = useTranslation();
   const defaultColumnDef = table._getDefaultColumnDef();
 
   const onDoubleClick = React.useCallback(() => {
@@ -228,7 +229,7 @@ function DataGridColumnResizerImpl<TData, TValue>({ header, table, label }: Data
     <div
       role="separator"
       aria-orientation="vertical"
-      aria-label={`Resize ${label} column`}
+      aria-label={t("ui:dataGrid.resizeColumn", "Resize {{label}} column", { label })}
       aria-valuenow={header.column.getSize()}
       aria-valuemin={defaultColumnDef.minSize}
       aria-valuemax={defaultColumnDef.maxSize}
