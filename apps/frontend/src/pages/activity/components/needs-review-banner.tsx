@@ -40,7 +40,7 @@ export function NeedsReviewBanner({ accountIds, onReview }: NeedsReviewBannerPro
         </div>
       </div>
       <Button size="sm" className="shrink-0" onClick={onReview}>
-        {t("common:review")}
+        {t("common:globalEvents.review")}
       </Button>
     </div>
   );

@@ -175,7 +175,7 @@ function computeSleeveSummary(driftReport: DriftReport, plan: RebalancePlan): Sl
     .filter((s) => s.currentBps > 0 || s.targetBps > 0 || s.afterBps > 0);
 }
 
-/** "Cash sits 42% over a 0% target." — describes the largest current drift driver. */
+/** "Cash is at 42%, above a 0% target." — describes the largest current drift driver. */
 function driftDriverSentence(driftReport: DriftReport, t: TFunction): string | null {
   let top: { name: string; drift: number; cur: number; tgt: number } | null = null;
   for (const r of driftReport.rows) {
