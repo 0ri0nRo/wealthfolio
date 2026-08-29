@@ -1,7 +1,8 @@
 {
   "needs_review_alert": {
     "title_other": "{{count}} 条活动需要审核",
-    "description": "请确认每笔交易的资产、类型和最终金额。"
+    "description": "请确认每笔交易的资产、类型和最终金额。",
+    "action": "审核"
   },
   "activities": "活动",
   "add_activity": "添加活动",

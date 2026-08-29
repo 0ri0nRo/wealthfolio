@@ -1,7 +1,8 @@
 {
   "needs_review_alert": {
     "title_other": "{{count}}件の取引に確認が必要です",
-    "description": "各取引の資産、タイプ、最終金額を確認してください。"
+    "description": "各取引の資産、タイプ、最終金額を確認してください。",
+    "action": "確認"
   },
   "activities": "取引",
   "add_activity": "取引を追加",
