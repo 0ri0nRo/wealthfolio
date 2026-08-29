@@ -11,6 +11,7 @@ import frUi from "@/i18n/locales/fr/ui.json";
 import jaUi from "@/i18n/locales/ja/ui.json";
 import koUi from "@/i18n/locales/ko/ui.json";
 import zhUi from "@/i18n/locales/zh/ui.json";
+import itUI from "@/i18n/locales/it/ui.json";
 
 // The sandbox iframe renders `@wealthfolio/ui` components that call
 // `useTranslation()` against `ui:`-namespaced keys. The iframe is its own realm,
@@ -33,6 +34,7 @@ const resources: Record<LocaleCode, { ui: Record<string, unknown> }> = {
   ja: { ui: jaUi },
   ko: { ui: koUi },
   zh: { ui: zhUi },
+  it: { ui: itUI },
 };
 
 // Map regional codes (e.g. `fr-CA`) to the base language, matching the host.

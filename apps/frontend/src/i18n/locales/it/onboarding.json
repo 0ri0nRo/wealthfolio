@@ -1,99 +1,99 @@
 {
+  "appearance": {
+    "fontLabel": "Carattere",
+    "fonts": {
+      "monoDescription": "Tecnico e preciso",
+      "monoLabel": "Mono",
+      "sansDescription": "Pulito e moderno",
+      "sansLabel": "Sans",
+      "serifDescription": "Classico ed elegante",
+      "serifLabel": "Serif"
+    },
+    "fontSample": "Investi con chiarezza.",
+    "navigationLabel": "Navigazione",
+    "subtitle": "Personalizza la tua esperienza",
+    "themeDark": "Scuro",
+    "themeDarkPreviewAlt": "Anteprima tema scuro",
+    "themeLabel": "Tema",
+    "themeLight": "Chiaro",
+    "themeLightPreviewAlt": "Anteprima tema chiaro",
+    "themeSystem": "Sistema",
+    "themeSystemPreviewAlt": "Anteprima tema di sistema"
+  },
   "buttons": {
-    "continue": "Continue",
-    "subscribeConnect": "Subscribe & Connect",
-    "getStarted": "Get Started"
+    "continue": "Continua",
+    "getStarted": "Inizia",
+    "subscribeConnect": "Abbonati e connetti"
+  },
+  "connect": {
+    "features": {
+      "brokerageSync": {
+        "description": "Sincronizza automaticamente i tuoi conti e le tue transazioni nel tuo database locale.",
+        "title": "Sincronizzazione broker"
+      },
+      "deviceSync": {
+        "description": "Mantieni il tuo database sincronizzato su tutti i dispositivi con crittografia end-to-end.",
+        "title": "Sincronizzazione dispositivi"
+      },
+      "householdView": {
+        "description": "Condividi conti selezionati con la famiglia e visualizzate insieme una vista aggregata.",
+        "title": "Vista nucleo familiare"
+      }
+    },
+    "learnMore": "Scopri di più su Connect",
+    "optional": "Facoltativo",
+    "subtitle": "Sincronizza automaticamente i tuoi broker mantenendo i tuoi dati privati.",
+    "title": "Wealthfolio Connect"
   },
   "steps": {
     "chooseMode": {
-      "subtitle": "Two ways to track your portfolio.",
+      "footnote": "Puoi usare modalità diverse per conti diversi.",
       "holdings": {
-        "title": "Holdings",
-        "subtitle": "Value Tracking",
-        "badge": "Best for low-maintenance tracking.",
+        "badge": "Ideale per un monitoraggio a basso impegno.",
         "features": {
-          "netWorth": "Net worth & allocation",
-          "unrealizedPnl": "Value & unrealized P&L",
-          "priceBased": "Price-based performance",
-          "fastSetup": "Fast & lightweight setup"
+          "fastSetup": "Configurazione rapida e leggera",
+          "netWorth": "Patrimonio netto e allocazione",
+          "priceBased": "Performance basata sul prezzo",
+          "unrealizedPnl": "Valore e G/P non realizzato"
         },
-        "limit": "Limit: No transaction-based TWR/IRR.",
-        "note": "Note: Requires maintaining holdings/positions."
+        "limit": "Limite: nessun TWR/IRR basato sulle transazioni.",
+        "note": "Nota: richiede il mantenimento delle partecipazioni/posizioni.",
+        "subtitle": "Tracciamento del valore",
+        "title": "Partecipazioni"
       },
+      "learnMore": "Scopri di più",
+      "subtitle": "Due modi per monitorare il tuo portafoglio.",
       "transactions": {
-        "title": "Transactions",
-        "subtitle": "Performance Tracking",
-        "badge": "Best for full performance analytics.",
+        "badge": "Ideale per analisi complete della performance.",
         "features": {
-          "totalReturn": "Total return over time",
-          "attribution": "Gains & cashflow attribution",
-          "completeView": "Most complete performance view",
-          "brokerSync": "Best with broker sync or CSV import"
+          "attribution": "Attribuzione di guadagni e flussi di cassa",
+          "brokerSync": "Ottimale con sincronizzazione broker o importazione CSV",
+          "completeView": "La visione più completa della performance",
+          "totalReturn": "Rendimento totale nel tempo"
         },
-        "limit": "Limit: Requires tracking all transactions.",
-        "note": "Note: Automated if synced with a broker."
-      },
-      "footnote": "You can use different modes for different accounts.",
-      "learnMore": "Learn more"
+        "limit": "Limite: richiede il tracciamento di tutte le transazioni.",
+        "note": "Nota: automatizzato se sincronizzato con un broker.",
+        "subtitle": "Tracciamento della performance",
+        "title": "Transazioni"
+      }
     },
     "preferences": {
-      "subtitle": "Just a couple preferences to get you started",
-      "currencyLabel": "Currency",
-      "timezoneLabel": "Timezone",
-      "other": "Other",
-      "selectCurrency": "Select Currency",
-      "selectTimezone": "Select Timezone",
-      "searchCurrenciesPlaceholder": "Search currencies...",
-      "searchTimezonesPlaceholder": "Search timezones...",
-      "noCurrenciesFound": "No currencies found",
-      "noTimezonesFound": "No timezones found",
-      "currencyRequired": "Please select a base currency.",
-      "timezoneRequired": "Please select a timezone.",
-      "languageLabel": "Language",
-      "formattingRegionLabel": "Region & formats",
-      "searchRegionsPlaceholder": "Search regions...",
-      "noRegionsFound": "No regions found"
-    }
-  },
-  "appearance": {
-    "subtitle": "Customize your experience",
-    "themeLabel": "Theme",
-    "fontLabel": "Font",
-    "themeLight": "Light",
-    "themeDark": "Dark",
-    "themeSystem": "System",
-    "themeLightPreviewAlt": "Light theme preview",
-    "themeDarkPreviewAlt": "Dark theme preview",
-    "themeSystemPreviewAlt": "System theme preview",
-    "fontSample": "Invest with clarity.",
-    "fonts": {
-      "monoLabel": "Mono",
-      "monoDescription": "Technical & precise",
-      "sansLabel": "Sans",
-      "sansDescription": "Clean & modern",
-      "serifLabel": "Serif",
-      "serifDescription": "Classic & elegant"
-    },
-    "navigationLabel": "Navigation"
-  },
-  "connect": {
-    "optional": "Optional",
-    "title": "Wealthfolio Connect",
-    "subtitle": "Automatically sync your brokers while keeping your data private.",
-    "learnMore": "Learn more about Connect",
-    "features": {
-      "brokerageSync": {
-        "title": "Brokerage Sync",
-        "description": "Auto-sync your accounts and transactions into your local database."
-      },
-      "deviceSync": {
-        "title": "Device Sync",
-        "description": "Keep your database in sync across all devices with end-to-end encryption."
-      },
-      "householdView": {
-        "title": "Household View",
-        "description": "Share selected accounts with family and see an aggregated view together."
-      }
+      "currencyLabel": "Valuta",
+      "currencyRequired": "Seleziona una valuta base.",
+      "formattingRegionLabel": "Regione e formati",
+      "languageLabel": "Lingua",
+      "noCurrenciesFound": "Nessuna valuta trovata",
+      "noRegionsFound": "Nessuna regione trovata",
+      "noTimezonesFound": "Nessun fuso orario trovato",
+      "other": "Altro",
+      "searchCurrenciesPlaceholder": "Cerca valute...",
+      "searchRegionsPlaceholder": "Cerca regioni...",
+      "searchTimezonesPlaceholder": "Cerca fusi orari...",
+      "selectCurrency": "Seleziona valuta",
+      "selectTimezone": "Seleziona fuso orario",
+      "subtitle": "Solo un paio di preferenze per iniziare",
+      "timezoneLabel": "Fuso orario",
+      "timezoneRequired": "Seleziona un fuso orario."
     }
   }
 }
