@@ -103,7 +103,7 @@
     "return_unavailable_holdings": "Rentabilidade % não disponível: custo de aquisição ou valor inicial das posições ausente.",
     "return_unavailable_activity": "Rentabilidade % não disponível: o histórico de atividades pode ser inconsistente.",
     "unexpected_error": "Ocorreu um erro inesperado",
-    "values_without_returns": "Os valores das contas são exibidos sem o retorno do período.",
+    "values_without_returns": "Os valores das contas são exibidos sem a rentabilidade do período.",
     "failed_to_load": "Erro ao carregar as contas",
     "failed_to_load_performance": "Erro ao carregar as métricas de desempenho",
     "try_restarting": "Tente reiniciar o aplicativo. Se o problema persistir, pode ser necessário redefinir seu banco de dados."

@@ -295,7 +295,7 @@
     "overAmount": "+{{amount}} excedido",
     "leftAmount": "{{amount}} restante",
     "spent": "gasto",
-    "target": "alvo"
+    "target": "meta"
   },
   "comparison": {
     "netSavings": "Poupança líquida",

@@ -356,7 +356,7 @@
       "effective_before_return": "Rentabilidade efetiva antes da aposentadoria",
       "effective_retirement_return": "Rentabilidade efetiva da aposentadoria",
       "annual_volatility": "Volatilidade anual",
-      "annual_volatility_tip": "O quanto os retornos anuais podem variar em torno do retorno esperado. Uma maior volatilidade amplia o intervalo de resultados das trajetórias de mercado.",
+      "annual_volatility_tip": "O quanto as rentabilidades anuais podem variar em torno da rentabilidade esperada. Uma maior volatilidade amplia o intervalo de resultados das trajetórias de mercado.",
       "inflation": "Inflação",
       "contribution_growth_per_year": "Crescimento do aporte por ano"
     },

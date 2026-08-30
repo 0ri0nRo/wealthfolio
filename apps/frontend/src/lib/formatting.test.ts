@@ -13,6 +13,7 @@ import {
   parseLocalizedNumber,
   resolveFormattingLocale,
 } from "@wealthfolio/ui";
+import { format } from "date-fns";
 import { describe, expect, it, vi } from "vitest";
 import { formatOptionSubtitle } from "./occ-symbol";
 
@@ -355,5 +356,18 @@ describe("locale formatting", () => {
         formatting,
       ),
     ).toContain("$1.234,5");
+  });
+});
+
+describe("pt-BR calendar text", () => {
+  it("uses Brazilian month names, ordinals and a 24-hour clock", () => {
+    const locale = dateFnsLocaleFor(resolveFormattingLocale("BR"));
+    const date = new Date(2026, 2, 9, 15, 30);
+
+    // Without a real ptBR entry the generic fallback keeps en-US ordinals,
+    // quarters and a 12-hour clock behind Portuguese month names.
+    expect(format(date, "p", { locale })).toBe("15:30");
+    expect(format(date, "PPPP", { locale })).toBe("segunda-feira, 9 de março de 2026");
+    expect(format(date, "QQQQ", { locale })).toBe("1º trimestre");
   });
 });
