@@ -227,6 +227,8 @@ export interface ActivityDetails {
   /** Canonical exchange MIC code for asset identification */
   exchangeMic?: string;
   instrumentType?: string;
+  /** Effective multiplier owned by the resolved asset. */
+  assetContractMultiplier?: string | null;
   // Sync/source metadata
   sourceSystem?: string;
   sourceRecordId?: string;
@@ -289,6 +291,8 @@ export interface ActivityCreate {
   currency?: string;
   fee?: string | number | null;
   tax?: string | number | null;
+  status?: ActivityStatus;
+  needsReview?: boolean;
   comment?: string | null;
   fxRate?: string | number | null;
   metadata?: string | Record<string, unknown>; // Metadata (serialized to JSON string before sending)
@@ -314,6 +318,8 @@ export interface ActivityUpdate {
   currency?: string;
   fee?: string | number | null;
   tax?: string | number | null;
+  status?: ActivityStatus;
+  needsReview?: boolean;
   comment?: string | null;
   fxRate?: string | number | null;
   metadata?: string | Record<string, unknown>; // Metadata (serialized to JSON string before sending)
@@ -622,6 +628,8 @@ export interface Instrument {
   preferredProvider?: string | null;
   isin?: string | null;
   exchangeMic?: string | null;
+  /** Canonical market instrument type (for example EQUITY or BOND). */
+  instrumentType?: string | null;
 
   // Taxonomy-based classifications
   classifications?: AssetClassifications | null;
@@ -2448,6 +2456,7 @@ export interface RetirementOverview {
   fundedThroughAge: number | null;
   failureAge: number | null;
   spendingShortfallAge: number | null;
+  incomeStreamExhaustion?: IncomeStreamExhaustion[];
   requiredAdditionalMonthlyContribution: number;
   suggestedGoalAgeIfUnchanged: number | null;
   coastAmountToday: number;
@@ -2457,6 +2466,13 @@ export interface RetirementOverview {
   budgetBreakdown: BudgetBreakdown;
   targetReconciliation: TargetReconciliation;
   trajectory: RetirementTrajectoryPoint[];
+}
+
+/** A drawdown fund that runs out, and the age its balance reaches zero. */
+export interface IncomeStreamExhaustion {
+  streamId: string;
+  label: string;
+  exhaustedAge: number;
 }
 
 export interface RetirementTrajectoryPoint {

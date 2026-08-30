@@ -104,11 +104,34 @@
     "loading": "Chargement…",
     "recalculate": "Recalculer",
     "calculatePlan": "Calculer le plan",
-    "driverSentenceOver": "{{name}} est à {{current}} % au-dessus d'une cible de {{target}} %.",
-    "driverSentenceUnder": "{{name}} est à {{current}} % en dessous d'une cible de {{target}} %.",
+    "driverSentenceOver": "{{name}} est à {{current}} %, au-dessus de la cible de {{target}} %.",
+    "driverSentenceUnder": "{{name}} est à {{current}} %, en dessous de la cible de {{target}} %.",
     "modeVerbSells": "Les ventes et achats",
     "modeVerbHybrid": "La trésorerie et les ventes",
     "modeVerbCashFlow": "Les achats par flux de trésorerie"
+  },
+  "eligibleHoldings": {
+    "label": "Titres éligibles",
+    "triggerLabel": "{{label}} : {{summary}}",
+    "rowLabel": "{{symbol}} {{name}} {{details}} — {{state}}",
+    "selected": "sélectionné",
+    "notSelected": "non sélectionné",
+    "allSelected": "Tous les titres sélectionnés",
+    "selectedCount": "{{selected}} sur {{total}} sélectionnés",
+    "searchPlaceholder": "Rechercher des titres",
+    "noMatches": "Aucun titre correspondant.",
+    "selectAll": "Tout sélectionner",
+    "clear": "Effacer",
+    "emptyGuidance": "Sélectionnez au moins un titre pour calculer un plan.",
+    "groups": {
+      "equity": "Actions",
+      "bond": "Obligations",
+      "crypto": "Crypto",
+      "option": "Options",
+      "metal": "Métaux",
+      "fx": "Devises",
+      "other": "Autres"
+    }
   },
   "narrative": {
     "liftAndShrink": "{{verb}} rapprochent {{lifted}} de la cible et réduisent la surpondération de {{shrank}} de {{before}} à {{after}}.",

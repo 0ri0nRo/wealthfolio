@@ -10,6 +10,7 @@ use crate::errors::{CalculatorError, Error as CoreError, Result};
 use crate::fx::currency::{get_normalization_rule, normalize_currency_code};
 use crate::fx::FxServiceTrait;
 use crate::lots::{LotRecord, LotRepositoryTrait};
+use crate::portfolio::economic_events::ActivityEconomicsResolver;
 use crate::portfolio::holdings::holdings_model::{Holding, HoldingType, Instrument, MonetaryValue};
 use crate::portfolio::snapshot::{self, SnapshotServiceTrait};
 use crate::utils::time_utils::{activity_date_in_tz, parse_user_timezone_or_default, user_today};
@@ -293,6 +294,7 @@ impl HoldingsService {
                             pricing_mode: asset.quote_mode.as_db_str().to_string(),
                             preferred_provider: asset.preferred_provider(),
                             exchange_mic: asset.instrument_exchange_mic.clone(),
+                            instrument_type: asset.instrument_type.clone(),
                             classifications: None,
                         };
 
@@ -430,6 +432,7 @@ impl HoldingsService {
                 pricing_mode: "MANUAL".to_string(),
                 preferred_provider: None,
                 exchange_mic: None,
+                instrument_type: None,
                 classifications: None,
             };
 
@@ -998,12 +1001,9 @@ fn calculate_asset_income(
 }
 
 fn activity_income_amount(activity: &Activity) -> Decimal {
-    let amount = activity.amt();
-    if amount > Decimal::ZERO {
-        amount
-    } else {
-        activity.qty() * activity.price()
-    }
+    ActivityEconomicsResolver::resolve_cash(activity, Decimal::ONE)
+        .gross_amount
+        .unwrap_or(Decimal::ZERO)
 }
 
 fn convert_income_amount(
@@ -1679,6 +1679,7 @@ impl HoldingsServiceTrait for HoldingsService {
                 pricing_mode: asset.quote_mode.as_db_str().to_string(),
                 preferred_provider: asset.preferred_provider(),
                 exchange_mic: asset.instrument_exchange_mic.clone(),
+                instrument_type: asset.instrument_type.clone(),
                 classifications: None,
             };
 
@@ -4034,6 +4035,7 @@ mod tests {
                 pricing_mode: "MARKET".to_string(),
                 preferred_provider: None,
                 exchange_mic: None,
+                instrument_type: None,
                 classifications: None,
             }),
             asset_kind: None,
