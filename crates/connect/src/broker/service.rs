@@ -74,6 +74,33 @@ fn normalize_regular_average_cost(
     (normalized * contract_multiplier).round_dp(HOLDINGS_DECIMAL_PRECISION)
 }
 
+/// Applies the asset's declared multiplier to a position the broker supplied
+/// none for.
+///
+/// Without this the position is stored with a bare default — 1 for regular
+/// holdings, 100/10 for options — and since valuation reads the position rather
+/// than the asset, every sync silently reverts a user-set multiplier. CFDs hit
+/// this on every sync: the upstream contract has no multiplier field for them
+/// at all, so a hand-entered value is the only one that will ever exist.
+///
+/// Average cost is rescaled exactly as the broker's own value would have been,
+/// so the per-position-unit basis stays consistent with the new multiplier.
+fn apply_declared_contract_multiplier(position: &mut HoldingsPositionData, declared: Decimal) {
+    if declared <= Decimal::ZERO
+        || declared == position.contract_multiplier
+        || position.contract_multiplier <= Decimal::ZERO
+    {
+        return;
+    }
+
+    if position.rescale_average_cost_with_multiplier {
+        position.average_cost = position.average_cost.map(|cost| {
+            (cost * declared / position.contract_multiplier).round_dp(HOLDINGS_DECIMAL_PRECISION)
+        });
+    }
+    position.contract_multiplier = declared;
+}
+
 fn option_contract_multiplier(option: &HoldingsOptionSymbol) -> Decimal {
     let legacy_fallback = if option.is_mini_option.unwrap_or(false) {
         Decimal::from(10)
@@ -233,6 +260,10 @@ struct HoldingsPositionData {
     position_currency: String,
     contract_multiplier: Decimal,
     rescale_average_cost_with_multiplier: bool,
+    /// False when the broker supplied no multiplier and this value is only a
+    /// default. The asset's declared multiplier then wins — see
+    /// `apply_declared_contract_multiplier`.
+    multiplier_from_broker: bool,
 }
 
 /// Service for syncing broker data to the local database
@@ -988,6 +1019,7 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 position_currency,
                 contract_multiplier,
                 rescale_average_cost_with_multiplier: true,
+                multiplier_from_broker: exact_multiplier.is_some(),
             });
         }
 
@@ -1094,6 +1126,7 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
                 position_currency,
                 contract_multiplier: multiplier,
                 rescale_average_cost_with_multiplier: false,
+                multiplier_from_broker: exact_multiplier.is_some(),
             });
         }
 
@@ -1230,6 +1263,23 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
         // that splits one holding across rows (margin/cash) and omits average_purchase_price
         // would otherwise never match the prior quantity, skip the "quantity unchanged -> reuse
         // prior cost" fallback, and overwrite a previously known basis with zero.
+        // Positions the broker gave no multiplier for fall back to the asset's
+        // declared value rather than a bare default, so a user-set multiplier
+        // survives the sync instead of being overwritten on the position that
+        // valuation actually reads.
+        for position in &mut position_data {
+            if position.multiplier_from_broker {
+                continue;
+            }
+            let Some(asset) = spec_key_to_asset_id
+                .get(&position.spec_key)
+                .and_then(|asset_id| ensure_result.assets.get(asset_id))
+            else {
+                continue;
+            };
+            apply_declared_contract_multiplier(position, asset.contract_multiplier());
+        }
+
         let combined_quantities =
             Self::combined_quantities_by_asset(&position_data, &spec_key_to_asset_id);
         let mut positions_map: HashMap<String, Position> = HashMap::new();
@@ -1711,6 +1761,72 @@ mod tests {
         Decimal::from_str(value).expect("valid decimal")
     }
 
+    fn position_without_broker_multiplier(
+        multiplier: Decimal,
+        average_cost: Option<Decimal>,
+        rescale: bool,
+    ) -> super::HoldingsPositionData {
+        super::HoldingsPositionData {
+            spec_key: "SEC:CFD".to_string(),
+            quantity: decimal("10"),
+            quote_price: decimal("100"),
+            quote_currency: "USD".to_string(),
+            average_cost,
+            position_currency: "USD".to_string(),
+            contract_multiplier: multiplier,
+            rescale_average_cost_with_multiplier: rescale,
+            multiplier_from_broker: false,
+        }
+    }
+
+    #[test]
+    fn declared_multiplier_replaces_the_default_and_rescales_cost() {
+        // A CFD: the upstream contract has no multiplier field at all, so the
+        // position lands on 1 and would silently revert a user-set value.
+        let mut position =
+            position_without_broker_multiplier(Decimal::ONE, Some(decimal("20")), true);
+
+        super::apply_declared_contract_multiplier(&mut position, decimal("50"));
+
+        assert_eq!(position.contract_multiplier, decimal("50"));
+        assert_eq!(position.average_cost, Some(decimal("1000")));
+    }
+
+    #[test]
+    fn declared_multiplier_leaves_option_cost_alone() {
+        // Option average cost is already per contract, so it must not rescale.
+        let mut position =
+            position_without_broker_multiplier(decimal("100"), Some(decimal("250")), false);
+
+        super::apply_declared_contract_multiplier(&mut position, decimal("115"));
+
+        assert_eq!(position.contract_multiplier, decimal("115"));
+        assert_eq!(position.average_cost, Some(decimal("250")));
+    }
+
+    #[test]
+    fn declared_multiplier_is_a_noop_when_it_matches_or_is_invalid() {
+        let mut position =
+            position_without_broker_multiplier(decimal("50"), Some(decimal("20")), true);
+
+        super::apply_declared_contract_multiplier(&mut position, decimal("50"));
+        assert_eq!(position.average_cost, Some(decimal("20")));
+
+        super::apply_declared_contract_multiplier(&mut position, Decimal::ZERO);
+        assert_eq!(position.contract_multiplier, decimal("50"));
+        assert_eq!(position.average_cost, Some(decimal("20")));
+    }
+
+    #[test]
+    fn declared_multiplier_handles_a_missing_average_cost() {
+        let mut position = position_without_broker_multiplier(Decimal::ONE, None, true);
+
+        super::apply_declared_contract_multiplier(&mut position, decimal("50"));
+
+        assert_eq!(position.contract_multiplier, decimal("50"));
+        assert_eq!(position.average_cost, None);
+    }
+
     #[test]
     fn normalize_holdings_money_converts_gbp_minor_units_to_major_units() {
         let (price, currency) = normalize_holdings_money(decimal("85"), "GBp");
@@ -1754,6 +1870,7 @@ mod tests {
             position_currency,
             contract_multiplier: Decimal::ONE,
             rescale_average_cost_with_multiplier: true,
+            multiplier_from_broker: true,
         };
 
         assert_eq!(position.quote_price, decimal("85"));
@@ -2388,6 +2505,7 @@ mod tests {
             position_currency: "USD".to_string(),
             contract_multiplier: Decimal::ONE,
             rescale_average_cost_with_multiplier: true,
+            multiplier_from_broker: true,
         };
         let position_data = vec![
             row("EQUITY:VTI", "32.005"),
