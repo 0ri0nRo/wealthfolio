@@ -1,6 +1,8 @@
 use async_trait::async_trait;
 use diesel::prelude::*;
 use diesel::r2d2::{self, Pool};
+use diesel::sql_query;
+use diesel::sql_types::Text;
 use diesel::sqlite::SqliteConnection;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -11,7 +13,7 @@ use wealthfolio_core::{Error, Result};
 use super::model::{AssetDB, InsertableAssetDB};
 use crate::db::{get_connection, WriteHandle};
 use crate::errors::StorageError;
-use crate::schema::{activities, assets, quotes};
+use crate::schema::{activities, assets, quotes, snapshot_positions};
 use crate::utils::chunk_for_sqlite;
 
 /// Repository for managing asset data in the database
@@ -393,15 +395,17 @@ impl AssetRepositoryTrait for AssetRepository {
                     .first(tx.conn())
                     .map_err(StorageError::from)?;
 
-                // Parse current metadata and remove $.legacy, keep $.identifiers
+                // Remove $.legacy and keep every other namespace. Allow-listing
+                // `identifiers` here would silently drop `option`, `bond`,
+                // `contractMultiplier` and `profile` — including user-set values.
                 let new_metadata: Option<String> = existing.metadata.and_then(|meta_str| {
-                    serde_json::from_str::<serde_json::Value>(&meta_str)
-                        .ok()
-                        .and_then(|meta| {
-                            let identifiers = meta.get("identifiers").cloned();
-                            identifiers
-                                .map(|ids| serde_json::json!({ "identifiers": ids }).to_string())
-                        })
+                    let mut meta = serde_json::from_str::<serde_json::Value>(&meta_str).ok()?;
+                    let obj = meta.as_object_mut()?;
+                    obj.remove("legacy");
+                    if obj.is_empty() {
+                        return None;
+                    }
+                    serde_json::to_string(&meta).ok()
                 });
 
                 // Update the asset
@@ -416,6 +420,42 @@ impl AssetRepositoryTrait for AssetRepository {
                 tx.update(&updated)?;
 
                 Ok(())
+            })
+            .await
+    }
+
+    async fn propagate_contract_multiplier(
+        &self,
+        asset_id: &str,
+        multiplier: rust_decimal::Decimal,
+    ) -> Result<usize> {
+        let asset_id_owned = asset_id.to_string();
+        let value = multiplier.normalize().to_string();
+        self.writer
+            .exec_tx(move |tx| -> Result<usize> {
+                let updated = diesel::update(
+                    snapshot_positions::table
+                        .filter(snapshot_positions::asset_id.eq(&asset_id_owned)),
+                )
+                .set(snapshot_positions::contract_multiplier.eq(&value))
+                .execute(tx.conn())
+                .map_err(StorageError::from)?;
+
+                // Snapshots are dual-written: the relational rows above and a
+                // JSON mirror on holdings_snapshots. `json()` embeds the value
+                // as a JSON number rather than a string, matching how serde
+                // writes Decimal and keeping the blob deserializable.
+                sql_query(
+                    "UPDATE holdings_snapshots \
+                     SET positions = json_set(positions, '$.\"' || ?1 || '\".contractMultiplier', json(?2)) \
+                     WHERE json_extract(positions, '$.\"' || ?1 || '\"') IS NOT NULL",
+                )
+                .bind::<Text, _>(&asset_id_owned)
+                .bind::<Text, _>(&value)
+                .execute(tx.conn())
+                .map_err(StorageError::from)?;
+
+                Ok(updated)
             })
             .await
     }
@@ -695,6 +735,204 @@ mod tests {
                 .as_ref()
                 .and_then(|metadata| metadata.get("contractMultiplier")),
             Some(&serde_json::json!("50"))
+        );
+    }
+
+    async fn cleanup_legacy_metadata_for(metadata: serde_json::Value) -> Option<serde_json::Value> {
+        let (pool, writer) = setup_db();
+        let repo = AssetRepository::new(pool.clone(), writer);
+        let mut conn = get_connection(&pool).expect("conn");
+        insert_asset(&mut conn, "legacy-asset");
+        diesel::update(assets::table.filter(assets::id.eq("legacy-asset")))
+            .set(assets::metadata.eq(metadata.to_string()))
+            .execute(&mut conn)
+            .expect("seed metadata");
+        drop(conn);
+
+        repo.cleanup_legacy_metadata("legacy-asset")
+            .await
+            .expect("cleanup");
+
+        repo.get_by_id("legacy-asset").expect("reload").metadata
+    }
+
+    #[tokio::test]
+    async fn cleanup_legacy_metadata_keeps_every_other_namespace() {
+        let metadata = cleanup_legacy_metadata_for(serde_json::json!({
+            "legacy": { "sectors": "[]", "countries": "[]", "old_id": "AAPL" },
+            "identifiers": { "isin": "US0378331005" },
+            "option": { "multiplier": 10.0, "right": "CALL" },
+            "bond": { "couponRate": 0.04375 },
+            "contractMultiplier": 50.0,
+            "profile": { "marketCap": 1 },
+        }))
+        .await
+        .expect("metadata retained");
+
+        assert!(metadata.get("legacy").is_none(), "legacy should be removed");
+        assert_eq!(
+            metadata.get("contractMultiplier"),
+            Some(&serde_json::json!(50.0)),
+            "a user-set multiplier must survive the legacy cleanup"
+        );
+        for key in ["identifiers", "option", "bond", "profile"] {
+            assert!(metadata.get(key).is_some(), "{key} should be preserved");
+        }
+    }
+
+    #[tokio::test]
+    async fn cleanup_legacy_metadata_keeps_multiplier_without_identifiers() {
+        let metadata = cleanup_legacy_metadata_for(serde_json::json!({
+            "legacy": { "sectors": "[]" },
+            "contractMultiplier": 5.0,
+        }))
+        .await
+        .expect("metadata retained");
+
+        assert_eq!(
+            metadata.get("contractMultiplier"),
+            Some(&serde_json::json!(5.0))
+        );
+    }
+
+    #[tokio::test]
+    async fn cleanup_legacy_metadata_nulls_column_when_only_legacy_remains() {
+        let metadata = cleanup_legacy_metadata_for(serde_json::json!({
+            "legacy": { "sectors": "[]", "countries": "[]" },
+        }))
+        .await;
+
+        assert!(metadata.is_none(), "expected metadata column to be NULL");
+    }
+
+    #[derive(QueryableByName)]
+    struct SingleText {
+        #[diesel(sql_type = Text)]
+        value: String,
+    }
+
+    fn decimal_from(raw: &str) -> rust_decimal::Decimal {
+        raw.parse().expect("decimal")
+    }
+
+    fn insert_snapshot_position(
+        conn: &mut SqliteConnection,
+        snapshot_id: &str,
+        asset_id: &str,
+        multiplier: &str,
+    ) {
+        sql_query(
+            "INSERT INTO snapshot_positions (
+                snapshot_id, asset_id, quantity, average_cost, total_cost_basis, currency,
+                inception_date, is_alternative, contract_multiplier, created_at, last_updated
+             ) VALUES (?, ?, '10', '5', '50', 'USD', '2026-01-01', 0, ?,
+                '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+        )
+        .bind::<Text, _>(snapshot_id)
+        .bind::<Text, _>(asset_id)
+        .bind::<Text, _>(multiplier)
+        .execute(conn)
+        .expect("insert snapshot position");
+    }
+
+    #[tokio::test]
+    async fn propagating_a_multiplier_updates_both_stores() {
+        let (pool, writer) = setup_db();
+        let repo = AssetRepository::new(pool.clone(), writer);
+        let mut conn = get_connection(&pool).expect("conn");
+
+        insert_account(&mut conn, "acc-1", false);
+        insert_asset(&mut conn, "cfd-1");
+        insert_asset(&mut conn, "other-1");
+        insert_holdings_snapshot(
+            &mut conn,
+            "acc-1",
+            "2026-01-01",
+            r#"{"cfd-1":{"quantity":"10","contractMultiplier":1},"other-1":{"quantity":"3","contractMultiplier":1}}"#,
+        );
+        insert_snapshot_position(&mut conn, "acc-1_2026-01-01", "cfd-1", "1");
+        insert_snapshot_position(&mut conn, "acc-1_2026-01-01", "other-1", "1");
+        drop(conn);
+
+        let updated = repo
+            .propagate_contract_multiplier("cfd-1", decimal_from("50"))
+            .await
+            .expect("propagate");
+        assert_eq!(updated, 1, "only the target asset's position is rewritten");
+
+        let mut conn = get_connection(&pool).expect("conn");
+        let rows: Vec<(String, String)> = snapshot_positions::table
+            .select((
+                snapshot_positions::asset_id,
+                snapshot_positions::contract_multiplier,
+            ))
+            .order(snapshot_positions::asset_id.asc())
+            .load(&mut conn)
+            .expect("load positions");
+        assert_eq!(
+            rows,
+            vec![
+                ("cfd-1".to_string(), "50".to_string()),
+                ("other-1".to_string(), "1".to_string()),
+            ]
+        );
+
+        // The JSON mirror must stay a deserializable number, not become a string.
+        let positions: String = sql_query("SELECT positions AS value FROM holdings_snapshots")
+            .get_result::<SingleText>(&mut conn)
+            .expect("load positions json")
+            .value;
+        let parsed: serde_json::Value = serde_json::from_str(&positions).expect("valid json");
+        assert_eq!(parsed["cfd-1"]["contractMultiplier"], serde_json::json!(50));
+        assert_eq!(
+            parsed["other-1"]["contractMultiplier"],
+            serde_json::json!(1)
+        );
+        assert_eq!(parsed["cfd-1"]["quantity"], serde_json::json!("10"));
+    }
+
+    #[tokio::test]
+    async fn propagating_a_fractional_multiplier_keeps_it_exact() {
+        let (pool, writer) = setup_db();
+        let repo = AssetRepository::new(pool.clone(), writer);
+        let mut conn = get_connection(&pool).expect("conn");
+
+        insert_account(&mut conn, "acc-1", false);
+        insert_asset(&mut conn, "bond-1");
+        insert_holdings_snapshot(
+            &mut conn,
+            "acc-1",
+            "2026-01-01",
+            r#"{"bond-1":{"quantity":"1000","contractMultiplier":1}}"#,
+        );
+        insert_snapshot_position(&mut conn, "acc-1_2026-01-01", "bond-1", "1");
+        drop(conn);
+
+        repo.propagate_contract_multiplier("bond-1", decimal_from("0.01"))
+            .await
+            .expect("propagate");
+
+        let mut conn = get_connection(&pool).expect("conn");
+        let stored: String = snapshot_positions::table
+            .select(snapshot_positions::contract_multiplier)
+            .first(&mut conn)
+            .expect("load position");
+        assert_eq!(stored, "0.01");
+    }
+
+    #[tokio::test]
+    async fn propagating_to_an_asset_without_positions_is_a_noop() {
+        let (pool, writer) = setup_db();
+        let repo = AssetRepository::new(pool.clone(), writer);
+        let mut conn = get_connection(&pool).expect("conn");
+        insert_asset(&mut conn, "lonely");
+        drop(conn);
+
+        assert_eq!(
+            repo.propagate_contract_multiplier("lonely", decimal_from("50"))
+                .await
+                .expect("propagate"),
+            0
         );
     }
 
