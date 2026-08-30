@@ -219,6 +219,25 @@ pub trait AssetRepositoryTrait: Send + Sync {
     /// Preserves $.identifiers if present.
     async fn cleanup_legacy_metadata(&self, asset_id: &str) -> Result<()>;
 
+    /// Rewrites the multiplier cached on already-stored snapshot positions for
+    /// this asset.
+    ///
+    /// Valuation reads the multiplier stamped on the position, not the asset,
+    /// and positions only pick up a new value when they are reconstructed.
+    /// Holdings-tracked accounts are never reconstructed, so without this an
+    /// edit would leave their valuations on the old multiplier indefinitely.
+    ///
+    /// A multiplier is a fixed property of the contract, so every stored
+    /// snapshot is rewritten: history computed with a wrong value was wrong.
+    /// Returns the number of positions updated.
+    async fn propagate_contract_multiplier(
+        &self,
+        _asset_id: &str,
+        _multiplier: rust_decimal::Decimal,
+    ) -> Result<usize> {
+        Ok(0)
+    }
+
     /// Deactivates an asset (sets is_active=0).
     /// Used when merging UNKNOWN assets into resolved ones.
     async fn deactivate(&self, asset_id: &str) -> Result<()>;
