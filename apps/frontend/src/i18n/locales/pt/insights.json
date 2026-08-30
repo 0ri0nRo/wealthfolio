@@ -52,7 +52,8 @@
       "compare_weights": "Compare os pesos atuais com sua carteira planejada.",
       "set_target_allocation": "Definir alocação alvo",
       "outside_range_one": "{{count}} fora do intervalo · maior diferença {{gap}}",
-      "outside_range_other": "{{count}} fora do intervalo · maior diferença {{gap}}"
+      "outside_range_other": "{{count}} fora do intervalo · maior diferença {{gap}}",
+      "outside_range_many": "{{count}} fora do intervalo · maior diferença {{gap}}"
     },
     "value_strip": {
       "portfolio_value": "Valor da carteira",
@@ -64,8 +65,10 @@
       "available_cash": "Caixa disponível",
       "holdings_count_one": "{{count}} posição",
       "holdings_count_other": "{{count}} posições",
+      "holdings_count_many": "{{count}} posições",
       "accounts_count_one": "{{count}} conta",
-      "accounts_count_other": "{{count}} contas"
+      "accounts_count_other": "{{count}} contas",
+      "accounts_count_many": "{{count}} contas"
     }
   },
   "networth": {
@@ -79,6 +82,7 @@
     "update_valuations": "Atualize suas valorações",
     "assets_count_one": "{{count}} ativo",
     "assets_count_other": "{{count}} ativos",
+    "assets_count_many": "{{count}} ativos",
     "not_updated_over_90_days": "Não atualizado há mais de 90 dias.",
     "chart": {
       "net_worth": "Patrimônio líquido",
@@ -92,6 +96,7 @@
       "category": "Categoria",
       "value": "Valor",
       "delta_period": "Δ {{period}}",
+      "new": "Novo",
       "liabilities": "Passivos",
       "net_worth": "Patrimônio líquido"
     },
@@ -115,14 +120,16 @@
       "monthly_pace": "Ritmo mensal",
       "over_months_one": "em {{count}} mês",
       "over_months_other": "em {{count}} meses",
+      "over_months_many": "em {{count}} meses",
       "trailing_pace": " · {{multiple}}× do ritmo dos últimos 12 meses",
       "drivers_of_change": "Fatores da variação",
-      "market_returns": "Retornos do mercado",
+      "market_returns": "Rentabilidade do mercado",
       "contributions": "Aportes",
       "equity_built": "Capital acumulado",
       "per_month": "/mês"
     },
     "days_ago_one": "há {{count}} d",
-    "days_ago_other": "há {{count}} d"
+    "days_ago_other": "há {{count}} d",
+    "days_ago_many": "há {{count}} d"
   }
 }

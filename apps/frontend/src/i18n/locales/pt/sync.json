@@ -18,7 +18,8 @@
     "connectThisDevice": "Conectar este dispositivo",
     "enableDeviceSync": "Ativar a sincronização de dispositivos",
     "morePreview_one": "+{{count}} mais",
-    "morePreview_other": "+{{count}} mais"
+    "morePreview_other": "+{{count}} mais",
+    "morePreview_many": "+{{count}} mais"
   },
   "status": {
     "syncError": "Erro de sincronização",
@@ -38,10 +39,13 @@
     "thisDeviceSuffix": "· Este dispositivo",
     "minutesAgo_one": "há {{count}} min",
     "minutesAgo_other": "há {{count}} min",
+    "minutesAgo_many": "há {{count}} min",
     "hoursAgo_one": "há {{count}} h",
     "hoursAgo_other": "há {{count}} h",
+    "hoursAgo_many": "há {{count}} h",
     "daysAgo_one": "há {{count}} d",
-    "daysAgo_other": "há {{count}} d"
+    "daysAgo_other": "há {{count}} d",
+    "daysAgo_many": "há {{count}} d"
   },
   "engine": {
     "pauseSync": "Pausar sincronização",
@@ -72,6 +76,7 @@
     "notConnectedYet": "Este dispositivo ainda não está conectado",
     "enterCodeFromDevices_one": "Insira o código de um dos seus {{count}} outros dispositivos conectados.",
     "enterCodeFromDevices_other": "Insira o código de um dos seus {{count}} outros dispositivos conectados.",
+    "enterCodeFromDevices_many": "Insira o código de um dos seus {{count}} outros dispositivos conectados.",
     "enterCodeGeneric": "Insira o código do seu outro dispositivo conectado para sincronizar seus dados.",
     "connectThisDevice": "Conectar este dispositivo",
     "connectToStartSyncing": "Conecte este dispositivo para começar a sincronizar."
@@ -127,6 +132,7 @@
     "replaceDataDescription": "Seus dados locais serão substituídos pelos dados do seu outro dispositivo conectado.",
     "localRowsReplaced_one": "{{count}} linha local será substituída.",
     "localRowsReplaced_other": "{{count}} linhas locais serão substituídas.",
+    "localRowsReplaced_many": "{{count}} linhas locais serão substituídas.",
     "notNow": "Agora não",
     "syncing": "Sincronizando...",
     "replaceAndSync": "Substituir e sincronizar"

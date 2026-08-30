@@ -35,7 +35,7 @@
     "category": "Categoria",
     "currentAllocation": "Alocação atual",
     "current": "Atual",
-    "target": "Meta",
+    "target": "Alvo",
     "drift": "Desvio"
   },
   "drivers": {
@@ -49,6 +49,7 @@
     "noActionRequired": "{{status}}. Nenhuma ação necessária.",
     "moreOutsideTarget_one": "{{count}} mais fora da meta",
     "moreOutsideTarget_other": "{{count}} mais fora da meta",
+    "moreOutsideTarget_many": "{{count}} mais fora da meta",
     "reviewRebalance": "Revisar rebalanceamento →"
   },
   "overview": {
@@ -66,15 +67,18 @@
     "colCategory": "Categoria",
     "colValue": "Valor",
     "colCurrent": "Atual",
-    "colTarget": "Meta",
+    "colTarget": "Alvo",
     "colDrift": "Desvio",
     "colAccount": "Conta",
     "accountCount_one": "{{count}} conta",
     "accountCount_other": "{{count}} contas",
+    "accountCount_many": "{{count}} contas",
     "summary_one": "{{count}} posição · {{currency}}",
     "summary_other": "{{count}} posições · {{currency}}",
+    "summary_many": "{{count}} posições · {{currency}}",
     "summaryUpdated_one": "{{count}} posição · {{currency}} · Atualizada {{updatedAt}}",
-    "summaryUpdated_other": "{{count}} posições · {{currency}} · Atualizado {{updatedAt}}"
+    "summaryUpdated_other": "{{count}} posições · {{currency}} · Atualizado {{updatedAt}}",
+    "summaryUpdated_many": "{{count}} posições · {{currency}} · Atualizado {{updatedAt}}"
   },
   "presets": {
     "currentAllocation": "Alocação atual",
@@ -110,6 +114,29 @@
     "modeVerbHybrid": "Caixa e vendas",
     "modeVerbCashFlow": "Compras com fluxo de caixa"
   },
+  "eligibleHoldings": {
+    "label": "Posições elegíveis",
+    "triggerLabel": "{{label}}: {{summary}}",
+    "rowLabel": "{{symbol}} {{name}} {{details}} — {{state}}",
+    "selected": "selecionada",
+    "notSelected": "não selecionada",
+    "allSelected": "Todas as posições selecionadas",
+    "selectedCount": "{{selected}} de {{total}} selecionadas",
+    "searchPlaceholder": "Buscar posições",
+    "noMatches": "Nenhuma posição corresponde.",
+    "selectAll": "Selecionar todas",
+    "clear": "Limpar",
+    "emptyGuidance": "Selecione pelo menos uma posição para calcular um plano.",
+    "groups": {
+      "equity": "Renda variável",
+      "bond": "Renda fixa",
+      "crypto": "Cripto",
+      "option": "Opções",
+      "metal": "Metais",
+      "fx": "Câmbio",
+      "other": "Outros"
+    }
+  },
   "narrative": {
     "liftAndShrink": "{{verb}} elevar {{lifted}} em direção à meta e reduzir o excesso de {{shrank}} de {{before}} para {{after}}.",
     "lift": "{{verb}} elevar {{lifted}} em direção à meta.",
@@ -134,10 +161,13 @@
     "projectedMaxDrift": "Desvio máximo projetado",
     "buysCount_one": "{{count}} compra",
     "buysCount_other": "{{count}} compras",
+    "buysCount_many": "{{count}} compras",
     "sellsCount_one": "{{count}} venda",
     "sellsCount_other": "{{count}} vendas",
+    "sellsCount_many": "{{count}} vendas",
     "tradesCount_one": "{{count}} operação",
     "tradesCount_other": "{{count}} operações",
+    "tradesCount_many": "{{count}} operações",
     "buysAndSells": "{{buys}} e {{sells}}",
     "deployedShort": "Alocado",
     "cashDeployed": "Caixa alocado",
@@ -155,7 +185,7 @@
     "sleeve": "Tranche",
     "now": "Agora",
     "after": "Depois",
-    "target": "Meta",
+    "target": "Alvo",
     "tgt": "Meta",
     "drift": "Desvio",
     "max": "Máx"
@@ -169,7 +199,8 @@
     "sellConstraint": "Restrição de venda",
     "turnoverCap": "Limite de giro",
     "thingsToKnow_one": "{{count}} coisa que você deve saber sobre este plano",
-    "thingsToKnow_other": "{{count}} coisas que você deve saber sobre este plano"
+    "thingsToKnow_other": "{{count}} coisas que você deve saber sobre este plano",
+    "thingsToKnow_many": "{{count}} coisas que você deve saber sobre este plano"
   },
   "trades": {
     "buy": "Comprar",
@@ -234,7 +265,8 @@
     "account": "conta {{account}}",
     "shares": "{{qty}} aç",
     "warnings_one": "{{count}} aviso:",
-    "warnings_other": "{{count}} avisos:"
+    "warnings_other": "{{count}} avisos:",
+    "warnings_many": "{{count}} avisos:"
   },
   "toast": {
     "dataLoading": "Os dados da carteira ainda estão sendo carregados",
@@ -256,7 +288,7 @@
     "assetClass": "Classe de ativo",
     "todayVsTarget": "Hoje vs meta",
     "current": "Atual",
-    "target": "Meta",
+    "target": "Alvo",
     "drift": "Desvio",
     "locked": "Bloqueado",
     "editTarget": "Editar meta",
@@ -283,13 +315,14 @@
     "cannotTargetScope": "Seleções personalizadas de múltiplas contas ainda não podem ter metas. Selecione todas as contas, uma carteira ou uma conta.",
     "currentCategories_one": "{{count}} categoria atual",
     "currentCategories_other": "{{count}} categorias atuais",
+    "currentCategories_many": "{{count}} categorias atuais",
     "rebalanceSettings": "Configurações de rebalanceamento",
     "mode": "Modo",
     "buyOnly": "Somente compra",
     "allowSells": "Permitir vendas",
     "modeSellNote": "Vende posições sobreponderadas para financiar as subponderadas.",
     "modeBuyNote": "Aloca somente caixa novo; nenhuma posição é vendida.",
-    "goal": "Objetivo",
+    "goal": "Meta",
     "nearestBand": "Banda mais próxima",
     "exactTarget": "Meta exata",
     "goalExactNote": "Aloca caixa até que cada tranche atinja exatamente o seu peso alvo.",

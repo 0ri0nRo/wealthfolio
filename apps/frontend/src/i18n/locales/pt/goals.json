@@ -62,8 +62,10 @@
     "at_risk": "EM RISCO",
     "months_left_one": "FALTA {{count}} MÊS",
     "months_left_other": "FALTAM {{count}} MESES",
+    "months_left_many": "FALTAM {{count}} MESES",
     "years_left_one": "FALTA {{count}} ANO",
     "years_left_other": "FALTAM {{count}} ANOS",
+    "years_left_many": "FALTAM {{count}} ANOS",
     "years_months_left": "FALTAM {{years}}A {{months}}M",
     "quote_car": "para a estrada à frente",
     "quote_home": "um lugar para chamar de lar",
@@ -80,6 +82,7 @@
     "create_first_goal": "Crie sua primeira meta",
     "archived_count_one": "Arquivado ({{count}})",
     "archived_count_other": "Arquivados ({{count}})",
+    "archived_count_many": "Arquivados ({{count}})",
     "stat_saved": "ECONOMIZADO",
     "stat_target": "ALVO",
     "stat_overall": "GERAL",
@@ -109,7 +112,8 @@
       "at_risk": "Em risco",
       "never_reaches_fi": "Nunca alcança a IF",
       "years_late_one": "{{count}} ano atrasado",
-      "years_late_other": "{{count}} anos atrasado"
+      "years_late_other": "{{count}} anos atrasado",
+      "years_late_many": "{{count}} anos atrasado"
     },
     "verdict": {
       "age": "idade {{age}}",
@@ -129,8 +133,10 @@
       "fi_at_prefix": "Você alcançará a independência financeira aos",
       "years_after_one": "{{count}} ano depois de",
       "years_after_other": "{{count}} anos depois de",
+      "years_after_many": "{{count}} anos depois de",
       "years_before_one": "{{count}} ano antes de",
       "years_before_other": "{{count}} anos antes de",
+      "years_before_many": "{{count}} anos antes de",
       "your_goal_of": "sua meta de {{age}}.",
       "right_on_goal": "exatamente na sua meta de {{age}}.",
       "not_reachable_prefix": "Não alcançável para os",
@@ -256,8 +262,8 @@
       "horizon_hint": "Idade até a qual o plano deve cobrir.",
       "monthly_contribution": "Aporte mensal",
       "monthly_contribution_hint": "Quanto você adiciona por mês até a aposentadoria.",
-      "return_before_hint": "Retorno anual esperado enquanto você poupa.",
-      "return_during_hint": "Retorno anual esperado após iniciar os saques.",
+      "return_before_hint": "Rentabilidade anual esperada enquanto você poupa.",
+      "return_during_hint": "Rentabilidade anual esperada após iniciar os saques.",
       "annual_fee_hint": "Taxas anuais estimadas da carteira.",
       "inflation_hint": "Aumento anual esperado dos preços."
     },
@@ -291,7 +297,9 @@
       "preset_travel": "Viagens",
       "add_travel": "+ Viagens",
       "preset_other": "Outro gasto",
-      "add_other": "+ Outro"
+      "preset_many": "Outro gasto",
+      "add_other": "+ Outro",
+      "add_many": "+ Outro"
     },
     "income": {
       "kicker": "Rendimentos",
@@ -317,7 +325,14 @@
       "monthly_income_after_tax": "Rendimento mensal após impostos",
       "current_fund_balance": "Saldo atual do fundo",
       "monthly_fund_contribution": "Aporte mensal no fundo",
-      "fund_return_before_payout": "Retorno do fundo antes do pagamento",
+      "fund_return_before_payout": "Rentabilidade do fundo antes do pagamento",
+      "fund_payout_rate": "Taxa de pagamento",
+      "fund_payout_mode": "Modo de pagamento",
+      "fund_payout_mode_help": "Uma anuidade paga de forma vitalícia; um resgate programado consome o fundo até esgotá-lo.",
+      "annuity": "Anuidade",
+      "drawdown": "Resgate programado",
+      "fund_return_during_payout": "Rentabilidade do fundo durante o pagamento",
+      "drawdown_note": "O resgate programado retira {{pct}}%/ano do saldo na idade inicial e depois segue a configuração de crescimento abaixo até o fundo se esgotar.",
       "monthly_payout_after_tax": "Pagamento mensal após impostos",
       "payout_estimate_note": "O pagamento estimado usa {{pct}}%/ano do saldo projetado do fundo, salvo se você inserir um pagamento mensal.",
       "start_age": "Idade de início",
@@ -335,11 +350,11 @@
     "assumptions": {
       "kicker": "Premissas",
       "title": "Premissas da projeção",
-      "return_before_retirement": "Retorno antes da aposentadoria",
-      "return_during_retirement": "Retorno durante a aposentadoria",
+      "return_before_retirement": "Rentabilidade antes da aposentadoria",
+      "return_during_retirement": "Rentabilidade durante a aposentadoria",
       "annual_investment_fee": "Taxa de investimento anual",
-      "effective_before_return": "Retorno efetivo antes da aposentadoria",
-      "effective_retirement_return": "Retorno efetivo da aposentadoria",
+      "effective_before_return": "Rentabilidade efetiva antes da aposentadoria",
+      "effective_retirement_return": "Rentabilidade efetiva da aposentadoria",
       "annual_volatility": "Volatilidade anual",
       "annual_volatility_tip": "O quanto os retornos anuais podem variar em torno do retorno esperado. Uma maior volatilidade amplia o intervalo de resultados das trajetórias de mercado.",
       "inflation": "Inflação",
@@ -568,6 +583,7 @@
     "no_active_accounts": "Nenhuma conta ativa encontrada.",
     "accounts_exceed_share_one": "{{count}} conta excede a participação disponível. Use o valor máximo destacado antes de salvar.",
     "accounts_exceed_share_other": "{{count}} contas excedem a participação disponível. Use o valor máximo destacado antes de salvar.",
+    "accounts_exceed_share_many": "{{count}} contas excedem a participação disponível. Use o valor máximo destacado antes de salvar.",
     "no_accounts_assigned": "Nenhuma conta atribuída.",
     "this_goal": "Esta meta",
     "free": "Livre",
@@ -664,8 +680,8 @@
     "field_target_amount": "Valor alvo",
     "field_target_date": "Data alvo",
     "field_monthly_contribution": "Aporte mensal",
-    "field_expected_return": "Retorno esperado",
-    "field_expected_annual_return": "Retorno anual esperado",
+    "field_expected_return": "Rentabilidade esperada",
+    "field_expected_annual_return": "Rentabilidade anual esperada",
     "hint_target_amount": "Valor necessário para esta meta",
     "hint_target_date": "Quando você quer ter esse dinheiro disponível",
     "hint_monthly_contribution": "Aportes planejados para esta meta",
@@ -735,6 +751,7 @@
       "not_reachable": "não alcançável",
       "years_late_one": "{{count}} ano atrasado",
       "years_late_other": "{{count}} anos atrasado",
+      "years_late_many": "{{count}} anos atrasado",
       "projected_run_short": "prevê-se que fique a descoberto",
       "short_at_retirement": "a descoberto na aposentadoria",
       "ahead_of_target": "à frente do alvo"
@@ -754,7 +771,8 @@
       "paths_count": "{{count}} trajetórias",
       "not_run": "não executado",
       "paths_count_one": "{{count}} trajetória",
-      "paths_count_other": "{{count}} trajetórias"
+      "paths_count_other": "{{count}} trajetórias",
+      "paths_count_many": "{{count}} trajetórias"
     },
     "results": {
       "base_plan": "Plano base",
@@ -778,6 +796,7 @@
       "unchanged": "sem alteração",
       "years_short_one": "{{count}} ano",
       "years_short_other": "{{count}} anos",
+      "years_short_many": "{{count}} anos",
       "runs_short_at": "Fica a descoberto aos {{age}}",
       "gap_starts_at": "O déficit começa aos {{age}}",
       "gap": "Déficit",
@@ -802,7 +821,8 @@
       "extra_gap": "Déficit extra",
       "money_left": "Dinheiro restante",
       "eyebrow_with_count_one": "O que poderia romper este plano? · {{count}} cenário",
-      "eyebrow_with_count_other": "O que poderia romper este plano? · {{count}} cenários"
+      "eyebrow_with_count_other": "O que poderia romper este plano? · {{count}} cenários",
+      "eyebrow_with_count_many": "O que poderia romper este plano? · {{count}} cenários"
     },
     "montecarlo": {
       "eyebrow": "Trajetórias de mercado",
@@ -837,7 +857,8 @@
       "retire": "aposentadoria",
       "goal": "meta",
       "market_paths_count_one": "{{count}} trajetória de mercado",
-      "market_paths_count_other": "{{count}} trajetórias de mercado"
+      "market_paths_count_other": "{{count}} trajetórias de mercado",
+      "market_paths_count_many": "{{count}} trajetórias de mercado"
     },
     "moves": {
       "eyebrow": "O que mais muda o plano?",
@@ -847,7 +868,7 @@
       "empty_description": "Compare poupar mais, obter um retorno diferente, gastar menos ou se aposentar em uma idade diferente.",
       "building": "Construindo...",
       "build_maps": "Construir mapas",
-      "contribution_return": "Aporte × Retorno",
+      "contribution_return": "Aporte × Rentabilidade",
       "money_left_subtitle": "Dinheiro restante no final, em reais de hoje",
       "fi_age": "Idade de IF",
       "readiness_age": "Idade de preparo",

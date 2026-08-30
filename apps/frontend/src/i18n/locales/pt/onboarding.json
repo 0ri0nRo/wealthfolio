@@ -13,7 +13,7 @@
         "badge": "Ideal para um acompanhamento de baixa manutenção.",
         "features": {
           "netWorth": "Patrimônio líquido e alocação",
-          "unrealizedPnl": "Valor e P&L não realizado",
+          "unrealizedPnl": "Valor e L/P não realizado",
           "priceBased": "Rentabilidade baseada em preços",
           "fastSetup": "Configuração rápida e leve"
         },

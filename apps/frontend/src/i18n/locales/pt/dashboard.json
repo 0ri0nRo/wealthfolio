@@ -6,7 +6,7 @@
   "total_gain_percent": "Ganho total %",
   "today_gain": "Ganho de hoje",
   "net_deposit": "Depósito líquido",
-  "cash_balance": "Saldo em dinheiro",
+  "cash_balance": "Saldo em caixa",
   "invested": "Investido",
   "available_cash": "Dinheiro disponível",
   "portfolio_summary": "Resumo da carteira",
@@ -64,6 +64,7 @@
     "create_first_goal": "Crie sua primeira meta",
     "more_goals_one": "+{{count}} meta",
     "more_goals_other": "+{{count}} metas",
+    "more_goals_many": "+{{count}} metas",
     "time_no_deadline": "SEM PRAZO",
     "time_due": "VENCE"
   },
@@ -78,8 +79,8 @@
     "add_first_transaction": "Adicione sua primeira transação",
     "filter_show": "Exibir",
     "perf_daily_change": "Variação diária",
-    "perf_total_pnl": "L&G total",
-    "perf_total_return": "Retorno total",
+    "perf_total_pnl": "L/P total",
+    "perf_total_return": "Rentabilidade total",
     "filter_sort_by": "Ordenar por",
     "sort_total_value": "Valor total",
     "sort_gain": "Ganho",
@@ -88,16 +89,19 @@
     "display_name": "Nome",
     "shares_one": "{{formatted}} ação",
     "shares_other": "{{formatted}} ações",
+    "shares_many": "{{formatted}} ações",
     "more_holdings": "+{{count}} posições",
     "more": "+{{count}} mais",
     "more_holdings_one": "+{{count}} posição",
     "more_holdings_other": "+{{count}} posições",
+    "more_holdings_many": "+{{count}} posições",
     "more_one": "+{{count}} mais",
-    "more_other": "+{{count}} mais"
+    "more_other": "+{{count}} mais",
+    "more_many": "+{{count}} mais"
   },
   "summary": {
-    "return_unavailable_holdings": "Retorno % não disponível: custo base ou valor inicial das posições ausente.",
-    "return_unavailable_activity": "Retorno % não disponível: o histórico de atividades pode ser inconsistente.",
+    "return_unavailable_holdings": "Rentabilidade % não disponível: custo de aquisição ou valor inicial das posições ausente.",
+    "return_unavailable_activity": "Rentabilidade % não disponível: o histórico de atividades pode ser inconsistente.",
     "unexpected_error": "Ocorreu um erro inesperado",
     "values_without_returns": "Os valores das contas são exibidos sem o retorno do período.",
     "failed_to_load": "Erro ao carregar as contas",
@@ -105,5 +109,6 @@
     "try_restarting": "Tente reiniciar o aplicativo. Se o problema persistir, pode ser necessário redefinir seu banco de dados."
   },
   "accounts_count_one": "{{count}} conta",
-  "accounts_count_other": "{{count}} contas"
+  "accounts_count_other": "{{count}} contas",
+  "accounts_count_many": "{{count}} contas"
 }

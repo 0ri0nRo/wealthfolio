@@ -16,11 +16,12 @@
   "type_bank": "Banco",
   "type_cryptocurrency": "Criptomoeda",
   "type_other": "Outro",
+  "type_many": "Outro",
   "group_taxable": "Tributável",
   "group_tax_deferred": "Tributação diferida",
   "group_tax_free": "Isenta de impostos",
   "balance": "Saldo",
-  "cash_balance": "Saldo em dinheiro",
+  "cash_balance": "Saldo em caixa",
   "total_value": "Valor total",
   "performance": "Desempenho",
   "save_account": "Salvar conta",
@@ -50,7 +51,7 @@
   "click_to_update_cash_balance": "Clique para atualizar o saldo em dinheiro",
   "investments": "Investimentos",
   "net_contribution": "Aporte líquido",
-  "cost_basis": "Custo base",
+  "cost_basis": "Custo de aquisição",
   "from": "de",
   "to": "a",
   "contributed_amount": "Você aportou",
@@ -62,8 +63,8 @@
   "limit": "limite",
   "to_this_account_in": "nesta conta em",
   "your_total_is": "Seu total é",
-  "time_weighted_return": "Retorno ponderado pelo tempo",
-  "money_weighted_return": "Retorno ponderado pelo dinheiro",
+  "time_weighted_return": "Rentabilidade ponderada pelo tempo",
+  "money_weighted_return": "Rentabilidade ponderada pelo capital",
   "volatility": "Volatilidade",
   "max_drawdown": "Queda máxima",
   "contribution": {
@@ -86,9 +87,9 @@
   "actions_add_holdings": "Adicionar posições",
   "actions_update_holdings": "Atualizar posições",
   "balance_label": "Saldo",
-  "book_value": "Valor contábil",
+  "book_value": "Custo de aquisição",
   "period_pnl": "L/P do período",
-  "all_time_return": "Retorno histórico",
+  "all_time_return": "Rentabilidade histórica",
   "unrealized_pnl": "L/P não realizado",
   "not_available": "N/D",
   "more_count": "+{{count}} mais",
@@ -123,7 +124,8 @@
     "source_broker": "Corretora",
     "source_calculated": "Calculado",
     "summary_one": "{{count}} posição, {{cash}} em dinheiro",
-    "summary_other": "{{count}} posições, {{cash}} em dinheiro"
+    "summary_other": "{{count}} posições, {{cash}} em dinheiro",
+    "summary_many": "{{count}} posições, {{cash}} em dinheiro"
   },
   "switch_account_title": "Trocar de conta",
   "explore": "Explorar",
@@ -141,11 +143,11 @@
   "action_transfer_holdings": "Transferir posições",
   "review_cash_impact": "Revisar impacto no caixa",
   "metric": {
-    "value_return": "Retorno por valor",
+    "value_return": "Rentabilidade por valor",
     "total_pnl": "L/P total",
     "total_pnl_info": "Lucro ou prejuízo total durante o período selecionado.",
-    "annualized_twr": "TWR anualizado",
-    "annualized_irr": "IRR anualizado",
+    "annualized_twr": "TWR anualizada",
+    "annualized_irr": "IRR anualizada",
     "irr": "IRR",
     "cumulative_twr": "TWR acumulado",
     "period_irr": "IRR do período",
@@ -153,5 +155,6 @@
     "irr_hover_hint": " Passe o cursor sobre o valor para ver o IRR do período selecionado."
   },
   "more_count_one": "+{{count}} mais",
-  "more_count_other": "+{{count}} mais"
+  "more_count_other": "+{{count}} mais",
+  "more_count_many": "+{{count}} mais"
 }
