@@ -187,13 +187,25 @@ fn contract_multiplier_metadata_update(
     }
 
     if asset.is_option() {
-        if let Some(option) = metadata
-            .get_mut("option")
-            .and_then(serde_json::Value::as_object_mut)
-        {
+        // Test the shape the reader will actually see. `OptionSpec` fields are
+        // non-Option with no serde defaults, so a partial spec fails to
+        // deserialize and `Asset::contract_multiplier()` silently falls back to
+        // the 100 default. Writing into such a spec — and dropping the
+        // top-level key with it — would lose this value entirely.
+        let mut candidate = metadata
+            .get("option")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+        if let Some(option) = candidate.as_object_mut() {
             option.insert("multiplier".to_string(), serde_json::json!(multiplier));
+        }
+
+        if serde_json::from_value::<OptionSpec>(candidate.clone()).is_ok() {
+            metadata.insert("option".to_string(), candidate);
             metadata.remove(CONTRACT_MULTIPLIER_METADATA_KEY);
         } else {
+            // Leave the partial spec alone — it still carries strike/expiry for
+            // display — and keep the multiplier where the resolver will find it.
             metadata.insert(
                 CONTRACT_MULTIPLIER_METADATA_KEY.to_string(),
                 serde_json::json!(multiplier),
@@ -1840,6 +1852,82 @@ mod tests {
             asset.metadata.unwrap()["identifiers"]
         );
         assert!(updated.get(CONTRACT_MULTIPLIER_METADATA_KEY).is_none());
+    }
+
+    #[test]
+    fn partial_option_spec_keeps_multiplier_at_top_level() {
+        // A broker identifier that is not valid OCC can yield an option asset
+        // whose spec is missing contract fields. Writing the multiplier inside
+        // it — and removing the top-level key — would make the spec fail to
+        // parse and silently resolve back to the 100 default.
+        let asset = Asset {
+            instrument_type: Some(InstrumentType::Option),
+            metadata: Some(serde_json::json!({
+                "option": { "right": "CALL", "multiplier": "100" }
+            })),
+            ..Default::default()
+        };
+
+        let updated = contract_multiplier_metadata_update(&asset, None, decimal("10"))
+            .expect("changed multiplier");
+
+        assert_eq!(
+            updated[CONTRACT_MULTIPLIER_METADATA_KEY],
+            serde_json::json!(decimal("10"))
+        );
+        // The partial spec is left intact for display.
+        assert_eq!(updated["option"]["right"], serde_json::json!("CALL"));
+
+        let resolved = Asset {
+            metadata: Some(updated),
+            ..asset
+        };
+        assert_eq!(resolved.contract_multiplier(), decimal("10"));
+    }
+
+    #[test]
+    fn option_spec_completed_by_the_multiplier_write_goes_nested() {
+        // Only `multiplier` is missing, so writing it produces a spec the
+        // resolver can parse — the nested key is the right home.
+        let asset = Asset {
+            instrument_type: Some(InstrumentType::Option),
+            metadata: Some(serde_json::json!({
+                "option": {
+                    "underlyingAssetId": "AAPL",
+                    "expiration": "2026-12-18",
+                    "right": "CALL",
+                    "strike": "150"
+                }
+            })),
+            ..Default::default()
+        };
+
+        let updated = contract_multiplier_metadata_update(&asset, None, decimal("50"))
+            .expect("changed multiplier");
+
+        assert!(updated.get(CONTRACT_MULTIPLIER_METADATA_KEY).is_none());
+        let resolved = Asset {
+            metadata: Some(updated),
+            ..asset
+        };
+        assert_eq!(resolved.contract_multiplier(), decimal("50"));
+    }
+
+    #[test]
+    fn option_without_any_spec_keeps_multiplier_at_top_level() {
+        let asset = Asset {
+            instrument_type: Some(InstrumentType::Option),
+            metadata: None,
+            ..Default::default()
+        };
+
+        let updated = contract_multiplier_metadata_update(&asset, None, decimal("10"))
+            .expect("changed multiplier");
+
+        assert_eq!(
+            updated[CONTRACT_MULTIPLIER_METADATA_KEY],
+            serde_json::json!(decimal("10"))
+        );
     }
 
     #[test]
