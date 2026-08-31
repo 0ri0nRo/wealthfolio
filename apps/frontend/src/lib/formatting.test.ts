@@ -371,3 +371,26 @@ describe("pt-BR calendar text", () => {
     expect(format(date, "QQQQ", { locale })).toBe("1º trimestre");
   });
 });
+
+describe("pt-PT formatting", () => {
+  it("keeps Portugal on European conventions, not Brazilian ones", () => {
+    const brazil = resolveFormattingLocale("BR");
+    const portugal = resolveFormattingLocale("PT");
+    expect(brazil).toBe("pt-BR");
+    expect(portugal).toBe("pt-PT");
+
+    // The two variants put the currency symbol on opposite sides (the space
+    // between symbol and digits is a non-breaking one, so match on position).
+    expect(createFormatter(brazil).formatAmount(1234.56, "EUR")).toMatch(/^\u20ac\s?1\.234,56$/);
+    expect(createFormatter(portugal).formatAmount(1234.56, "EUR")).toMatch(/^1\s?234,56\s?\u20ac$/);
+  });
+
+  it("uses European Portuguese calendar data", () => {
+    const locale = dateFnsLocaleFor(resolveFormattingLocale("PT"));
+    const date = new Date(2026, 2, 9, 15, 30);
+
+    expect(locale.code).toBe("pt");
+    expect(format(date, "p", { locale })).toBe("15:30");
+    expect(format(date, "PPPP", { locale })).toBe("segunda-feira, 9 de março de 2026");
+  });
+});

@@ -8,7 +8,7 @@ use log::{debug, error};
 use std::sync::Arc;
 
 const SUPPORTED_FORMATTING_REGIONS: &[&str] = &[
-    "system", "CA", "US", "GB", "FR", "DE", "ES", "MX", "BR", "CN", "JP", "KR", "IT",
+    "system", "CA", "US", "GB", "FR", "DE", "ES", "MX", "BR", "PT", "CN", "JP", "KR", "IT",
 ];
 const SUPPORTED_UI_LANGUAGES: &[&str] = &["en", "fr", "de", "es", "pt", "zh", "ja", "ko", "it"];
 

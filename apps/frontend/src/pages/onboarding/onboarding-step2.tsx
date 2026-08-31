@@ -77,6 +77,7 @@ const formattingRegions = [
   ["ES", "spain"],
   ["MX", "mexico"],
   ["BR", "brazil"],
+  ["PT", "portugal"],
   ["CN", "china"],
   ["JP", "japan"],
   ["KR", "southKorea"],
