@@ -1,7 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Custom hook for intersection observer (infinite scroll trigger).
+ *
+ * Returns a callback ref to attach to the sentinel element. Using a callback
+ * ref (rather than a ref object) lets the observer reconnect when the sentinel
+ * node is replaced — e.g. when a layout switch unmounts one sentinel and
+ * mounts another.
  */
 export function useIntersectionObserver(
   callback: () => void,
@@ -10,30 +15,34 @@ export function useIntersectionObserver(
     rootMargin?: string;
   },
 ) {
-  const ref = useRef<HTMLDivElement | null>(null);
+  const [node, setNode] = useState<HTMLElement | null>(null);
   const { enabled = true, rootMargin = "100px" } = options ?? {};
 
+  // Always invoke the latest callback so an observer entry delivered between
+  // a state change and the next effect run cannot call a stale closure.
+  const callbackRef = useRef(callback);
   useEffect(() => {
-    if (!enabled) return;
+    callbackRef.current = callback;
+  });
 
-    const element = ref.current;
-    if (!element) return;
+  useEffect(() => {
+    if (!enabled || !node) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
-          callback();
+          callbackRef.current();
         }
       },
       { rootMargin },
     );
 
-    observer.observe(element);
+    observer.observe(node);
 
     return () => {
       observer.disconnect();
     };
-  }, [callback, enabled, rootMargin]);
+  }, [node, enabled, rootMargin]);
 
-  return ref;
+  return setNode;
 }
