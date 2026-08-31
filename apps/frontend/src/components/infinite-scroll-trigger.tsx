@@ -1,3 +1,4 @@
+import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
@@ -45,11 +46,31 @@ export function InfiniteScrollTrigger({
   return (
     <div className={cn("flex w-full flex-col items-center", className)}>
       {hasNextPage && <div ref={sentinelRef} className="h-px w-full" aria-hidden="true" />}
-      {isFetchingNextPage && (
-        <span className="text-muted-foreground flex items-center gap-2 text-sm">
-          <Icons.Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
-          {t("common:loading")}
-        </span>
+      {/* Persistent live region: mounted before a fetch starts so screen
+          readers announce the loading state when it appears. */}
+      <div
+        role="status"
+        aria-live="polite"
+        className="text-muted-foreground flex items-center justify-center gap-2 text-sm"
+      >
+        {isFetchingNextPage && (
+          <>
+            <Icons.Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
+            {t("common:loading")}
+          </>
+        )}
+      </div>
+      {hasNextPage && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isFetching}
+          onClick={loadMore}
+          className="sr-only focus:not-sr-only"
+        >
+          {t("common:load_more")}
+        </Button>
       )}
     </div>
   );

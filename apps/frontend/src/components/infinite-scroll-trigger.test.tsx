@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InfiniteScrollTrigger } from "./infinite-scroll-trigger";
 
@@ -100,6 +100,51 @@ describe("InfiniteScrollTrigger", () => {
     );
 
     expect(screen.getByText("Loading...")).toBeInTheDocument();
+  });
+
+  it("keeps a status live region mounted before any fetch starts", () => {
+    render(
+      <InfiniteScrollTrigger
+        onLoadMore={vi.fn()}
+        hasNextPage={true}
+        isFetching={false}
+        isFetchingNextPage={false}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toBeInTheDocument();
+  });
+
+  it("offers an accessible Load more button that fetches on activation", () => {
+    const onLoadMore = vi.fn();
+    render(
+      <InfiniteScrollTrigger
+        onLoadMore={onLoadMore}
+        hasNextPage={true}
+        isFetching={false}
+        isFetchingNextPage={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /load more/i }));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the Load more button while a fetch is in flight", () => {
+    const onLoadMore = vi.fn();
+    render(
+      <InfiniteScrollTrigger
+        onLoadMore={onLoadMore}
+        hasNextPage={true}
+        isFetching={true}
+        isFetchingNextPage={true}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: /load more/i });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onLoadMore).not.toHaveBeenCalled();
   });
 
   it("does not fetch the next page while a background refetch is in flight", () => {
