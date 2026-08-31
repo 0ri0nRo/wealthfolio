@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 export interface InfiniteScrollTriggerProps {
   onLoadMore: () => void;
   hasNextPage: boolean;
+  /** Any fetch in flight for this list, including a background refetch. */
+  isFetching: boolean;
   /** The next page specifically loading; drives the spinner. */
   isFetchingNextPage: boolean;
   className?: string;
@@ -21,17 +23,20 @@ export interface InfiniteScrollTriggerProps {
 export function InfiniteScrollTrigger({
   onLoadMore,
   hasNextPage,
+  isFetching,
   isFetchingNextPage,
   className,
 }: InfiniteScrollTriggerProps) {
   const { t } = useTranslation();
 
+  // Guard on isFetching (not just isFetchingNextPage) so a next-page
+  // request can't start while a background refetch is in flight.
   const loadMore = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) onLoadMore();
-  }, [hasNextPage, isFetchingNextPage, onLoadMore]);
+    if (hasNextPage && !isFetching) onLoadMore();
+  }, [hasNextPage, isFetching, onLoadMore]);
 
   const sentinelRef = useIntersectionObserver(loadMore, {
-    enabled: hasNextPage && !isFetchingNextPage,
+    enabled: hasNextPage && !isFetching,
     rootMargin: "800px",
   });
 

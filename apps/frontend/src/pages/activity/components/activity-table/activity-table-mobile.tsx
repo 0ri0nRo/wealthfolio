@@ -46,6 +46,7 @@ interface ActivityTableMobileProps {
   onClearFilters?: () => void;
   onLoadMore?: () => void;
   hasNextPage?: boolean;
+  isFetching?: boolean;
   isFetchingNextPage?: boolean;
 }
 
@@ -63,6 +64,7 @@ export const ActivityTableMobile = ({
   onClearFilters,
   onLoadMore,
   hasNextPage = false,
+  isFetching,
   isFetchingNextPage = false,
 }: ActivityTableMobileProps) => {
   const formatting = useAmountFormatting();
@@ -367,6 +369,7 @@ export const ActivityTableMobile = ({
         <InfiniteScrollTrigger
           onLoadMore={onLoadMore}
           hasNextPage={hasNextPage}
+          isFetching={isFetching ?? isFetchingNextPage}
           isFetchingNextPage={isFetchingNextPage}
         />
       )}

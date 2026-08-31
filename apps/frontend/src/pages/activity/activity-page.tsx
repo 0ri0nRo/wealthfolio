@@ -763,6 +763,7 @@ const ActivityPage = () => {
           onClearFilters={clearInvestmentsFilters}
           onLoadMore={infiniteSearch.fetchNextPage}
           hasNextPage={infiniteSearch.hasNextPage}
+          isFetching={infiniteSearch.isFetching}
           isFetchingNextPage={infiniteSearch.isFetchingNextPage}
         />
       ) : shouldUseDatagridView ? (
@@ -797,6 +798,7 @@ const ActivityPage = () => {
           onClearFilters={clearInvestmentsFilters}
           onLoadMore={infiniteSearch.fetchNextPage}
           hasNextPage={infiniteSearch.hasNextPage}
+          isFetching={infiniteSearch.isFetching}
           isFetchingNextPage={infiniteSearch.isFetchingNextPage}
         />
       )}

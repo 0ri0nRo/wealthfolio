@@ -672,6 +672,7 @@ const AccountPage = () => {
         onAdd={() => navigate(`/activities/manage?account=${id}`)}
         onLoadMore={accountActivitiesSearch.fetchNextPage}
         hasNextPage={accountActivitiesSearch.hasNextPage}
+        isFetching={accountActivitiesSearch.isFetching}
         isFetchingNextPage={accountActivitiesSearch.isFetchingNextPage}
       />
       <ActivityPagination
@@ -692,6 +693,7 @@ const AccountPage = () => {
         onAdd={() => navigate(`/activities/manage?account=${id}`)}
         onLoadMore={accountActivitiesSearch.fetchNextPage}
         hasNextPage={accountActivitiesSearch.hasNextPage}
+        isFetching={accountActivitiesSearch.isFetching}
         isFetchingNextPage={accountActivitiesSearch.isFetchingNextPage}
       />
       <ActivityPagination

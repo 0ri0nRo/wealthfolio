@@ -72,6 +72,7 @@ interface ActivityTableProps {
   onClearFilters?: () => void;
   onLoadMore?: () => void;
   hasNextPage?: boolean;
+  isFetching?: boolean;
   isFetchingNextPage?: boolean;
 }
 
@@ -89,6 +90,7 @@ export const ActivityTable = ({
   onClearFilters,
   onLoadMore,
   hasNextPage = false,
+  isFetching,
   isFetchingNextPage = false,
 }: ActivityTableProps) => {
   const formatting = useAmountFormatting();
@@ -698,6 +700,7 @@ export const ActivityTable = ({
           <InfiniteScrollTrigger
             onLoadMore={onLoadMore}
             hasNextPage={hasNextPage}
+            isFetching={isFetching ?? isFetchingNextPage}
             isFetchingNextPage={isFetchingNextPage}
           />
         )}

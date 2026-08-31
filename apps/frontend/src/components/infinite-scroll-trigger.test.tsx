@@ -48,7 +48,12 @@ describe("InfiniteScrollTrigger", () => {
 
   it("renders a sentinel and observes it while more pages exist", () => {
     render(
-      <InfiniteScrollTrigger onLoadMore={vi.fn()} hasNextPage={true} isFetchingNextPage={false} />,
+      <InfiniteScrollTrigger
+        onLoadMore={vi.fn()}
+        hasNextPage={true}
+        isFetching={false}
+        isFetchingNextPage={false}
+      />,
     );
 
     expect(instances).toHaveLength(1);
@@ -57,7 +62,12 @@ describe("InfiniteScrollTrigger", () => {
 
   it("renders nothing when pagination is finished", () => {
     const { container } = render(
-      <InfiniteScrollTrigger onLoadMore={vi.fn()} hasNextPage={false} isFetchingNextPage={false} />,
+      <InfiniteScrollTrigger
+        onLoadMore={vi.fn()}
+        hasNextPage={false}
+        isFetching={false}
+        isFetchingNextPage={false}
+      />,
     );
 
     expect(container).toBeEmptyDOMElement();
@@ -70,6 +80,7 @@ describe("InfiniteScrollTrigger", () => {
       <InfiniteScrollTrigger
         onLoadMore={onLoadMore}
         hasNextPage={true}
+        isFetching={false}
         isFetchingNextPage={false}
       />,
     );
@@ -80,14 +91,52 @@ describe("InfiniteScrollTrigger", () => {
 
   it("shows the loading indicator while the next page is fetching", () => {
     render(
-      <InfiniteScrollTrigger onLoadMore={vi.fn()} hasNextPage={true} isFetchingNextPage={true} />,
+      <InfiniteScrollTrigger
+        onLoadMore={vi.fn()}
+        hasNextPage={true}
+        isFetching={true}
+        isFetchingNextPage={true}
+      />,
     );
 
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
 
+  it("does not fetch the next page while a background refetch is in flight", () => {
+    const onLoadMore = vi.fn();
+    const { rerender } = render(
+      <InfiniteScrollTrigger
+        onLoadMore={onLoadMore}
+        hasNextPage={true}
+        isFetching={false}
+        isFetchingNextPage={false}
+      />,
+    );
+    const observerCallback = lastInstance().callback;
+
+    // A background refetch starts: isFetching without isFetchingNextPage.
+    rerender(
+      <InfiniteScrollTrigger
+        onLoadMore={onLoadMore}
+        hasNextPage={true}
+        isFetching={true}
+        isFetchingNextPage={false}
+      />,
+    );
+
+    // An entry delivered from the observer created before the rerender
+    // must see the latest state and refuse to overlap the refetch.
+    observerCallback([{ isIntersecting: true }]);
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
   it("reconnects the observer when the trigger moves to a different layout slot", () => {
-    const props = { onLoadMore: vi.fn(), hasNextPage: true, isFetchingNextPage: false };
+    const props = {
+      onLoadMore: vi.fn(),
+      hasNextPage: true,
+      isFetching: false,
+      isFetchingNextPage: false,
+    };
     const { rerender } = render(
       <div data-testid="desktop">
         <InfiniteScrollTrigger {...props} />

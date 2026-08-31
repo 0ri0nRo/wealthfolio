@@ -844,6 +844,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
         <InfiniteScrollTrigger
           onLoadMore={fetchNextPage}
           hasNextPage={hasNextPage}
+          isFetching={isFetching}
           isFetchingNextPage={isFetchingNextPage}
         />
       ) : null;
