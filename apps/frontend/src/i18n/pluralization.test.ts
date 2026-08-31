@@ -83,9 +83,11 @@ describe("global event translations", () => {
 });
 
 describe("CLDR `many` category", () => {
-  // it/pt (and fr/es) resolve `many` at exact millions. Without a `_many` form
+  // fr/es/pt/it resolve `many` at exact millions. Without a `_many` form
   // i18next resolves nothing and echoes the raw key back.
   it.each([
+    ["fr", frCommon],
+    ["es", esCommon],
     ["it", itCommon],
     ["pt", ptCommon],
   ])("resolves the many form for %s", async (locale, common) => {
@@ -105,3 +107,96 @@ describe("CLDR `many` category", () => {
     );
   });
 });
+
+describe("plural form coverage", () => {
+  // Globbed rather than imported one by one so a newly added locale is covered
+  // the moment its folder lands.
+  const files = import.meta.glob<{ default: Record<string, unknown> }>("./locales/*/*.json", {
+    eager: true,
+  });
+
+  const byLocale = new Map<string, Map<string, Set<string>>>();
+  for (const [path, mod] of Object.entries(files)) {
+    const [, , locale, file] = path.split("/");
+    const namespace = file.replace(/\.json$/, "");
+    const keys = new Set<string>();
+    collectKeys(mod.default, "", keys);
+    if (!byLocale.has(locale)) byLocale.set(locale, new Map());
+    byLocale.get(locale)!.set(namespace, keys);
+  }
+
+  // English is the source of truth for which keys are plurals at all. A stem
+  // qualifies only when it has both `_one` and `_other`, which rules out names
+  // that merely end in `_other` (the "Other" account type) or `_one`
+  // (`err_shares_gt_one`, i.e. "greater than 1").
+  const pluralStems = new Map<string, Set<string>>();
+  for (const [namespace, keys] of byLocale.get("en")!) {
+    const stems = new Set(
+      [...keys]
+        .filter((k) => k.endsWith("_other") && keys.has(`${k.slice(0, -"_other".length)}_one`))
+        .map((k) => k.slice(0, -"_other".length)),
+    );
+    if (stems.size) pluralStems.set(namespace, stems);
+  }
+
+  it.each([...byLocale.keys()].sort())(
+    "%s defines every plural category its CLDR rules can select",
+    (locale) => {
+      const categories = new Intl.PluralRules(locale).resolvedOptions().pluralCategories;
+      const namespaces = byLocale.get(locale)!;
+
+      const missing: string[] = [];
+      for (const [namespace, stems] of pluralStems) {
+        const keys = namespaces.get(namespace);
+        if (!keys) continue; // locale has not translated this namespace yet
+        for (const stem of stems) {
+          if (!keys.has(`${stem}_other`)) continue; // key not translated yet
+          for (const category of categories) {
+            // i18next returns the raw key for any count whose category has no form.
+            if (!keys.has(`${stem}_${category}`)) missing.push(`${namespace}:${stem}_${category}`);
+          }
+        }
+      }
+
+      expect(missing.sort()).toEqual([]);
+    },
+  );
+
+  // The mirror image of the check above. Without it, a bulk edit can bolt a
+  // `_many` onto a key that only looks like a plural (`type_other` is the
+  // account type "Other") and every test still passes.
+  it.each([...byLocale.keys()].sort())("%s invents no plural forms of its own", (locale) => {
+    const categories = new Set<string>(
+      new Intl.PluralRules(locale).resolvedOptions().pluralCategories,
+    );
+
+    const invented: string[] = [];
+    for (const [namespace, keys] of byLocale.get(locale)!) {
+      const englishKeys = byLocale.get("en")?.get(namespace);
+      const stems = pluralStems.get(namespace);
+      for (const key of keys) {
+        const match = /^(.*)_(zero|one|two|few|many|other)$/.exec(key);
+        if (!match) continue;
+        const [, stem, category] = match;
+        // Keys English also has are names that merely end in a category word,
+        // like `err_amount_gt_zero`. Only forms this locale added are suspect.
+        if (englishKeys?.has(key)) continue;
+        if (!stems?.has(stem)) invented.push(`${namespace}:${key}`);
+        else if (!categories.has(category)) invented.push(`${namespace}:${key}`);
+      }
+    }
+
+    expect(invented.sort()).toEqual([]);
+  });
+});
+
+function collectKeys(node: Record<string, unknown>, prefix: string, out: Set<string>) {
+  for (const [key, value] of Object.entries(node)) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      collectKeys(value as Record<string, unknown>, path, out);
+    } else {
+      out.add(path);
+    }
+  }
+}

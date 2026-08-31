@@ -333,12 +333,15 @@
     "lots_by_account": "Lotes por cuenta",
     "account_one": "{{count}} cuenta",
     "account_other": "{{count}} cuentas",
+    "account_many": "{{count}} cuentas",
     "lot_one": "{{count}} lote",
     "lot_other": "{{count}} lotes",
+    "lot_many": "{{count}} lotes",
     "collapse_all": "Contraer todo",
     "expand_all": "Expandir todo",
     "share_one": "acción",
     "share_other": "acciones",
+    "share_many": "acciones",
     "market_value": "Valor de mercado",
     "shares_suffix": "acciones",
     "cost_basis": "Base de coste",
@@ -415,7 +418,8 @@
     "to_manual_warning": "Las actualizaciones automáticas de precios se desactivarán.",
     "confirm_change": "Confirmar cambio",
     "delete_count_one": "Eliminar ({{count}})",
-    "delete_count_other": "Eliminar ({{count}})"
+    "delete_count_other": "Eliminar ({{count}})",
+    "delete_count_many": "Eliminar ({{count}})"
   },
   "quoteTable": {
     "date": "Fecha",
@@ -712,9 +716,12 @@
     "save_changes": "Guardar cambios",
     "delete_count_one": "Eliminar ({{count}})",
     "delete_count_other": "Eliminar ({{count}})",
+    "delete_count_many": "Eliminar ({{count}})",
     "modified_one": "{{count}} modificado",
     "modified_other": "{{count}} modificados",
+    "modified_many": "{{count}} modificados",
     "to_delete_one": "{{count}} para eliminar",
-    "to_delete_other": "{{count}} para eliminar"
+    "to_delete_other": "{{count}} para eliminar",
+    "to_delete_many": "{{count}} para eliminar"
   }
 }
