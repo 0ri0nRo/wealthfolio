@@ -670,10 +670,11 @@ const AccountPage = () => {
         handleDelete={handleActivityDelete}
         onDuplicate={handleActivityDuplicate}
         onAdd={() => navigate(`/activities/manage?account=${id}`)}
+        onLoadMore={accountActivitiesSearch.fetchNextPage}
+        hasNextPage={accountActivitiesSearch.hasNextPage}
+        isFetchingNextPage={accountActivitiesSearch.isFetchingNextPage}
       />
       <ActivityPagination
-        hasMore={accountActivitiesSearch.hasNextPage ?? false}
-        onLoadMore={accountActivitiesSearch.fetchNextPage}
         isFetching={accountActivitiesSearch.isFetchingNextPage}
         totalFetched={accountActivitiesSearch.data.length}
         totalCount={accountActivitiesSearch.totalRowCount}
@@ -689,10 +690,11 @@ const AccountPage = () => {
         handleEdit={handleActivityEdit}
         handleDelete={handleActivityDelete}
         onAdd={() => navigate(`/activities/manage?account=${id}`)}
+        onLoadMore={accountActivitiesSearch.fetchNextPage}
+        hasNextPage={accountActivitiesSearch.hasNextPage}
+        isFetchingNextPage={accountActivitiesSearch.isFetchingNextPage}
       />
       <ActivityPagination
-        hasMore={accountActivitiesSearch.hasNextPage ?? false}
-        onLoadMore={accountActivitiesSearch.fetchNextPage}
         isFetching={accountActivitiesSearch.isFetchingNextPage}
         totalFetched={accountActivitiesSearch.data.length}
         totalCount={accountActivitiesSearch.totalRowCount}

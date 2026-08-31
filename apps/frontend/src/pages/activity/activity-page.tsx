@@ -761,6 +761,9 @@ const ActivityPage = () => {
           filtersActive={investmentsFiltersActive}
           onAdd={() => handleEdit(undefined)}
           onClearFilters={clearInvestmentsFilters}
+          onLoadMore={infiniteSearch.fetchNextPage}
+          hasNextPage={infiniteSearch.hasNextPage}
+          isFetchingNextPage={infiniteSearch.isFetchingNextPage}
         />
       ) : shouldUseDatagridView ? (
         <ActivityDataGrid
@@ -792,13 +795,14 @@ const ActivityPage = () => {
           filtersActive={investmentsFiltersActive}
           onAdd={() => handleEdit(undefined)}
           onClearFilters={clearInvestmentsFilters}
+          onLoadMore={infiniteSearch.fetchNextPage}
+          hasNextPage={infiniteSearch.hasNextPage}
+          isFetchingNextPage={infiniteSearch.isFetchingNextPage}
         />
       )}
 
       {!shouldUseDatagridView && (
         <ActivityPagination
-          hasMore={infiniteSearch.hasNextPage ?? false}
-          onLoadMore={infiniteSearch.fetchNextPage}
           isFetching={infiniteSearch.isFetchingNextPage}
           totalFetched={totalFetched}
           totalCount={infiniteSearch.totalRowCount}

@@ -53,6 +53,7 @@ import {
 } from "@wealthfolio/ui/components/ui/table";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
+import { useIntersectionObserver } from "@/hooks/use-intersection-observer";
 import { useActivityMutations } from "../../hooks/use-activity-mutations";
 import { ActivityOperations } from "../activity-operations";
 import { ActivityTypeBadge } from "../activity-type-badge";
@@ -69,6 +70,9 @@ interface ActivityTableProps {
   filtersActive?: boolean;
   onAdd?: () => void;
   onClearFilters?: () => void;
+  onLoadMore?: () => void;
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
 }
 
 export const ActivityTable = ({
@@ -83,6 +87,9 @@ export const ActivityTable = ({
   filtersActive = false,
   onAdd,
   onClearFilters,
+  onLoadMore,
+  hasNextPage = false,
+  isFetchingNextPage = false,
 }: ActivityTableProps) => {
   const formatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
@@ -96,6 +103,14 @@ export const ActivityTable = ({
     async (activity: ActivityDetails) => duplicateActivityMutation.mutateAsync(activity),
     [duplicateActivityMutation],
   );
+
+  const loadMore = React.useCallback(() => {
+    if (hasNextPage && !isFetchingNextPage) onLoadMore?.();
+  }, [hasNextPage, isFetchingNextPage, onLoadMore]);
+  const sentinelRef = useIntersectionObserver(loadMore, {
+    enabled: Boolean(onLoadMore) && hasNextPage && !isFetchingNextPage,
+    rootMargin: "800px",
+  });
 
   const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({
     accountId: false,
@@ -687,6 +702,13 @@ export const ActivityTable = ({
             })}
           </TableBody>
         </Table>
+        {hasNextPage && <div ref={sentinelRef} className="h-px" aria-hidden="true" />}
+        {isFetchingNextPage && (
+          <div className="text-muted-foreground flex items-center justify-center gap-2 p-3 text-sm">
+            <Icons.Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
+            {t("activity:loading")}
+          </div>
+        )}
       </div>
     </div>
   );
