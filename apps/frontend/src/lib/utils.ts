@@ -20,20 +20,55 @@ export function cn(...inputs: ClassValue[]) {
 /** Field order of a purely numeric date such as "03/08/2026". */
 export type DateOrder = "DMY" | "MDY";
 
-const NUMERIC_DATE_RE = /^(\d{1,2})([/.-])(\d{1,2})\2(\d{2,4})(?:\D|$)/;
+/**
+ * Numeric dates the formats below can actually parse: two small fields, a
+ * repeated separator, four-digit year. Detection deliberately matches no more
+ * than parsing supports — claiming an order for "03/08/26" would be useless,
+ * since no pattern here reads a two-digit year.
+ */
+const NUMERIC_DATE_RE = /^(\d{1,2})([/.-])(\d{1,2})\2(\d{4})(?:\D|$)/;
 
-const MONTH_FIRST_NUMERIC_FORMATS = [
+/**
+ * The two field orders NUMERIC_DATE_RE can report, each covering every
+ * separator that regex accepts, so anything detection resolves is also
+ * parseable. Keep the two lists mirror images of each other.
+ */
+export const MONTH_FIRST_NUMERIC_FORMATS = [
   "MM/dd/yyyy", // "05/01/2024" - US Standard
   "M/d/yyyy", // "5/1/2024" - US Relaxed
+  "MM.dd.yyyy", // "05.01.2024"
+  "M.d.yyyy", // "5.1.2024"
+  "MM-dd-yyyy", // "05-01-2024"
+  "M-d-yyyy", // "5-1-2024"
 ];
 
-const DAY_FIRST_NUMERIC_FORMATS = [
+export const DAY_FIRST_NUMERIC_FORMATS = [
   "dd/MM/yyyy", // "01/05/2024" - UK/EU Standard
   "d/M/yyyy", // "1/5/2024" - UK/EU Relaxed
   "dd.MM.yyyy", // "01.05.2024" - German/Swiss/Russian
   "d.M.yyyy", // "1.5.2024" - German/Swiss Relaxed
   "dd-MM-yyyy", // "01-05-2024" - Dutch/Danish
+  "d-M-yyyy", // "1-5-2024"
 ];
+
+/**
+ * Numeric patterns by resolved field order. `auto` is the historical sequence
+ * and stays exactly as it was — dot dates read day-first there, so a file that
+ * imports correctly today keeps doing so when a column yields no evidence.
+ */
+const NUMERIC_FORMATS_BY_ORDER = {
+  auto: [
+    "MM/dd/yyyy",
+    "M/d/yyyy",
+    "dd/MM/yyyy",
+    "d/M/yyyy",
+    "dd.MM.yyyy",
+    "d.M.yyyy",
+    "dd-MM-yyyy",
+  ],
+  DMY: [...DAY_FIRST_NUMERIC_FORMATS, ...MONTH_FIRST_NUMERIC_FORMATS],
+  MDY: [...MONTH_FIRST_NUMERIC_FORMATS, ...DAY_FIRST_NUMERIC_FORMATS],
+} as const;
 
 /**
  * True when a numeric date could be read either way — both leading fields are
@@ -118,10 +153,8 @@ export function tryParseDate(dateStr: string, order?: DateOrder): Date | null {
     // Numeric day/month orders. "05/01/2024" is 5 January or May 1st with equal
     // justification, so whichever group is tried first silently decides. When
     // the caller resolved the order from the whole column, honour it; otherwise
-    // keep the historical month-first preference.
-    ...(order === "DMY"
-      ? [...DAY_FIRST_NUMERIC_FORMATS, ...MONTH_FIRST_NUMERIC_FORMATS]
-      : [...MONTH_FIRST_NUMERIC_FORMATS, ...DAY_FIRST_NUMERIC_FORMATS]),
+    // leave the historical sequence untouched.
+    ...NUMERIC_FORMATS_BY_ORDER[order ?? "auto"],
 
     // Asian Banking Formats
     "yyyy年MM月dd日", // "2024年05月01日" - Japanese

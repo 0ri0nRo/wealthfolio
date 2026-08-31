@@ -1,20 +1,34 @@
 import { parse, parseISO, isValid, format as formatDate } from "date-fns";
 
 import type { HoldingsSnapshotInput, HoldingsPositionInput } from "@/lib/types";
-import { type DateOrder, detectDateOrder, isAmbiguousNumericDate } from "@/lib/utils";
+import {
+  DAY_FIRST_NUMERIC_FORMATS,
+  type DateOrder,
+  MONTH_FIRST_NUMERIC_FORMATS,
+  detectDateOrder,
+  isAmbiguousNumericDate,
+} from "@/lib/utils";
 import type { DraftActivity } from "../context";
 import { HoldingsFormat } from "../steps/holdings-mapping-step";
 import { getDateFnsPattern } from "./date-format-options";
 
 export const CASH_SYMBOL = "$CASH";
 
-/** Numeric dates like 03/08/2026, 3-8-26 — day/month order is not self-evident. */
+/**
+ * Numeric dates like 03/08/2026 or 3-8-26 — the field order is not self-evident.
+ * Deliberately broader than the detection regex in lib/utils: this only guards
+ * the `new Date` fallback, and two-digit-year dates are exactly the input that
+ * fallback would guess at, so they must not reach it either.
+ */
 const NUMERIC_DATE_SHAPE = /^\d{1,2}([/.-])\d{1,2}\1\d{2,4}$/;
 
 /**
- * Numeric date patterns, ordered by which field leads. `auto` is the historical
- * order and stays byte-for-byte as it was, so files that parse correctly today
- * keep doing so when the column yields no evidence either way.
+ * Numeric date patterns, ordered by which field leads. The resolved orders
+ * reuse the shared lists so detection and parsing support the same formats.
+ * `auto` keeps its historical sequence — dash dates read month-first here, so
+ * files that parse correctly today keep doing so when a column yields no
+ * evidence — with the single-digit forms appended: those used to be reachable
+ * only through `new Date`, which guessed their field order.
  */
 const NUMERIC_PATTERNS = {
   auto: [
@@ -24,26 +38,16 @@ const NUMERIC_PATTERNS = {
     "dd-MM-yyyy",
     "dd.MM.yyyy",
     "MM.dd.yyyy",
+    "M/d/yyyy",
+    "d/M/yyyy",
+    "M-d-yyyy",
+    "d-M-yyyy",
+    "d.M.yyyy",
+    "M.d.yyyy",
     "yyyy/MM/dd",
   ],
-  DMY: [
-    "dd/MM/yyyy",
-    "dd-MM-yyyy",
-    "dd.MM.yyyy",
-    "MM/dd/yyyy",
-    "MM-dd-yyyy",
-    "MM.dd.yyyy",
-    "yyyy/MM/dd",
-  ],
-  MDY: [
-    "MM/dd/yyyy",
-    "MM-dd-yyyy",
-    "MM.dd.yyyy",
-    "dd/MM/yyyy",
-    "dd-MM-yyyy",
-    "dd.MM.yyyy",
-    "yyyy/MM/dd",
-  ],
+  DMY: [...DAY_FIRST_NUMERIC_FORMATS, ...MONTH_FIRST_NUMERIC_FORMATS, "yyyy/MM/dd"],
+  MDY: [...MONTH_FIRST_NUMERIC_FORMATS, ...DAY_FIRST_NUMERIC_FORMATS, "yyyy/MM/dd"],
 } as const;
 
 export interface ParseOptions {

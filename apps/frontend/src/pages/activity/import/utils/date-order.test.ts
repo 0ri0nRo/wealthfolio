@@ -5,6 +5,10 @@ import { detectDateOrder, isAmbiguousNumericDate, tryParseDate } from "@/lib/uti
 import { HoldingsFormat } from "../steps/holdings-mapping-step";
 import { analyzeDateColumn, parseDateToYMD } from "./holdings-import-utils";
 
+// tryParseDate returns a local-midnight Date, so compare in local time —
+// toISOString would shift the day for any positive UTC offset.
+const ymd = (date: Date | null) => (date ? formatDate(date, "yyyy-MM-dd") : null);
+
 describe("detectDateOrder", () => {
   it("reads a column as day-first when a day exceeds 12", () => {
     expect(detectDateOrder(["03/08/2026", "26/06/2026"])).toBe("DMY");
@@ -33,6 +37,50 @@ describe("detectDateOrder", () => {
 
   it("does not mix separators within one value", () => {
     expect(detectDateOrder(["13/08-2026"])).toBeNull();
+  });
+
+  it("ignores two-digit years, which no pattern can parse", () => {
+    expect(detectDateOrder(["13/08/26"])).toBeNull();
+    expect(detectDateOrder(["08/13/26"])).toBeNull();
+  });
+
+  it("still reads a four-digit year followed by a time", () => {
+    expect(detectDateOrder(["13/08/2026 14:30"])).toBe("DMY");
+  });
+});
+
+describe("numeric format coverage", () => {
+  // Detection reports an order for any separator NUMERIC_DATE_RE accepts, so
+  // both parsers must be able to read that order back for each of them.
+  const separatorCases = [
+    ["/", "08/13/2026", "13/08/2026"],
+    [".", "08.13.2026", "13.08.2026"],
+    ["-", "08-13-2026", "13-08-2026"],
+  ] as const;
+
+  it.each(separatorCases)(
+    "resolves and parses month-first %s dates",
+    (_sep, monthFirst, _dayFirst) => {
+      const order = detectDateOrder([monthFirst]);
+      expect(order).toBe("MDY");
+      expect(parseDateToYMD(monthFirst, "auto", order ?? undefined)).toBe("2026-08-13");
+      expect(ymd(tryParseDate(monthFirst, order ?? undefined))).toBe("2026-08-13");
+    },
+  );
+
+  it.each(separatorCases)(
+    "resolves and parses day-first %s dates",
+    (_sep, _monthFirst, dayFirst) => {
+      const order = detectDateOrder([dayFirst]);
+      expect(order).toBe("DMY");
+      expect(parseDateToYMD(dayFirst, "auto", order ?? undefined)).toBe("2026-08-13");
+      expect(ymd(tryParseDate(dayFirst, order ?? undefined))).toBe("2026-08-13");
+    },
+  );
+
+  it("applies a resolved order to single-digit dates too", () => {
+    expect(parseDateToYMD("3/8/2026", "auto", "DMY")).toBe("2026-08-03");
+    expect(ymd(tryParseDate("3/8/2026", "DMY"))).toBe("2026-08-03");
   });
 });
 
@@ -81,10 +129,6 @@ describe("parseDateToYMD", () => {
 });
 
 describe("tryParseDate", () => {
-  // tryParseDate returns a local-midnight Date, so compare in local time —
-  // toISOString would shift the day for any positive UTC offset.
-  const ymd = (date: Date | null) => (date ? formatDate(date, "yyyy-MM-dd") : null);
-
   it("honours a resolved day-first order", () => {
     expect(ymd(tryParseDate("03/08/2026", "DMY"))).toBe("2026-08-03");
   });
@@ -93,8 +137,14 @@ describe("tryParseDate", () => {
     expect(ymd(tryParseDate("03/08/2026"))).toBe("2026-03-08");
   });
 
-  it("still parses European dot dates when the order is month-first", () => {
-    expect(ymd(tryParseDate("01.05.2024", "MDY"))).toBe("2024-05-01");
+  it("reads dot dates month-first once the column resolved that order", () => {
+    expect(ymd(tryParseDate("01.05.2024", "MDY"))).toBe("2024-01-05");
+  });
+
+  it("leaves dot dates day-first when no order was resolved", () => {
+    // Regression guard: the `auto` sequence is unchanged, so German/Swiss files
+    // that read correctly today keep doing so.
+    expect(ymd(tryParseDate("01.05.2024"))).toBe("2024-05-01");
   });
 });
 
