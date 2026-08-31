@@ -16,7 +16,6 @@
   "type_bank": "Banque",
   "type_cryptocurrency": "Cryptomonnaie",
   "type_other": "Autre",
-  "type_many": "Autre",
   "group_taxable": "Imposable",
   "group_tax_deferred": "À impôt différé",
   "group_tax_free": "Libre d'impôt",

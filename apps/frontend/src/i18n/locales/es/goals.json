@@ -297,9 +297,7 @@
       "preset_travel": "Viajes",
       "add_travel": "+ Viajes",
       "preset_other": "Otro gasto",
-      "preset_many": "Otro gasto",
-      "add_other": "+ Otro",
-      "add_many": "+ Otro"
+      "add_other": "+ Otro"
     },
     "income": {
       "kicker": "Ingresos",

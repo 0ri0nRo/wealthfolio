@@ -297,9 +297,7 @@
       "preset_travel": "Voyages",
       "add_travel": "+ Voyages",
       "preset_other": "Autres dépenses",
-      "preset_many": "Autres dépenses",
-      "add_other": "+ Autre",
-      "add_many": "+ Autre"
+      "add_other": "+ Autre"
     },
     "income": {
       "kicker": "Revenus",

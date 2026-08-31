@@ -129,12 +129,14 @@ describe("plural form coverage", () => {
   // qualifies only when it has both `_one` and `_other`, which rules out names
   // that merely end in `_other` (the "Other" account type) or `_one`
   // (`err_shares_gt_one`, i.e. "greater than 1").
-  const pluralStems = new Map<string, string[]>();
+  const pluralStems = new Map<string, Set<string>>();
   for (const [namespace, keys] of byLocale.get("en")!) {
-    const stems = [...keys]
-      .filter((k) => k.endsWith("_other") && keys.has(`${k.slice(0, -"_other".length)}_one`))
-      .map((k) => k.slice(0, -"_other".length));
-    if (stems.length) pluralStems.set(namespace, stems);
+    const stems = new Set(
+      [...keys]
+        .filter((k) => k.endsWith("_other") && keys.has(`${k.slice(0, -"_other".length)}_one`))
+        .map((k) => k.slice(0, -"_other".length)),
+    );
+    if (stems.size) pluralStems.set(namespace, stems);
   }
 
   it.each([...byLocale.keys()].sort())(
@@ -159,6 +161,33 @@ describe("plural form coverage", () => {
       expect(missing.sort()).toEqual([]);
     },
   );
+
+  // The mirror image of the check above. Without it, a bulk edit can bolt a
+  // `_many` onto a key that only looks like a plural (`type_other` is the
+  // account type "Other") and every test still passes.
+  it.each([...byLocale.keys()].sort())("%s invents no plural forms of its own", (locale) => {
+    const categories = new Set<string>(
+      new Intl.PluralRules(locale).resolvedOptions().pluralCategories,
+    );
+
+    const invented: string[] = [];
+    for (const [namespace, keys] of byLocale.get(locale)!) {
+      const englishKeys = byLocale.get("en")?.get(namespace);
+      const stems = pluralStems.get(namespace);
+      for (const key of keys) {
+        const match = /^(.*)_(zero|one|two|few|many|other)$/.exec(key);
+        if (!match) continue;
+        const [, stem, category] = match;
+        // Keys English also has are names that merely end in a category word,
+        // like `err_amount_gt_zero`. Only forms this locale added are suspect.
+        if (englishKeys?.has(key)) continue;
+        if (!stems?.has(stem)) invented.push(`${namespace}:${key}`);
+        else if (!categories.has(category)) invented.push(`${namespace}:${key}`);
+      }
+    }
+
+    expect(invented.sort()).toEqual([]);
+  });
 });
 
 function collectKeys(node: Record<string, unknown>, prefix: string, out: Set<string>) {
