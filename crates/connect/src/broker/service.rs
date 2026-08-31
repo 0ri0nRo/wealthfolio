@@ -1271,13 +1271,25 @@ impl BrokerSyncServiceTrait for BrokerSyncService {
             if position.multiplier_from_broker {
                 continue;
             }
-            let Some(asset) = spec_key_to_asset_id
+            // `authoritative_multipliers` first: it holds the value this sync
+            // just persisted, while `ensure_result.assets` still holds the
+            // asset as it was before that write. A broker that splits one
+            // holding across rows supplies the multiplier on only some of them,
+            // and reading the stale map would give those rows a different
+            // multiplier from their siblings.
+            let declared = authoritative_multipliers
                 .get(&position.spec_key)
-                .and_then(|asset_id| ensure_result.assets.get(asset_id))
-            else {
+                .copied()
+                .or_else(|| {
+                    spec_key_to_asset_id
+                        .get(&position.spec_key)
+                        .and_then(|asset_id| ensure_result.assets.get(asset_id))
+                        .map(|asset| asset.contract_multiplier())
+                });
+            let Some(declared) = declared else {
                 continue;
             };
-            apply_declared_contract_multiplier(position, asset.contract_multiplier());
+            apply_declared_contract_multiplier(position, declared);
         }
 
         let combined_quantities =

@@ -1398,46 +1398,10 @@ impl AssetService {
         }
 
         let multiplier_changed = old_multiplier != updated_asset.contract_multiplier();
-        if multiplier_changed {
-            self.propagate_multiplier(&updated_asset).await;
-        }
         Ok(AssetEnrichmentOutcome {
             asset: updated_asset,
             multiplier_changed,
         })
-    }
-
-    /// Pushes a changed multiplier onto already-stored snapshot positions.
-    ///
-    /// Valuation reads the multiplier stamped on each position rather than the
-    /// asset, and holdings-tracked accounts are never rebuilt, so without this
-    /// their totals keep using the old value indefinitely. Every write path that
-    /// can change a multiplier must call this — a user edit, broker sync on a
-    /// shared asset, and provider enrichment all reach it by different routes.
-    async fn sync_stored_multipliers(&self, before: &Asset, after: &Asset) {
-        if before.contract_multiplier() != after.contract_multiplier() {
-            self.propagate_multiplier(after).await;
-        }
-    }
-
-    async fn propagate_multiplier(&self, asset: &Asset) {
-        let multiplier = asset.contract_multiplier();
-        match self
-            .asset_repository
-            .propagate_contract_multiplier(&asset.id, multiplier)
-            .await
-        {
-            Ok(updated) => debug!(
-                "Propagated contract multiplier for {} to {} stored position(s)",
-                asset.id, updated
-            ),
-            // Non-fatal: the asset itself is already saved, and the next full
-            // rebuild fixes transaction-tracked accounts regardless.
-            Err(err) => warn!(
-                "Failed to propagate contract multiplier for {}: {}",
-                asset.id, err
-            ),
-        }
     }
 }
 
@@ -1944,8 +1908,6 @@ impl AssetServiceTrait for AssetService {
             .update_profile(asset_id, payload)
             .await?;
 
-        self.sync_stored_multipliers(&existing_asset, &asset).await;
-
         if Self::should_reset_sync_state_after_profile_change(&existing_asset, &asset) {
             if let Err(err) = self
                 .quote_service
@@ -1970,20 +1932,10 @@ impl AssetServiceTrait for AssetService {
         asset_id: &str,
         metadata: serde_json::Value,
     ) -> Result<Asset> {
-        // Captured before the write: broker sync reaches this path when it
-        // persists a multiplier onto an asset shared across accounts, and the
-        // sibling accounts' stored positions still need the new value.
-        let existing_asset = self.asset_repository.get_by_id(asset_id).ok();
-
         let asset = self
             .asset_repository
             .update_metadata(asset_id, metadata)
             .await?;
-
-        match existing_asset {
-            Some(before) => self.sync_stored_multipliers(&before, &asset).await,
-            None => self.propagate_multiplier(&asset).await,
-        }
 
         self.event_sink
             .emit(DomainEvent::assets_updated(vec![asset.id.clone()]));
@@ -2801,20 +2753,13 @@ mod tests {
     #[derive(Default)]
     struct TestAssetRepository {
         assets: Mutex<Vec<Asset>>,
-        /// (asset_id, multiplier) pairs pushed onto stored snapshot positions.
-        propagated: Mutex<Vec<(String, Decimal)>>,
     }
 
     impl TestAssetRepository {
         fn with_assets(assets: Vec<Asset>) -> Self {
             Self {
                 assets: Mutex::new(assets),
-                propagated: Mutex::new(Vec::new()),
             }
-        }
-
-        fn propagated(&self) -> Vec<(String, Decimal)> {
-            self.propagated.lock().unwrap().clone()
         }
     }
 
@@ -2826,18 +2771,6 @@ mod tests {
 
         async fn create_batch(&self, _new_assets: Vec<NewAsset>) -> Result<Vec<Asset>> {
             unimplemented!()
-        }
-
-        async fn propagate_contract_multiplier(
-            &self,
-            asset_id: &str,
-            multiplier: Decimal,
-        ) -> Result<usize> {
-            self.propagated
-                .lock()
-                .unwrap()
-                .push((asset_id.to_string(), multiplier));
-            Ok(1)
         }
 
         async fn update_profile(
@@ -3299,117 +3232,6 @@ mod tests {
             Arc::new(quote_service),
         )
         .unwrap()
-    }
-
-    /// Every write path that can change a multiplier must push it onto stored
-    /// snapshot positions: valuation reads the position's copy, and
-    /// holdings-tracked accounts are never rebuilt to pick up the asset's.
-    mod multiplier_propagation {
-        use super::*;
-
-        fn option_asset(multiplier: &str) -> Asset {
-            Asset {
-                id: "opt-1".to_string(),
-                kind: AssetKind::Investment,
-                instrument_type: Some(InstrumentType::Option),
-                quote_mode: QuoteMode::Market,
-                quote_ccy: "USD".to_string(),
-                metadata: Some(serde_json::json!({
-                    "contractMultiplier": multiplier.parse::<f64>().unwrap()
-                })),
-                ..Default::default()
-            }
-        }
-
-        fn service_with(asset: Asset) -> (AssetService, Arc<TestAssetRepository>) {
-            let repo = Arc::new(TestAssetRepository::with_assets(vec![asset]));
-            let service = AssetService::new(repo.clone(), Arc::new(TestQuoteService::default()))
-                .expect("service");
-            (service, repo)
-        }
-
-        #[tokio::test]
-        async fn update_asset_profile_propagates_a_changed_multiplier() {
-            let (service, repo) = service_with(option_asset("100"));
-
-            service
-                .update_asset_profile(
-                    "opt-1",
-                    UpdateAssetProfile {
-                        metadata: Some(serde_json::json!({ "contractMultiplier": 10.0 })),
-                        ..metadata_only_payload()
-                    },
-                )
-                .await
-                .expect("update");
-
-            assert_eq!(repo.propagated(), vec![("opt-1".to_string(), dec(10))]);
-        }
-
-        #[tokio::test]
-        async fn update_asset_profile_skips_an_unchanged_multiplier() {
-            let (service, repo) = service_with(option_asset("100"));
-
-            service
-                .update_asset_profile(
-                    "opt-1",
-                    UpdateAssetProfile {
-                        metadata: Some(serde_json::json!({ "contractMultiplier": 100.0 })),
-                        ..metadata_only_payload()
-                    },
-                )
-                .await
-                .expect("update");
-
-            assert!(repo.propagated().is_empty());
-        }
-
-        #[tokio::test]
-        async fn update_asset_metadata_propagates_for_broker_shared_assets() {
-            // Broker sync reaches multiplier changes through this path when the
-            // asset is held by more than one account; the sibling accounts'
-            // positions are only fixed here.
-            let (service, repo) = service_with(option_asset("100"));
-
-            service
-                .update_asset_metadata("opt-1", serde_json::json!({ "contractMultiplier": 50.0 }))
-                .await
-                .expect("update metadata");
-
-            assert_eq!(repo.propagated(), vec![("opt-1".to_string(), dec(50))]);
-        }
-
-        #[tokio::test]
-        async fn update_asset_metadata_skips_an_unchanged_multiplier() {
-            let (service, repo) = service_with(option_asset("100"));
-
-            service
-                .update_asset_metadata("opt-1", serde_json::json!({ "contractMultiplier": 100.0 }))
-                .await
-                .expect("update metadata");
-
-            assert!(repo.propagated().is_empty());
-        }
-
-        fn dec(value: i64) -> Decimal {
-            Decimal::from(value)
-        }
-
-        fn metadata_only_payload() -> UpdateAssetProfile {
-            UpdateAssetProfile {
-                name: None,
-                display_code: None,
-                notes: String::new(),
-                kind: None,
-                quote_mode: None,
-                quote_ccy: None,
-                instrument_type: None,
-                instrument_symbol: None,
-                instrument_exchange_mic: None,
-                provider_config: None,
-                metadata: None,
-            }
-        }
     }
 
     #[test]
