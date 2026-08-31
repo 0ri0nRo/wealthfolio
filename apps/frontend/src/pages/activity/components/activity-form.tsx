@@ -166,6 +166,7 @@ export function ActivityForm({
           {/* Render the appropriate form */}
           <ActivityFormRenderer
             selectedType={effectiveSelectedType}
+            formIdentity={activity?.id}
             accounts={filteredAccounts}
             defaultValues={defaultValues}
             onSubmit={handleSubmit}
