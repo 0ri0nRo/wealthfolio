@@ -1213,7 +1213,9 @@
       "positionsCount_one": "{{count}} holding",
       "positionsCount_other": "{{count}} holdings",
       "readyRows_one": "{{count}} row",
-      "readyRows_other": "{{count}} rows"
+      "readyRows_other": "{{count}} rows",
+      "ambiguousDateTitle": "Date order is ambiguous",
+      "ambiguousDateHint": "Dates like {{example}} can be read as day/month or month/day, and nothing in this file settles it. Go back and choose a date format instead of Auto-detect."
     },
     "symbolPanel": {
       "unrecognized_one": "{{count}} unrecognized symbol",
