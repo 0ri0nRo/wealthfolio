@@ -814,8 +814,7 @@
     "addTransaction": "거래 추가",
     "deselectAllVisible": "표시된 거래 모두 선택 해제",
     "selectAllVisible": "표시된 거래 모두 선택",
-    "nameNotes": "이름 / 메모",
-    "loading": "불러오는 중…"
+    "nameNotes": "이름 / 메모"
   },
   "tabContent": {
     "stageWhereLabel": "현재 위치",

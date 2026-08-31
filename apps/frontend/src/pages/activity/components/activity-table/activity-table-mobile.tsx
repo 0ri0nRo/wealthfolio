@@ -26,10 +26,9 @@ import {
   useDateFormatting,
 } from "@wealthfolio/ui";
 import { Card } from "@wealthfolio/ui/components/ui/card";
-import { useCallback } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { useIntersectionObserver } from "@/hooks/use-intersection-observer";
+import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
 import { ActivityOperations } from "../activity-operations";
 import { ActivityTypeBadge } from "../activity-type-badge";
 
@@ -72,14 +71,6 @@ export const ActivityTableMobile = ({
   const { t } = useTranslation();
   const { settings } = useSettingsContext();
   const appTimezone = settings?.timezone?.trim() || undefined;
-
-  const loadMore = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) onLoadMore?.();
-  }, [hasNextPage, isFetchingNextPage, onLoadMore]);
-  const sentinelRef = useIntersectionObserver(loadMore, {
-    enabled: Boolean(onLoadMore) && hasNextPage && !isFetchingNextPage,
-    rootMargin: "800px",
-  });
 
   if (isLoading) {
     return (
@@ -372,12 +363,12 @@ export const ActivityTableMobile = ({
           </Card>
         );
       })}
-      {hasNextPage && <div ref={sentinelRef} className="h-px" aria-hidden="true" />}
-      {isFetchingNextPage && (
-        <div className="text-muted-foreground flex items-center justify-center gap-2 p-3 text-sm">
-          <Icons.Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
-          {t("activity:loading")}
-        </div>
+      {onLoadMore && (
+        <InfiniteScrollTrigger
+          onLoadMore={onLoadMore}
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+        />
       )}
     </div>
   );

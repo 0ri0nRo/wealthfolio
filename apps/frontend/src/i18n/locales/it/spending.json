@@ -871,8 +871,7 @@
     "addTransaction": "Aggiungi transazione",
     "deselectAllVisible": "Deseleziona tutte le transazioni visibili",
     "selectAllVisible": "Seleziona tutte le transazioni visibili",
-    "nameNotes": "Nome / Note",
-    "loading": "Caricamento…"
+    "nameNotes": "Nome / Note"
   },
   "tabContent": {
     "stageWhereLabel": "Dove sono",

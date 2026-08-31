@@ -18,7 +18,7 @@ import { generateId } from "@/lib/id";
 import { useAccounts } from "@/hooks/use-accounts";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { useDebouncedValue } from "@/hooks/use-debounced-value";
-import { useIntersectionObserver } from "@/hooks/use-intersection-observer";
+import { InfiniteScrollTrigger } from "@/components/infinite-scroll-trigger";
 import { useTaxonomy } from "@/hooks/use-taxonomies";
 import { QueryKeys } from "@/lib/query-keys";
 import { formatDateISO } from "@/lib/utils";
@@ -839,26 +839,14 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
     const isRefreshing = isFetching && !isFetchingNextPage;
     const isMobile = useIsMobileViewport();
 
-    const loadMore = useCallback(() => {
-      if (hasNextPage && !isFetchingNextPage) fetchNextPage();
-    }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-    const sentinelRef = useIntersectionObserver(loadMore, {
-      enabled: hasNextPage && !isFetchingNextPage,
-      rootMargin: "200px",
-    });
-
-    const loadMoreSentinel = hasNextPage ? (
-      <>
-        <div ref={sentinelRef} className="h-px" aria-hidden="true" />
-        {isFetchingNextPage && (
-          <span className="text-muted-foreground flex items-center text-sm">
-            <Icons.Spinner className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            {t("spending:txTab.loading")}
-          </span>
-        )}
-      </>
-    ) : null;
+    const loadMoreTrigger =
+      hasNextPage || isFetchingNextPage ? (
+        <InfiniteScrollTrigger
+          onLoadMore={fetchNextPage}
+          hasNextPage={hasNextPage}
+          isFetchingNextPage={isFetchingNextPage}
+        />
+      ) : null;
 
     const renderRows = () =>
       rows.map((r) => {
@@ -1004,7 +992,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
               </div>
             )}
             {renderRows()}
-            {loadMoreSentinel && <div className="flex justify-center pt-1">{loadMoreSentinel}</div>}
+            {loadMoreTrigger && <div className="flex justify-center pt-1">{loadMoreTrigger}</div>}
           </div>
         ) : (
           <div className="rounded-md border">
@@ -1041,9 +1029,9 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
               <TableBody>{renderRows()}</TableBody>
             </Table>
 
-            {loadMoreSentinel && (
+            {loadMoreTrigger && (
               <div className="border-border flex items-center justify-center border-t p-3">
-                {loadMoreSentinel}
+                {loadMoreTrigger}
               </div>
             )}
           </div>

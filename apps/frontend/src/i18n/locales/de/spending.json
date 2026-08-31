@@ -823,8 +823,7 @@
     "addTransaction": "Transaktion hinzufügen",
     "deselectAllVisible": "Alle sichtbaren Transaktionen abwählen",
     "selectAllVisible": "Alle sichtbaren Transaktionen auswählen",
-    "nameNotes": "Name / Notizen",
-    "loading": "Wird geladen…"
+    "nameNotes": "Name / Notizen"
   },
   "tabContent": {
     "stageWhereLabel": "Wo ich stehe",

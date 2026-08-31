@@ -1,0 +1,110 @@
+import { render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { InfiniteScrollTrigger } from "./infinite-scroll-trigger";
+
+type ObserverCallback = (entries: { isIntersecting: boolean }[]) => void;
+
+interface ObserverInstance {
+  callback: ObserverCallback;
+  options: IntersectionObserverInit | undefined;
+  observed: Element[];
+  disconnected: boolean;
+}
+
+let instances: ObserverInstance[] = [];
+
+class MockIntersectionObserver {
+  instance: ObserverInstance;
+
+  constructor(callback: ObserverCallback, options?: IntersectionObserverInit) {
+    this.instance = { callback, options, observed: [], disconnected: false };
+    instances.push(this.instance);
+  }
+
+  observe = (element: Element) => {
+    this.instance.observed.push(element);
+  };
+
+  disconnect = () => {
+    this.instance.disconnected = true;
+  };
+}
+
+function lastInstance(): ObserverInstance {
+  const instance = instances[instances.length - 1];
+  if (!instance) throw new Error("no IntersectionObserver was created");
+  return instance;
+}
+
+describe("InfiniteScrollTrigger", () => {
+  beforeEach(() => {
+    instances = [];
+    vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders a sentinel and observes it while more pages exist", () => {
+    render(
+      <InfiniteScrollTrigger onLoadMore={vi.fn()} hasNextPage={true} isFetchingNextPage={false} />,
+    );
+
+    expect(instances).toHaveLength(1);
+    expect(lastInstance().observed).toHaveLength(1);
+  });
+
+  it("renders nothing when pagination is finished", () => {
+    const { container } = render(
+      <InfiniteScrollTrigger onLoadMore={vi.fn()} hasNextPage={false} isFetchingNextPage={false} />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+    expect(instances).toHaveLength(0);
+  });
+
+  it("calls onLoadMore when the sentinel intersects", () => {
+    const onLoadMore = vi.fn();
+    render(
+      <InfiniteScrollTrigger
+        onLoadMore={onLoadMore}
+        hasNextPage={true}
+        isFetchingNextPage={false}
+      />,
+    );
+
+    lastInstance().callback([{ isIntersecting: true }]);
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the loading indicator while the next page is fetching", () => {
+    render(
+      <InfiniteScrollTrigger onLoadMore={vi.fn()} hasNextPage={true} isFetchingNextPage={true} />,
+    );
+
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+  });
+
+  it("reconnects the observer when the trigger moves to a different layout slot", () => {
+    const props = { onLoadMore: vi.fn(), hasNextPage: true, isFetchingNextPage: false };
+    const { rerender } = render(
+      <div data-testid="desktop">
+        <InfiniteScrollTrigger {...props} />
+      </div>,
+    );
+    expect(instances).toHaveLength(1);
+
+    rerender(
+      <section data-testid="mobile">
+        <InfiniteScrollTrigger {...props} />
+      </section>,
+    );
+
+    expect(instances.length).toBeGreaterThan(1);
+    expect(instances[0].disconnected).toBe(true);
+    const active = lastInstance();
+    expect(active.disconnected).toBe(false);
+    expect(active.observed).toHaveLength(1);
+  });
+});
