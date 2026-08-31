@@ -54,7 +54,7 @@ describe("useIntersectionObserver", () => {
 
     expect(instances).toHaveLength(1);
     expect(lastInstance().observed).toEqual([element]);
-    expect(lastInstance().options).toEqual({ rootMargin: "100px" });
+    expect(lastInstance().options).toEqual({ root: null, rootMargin: "100px" });
   });
 
   it("invokes the callback when the sentinel intersects", () => {
@@ -137,6 +137,90 @@ describe("useIntersectionObserver", () => {
     const { result } = renderHook(() => useIntersectionObserver(vi.fn(), { rootMargin: "200px" }));
     act(() => result.current(document.createElement("div")));
 
-    expect(lastInstance().options).toEqual({ rootMargin: "200px" });
+    expect(lastInstance().options).toEqual({ root: null, rootMargin: "200px" });
+  });
+
+  describe("scroll root resolution", () => {
+    function setScrollMetrics(element: HTMLElement, scrollHeight: number, clientHeight: number) {
+      Object.defineProperty(element, "scrollHeight", { value: scrollHeight, configurable: true });
+      Object.defineProperty(element, "clientHeight", { value: clientHeight, configurable: true });
+    }
+
+    function scrollableAncestor(scrollHeight = 800, clientHeight = 400): HTMLElement {
+      const el = document.createElement("div");
+      el.style.overflowY = "auto";
+      setScrollMetrics(el, scrollHeight, clientHeight);
+      return el;
+    }
+
+    it("uses the nearest scrollable ancestor as the observer root", () => {
+      const scroller = scrollableAncestor();
+      const sentinel = document.createElement("div");
+      scroller.appendChild(sentinel);
+
+      const { result } = renderHook(() => useIntersectionObserver(vi.fn()));
+      act(() => result.current(sentinel));
+
+      expect(lastInstance().options?.root).toBe(scroller);
+    });
+
+    it("skips an overflow container that grows instead of scrolling", () => {
+      // scrollHeight == clientHeight: the container fits its content, so
+      // rooting on it would leave the sentinel permanently intersecting.
+      const grown = scrollableAncestor(400, 400);
+      const sentinel = document.createElement("div");
+      grown.appendChild(sentinel);
+
+      const { result } = renderHook(() => useIntersectionObserver(vi.fn()));
+      act(() => result.current(sentinel));
+
+      expect(lastInstance().options?.root).toBeNull();
+    });
+
+    it("skips ancestors that overflow visibly even when their content is taller", () => {
+      const visible = document.createElement("div");
+      setScrollMetrics(visible, 800, 400);
+      const sentinel = document.createElement("div");
+      visible.appendChild(sentinel);
+
+      const { result } = renderHook(() => useIntersectionObserver(vi.fn()));
+      act(() => result.current(sentinel));
+
+      expect(lastInstance().options?.root).toBeNull();
+    });
+
+    it("prefers the nearest of two nested scrollable ancestors", () => {
+      const outer = scrollableAncestor();
+      const inner = scrollableAncestor();
+      outer.appendChild(inner);
+      const sentinel = document.createElement("div");
+      inner.appendChild(sentinel);
+
+      const { result } = renderHook(() => useIntersectionObserver(vi.fn()));
+      act(() => result.current(sentinel));
+
+      expect(lastInstance().options?.root).toBe(inner);
+    });
+
+    it("re-resolves the root when re-enabled after content grows", () => {
+      const container = scrollableAncestor(400, 400); // fits: not scrollable yet
+      const sentinel = document.createElement("div");
+      container.appendChild(sentinel);
+
+      const { result, rerender } = renderHook(
+        ({ enabled }: { enabled: boolean }) => useIntersectionObserver(vi.fn(), { enabled }),
+        { initialProps: { enabled: true } },
+      );
+      act(() => result.current(sentinel));
+      expect(lastInstance().options?.root).toBeNull();
+
+      // A fetch cycle: enabled flips false while loading, content grows,
+      // enabled flips back — the new observer must pick up the real root.
+      rerender({ enabled: false });
+      setScrollMetrics(container, 1200, 400);
+      rerender({ enabled: true });
+
+      expect(lastInstance().options?.root).toBe(container);
+    });
   });
 });
