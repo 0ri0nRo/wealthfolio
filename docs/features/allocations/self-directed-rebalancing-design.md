@@ -1,7 +1,7 @@
 # Self-Directed Rebalancing — Design Document
 
 Status: Source of truth for allocation rebalancing, no open questions Date:
-2026-08-27 Authors: @Jonjon-prog Reviewers: @afadil, @marcoscale98
+2026-08-31 Authors: @Jonjon-prog Reviewers: @afadil, @marcoscale98
 
 Context: [PR #1486](https://github.com/wealthfolio/wealthfolio/pull/1486)
 discussion.
@@ -55,6 +55,7 @@ Applied to this feature:
 | ---------------------------------------- | ---------------------- | ----------------- |
 | Target weights per category              | User                   | Keep              |
 | Ranges, triggers, turnover cap, min line | User                   | Keep              |
+| Mode: Invest cash or Rebalance           | User                   | Keep (§4)         |
 | Difference arithmetic                    | Nobody (math)          | Keep              |
 | Eligible securities                      | User                   | Keep (#1486)      |
 | Allocation rule                          | User picks from rules  | Keep              |
@@ -91,8 +92,22 @@ Applied to this feature:
 
 ## 4. Allocation model
 
-Four steps, in order. Steps 1 and 2 are user choices; steps 3 and 4 describe how
-the arithmetic resolves.
+The user picks one of two modes, which decides whether reductions are part of
+the calculation at all:
+
+- **Invest cash** — cash increases positions and nothing is reduced.
+- **Rebalance** — cash is used first, then reductions cover what is left. Cash
+  is optional; with none selected, reductions fund the increases on their own,
+  which is what the removed sell-to-rebalance mode did. `allow_sells` on the
+  target decides whether this mode is offered at all.
+
+Two modes rather than three: cash-flow-only and sell-to-rebalance were the two
+ends of the same cash-first sequence, and hybrid was that sequence with both
+inputs present. Naming the sequence once and letting the cash amount vary says
+the same thing with one control fewer.
+
+Within the selected mode the four steps below apply in order. Steps 1 and 2 are
+user choices; steps 3 and 4 describe how the arithmetic resolves.
 
 ### 4.1 Eligible securities
 
@@ -100,10 +115,15 @@ The user chooses which recorded securities may receive changes (#1486). Default
 is every recorded security, which is a fact rather than a selection. The app
 never proposes a subset.
 
-Eligibility gates **increases**. Reductions stay governed by the existing
-do-not-sell and avoid-selling constraints from #1177 — two overlapping
-mechanisms for the same decision would be confusing, and "I don't want to add to
-this position" is a different intent from "I don't want to sell it".
+Eligibility gates **increases**, in both modes, and never restricts reductions.
+Those stay governed by the existing do-not-sell and avoid-selling constraints
+from #1177 — two overlapping mechanisms for the same decision would be
+confusing, and "I don't want to add to this position" is a different intent from
+"I don't want to sell it".
+
+Selecting no eligible security is a valid state, not an error. The increases
+that cannot be placed become unresolved category amounts (§4.4). The app does
+not fall back to a security the user did not choose.
 
 ### 4.2 Security allocation rule
 
@@ -152,33 +172,60 @@ amounts**, not from the per-category intents that produced them. So a security
 classified 60 % equity / 40 % fixed income moves both categories once, by the
 amount actually applied to it.
 
-The calculation is single-pass: the projection is not re-optimised after the
+Each pass is single-pass: the projection is not re-optimised after the
 combination step, because iterating to correct the result is exactly the
-construction the manual-only direction removed. A category can therefore end up
-outside its range even though another was brought inside it. That is reported in
-the existing outside-range strip and the **Current · Projected · Target**
-section, and it is the user's cue to edit a line.
+construction the manual-only direction removed.
+
+**Invest cash** runs one pass. **Rebalance** runs a fixed sequence of exactly
+two, cash first:
+
+1. Deploy the selected cash against the category gaps, then combine and
+   recalculate the projection as above.
+2. Size reductions against the differences that remain, and fund the increases
+   those differences imply from the proceeds.
+
+The sequence stops there. It is fixed, not a loop: nothing is recalculated again
+after the reduction-funded pass, and the number of passes never depends on the
+result. With no cash selected, step 1 deploys nothing and Rebalance is
+reductions funding increases in a single pass.
+
+A category can therefore still end up outside its range even though another was
+brought inside it. That is reported in the existing outside-range strip and the
+**Current · Projected · Target** section, and it is the user's cue to edit a
+line.
 
 ### 4.6 Limits applied before the worksheet is prefilled
 
 In order:
 
-1. **Funding.** Increases are funded by selected tracked cash, hypothetical
-   external cash, and reduction proceeds (cash model from the reference branch).
-   If intents exceed available funding, every increase is scaled by the same
-   factor; nothing is dropped selectively, since dropping would be a choice
-   between securities. The scaling is stated in the result and travels with the
-   export, so a scaled figure is never mistaken for the full amount.
-2. **Held quantity.** A reduction cannot exceed the recorded position in the
+1. **Held quantity.** A reduction cannot exceed the recorded position in the
    account it is drawn from.
-3. **Rounding.** Under whole-unit policy, quantities are floored. Amounts stay
+2. **Turnover cap.** If the reductions exceed the target's `max_turnover_bps`,
+   every reduction is scaled by the same factor. Nothing is dropped selectively,
+   since dropping would be a choice between securities.
+3. **Available proceeds.** What survives 1 and 2 is what the reductions actually
+   raise. Added to the selected tracked cash and the hypothetical external cash,
+   it gives the funding available to the increases (cash model from the
+   reference branch).
+4. **Funding.** If the increases exceed the funding available to them, they are
+   scaled down by a single common factor, and nothing is dropped selectively.
+   Increases already covered by cash deployed in the first pass (§4.5) are not
+   scaled: the shortfall belongs to the increases that depend on reduction
+   proceeds, so scaling the cash-funded ones would leave selected cash
+   undeployed for no reason. The scaling is stated in the result and travels
+   with the export, so a scaled figure is never mistaken for the full amount.
+5. **Rounding.** Under whole-unit policy, quantities are floored. Amounts stay
    primary and quantities remain estimates.
-4. **Minimum line size.** Lines below the target's minimum are reported as below
+6. **Minimum line size.** Lines below the target's minimum are reported as below
    minimum rather than silently dropped. Nothing is re-rounded to lift them over
    the threshold; the user removes or edits them.
-5. **Remaining cash.** Whatever is left after 3 and 4 is reported as remaining
+7. **Remaining cash.** Whatever is left after 5 and 6 is reported as remaining
    cash. It is not redistributed — redistribution is another round of
    construction.
+
+The turnover cap constrains the prefill only. If a later edit takes the
+worksheet past the cap, the result reports it and leaves the edit alone, since
+after prefill the worksheet is the source of truth (§5).
 
 ---
 
@@ -199,11 +246,15 @@ values comes from.
   the current target, eligible securities and allocation rule, and **Reset to
   calculated adjustments**, which restores the last generated set and discards
   edits.
-- Changing an input the calculation depends on — cash to deploy, account scope,
-  eligible securities, the target itself — marks the worksheet as no longer
-  matching those inputs and offers **Recalculate from target**. It never
+- Changing an input the calculation depends on — mode, cash to deploy, account
+  scope, eligible securities, the target itself — marks the worksheet as no
+  longer matching those inputs and offers **Recalculate from target**. It never
   regenerates on its own, so an edited worksheet is never overwritten without
   the user asking.
+- **An edit that breaks a limit is reported, not corrected.** Taking the
+  worksheet past the turnover cap, below the minimum line size or over the
+  available funding produces a warning on the result and leaves the numbers as
+  the user typed them.
 - **Review adjustments** stays the validated account-level view and remains the
   only place copy and CSV can be produced.
 
@@ -245,14 +296,19 @@ Two actions are new and carry the regeneration rule from §5: **Recalculate from
 target** and **Reset to calculated adjustments**. They replace the branch's
 single **Reset changes**, which no longer describes what happens.
 
-| Use                                | Avoid                                     |
-| ---------------------------------- | ----------------------------------------- |
-| Calculated adjustments             | Proposed / suggested / generated trades   |
-| Eligible securities                | Recommended securities                    |
-| Allocation rule                    | Allocation strategy                       |
-| Unresolved amount                  | Missing trade                             |
-| Amounts primary, quantities second | Share counts as the headline figure       |
-| (nothing)                          | Recommended, optimal, best, should, ideal |
+The two modes are **Invest cash** and **Rebalance** (§4). They retire the
+three-way **Cash-flow only / Sell to rebalance / Hybrid** picker and its hint
+strings; `mode.enableSellsTip` survives, pointed at **Rebalance**.
+
+| Use                                | Avoid                                       |
+| ---------------------------------- | ------------------------------------------- |
+| Calculated adjustments             | Proposed / suggested / generated trades     |
+| Eligible securities                | Recommended securities                      |
+| Allocation rule                    | Allocation strategy                         |
+| Invest cash / Rebalance            | Cash-flow only / Sell to rebalance / Hybrid |
+| Unresolved amount                  | Missing trade                               |
+| Amounts primary, quantities second | Share counts as the headline figure         |
+| (nothing)                          | Recommended, optimal, best, should, ideal   |
 
 Two copy changes the prefill forces:
 
@@ -274,8 +330,9 @@ Two copy changes the prefill forces:
 Clipboard and CSV carry the same readable table, produced only from a fresh
 **Review adjustments** result:
 
-- Header: target, date, account scope, funding used, allocation rule, eligible
-  securities count, and whether increases were scaled (§4.6).
+- Header: target, date, account scope, mode, funding used, allocation rule,
+  eligible securities count, and whether increases or reductions were scaled
+  (§4.6).
 - One row per security/account allocation: status, category, direction,
   security, account, amount, estimated quantity, price and price date.
 - **Unresolved amounts (§4.4) are rows in the same table**, with
@@ -350,16 +407,20 @@ asset-scoped action rather than a new table.
 
 Three shipments.
 
-| #      | Content                                                                                                            | Verify                                                                                                                                                                                                                                                                                                                                             |
-| ------ | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| M0     | ✅ Done. #1486 (eligible securities) rebased and merged on 2026-08-27                                              | merged as `a0dcadeb5`, with symbol disambiguation added in `50515d41f`                                                                                                                                                                                                                                                                             |
-| M1     | The complete calculated worksheet: copy, calculation, prefill, account allocation, preview, export (§4 to §8, §10) | core tests for proportional split, multi-category combination, funding scale, held-quantity cap, rounding residue and unresolved amounts; edits never trigger regeneration and both explicit actions do; increase with several eligible accounts stays unallocated; copy-contract test and i18n parity; export snapshot from a fresh review result |
-| Future | Optional security-level targets (§9)                                                                               | after the main workflow is stable                                                                                                                                                                                                                                                                                                                  |
+| #      | Content                                                                                                            | Verify                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------ | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| M0     | ✅ Done. #1486 (eligible securities) rebased and merged on 2026-08-27                                              | merged as `a0dcadeb5`, with symbol disambiguation added in `50515d41f`                                                                                                                                                                                                                                                                                                                                     |
+| M1     | The complete calculated worksheet: copy, calculation, prefill, account allocation, preview, export (§4 to §8, §10) | core tests for proportional split, multi-category combination, the two-pass cash-first sequence, turnover-cap scaling, funding scale, held-quantity cap, rounding residue and unresolved amounts; edits never trigger regeneration and both explicit actions do; increase with several eligible accounts stays unallocated; copy-contract test and i18n parity; export snapshot from a fresh review result |
+| Future | Optional security-level targets (§9)                                                                               | after the main workflow is stable                                                                                                                                                                                                                                                                                                                                                                          |
 
 Implementation branches from the latest `main` and copies the worksheet UI,
 account allocation, copy, exports and example-weight work from
 `feature/allocation-worksheet-refactor`. That branch is a reference, not a base:
 it is not rebased, extended or merged.
+
+M1 ships as one pull request, kept reviewable through its commit order:
+calculation and limits in core, then prefill and account allocation, then copy
+and locales, then export.
 
 ---
 
@@ -368,18 +429,21 @@ it is not rebased, extended or merged.
 Nothing is open. The decisions taken during review, with the section that
 carries each one:
 
-| Question                             | Decision                                                                            | Section |
-| ------------------------------------ | ----------------------------------------------------------------------------------- | ------- |
-| Iterate after combining intents?     | No. Single pass, show the projection, let the user edit                             | §4.5    |
-| Funding shortfall                    | Scale every increase proportionally and state that the scaling was applied          | §4.6    |
-| Sub-minimum lines and remaining cash | Report both. No re-rounding, no redistribution                                      | §4.6    |
-| Editing after prefill                | The worksheet becomes the source of truth; editing only updates the preview         | §5      |
-| Regenerating adjustments             | Only on **Recalculate from target** or **Reset to calculated adjustments**          | §5      |
-| Account attribution                  | Auto-assign only when exactly one account is eligible, otherwise the user allocates | §6      |
-| Unresolved amounts in the export     | Same table, `Status: Unresolved`, category and amount only                          | §8      |
-| Example weights metadata             | No source or effective date, no external-index claim                                | §10     |
-| Existing target names                | Left unchanged; quantitative naming applies to new selections only                  | §10     |
-| Configuration persistence            | Saved configuration, not result reproduction, and out of the first release          | §11     |
+| Question                             | Decision                                                                                                                        | Section |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| How many modes?                      | Two: **Invest cash** and **Rebalance**. `allow_sells` decides whether Rebalance is offered                                      | §4      |
+| Iterate after combining intents?     | No. Each pass is single-pass. Rebalance runs a fixed cash-first sequence of exactly two, and never more                         | §4.5    |
+| Funding shortfall                    | Scale the increases that depend on reduction proceeds by one common factor, and state that the scaling was applied              | §4.6    |
+| Turnover cap                         | Constrains the prefill, applied to reductions before proceeds are known. A later edit past the cap warns and is left alone      | §4.6    |
+| Eligible securities and reductions   | Gate every increase in both modes, never restrict reductions. An empty selection yields unresolved amounts rather than an error | §4.1    |
+| Sub-minimum lines and remaining cash | Report both. No re-rounding, no redistribution                                                                                  | §4.6    |
+| Editing after prefill                | The worksheet becomes the source of truth; editing only updates the preview                                                     | §5      |
+| Regenerating adjustments             | Only on **Recalculate from target** or **Reset to calculated adjustments**                                                      | §5      |
+| Account attribution                  | Auto-assign only when exactly one account is eligible, otherwise the user allocates                                             | §6      |
+| Unresolved amounts in the export     | Same table, `Status: Unresolved`, category and amount only                                                                      | §8      |
+| Example weights metadata             | No source or effective date, no external-index claim                                                                            | §10     |
+| Existing target names                | Left unchanged; quantitative naming applies to new selections only                                                              | §10     |
+| Configuration persistence            | Saved configuration, not result reproduction, and out of the first release                                                      | §11     |
 
 ---
 
@@ -392,5 +456,11 @@ carries each one:
 - `feature/allocation-worksheet-refactor` — worksheet implementation, copy
   contract test, example weights.
 - [`rebalance-algorithm.md`](./rebalance-algorithm.md) — V1 engine, retained for
-  the arithmetic that survives.
+  the arithmetic that survives. Its three scenario modes and its two-pass hybrid
+  are superseded by §4 and §4.5.
+- [`sota-target-model-spec.md`](./sota-target-model-spec.md) — historical draft
+  (2026-05-07), not a source of truth for behaviour this document leaves
+  unstated. It predates #1486 and still frames the feature as an advisor
+  producing draft trades. Its rebalancing sections are marked superseded by this
+  document.
 - PR #1177 (constraints, turnover cap), PR #1486 (eligible securities).
