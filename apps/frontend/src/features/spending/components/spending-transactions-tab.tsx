@@ -479,6 +479,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
       isLoading,
       isFetching,
       isFetchingNextPage,
+      isFetchNextPageError,
       isError,
       error,
       hasNextPage,
@@ -846,6 +847,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
           hasNextPage={hasNextPage}
           isFetching={isFetching}
           isFetchingNextPage={isFetchingNextPage}
+          hasLoadMoreError={isFetchNextPageError}
         />
       ) : null;
 
@@ -945,7 +947,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
             <Skeleton className="h-12" />
             <Skeleton className="h-12" />
           </div>
-        ) : isError ? (
+        ) : isError && !isFetchNextPageError ? (
           <EmptyPlaceholder>
             <EmptyPlaceholder.Icon name="AlertTriangle" />
             <EmptyPlaceholder.Title>{t("spending:txTab.loadErrorTitle")}</EmptyPlaceholder.Title>

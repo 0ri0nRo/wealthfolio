@@ -74,6 +74,7 @@ interface ActivityTableProps {
   hasNextPage?: boolean;
   isFetching?: boolean;
   isFetchingNextPage?: boolean;
+  hasLoadMoreError?: boolean;
 }
 
 export const ActivityTable = ({
@@ -92,6 +93,7 @@ export const ActivityTable = ({
   hasNextPage = false,
   isFetching,
   isFetchingNextPage = false,
+  hasLoadMoreError = false,
 }: ActivityTableProps) => {
   const formatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
@@ -702,6 +704,7 @@ export const ActivityTable = ({
             hasNextPage={hasNextPage}
             isFetching={isFetching ?? isFetchingNextPage}
             isFetchingNextPage={isFetchingNextPage}
+            hasLoadMoreError={hasLoadMoreError}
           />
         )}
       </div>

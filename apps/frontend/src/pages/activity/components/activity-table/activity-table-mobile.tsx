@@ -48,6 +48,7 @@ interface ActivityTableMobileProps {
   hasNextPage?: boolean;
   isFetching?: boolean;
   isFetchingNextPage?: boolean;
+  hasLoadMoreError?: boolean;
 }
 
 export const ActivityTableMobile = ({
@@ -66,6 +67,7 @@ export const ActivityTableMobile = ({
   hasNextPage = false,
   isFetching,
   isFetchingNextPage = false,
+  hasLoadMoreError = false,
 }: ActivityTableMobileProps) => {
   const formatting = useAmountFormatting();
   const numberFormatting = useNumberFormatting();
@@ -371,6 +373,7 @@ export const ActivityTableMobile = ({
           hasNextPage={hasNextPage}
           isFetching={isFetching ?? isFetchingNextPage}
           isFetchingNextPage={isFetchingNextPage}
+          hasLoadMoreError={hasLoadMoreError}
         />
       )}
     </div>

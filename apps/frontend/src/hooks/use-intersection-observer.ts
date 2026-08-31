@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
  * Find the element that actually scrolls the sentinel, to use as the
@@ -40,10 +40,10 @@ export function useIntersectionObserver(
   const [node, setNode] = useState<HTMLElement | null>(null);
   const { enabled = true, rootMargin = "100px" } = options ?? {};
 
-  // Always invoke the latest callback so an observer entry delivered between
-  // a state change and the next effect run cannot call a stale closure.
+  // Update during the layout phase so a queued observer entry cannot use a
+  // stale closure between commit and passive-effect cleanup.
   const callbackRef = useRef(callback);
-  useEffect(() => {
+  useLayoutEffect(() => {
     callbackRef.current = callback;
   });
 

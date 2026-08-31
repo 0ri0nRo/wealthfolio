@@ -12,6 +12,8 @@ export interface InfiniteScrollTriggerProps {
   isFetching: boolean;
   /** The next page specifically loading; drives the spinner. */
   isFetchingNextPage: boolean;
+  /** The most recent next-page request failed; disables automatic retries. */
+  hasLoadMoreError: boolean;
   className?: string;
 }
 
@@ -26,6 +28,7 @@ export function InfiniteScrollTrigger({
   hasNextPage,
   isFetching,
   isFetchingNextPage,
+  hasLoadMoreError,
   className,
 }: InfiniteScrollTriggerProps) {
   const { t } = useTranslation();
@@ -37,7 +40,7 @@ export function InfiniteScrollTrigger({
   }, [hasNextPage, isFetching, onLoadMore]);
 
   const sentinelRef = useIntersectionObserver(loadMore, {
-    enabled: hasNextPage && !isFetching,
+    enabled: hasNextPage && !isFetching && !hasLoadMoreError,
     rootMargin: "800px",
   });
 
@@ -53,12 +56,14 @@ export function InfiniteScrollTrigger({
         aria-live="polite"
         className="text-muted-foreground flex items-center justify-center gap-2 text-sm"
       >
-        {isFetchingNextPage && (
+        {isFetchingNextPage ? (
           <>
             <Icons.Spinner className="h-4 w-4 animate-spin" aria-hidden="true" />
             {t("common:loading")}
           </>
-        )}
+        ) : hasLoadMoreError ? (
+          t("common:error")
+        ) : null}
       </div>
       {hasNextPage && (
         <Button
@@ -67,9 +72,9 @@ export function InfiniteScrollTrigger({
           size="sm"
           disabled={isFetching}
           onClick={loadMore}
-          className="sr-only focus:not-sr-only"
+          className={cn(!hasLoadMoreError && "sr-only focus:not-sr-only")}
         >
-          {t("common:load_more")}
+          {t(hasLoadMoreError ? "common:retry" : "common:load_more")}
         </Button>
       )}
     </div>

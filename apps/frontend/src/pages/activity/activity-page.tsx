@@ -765,6 +765,7 @@ const ActivityPage = () => {
           hasNextPage={infiniteSearch.hasNextPage}
           isFetching={infiniteSearch.isFetching}
           isFetchingNextPage={infiniteSearch.isFetchingNextPage}
+          hasLoadMoreError={infiniteSearch.isFetchNextPageError}
         />
       ) : shouldUseDatagridView ? (
         <ActivityDataGrid
@@ -800,6 +801,7 @@ const ActivityPage = () => {
           hasNextPage={infiniteSearch.hasNextPage}
           isFetching={infiniteSearch.isFetching}
           isFetchingNextPage={infiniteSearch.isFetchingNextPage}
+          hasLoadMoreError={infiniteSearch.isFetchNextPageError}
         />
       )}
 

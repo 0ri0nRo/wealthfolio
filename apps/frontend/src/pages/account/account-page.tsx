@@ -674,6 +674,7 @@ const AccountPage = () => {
         hasNextPage={accountActivitiesSearch.hasNextPage}
         isFetching={accountActivitiesSearch.isFetching}
         isFetchingNextPage={accountActivitiesSearch.isFetchingNextPage}
+        hasLoadMoreError={accountActivitiesSearch.isFetchNextPageError}
       />
       <ActivityPagination
         isFetching={accountActivitiesSearch.isFetchingNextPage}
@@ -695,6 +696,7 @@ const AccountPage = () => {
         hasNextPage={accountActivitiesSearch.hasNextPage}
         isFetching={accountActivitiesSearch.isFetching}
         isFetchingNextPage={accountActivitiesSearch.isFetchingNextPage}
+        hasLoadMoreError={accountActivitiesSearch.isFetchNextPageError}
       />
       <ActivityPagination
         isFetching={accountActivitiesSearch.isFetchingNextPage}

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { useLayoutEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InfiniteScrollTrigger } from "./infinite-scroll-trigger";
 
@@ -36,6 +37,31 @@ function lastInstance(): ObserverInstance {
   return instance;
 }
 
+function BackgroundRefetchHarness({ onLoadMore }: { onLoadMore: () => void }) {
+  const [isFetching, setIsFetching] = useState(false);
+
+  useLayoutEffect(() => {
+    if (isFetching) {
+      lastInstance().callback([{ isIntersecting: true }]);
+    }
+  }, [isFetching]);
+
+  return (
+    <>
+      <button type="button" onClick={() => setIsFetching(true)}>
+        Start background refetch
+      </button>
+      <InfiniteScrollTrigger
+        onLoadMore={onLoadMore}
+        hasNextPage={true}
+        isFetching={isFetching}
+        isFetchingNextPage={false}
+        hasLoadMoreError={false}
+      />
+    </>
+  );
+}
+
 describe("InfiniteScrollTrigger", () => {
   beforeEach(() => {
     instances = [];
@@ -53,6 +79,7 @@ describe("InfiniteScrollTrigger", () => {
         hasNextPage={true}
         isFetching={false}
         isFetchingNextPage={false}
+        hasLoadMoreError={false}
       />,
     );
 
@@ -67,6 +94,7 @@ describe("InfiniteScrollTrigger", () => {
         hasNextPage={false}
         isFetching={false}
         isFetchingNextPage={false}
+        hasLoadMoreError={false}
       />,
     );
 
@@ -82,6 +110,7 @@ describe("InfiniteScrollTrigger", () => {
         hasNextPage={true}
         isFetching={false}
         isFetchingNextPage={false}
+        hasLoadMoreError={false}
       />,
     );
 
@@ -96,6 +125,7 @@ describe("InfiniteScrollTrigger", () => {
         hasNextPage={true}
         isFetching={true}
         isFetchingNextPage={true}
+        hasLoadMoreError={false}
       />,
     );
 
@@ -109,6 +139,7 @@ describe("InfiniteScrollTrigger", () => {
         hasNextPage={true}
         isFetching={false}
         isFetchingNextPage={false}
+        hasLoadMoreError={false}
       />,
     );
 
@@ -123,6 +154,7 @@ describe("InfiniteScrollTrigger", () => {
         hasNextPage={true}
         isFetching={false}
         isFetchingNextPage={false}
+        hasLoadMoreError={false}
       />,
     );
 
@@ -138,6 +170,7 @@ describe("InfiniteScrollTrigger", () => {
         hasNextPage={true}
         isFetching={true}
         isFetchingNextPage={true}
+        hasLoadMoreError={false}
       />,
     );
 
@@ -155,6 +188,7 @@ describe("InfiniteScrollTrigger", () => {
         hasNextPage={true}
         isFetching={false}
         isFetchingNextPage={false}
+        hasLoadMoreError={false}
       />,
     );
     const observerCallback = lastInstance().callback;
@@ -166,6 +200,7 @@ describe("InfiniteScrollTrigger", () => {
         hasNextPage={true}
         isFetching={true}
         isFetchingNextPage={false}
+        hasLoadMoreError={false}
       />,
     );
 
@@ -175,12 +210,43 @@ describe("InfiniteScrollTrigger", () => {
     expect(onLoadMore).not.toHaveBeenCalled();
   });
 
+  it("uses the current fetch guard before passive effects run", () => {
+    const onLoadMore = vi.fn();
+    render(<BackgroundRefetchHarness onLoadMore={onLoadMore} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Start background refetch" }));
+
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it("stops automatic loading after a next-page error and offers a manual retry", () => {
+    const onLoadMore = vi.fn();
+    render(
+      <InfiniteScrollTrigger
+        onLoadMore={onLoadMore}
+        hasNextPage={true}
+        isFetching={false}
+        isFetchingNextPage={false}
+        hasLoadMoreError={true}
+      />,
+    );
+
+    expect(instances).toHaveLength(0);
+    expect(screen.getByRole("status")).toHaveTextContent("Error");
+
+    const retryButton = screen.getByRole("button", { name: "Retry" });
+    expect(retryButton).not.toHaveClass("sr-only");
+    fireEvent.click(retryButton);
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
   it("reconnects the observer when the trigger moves to a different layout slot", () => {
     const props = {
       onLoadMore: vi.fn(),
       hasNextPage: true,
       isFetching: false,
       isFetchingNextPage: false,
+      hasLoadMoreError: false,
     };
     const { rerender } = render(
       <div data-testid="desktop">
