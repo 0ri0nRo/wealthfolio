@@ -16,6 +16,7 @@
   "type_bank": "Banco",
   "type_cryptocurrency": "Criptomoneda",
   "type_other": "Otro",
+  "type_many": "Otro",
   "group_taxable": "Sujeta a impuestos",
   "group_tax_deferred": "Con impuestos diferidos",
   "group_tax_free": "Libre de impuestos",
@@ -123,7 +124,8 @@
     "source_broker": "Bróker",
     "source_calculated": "Calculado",
     "summary_one": "{{count}} posición, {{cash}} en efectivo",
-    "summary_other": "{{count}} posiciones, {{cash}} en efectivo"
+    "summary_other": "{{count}} posiciones, {{cash}} en efectivo",
+    "summary_many": "{{count}} posiciones, {{cash}} en efectivo"
   },
   "switch_account_title": "Cambiar de cuenta",
   "explore": "Explorar",
@@ -153,5 +155,6 @@
     "irr_hover_hint": " Pasa el cursor sobre el valor para ver la IRR del periodo seleccionado."
   },
   "more_count_one": "+{{count}} más",
-  "more_count_other": "+{{count}} más"
+  "more_count_other": "+{{count}} más",
+  "more_count_many": "+{{count}} más"
 }
