@@ -2,7 +2,8 @@
   "needs_review_alert": {
     "title_one": "{{count}} Aktivität muss geprüft werden",
     "title_other": "{{count}} Aktivitäten müssen geprüft werden",
-    "description": "Prüfen Sie bei jeder Transaktion Vermögenswert, Typ und Endbetrag."
+    "description": "Prüfen Sie bei jeder Transaktion Vermögenswert, Typ und Endbetrag.",
+    "action": "Prüfen"
   },
   "activities": "Aktivitäten",
   "add_activity": "Aktivität hinzufügen",
@@ -79,7 +80,6 @@
   "duplicate": "Duplizieren",
   "delete": "Löschen",
   "loading": "Wird geladen...",
-  "load_more": "Mehr laden",
   "search_placeholder": "Suchen...",
   "clear_search": "Suche löschen",
   "filter_account": "Konto",
