@@ -476,6 +476,19 @@ impl ActivityService {
         activity: &mut ActivityUpdate,
         existing: &Activity,
     ) -> Result<()> {
+        // PATCH semantics: omission preserves the current asset. Hydrate the
+        // existing id before validation/resolution; an explicit empty object
+        // remains empty and is handled as a clear by the repository.
+        if activity.asset.is_none() {
+            activity.asset = existing
+                .asset_id
+                .as_ref()
+                .map(|asset_id| AssetResolutionInput {
+                    id: Some(asset_id.clone()),
+                    ..Default::default()
+                });
+        }
+
         // A metadata patch carries only the keys its writer owns (e.g. the
         // option form's contract multiplier); merge it over the stored blob
         // so unrelated keys - the migration's legacy_amount breadcrumb,
@@ -505,10 +518,13 @@ impl ActivityService {
             Some(subtype) => Some(subtype),
             None => existing.subtype.as_deref(),
         };
-        let effective_asset_id = activity
-            .get_symbol_id()
-            .map(str::to_string)
-            .or_else(|| existing.asset_id.clone());
+        let effective_asset_id = match activity.asset.as_ref() {
+            Some(asset) if asset.is_empty() => None,
+            _ => activity
+                .get_symbol_id()
+                .map(str::to_string)
+                .or_else(|| existing.asset_id.clone()),
+        };
         let is_security_transfer =
             is_securities_transfer(&activity.activity_type, effective_asset_id.as_deref());
         let quantity = activity
@@ -696,7 +712,10 @@ impl ActivityService {
         if activity.amount.is_some() {
             return false;
         }
-        let asset_id = activity.get_symbol_id().or(existing.asset_id.as_deref());
+        let asset_id = match activity.asset.as_ref() {
+            Some(asset) if asset.is_empty() => None,
+            _ => activity.get_symbol_id().or(existing.asset_id.as_deref()),
+        };
         if !is_securities_transfer(&activity.activity_type, asset_id)
             || self.is_bond_asset(asset_id)
         {
@@ -2942,6 +2961,21 @@ impl ActivityService {
         let base_ccy = self.account_service.get_base_currency().unwrap_or_default();
         let account_currency = resolve_currency(&[&account.currency, &base_ccy]);
         let currency = resolve_currency(&[&activity.currency, &account_currency]);
+
+        if activity.asset.as_ref().is_some_and(|asset| {
+            !asset.is_empty()
+                && asset.id.as_deref().is_none_or(|id| id.trim().is_empty())
+                && asset
+                    .symbol
+                    .as_deref()
+                    .is_none_or(|symbol| symbol.trim().is_empty())
+        }) {
+            return Err(ActivityError::InvalidData(
+                "Asset updates need either asset_id or symbol; use an empty asset object to clear"
+                    .to_string(),
+            )
+            .into());
+        }
 
         if activity.activity_type == ACTIVITY_TYPE_SPLIT {
             activity.amount = activity.amount.map(|v| v.map(|d| d.abs()));

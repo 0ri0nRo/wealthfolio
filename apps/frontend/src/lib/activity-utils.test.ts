@@ -1,12 +1,14 @@
 import { ACTIVITY_SUBTYPES, ActivityStatus, ActivityType } from "./constants";
 import {
   isCashActivity,
+  isGarbageSymbol,
   isCashTransfer,
   isIncomeActivity,
   isAssetBackedIncomeActivity,
   isAssetBackedIncomeSubtype,
   isAssetIdentityRequired,
   needsImportAssetResolution,
+  shouldResolveImportAsset,
   calculateActivityValue,
   calculateActivityCashImpact,
   canonicalizeActivitySubtype,
@@ -138,6 +140,23 @@ describe("Activity Utilities", () => {
     it("resolves provider-supplied symbols for otherwise optional adjustments", () => {
       expect(needsImportAssetResolution(ActivityType.ADJUSTMENT, "CORPORATE_ACTION")).toBe(true);
       expect(isAssetIdentityRequired(ActivityType.ADJUSTMENT, "CORPORATE_ACTION")).toBe(false);
+    });
+
+    it("matches backend placeholder classification for optional-asset imports", () => {
+      expect(isGarbageSymbol("----")).toBe(true);
+      expect(isGarbageSymbol("$FOO")).toBe(true);
+      expect(isGarbageSymbol("$CASH-USD")).toBe(false);
+      expect(shouldResolveImportAsset(ActivityType.ADJUSTMENT, "CASH_SWEEP", "----")).toBe(false);
+      expect(shouldResolveImportAsset(ActivityType.ADJUSTMENT, "CORPORATE_ACTION", "$FOO")).toBe(
+        false,
+      );
+      expect(shouldResolveImportAsset(ActivityType.ADJUSTMENT, "CORPORATE_ACTION", "AAPL")).toBe(
+        true,
+      );
+    });
+
+    it("keeps malformed required-asset symbols in validation", () => {
+      expect(shouldResolveImportAsset(ActivityType.BUY, undefined, "----")).toBe(true);
     });
   });
 

@@ -197,7 +197,7 @@ export interface ActivityCreatePayload extends ActivityBasePayload {
  * - Or send asset.symbol + asset.exchangeMic to re-resolve the asset
  */
 export interface ActivityUpdatePayload extends ActivityBasePayload {
-  /** Asset resolution input - id plus natural identity and creation hints */
+  /** Omit to preserve, provide identity to replace, or pass {} to clear. */
   asset?: AssetResolutionInput;
   /** Explicit review patch; false approves a flagged activity. */
   needsReview?: boolean;

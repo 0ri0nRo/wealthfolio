@@ -361,11 +361,21 @@ export function useActivityForm({
             (formData as AdjustmentFormValues).adjustmentMode === "cash"
               ? undefined
               : activity.assetId;
+          const clearAsset = Boolean(
+            activity.assetId &&
+            selectedType === ActivityType.ADJUSTMENT &&
+            (formData as AdjustmentFormValues).adjustmentMode === "cash",
+          );
           await updateActivityMutation.mutateAsync({
             id: activity.id,
             currentAssetId,
+            clearAsset,
             ...submitData,
-          } as NewActivityFormValues & { id: string; currentAssetId?: string });
+          } as NewActivityFormValues & {
+            id: string;
+            currentAssetId?: string;
+            clearAsset?: boolean;
+          });
         } else {
           await addActivityMutation.mutateAsync(submitData);
         }

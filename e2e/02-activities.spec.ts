@@ -969,7 +969,7 @@ test.describe("Activity Creation Tests", () => {
     );
     await updateActivity(securitiesDialog);
     const cashUpdatePayload = (await cashUpdateRequest).postDataJSON() as Record<string, unknown>;
-    expect(cashUpdatePayload.asset).toBeUndefined();
+    expect(cashUpdatePayload.asset).toEqual({});
 
     persisted = await getActivity(seeded.id);
     expect(persisted.assetId).toBe("");

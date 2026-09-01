@@ -1466,10 +1466,12 @@ mod tests {
                 .iter_mut()
                 .find(|activity| activity.id == activity_update.id)
                 .ok_or_else(|| Error::Unexpected("Activity not found".to_string()))?;
-            let asset_id = activity_update.get_symbol_id().map(|s| s.to_string());
+            let asset_id_patch = activity_update.asset.as_ref().map(|asset| asset.id.clone());
 
             existing.account_id = activity_update.account_id;
-            existing.asset_id = asset_id;
+            if let Some(asset_id) = asset_id_patch {
+                existing.asset_id = asset_id;
+            }
             existing.activity_type = activity_update.activity_type;
             existing.activity_date = parse_test_activity_datetime(&activity_update.activity_date);
             existing.subtype = match activity_update.subtype {
@@ -5450,7 +5452,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_bulk_update_preserves_existing_asset_backed_subtype_when_omitted() {
+    async fn test_bulk_update_preserves_existing_asset_and_subtype_when_omitted() {
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let fx_service = Arc::new(MockFxService::new());
@@ -5482,15 +5484,7 @@ mod tests {
             quote_service,
         );
 
-        let mut update = create_test_activity_update(
-            "staking-1",
-            "acc-1",
-            Some(AssetResolutionInput {
-                id: Some("ETH".to_string()),
-                ..Default::default()
-            }),
-            "USD",
-        );
+        let mut update = create_test_activity_update("staking-1", "acc-1", None, "USD");
         update.activity_type = "INTEREST".to_string();
         update.subtype = None;
         update.quantity = None;
@@ -5508,9 +5502,60 @@ mod tests {
 
         assert!(result.errors.is_empty());
         assert_eq!(result.updated.len(), 1);
+        assert_eq!(result.updated[0].asset_id.as_deref(), Some("ETH"));
         assert_eq!(result.updated[0].subtype.as_deref(), Some("STAKING_REWARD"));
         assert_eq!(result.updated[0].quantity, Some(dec!(1)));
         assert_eq!(result.updated[0].unit_price, Some(dec!(100)));
+    }
+
+    #[tokio::test]
+    async fn test_update_requires_explicit_clear_and_rejects_clear_for_required_asset() {
+        let account_service = Arc::new(MockAccountService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        account_service.add_account(create_test_account("acc-1", "USD"));
+
+        let mut existing = create_stored_activity("adjustment-1", "acc-1", Some("AAPL"));
+        existing.activity_type = "ADJUSTMENT".to_string();
+        existing.subtype = Some("CASH_SWEEP".to_string());
+        activity_repository.add_activity(existing);
+
+        let activity_service = ActivityService::new(
+            activity_repository,
+            account_service,
+            Arc::new(MockAssetService::new()),
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        );
+
+        let mut clear = create_test_activity_update(
+            "adjustment-1",
+            "acc-1",
+            Some(AssetResolutionInput::default()),
+            "USD",
+        );
+        clear.activity_type = "ADJUSTMENT".to_string();
+        clear.subtype = Some("CASH_SWEEP".to_string());
+        clear.quantity = Some(None);
+        clear.unit_price = Some(None);
+        clear.amount = Some(Some(dec!(25)));
+
+        let cleared = activity_service
+            .update_activity(clear)
+            .await
+            .expect("optional adjustment asset should clear explicitly");
+        assert_eq!(cleared.asset_id, None);
+
+        let required_clear = create_test_activity_update(
+            "adjustment-1",
+            "acc-1",
+            Some(AssetResolutionInput::default()),
+            "USD",
+        );
+        let error = activity_service
+            .update_activity(required_clear)
+            .await
+            .expect_err("BUY must reject an explicit asset clear");
+        assert!(error.to_string().contains("asset_id or symbol"));
     }
 
     #[tokio::test]

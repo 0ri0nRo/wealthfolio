@@ -69,6 +69,17 @@ export const isCashSymbol = (symbol?: string): boolean => {
 };
 
 /**
+ * Matches the backend's import-only placeholder detection. These values are
+ * not real tickers and must never enter asset mapping/resolution.
+ */
+export const isGarbageSymbol = (symbol?: string): boolean => {
+  const normalized = symbol?.trim() ?? "";
+  if (!normalized) return false;
+  if (/^-+$/.test(normalized)) return true;
+  return normalized.startsWith("$") && !isCashSymbol(normalized);
+};
+
+/**
  * Whether a symbol is required for this activity type.
  */
 export const isSymbolRequired = (activityType: string): boolean => {
@@ -116,6 +127,26 @@ export const needsImportAssetResolution = (
     isSymbolRequired(activityType) ||
     isAssetBackedIncomeSubtype(activityType, subtype)
   );
+};
+
+/** Whether an imported symbol represents an asset the user must resolve. */
+export const shouldResolveImportAsset = (
+  activityType: string,
+  subtype: string | null | undefined,
+  symbol: string,
+): boolean => {
+  if (!needsImportAssetResolution(activityType, subtype)) return false;
+  // Required-asset rows still enter validation so malformed symbols surface
+  // as errors. Optional-asset rows mirror backend classification and treat
+  // placeholders as cash movements.
+  if (
+    isSymbolRequired(activityType) &&
+    activityType !== ActivityType.DIVIDEND &&
+    activityType !== ActivityType.ADJUSTMENT
+  ) {
+    return true;
+  }
+  return !isCashSymbol(symbol) && !isGarbageSymbol(symbol);
 };
 
 export const canonicalizeActivitySubtype = (

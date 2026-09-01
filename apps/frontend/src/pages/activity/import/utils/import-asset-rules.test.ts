@@ -59,6 +59,21 @@ describe("import asset rules", () => {
     expect(candidate?.symbol).toBe("AAPL");
   });
 
+  it.each(["----", "$FOO"])(
+    "does not build an asset candidate for adjustment placeholder %s",
+    (symbol) => {
+      const candidate = buildImportAssetCandidateFromDraft(
+        createDraft({
+          activityType: ActivityType.ADJUSTMENT,
+          subtype: "CASH_SWEEP",
+          symbol,
+        }),
+      );
+
+      expect(candidate).toBeNull();
+    },
+  );
+
   it("keeps otherwise identical candidates distinct when their ISIN differs", () => {
     const first = buildImportAssetCandidateFromDraft(
       createDraft({
