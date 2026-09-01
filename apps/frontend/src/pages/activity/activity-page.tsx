@@ -900,7 +900,12 @@ const ActivityPage = () => {
 
   return (
     <>
-      <SwipablePage views={views} defaultView="investments" persistKey="activity-page-tab" />
+      <SwipablePage
+        views={views}
+        defaultView="investments"
+        persistKey="activity-page-tab"
+        desktopContentClassName="overflow-y-visible"
+      />
       {sharedModals}
     </>
   );
