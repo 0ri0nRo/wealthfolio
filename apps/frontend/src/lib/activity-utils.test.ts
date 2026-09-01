@@ -111,6 +111,14 @@ describe("Activity Utilities", () => {
       );
       expect(isAssetIdentityRequired(ActivityType.INTEREST, null)).toBe(false);
     });
+
+    it("requires an asset only for asset-affecting adjustments", () => {
+      expect(isAssetIdentityRequired(ActivityType.ADJUSTMENT, null)).toBe(false);
+      expect(isAssetIdentityRequired(ActivityType.ADJUSTMENT, "CASH_SWEEP")).toBe(false);
+      expect(
+        isAssetIdentityRequired(ActivityType.ADJUSTMENT, ACTIVITY_SUBTYPES.OPTION_EXPIRY),
+      ).toBe(true);
+    });
   });
 
   describe("needsImportAssetResolution", () => {
@@ -125,6 +133,11 @@ describe("Activity Utilities", () => {
 
     it("does not force cash-only interest imports through asset resolution", () => {
       expect(needsImportAssetResolution(ActivityType.INTEREST)).toBe(false);
+    });
+
+    it("resolves provider-supplied symbols for otherwise optional adjustments", () => {
+      expect(needsImportAssetResolution(ActivityType.ADJUSTMENT, "CORPORATE_ACTION")).toBe(true);
+      expect(isAssetIdentityRequired(ActivityType.ADJUSTMENT, "CORPORATE_ACTION")).toBe(false);
     });
   });
 

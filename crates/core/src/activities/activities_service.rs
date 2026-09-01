@@ -41,7 +41,8 @@ use std::sync::{Arc, RwLock};
 use crate::accounts::{account_types, Account, AccountServiceTrait};
 use crate::activities::activities_constants::{
     classify_import_activity, is_cash_symbol, is_garbage_symbol, is_securities_transfer,
-    requires_final_cash_amount, requires_symbol, ImportSymbolDisposition, ACTIVITY_TYPE_BUY,
+    requires_final_cash_amount, requires_symbol, ImportSymbolDisposition,
+    ACTIVITY_SUBTYPE_OPTION_EXPIRY, ACTIVITY_TYPE_ADJUSTMENT, ACTIVITY_TYPE_BUY,
     ACTIVITY_TYPE_CREDIT, ACTIVITY_TYPE_FEE, ACTIVITY_TYPE_INTEREST, ACTIVITY_TYPE_SELL,
     ACTIVITY_TYPE_SPLIT, ACTIVITY_TYPE_TAX, ACTIVITY_TYPE_TRANSFER_IN, ACTIVITY_TYPE_TRANSFER_OUT,
     ACTIVITY_TYPE_WITHDRAWAL, PRICE_BEARING_ACTIVITY_TYPES,
@@ -803,6 +804,11 @@ impl ActivityService {
     }
 
     fn requires_asset_identity(activity_type: &str, subtype: Option<&str>) -> bool {
+        if activity_type.eq_ignore_ascii_case(ACTIVITY_TYPE_ADJUSTMENT) {
+            return subtype.is_some_and(|subtype| {
+                subtype.eq_ignore_ascii_case(ACTIVITY_SUBTYPE_OPTION_EXPIRY)
+            });
+        }
         requires_symbol(activity_type)
             || NewActivity::is_asset_backed_income_subtype(activity_type, subtype)
     }

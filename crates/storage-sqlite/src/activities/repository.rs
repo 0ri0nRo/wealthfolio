@@ -4397,6 +4397,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn update_activity_can_clear_asset_id() {
+        let (pool, writer) = setup_db();
+        let repo = ActivityRepository::new(pool.clone(), writer);
+        let mut conn = get_connection(&pool).expect("conn");
+
+        insert_account(&mut conn, "acc-adjustment");
+        diesel::insert_into(assets::table)
+            .values((
+                assets::id.eq("asset-aapl"),
+                assets::kind.eq("INVESTMENT"),
+                assets::is_active.eq(1),
+                assets::quote_mode.eq("MARKET"),
+                assets::quote_ccy.eq("USD"),
+                assets::created_at.eq("2024-01-15T00:00:00+00:00"),
+                assets::updated_at.eq("2024-01-15T00:00:00+00:00"),
+            ))
+            .execute(&mut conn)
+            .expect("insert asset");
+        insert_activity_with_subtype(
+            &mut conn,
+            "security-adjustment",
+            "acc-adjustment",
+            "ADJUSTMENT",
+            Some("asset-aapl"),
+            Some("CASH_SWEEP"),
+        );
+        drop(conn);
+
+        let updated = repo
+            .update_activity(ActivityUpdate {
+                id: "security-adjustment".to_string(),
+                account_id: "acc-adjustment".to_string(),
+                asset: None,
+                activity_type: "ADJUSTMENT".to_string(),
+                subtype: Some("CASH_SWEEP".to_string()),
+                activity_date: "2024-01-15".to_string(),
+                quantity: Some(None),
+                unit_price: Some(None),
+                currency: "USD".to_string(),
+                fee: None,
+                tax: None,
+                amount: Some(Some(Decimal::new(25, 0))),
+                status: None,
+                needs_review: Some(false),
+                notes: None,
+                fx_rate: None,
+                metadata: None,
+            })
+            .await
+            .expect("clear adjustment asset");
+
+        assert_eq!(updated.asset_id, None);
+        assert_eq!(updated.quantity, None);
+        assert_eq!(updated.unit_price, None);
+        assert_eq!(updated.amount, Some(Decimal::new(25, 0)));
+    }
+
+    #[tokio::test]
     async fn final_cash_migration_updates_are_local_only() {
         let (pool, writer) = setup_db();
         let repo = ActivityRepository::new(pool.clone(), writer);

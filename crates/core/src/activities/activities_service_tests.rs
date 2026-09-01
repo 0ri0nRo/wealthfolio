@@ -7233,6 +7233,98 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn test_cash_adjustment_without_asset_can_be_saved() {
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let fx_service = Arc::new(MockFxService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+
+        account_service.add_account(create_test_account("acc-1", "USD"));
+        let activity_service = ActivityService::new(
+            activity_repository,
+            account_service,
+            asset_service,
+            fx_service,
+            Arc::new(MockQuoteService),
+        );
+
+        let created = activity_service
+            .create_activity(NewActivity {
+                id: Some("cash-adjustment".to_string()),
+                account_id: "acc-1".to_string(),
+                asset: None,
+                activity_type: "ADJUSTMENT".to_string(),
+                subtype: Some("CASH_SWEEP".to_string()),
+                activity_date: "2024-01-15".to_string(),
+                quantity: None,
+                unit_price: None,
+                currency: "USD".to_string(),
+                fee: None,
+                tax: None,
+                amount: Some(Decimal::ZERO),
+                status: None,
+                notes: None,
+                fx_rate: None,
+                metadata: None,
+                needs_review: None,
+                source_system: None,
+                source_record_id: None,
+                source_group_id: None,
+                idempotency_key: None,
+                import_run_id: None,
+            })
+            .await
+            .expect("cash-style adjustments should not require an asset");
+
+        assert_eq!(created.asset_id, None);
+        assert_eq!(created.subtype.as_deref(), Some("CASH_SWEEP"));
+        assert_eq!(created.amount, Some(Decimal::ZERO));
+    }
+
+    #[tokio::test]
+    async fn test_option_expiry_adjustment_without_asset_is_rejected() {
+        let account_service = Arc::new(MockAccountService::new());
+        account_service.add_account(create_test_account("acc-1", "USD"));
+        let activity_service = ActivityService::new(
+            Arc::new(MockActivityRepository::new()),
+            account_service,
+            Arc::new(MockAssetService::new()),
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        );
+
+        let error = activity_service
+            .create_activity(NewActivity {
+                id: Some("option-expiry".to_string()),
+                account_id: "acc-1".to_string(),
+                asset: None,
+                activity_type: "ADJUSTMENT".to_string(),
+                subtype: Some("OPTION_EXPIRY".to_string()),
+                activity_date: "2024-01-15".to_string(),
+                quantity: Some(Decimal::ONE),
+                unit_price: Some(Decimal::ZERO),
+                currency: "USD".to_string(),
+                fee: None,
+                tax: None,
+                amount: Some(Decimal::ZERO),
+                status: None,
+                notes: None,
+                fx_rate: None,
+                metadata: None,
+                needs_review: None,
+                source_system: None,
+                source_record_id: None,
+                source_group_id: None,
+                idempotency_key: None,
+                import_run_id: None,
+            })
+            .await
+            .expect_err("option expiry still requires an asset");
+
+        assert!(error.to_string().contains("asset_id or symbol"));
+    }
+
     /// Test: Cash activity (WITHDRAWAL) has no asset_id
     #[tokio::test]
     async fn test_resolve_asset_id_cash_withdrawal_no_asset() {

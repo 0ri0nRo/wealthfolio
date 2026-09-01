@@ -396,7 +396,7 @@ const ActivityPage = () => {
         : source;
 
     return list
-      .filter((acc: Account) => !acc.isArchived)
+      .filter((acc: Account) => !acc.isArchived || acc.id === selectedActivity?.accountId)
       .map((account: Account) => ({
         value: account.id,
         label: account.name,

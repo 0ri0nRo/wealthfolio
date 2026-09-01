@@ -97,18 +97,25 @@ export const isAssetBackedIncomeSubtype = (
  * Activity/subtype pairs that must carry a market asset identity.
  */
 export const isAssetIdentityRequired = (activityType: string, subtype?: string | null): boolean => {
+  if (activityType === ActivityType.ADJUSTMENT) {
+    return subtype?.trim().toUpperCase() === ACTIVITY_SUBTYPES.OPTION_EXPIRY;
+  }
   return isSymbolRequired(activityType) || isAssetBackedIncomeSubtype(activityType, subtype);
 };
 
 /**
- * Import-time asset resolution can also be required by subtype even when the
- * base activity type is normally cash-oriented (e.g. staking rewards).
+ * Import-time asset resolution also applies to optional, provider-supplied
+ * adjustment symbols and asset-backed income subtypes such as staking rewards.
  */
 export const needsImportAssetResolution = (
   activityType: string,
   subtype?: string | null,
 ): boolean => {
-  return isAssetIdentityRequired(activityType, subtype);
+  return (
+    activityType === ActivityType.ADJUSTMENT ||
+    isSymbolRequired(activityType) ||
+    isAssetBackedIncomeSubtype(activityType, subtype)
+  );
 };
 
 export const canonicalizeActivitySubtype = (

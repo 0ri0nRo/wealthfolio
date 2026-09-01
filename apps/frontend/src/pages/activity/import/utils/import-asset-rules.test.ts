@@ -45,6 +45,20 @@ describe("import asset rules", () => {
     expect(candidate?.symbol).toBe("SOL");
   });
 
+  it("builds asset candidates for symbol-backed adjustments", () => {
+    const candidate = buildImportAssetCandidateFromDraft(
+      createDraft({
+        activityType: ActivityType.ADJUSTMENT,
+        subtype: "CORPORATE_ACTION",
+        symbol: "AAPL",
+        instrumentType: "EQUITY",
+      }),
+    );
+
+    expect(candidate).not.toBeNull();
+    expect(candidate?.symbol).toBe("AAPL");
+  });
+
   it("keeps otherwise identical candidates distinct when their ISIN differs", () => {
     const first = buildImportAssetCandidateFromDraft(
       createDraft({

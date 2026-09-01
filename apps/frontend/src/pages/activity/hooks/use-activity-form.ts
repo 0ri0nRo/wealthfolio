@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import type { AccountSelectOption } from "../components/forms/fields";
 import type { NewActivityFormValues } from "../components/forms/schemas";
 import type { TransferFormValues } from "../components/forms/transfer-form";
+import type { AdjustmentFormValues } from "../components/forms/adjustment-form";
 import {
   ACTIVITY_FORM_CONFIG,
   type ActivityFormValues,
@@ -355,9 +356,14 @@ export function useActivityForm({
         }
 
         if (isEditing && activity?.id) {
+          const currentAssetId =
+            selectedType === ActivityType.ADJUSTMENT &&
+            (formData as AdjustmentFormValues).adjustmentMode === "cash"
+              ? undefined
+              : activity.assetId;
           await updateActivityMutation.mutateAsync({
             id: activity.id,
-            currentAssetId: activity.assetId,
+            currentAssetId,
             ...submitData,
           } as NewActivityFormValues & { id: string; currentAssetId?: string });
         } else {
