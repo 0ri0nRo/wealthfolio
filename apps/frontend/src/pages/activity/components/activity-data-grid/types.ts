@@ -76,6 +76,23 @@ export function isPendingReview(transaction: LocalTransaction): boolean {
 }
 
 /**
+ * Returns the review reasons supplied by the broker mapping service.
+ */
+export function getProviderMappingReasons(activity: Pick<ActivityDetails, "metadata">): string[] {
+  const reasons = activity.metadata?.mapping_reasons;
+  if (!Array.isArray(reasons)) {
+    return [];
+  }
+
+  const normalizedReasons = reasons
+    .filter((reason): reason is string => typeof reason === "string")
+    .map((reason) => reason.trim())
+    .filter(Boolean);
+
+  return [...new Set(normalizedReasons)];
+}
+
+/**
  * Tracks the state of changes to transactions
  */
 export interface TransactionChangeState {

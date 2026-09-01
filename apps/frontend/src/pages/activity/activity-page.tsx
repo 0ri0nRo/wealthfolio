@@ -254,6 +254,11 @@ const ActivityPage = () => {
     [materializeInvestmentFilters],
   );
 
+  const handleReviewActivities = useCallback(() => {
+    setViewMode("datagrid");
+    setStatusFilter("pending");
+  }, [setStatusFilter, setViewMode]);
+
   const setInvestmentDateRange = useCallback(
     (range: DateRange | undefined) => {
       materializeInvestmentFilters({ dateRange: fromDateRange(range) });
@@ -690,7 +695,7 @@ const ActivityPage = () => {
       {statusFilter !== "pending" && (
         <NeedsReviewBanner
           accountIds={effectiveInvestmentAccountIds}
-          onReview={() => setStatusFilter("pending")}
+          onReview={handleReviewActivities}
         />
       )}
       {isHealthActivityDeepLink && (
