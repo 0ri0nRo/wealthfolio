@@ -6277,7 +6277,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_sync_prepare_keeps_incomplete_valid_asset_backed_subtype_for_review() {
+    async fn test_sync_prepare_preserves_incomplete_asset_backed_subtype_for_review() {
         let account_service = Arc::new(MockAccountService::new());
         let asset_service = Arc::new(MockAssetService::new());
         let fx_service = Arc::new(MockFxService::new());
@@ -6329,11 +6329,82 @@ mod tests {
         assert_eq!(result.prepared.len(), 1);
         let prepared = &result.prepared[0].activity;
         assert_eq!(prepared.activity_type, "INTEREST");
-        assert_eq!(prepared.subtype, None);
+        assert_eq!(prepared.subtype.as_deref(), Some("STAKING_REWARD"));
         assert_eq!(prepared.amount, Some(dec!(25)));
         assert_eq!(prepared.quantity, None);
         assert_eq!(prepared.needs_review, Some(true));
         assert_eq!(prepared.status, Some(ActivityStatus::Draft));
+    }
+
+    #[tokio::test]
+    async fn test_sync_prepare_preserves_zero_value_staking_reward_subtype_for_review() {
+        let account_service = Arc::new(MockAccountService::new());
+        let asset_service = Arc::new(MockAssetService::new());
+        let fx_service = Arc::new(MockFxService::new());
+        let activity_repository = Arc::new(MockActivityRepository::new());
+
+        let account = create_test_account("acc-1", "CAD");
+        account_service.add_account(account.clone());
+        asset_service.add_asset(create_test_asset_with_instrument(
+            "SOL",
+            "SOL",
+            None,
+            Some(InstrumentType::Crypto),
+            "CAD",
+        ));
+
+        let activity_service = ActivityService::new(
+            activity_repository,
+            account_service,
+            asset_service,
+            fx_service,
+            Arc::new(MockQuoteService),
+        );
+
+        let result = activity_service
+            .prepare_activities_for_sync(
+                vec![NewActivity {
+                    id: Some("activity-staking-sol".to_string()),
+                    account_id: "acc-1".to_string(),
+                    asset: Some(AssetResolutionInput {
+                        id: Some("SOL".to_string()),
+                        ..Default::default()
+                    }),
+                    activity_type: "INTEREST".to_string(),
+                    subtype: Some("STAKING_REWARD".to_string()),
+                    activity_date: "2024-06-04".to_string(),
+                    quantity: Some(dec!(0.000000329)),
+                    unit_price: Some(dec!(0)),
+                    currency: "CAD".to_string(),
+                    fee: Some(dec!(0)),
+                    tax: None,
+                    amount: Some(dec!(0)),
+                    status: None,
+                    notes: Some("SOL Staking Reward".to_string()),
+                    fx_rate: None,
+                    metadata: None,
+                    needs_review: Some(false),
+                    source_system: Some("SNAPTRADE".to_string()),
+                    source_record_id: Some("c243110e-9bac-581d-b2d7-0c490ee06870".to_string()),
+                    source_group_id: None,
+                    idempotency_key: None,
+                    import_run_id: None,
+                }],
+                &account,
+            )
+            .await
+            .expect("sync preparation should keep zero-value staking rewards for review");
+
+        assert!(result.errors.is_empty());
+        assert_eq!(result.prepared.len(), 1);
+        let prepared = &result.prepared[0];
+        assert_eq!(prepared.resolved_asset_id.as_deref(), Some("SOL"));
+        assert_eq!(prepared.activity.subtype.as_deref(), Some("STAKING_REWARD"));
+        assert_eq!(prepared.activity.quantity, Some(dec!(0.000000329)));
+        assert_eq!(prepared.activity.unit_price, Some(dec!(0)));
+        assert_eq!(prepared.activity.amount, Some(dec!(0)));
+        assert_eq!(prepared.activity.needs_review, Some(true));
+        assert_eq!(prepared.activity.status, Some(ActivityStatus::Draft));
     }
 
     #[tokio::test]
@@ -6392,7 +6463,7 @@ mod tests {
         assert_eq!(result.prepared.len(), 1);
         let prepared = &result.prepared[0];
         assert_eq!(prepared.resolved_asset_id, None);
-        assert_eq!(prepared.activity.subtype, None);
+        assert_eq!(prepared.activity.subtype.as_deref(), Some("STAKING_REWARD"));
         assert_eq!(prepared.activity.amount, Some(dec!(25.00)));
         assert_eq!(prepared.activity.needs_review, Some(true));
         assert_eq!(prepared.activity.status, Some(ActivityStatus::Draft));

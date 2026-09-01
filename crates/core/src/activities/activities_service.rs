@@ -754,7 +754,7 @@ impl ActivityService {
         activity
     }
 
-    fn downgrade_unresolvable_sync_asset_income(activity: &mut NewActivity) {
+    fn prepare_incomplete_sync_asset_income_for_review(activity: &mut NewActivity) {
         if activity.amount.is_none() {
             activity.amount = ActivityEconomicsResolver::calculate_composite_final_cash(
                 &activity.activity_type,
@@ -764,11 +764,9 @@ impl ActivityService {
                 Decimal::ONE,
             );
         }
-
-        activity.subtype = None;
     }
 
-    fn sync_asset_income_needs_downgrade(
+    fn sync_asset_income_needs_review(
         activity: &NewActivity,
         resolved_asset_id: Option<&str>,
     ) -> bool {
@@ -6575,9 +6573,9 @@ impl ActivityService {
             }
 
             if mode.is_sync()
-                && Self::sync_asset_income_needs_downgrade(&activity, resolved_asset_id.as_deref())
+                && Self::sync_asset_income_needs_review(&activity, resolved_asset_id.as_deref())
             {
-                Self::downgrade_unresolvable_sync_asset_income(&mut activity);
+                Self::prepare_incomplete_sync_asset_income_for_review(&mut activity);
                 sync_review_indices.insert(idx);
             }
 
