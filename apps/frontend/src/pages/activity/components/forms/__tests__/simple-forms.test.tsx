@@ -5,7 +5,6 @@ import { WithdrawalForm } from "../withdrawal-form";
 import { FeeForm } from "../fee-form";
 import { InterestForm } from "../interest-form";
 import { TaxForm } from "../tax-form";
-import { CreditForm } from "../credit-form";
 import { AdjustmentForm } from "../adjustment-form";
 import type { AccountSelectOption } from "../fields";
 
@@ -51,8 +50,19 @@ vi.mock("../fields", () => ({
       <textarea data-testid={`textarea-${name}`} name={name} id={name} />
     </div>
   ),
-  AdvancedOptionsSection: ({ children }: { children?: React.ReactNode }) => (
-    <div data-testid="advanced-options-section">{children}</div>
+  AdvancedOptionsSection: ({
+    children,
+    subtypeOptions,
+  }: {
+    children?: React.ReactNode;
+    subtypeOptions?: readonly string[];
+  }) => (
+    <div data-testid="advanced-options-section">
+      {subtypeOptions?.map((option) => (
+        <span key={option}>{option}</span>
+      ))}
+      {children}
+    </div>
   ),
   FormSection: ({ action, children }: { action?: React.ReactNode; children?: React.ReactNode }) => (
     <div data-testid="form-section">
@@ -148,6 +158,66 @@ const mockAccounts: AccountSelectOption[] = [
   { value: "acc-1", label: "Savings Account", currency: "USD" },
   { value: "acc-2", label: "Investment Account", currency: "EUR" },
 ];
+
+describe("AdjustmentForm", () => {
+  const mockOnSubmit = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders cash adjustment fields by default", () => {
+    render(<AdjustmentForm accounts={mockAccounts} onSubmit={mockOnSubmit} isEditing />);
+
+    expect(screen.getByTestId("select-accountId")).toBeInTheDocument();
+    expect(screen.getByTestId("date-picker-activityDate")).toBeInTheDocument();
+    expect(screen.getByTestId("input-amount")).toBeInTheDocument();
+    expect(screen.queryByTestId("symbol-search-assetId")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /update/i })).toBeInTheDocument();
+  });
+
+  it("renders security fields when selected", async () => {
+    const user = userEvent.setup();
+    render(<AdjustmentForm accounts={mockAccounts} onSubmit={mockOnSubmit} isEditing />);
+
+    await user.click(screen.getByRole("button", { name: /securities/i }));
+
+    expect(screen.getByTestId("symbol-search-assetId")).toBeInTheDocument();
+    expect(screen.getByTestId("input-quantity")).toBeInTheDocument();
+    expect(screen.getByTestId("input-unitPrice")).toBeInTheDocument();
+    expect(screen.getByTestId("input-amount")).toBeInTheDocument();
+  });
+
+  it("offers option expiry only for option securities", () => {
+    const baseDefaults = {
+      adjustmentMode: "securities" as const,
+      accountId: "acc-2",
+      activityDate: new Date(),
+      assetId: "AAPL",
+      currency: "USD",
+    };
+    const equityForm = render(
+      <AdjustmentForm
+        accounts={mockAccounts}
+        defaultValues={{ ...baseDefaults, symbolInstrumentType: "EQUITY" }}
+        onSubmit={mockOnSubmit}
+      />,
+    );
+
+    expect(screen.queryByText("OPTION_EXPIRY")).not.toBeInTheDocument();
+    equityForm.unmount();
+
+    render(
+      <AdjustmentForm
+        accounts={mockAccounts}
+        defaultValues={{ ...baseDefaults, symbolInstrumentType: "OPTION" }}
+        onSubmit={mockOnSubmit}
+      />,
+    );
+
+    expect(screen.getByText("OPTION_EXPIRY")).toBeInTheDocument();
+  });
+});
 
 describe("WithdrawalForm", () => {
   const mockOnSubmit = vi.fn();
@@ -332,79 +402,6 @@ describe("TaxForm", () => {
       render(<TaxForm accounts={mockAccounts} onSubmit={mockOnSubmit} isLoading={true} />);
 
       expect(screen.getByTestId("spinner")).toBeInTheDocument();
-    });
-  });
-});
-
-// CREDIT and ADJUSTMENT are stored types the picker never offers, so these forms
-// are only ever reached by editing a row that already has one.
-describe("CreditForm", () => {
-  const mockOnSubmit = vi.fn();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  describe("Render Tests", () => {
-    it("renders all form fields", () => {
-      render(<CreditForm accounts={mockAccounts} onSubmit={mockOnSubmit} />);
-
-      expect(screen.getByTestId("select-accountId")).toBeInTheDocument();
-      expect(screen.getByTestId("date-picker-activityDate")).toBeInTheDocument();
-      expect(screen.getByTestId("input-amount")).toBeInTheDocument();
-      expect(screen.getByTestId("textarea-comment")).toBeInTheDocument();
-    });
-
-    it("renders submit button with correct text when editing", () => {
-      render(<CreditForm accounts={mockAccounts} onSubmit={mockOnSubmit} isEditing={true} />);
-
-      expect(screen.getByRole("button", { name: /update/i })).toBeInTheDocument();
-    });
-  });
-});
-
-describe("AdjustmentForm", () => {
-  const mockOnSubmit = vi.fn();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  describe("Render Tests", () => {
-    it("renders all form fields", () => {
-      render(<AdjustmentForm accounts={mockAccounts} onSubmit={mockOnSubmit} />);
-
-      expect(screen.getByTestId("symbol-search-symbol")).toBeInTheDocument();
-      expect(screen.getByTestId("select-accountId")).toBeInTheDocument();
-      expect(screen.getByTestId("date-picker-activityDate")).toBeInTheDocument();
-      expect(screen.getByTestId("input-quantity")).toBeInTheDocument();
-      expect(screen.getByTestId("textarea-comment")).toBeInTheDocument();
-    });
-
-    it("renders submit button with correct text when editing", () => {
-      render(<AdjustmentForm accounts={mockAccounts} onSubmit={mockOnSubmit} isEditing={true} />);
-
-      expect(screen.getByRole("button", { name: /update/i })).toBeInTheDocument();
-    });
-
-    it("renders amount fields for an existing cash adjustment", () => {
-      render(
-        <AdjustmentForm
-          accounts={mockAccounts}
-          onSubmit={mockOnSubmit}
-          isEditing
-          defaultValues={{
-            accountId: "acc-1",
-            activityDate: new Date("2026-01-15T00:00:00Z"),
-            amount: 25,
-            currency: "USD",
-          }}
-        />,
-      );
-
-      expect(screen.getByTestId("input-amount")).toBeInTheDocument();
-      expect(screen.queryByTestId("symbol-search-symbol")).not.toBeInTheDocument();
-      expect(screen.queryByTestId("input-quantity")).not.toBeInTheDocument();
     });
   });
 });

@@ -23,14 +23,12 @@ export type SecondaryActivityType =
   | typeof CanonicalActivityType.SPLIT
   | typeof CanonicalActivityType.FEE
   | typeof CanonicalActivityType.INTEREST
-  | typeof CanonicalActivityType.TAX;
-export type ReclassificationActivityType =
-  | typeof CanonicalActivityType.CREDIT
-  | typeof CanonicalActivityType.ADJUSTMENT;
+  | typeof CanonicalActivityType.TAX
+  | typeof CanonicalActivityType.CREDIT;
 export type ActivityType =
   | PrimaryActivityType
   | SecondaryActivityType
-  | ReclassificationActivityType;
+  | typeof CanonicalActivityType.ADJUSTMENT;
 
 interface ActivityTypeConfig<T extends string> {
   value: T;
@@ -60,11 +58,20 @@ const SECONDARY_ACTIVITY_TYPES: ActivityTypeConfig<SecondaryActivityType>[] = [
   { value: CanonicalActivityType.FEE, labelKey: "activity:type_fee", icon: "Receipt" },
   { value: CanonicalActivityType.INTEREST, labelKey: "activity:type_interest", icon: "Percent" },
   { value: CanonicalActivityType.TAX, labelKey: "activity:type_tax", icon: "ReceiptText" },
+  {
+    value: CanonicalActivityType.CREDIT,
+    labelKey: "activity:type_credit",
+    icon: "BadgeDollarSign",
+  },
 ];
 
 const ALL_ACTIVITY_TYPES = [...PRIMARY_ACTIVITY_TYPES, ...SECONDARY_ACTIVITY_TYPES];
-const RECLASSIFICATION_ACTIVITY_TYPES: ActivityTypeConfig<ReclassificationActivityType>[] = [
-  { value: CanonicalActivityType.CREDIT, labelKey: "activity:type_credit", icon: "Coins" },
+// ADJUSTMENT has an editor but is deliberately not offered as a way to record a
+// new activity, so it is absent from the lists above. Reclassifying an
+// unclassified row is the one flow that has to be able to reach it.
+const RECLASSIFICATION_ACTIVITY_TYPES: ActivityTypeConfig<
+  typeof CanonicalActivityType.ADJUSTMENT
+>[] = [
   {
     value: CanonicalActivityType.ADJUSTMENT,
     labelKey: "activity:mobile_type_adjustment_label",
@@ -77,7 +84,7 @@ interface ActivityTypePickerProps {
   onSelect: (type: ActivityType) => void;
   /** Optional list of allowed activity types. If not provided, all types are shown. */
   allowedTypes?: readonly string[];
-  /** Include provider-import types when an unclassified row is being reclassified. */
+  /** Also offer ADJUSTMENT, for an unclassified row being reclassified. */
   includeReclassificationTypes?: boolean;
 }
 

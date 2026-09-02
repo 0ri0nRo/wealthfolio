@@ -3,9 +3,13 @@ import type { ActivityDetails } from "@/lib/types";
 import { render, screen } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ActivityForm } from "./activity-form";
 import type { AccountSelectOption } from "./forms/fields";
+
+const { useActivityFormMock } = vi.hoisted(() => ({
+  useActivityFormMock: vi.fn(),
+}));
 
 vi.mock("@wealthfolio/ui/components/ui/sheet", () => ({
   Sheet: ({ children, open }: { children: ReactNode; open?: boolean }) =>
@@ -34,37 +38,95 @@ vi.mock("./activity-type-picker", () => ({
         pick deposit
       </button>
       {includeReclassificationTypes && (
-        <>
-          <button type="button" onClick={() => onSelect(ActivityType.CREDIT)}>
-            pick credit
-          </button>
-          <button type="button" onClick={() => onSelect(ActivityType.ADJUSTMENT)}>
-            pick adjustment
-          </button>
-        </>
+        <button type="button" onClick={() => onSelect(ActivityType.ADJUSTMENT)}>
+          pick adjustment
+        </button>
       )}
     </div>
   ),
 }));
 
 vi.mock("./activity-form-renderer", () => ({
-  ActivityFormRenderer: ({ selectedType }: { selectedType?: string }) => (
-    <div data-testid="form-renderer">{selectedType ?? "no-type"}</div>
+  ActivityFormRenderer: ({
+    selectedType,
+    accounts,
+  }: {
+    selectedType?: string;
+    accounts: AccountSelectOption[];
+  }) => (
+    <>
+      <div data-testid="form-renderer">{selectedType ?? "no-type"}</div>
+      <div data-testid="rendered-account-ids">
+        {accounts.map((account) => account.value).join(",")}
+      </div>
+    </>
   ),
 }));
 
 vi.mock("../hooks/use-activity-form", () => ({
-  useActivityForm: ({ activity }: { activity?: Partial<ActivityDetails> }) => ({
-    defaultValues: undefined,
-    isEditing: !!activity?.id,
-    isLoading: false,
-    error: null,
-    isError: false,
-    handleSubmit: vi.fn(),
-  }),
+  useActivityForm: (params: unknown) => useActivityFormMock(params),
 }));
 
+beforeEach(() => {
+  useActivityFormMock.mockReturnValue({
+    defaultValues: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    handleSubmit: vi.fn(),
+  });
+});
+
 const accounts: AccountSelectOption[] = [
+  {
+    value: "current-account",
+    label: "Current account",
+    currency: "USD",
+    restrictionLevel: "blocked",
+  },
+  {
+    value: "eligible-account",
+    label: "Eligible account",
+    currency: "USD",
+    restrictionLevel: "none",
+  },
+  {
+    value: "other-blocked-account",
+    label: "Other blocked account",
+    currency: "USD",
+    restrictionLevel: "blocked",
+  },
+];
+
+describe("ActivityForm account filtering", () => {
+  it("keeps the activity's current restricted account available while editing", () => {
+    render(
+      <ActivityForm
+        open
+        accounts={accounts}
+        activity={{
+          id: "credit-activity",
+          accountId: "current-account",
+          activityType: ActivityType.CREDIT,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId("rendered-account-ids")).toHaveTextContent(
+      "current-account,eligible-account",
+    );
+  });
+
+  it("continues to exclude restricted accounts when creating an activity", () => {
+    render(
+      <ActivityForm open accounts={accounts} activity={{ activityType: ActivityType.CREDIT }} />,
+    );
+
+    expect(screen.getByTestId("rendered-account-ids")).toHaveTextContent("eligible-account");
+  });
+});
+
+const reclassificationAccounts: AccountSelectOption[] = [
   { value: "acc_1", label: "Brokerage", currency: "USD" } as AccountSelectOption,
 ];
 
@@ -74,7 +136,12 @@ function activity(id: string, activityType: ActivityType): Partial<ActivityDetai
 
 function renderForm(activityToEdit: Partial<ActivityDetails>) {
   return render(
-    <ActivityForm accounts={accounts} open onClose={vi.fn()} activity={activityToEdit} />,
+    <ActivityForm
+      accounts={reclassificationAccounts}
+      open
+      onClose={vi.fn()}
+      activity={activityToEdit}
+    />,
   );
 }
 
@@ -101,16 +168,15 @@ describe("ActivityForm reclassification", () => {
     expect(renderedType()).toBe(ActivityType.DEPOSIT);
   });
 
-  it.each([
-    [ActivityType.CREDIT, "pick credit"],
-    [ActivityType.ADJUSTMENT, "pick adjustment"],
-  ])("can reclassify UNKNOWN as %s", async (activityType, buttonName) => {
+  // ADJUSTMENT is the one editable type the picker never offers for a new
+  // activity, so reclassification is the only way to reach it.
+  it("can reclassify UNKNOWN as ADJUSTMENT", async () => {
     const user = userEvent.setup();
     renderForm(activity("act_1", ActivityType.UNKNOWN));
 
-    await user.click(screen.getByRole("button", { name: buttonName }));
+    await user.click(screen.getByRole("button", { name: "pick adjustment" }));
 
-    expect(renderedType()).toBe(activityType);
+    expect(renderedType()).toBe(ActivityType.ADJUSTMENT);
   });
 
   it.each([ActivityType.CREDIT, ActivityType.ADJUSTMENT])(
@@ -132,7 +198,7 @@ describe("ActivityForm reclassification", () => {
 
     rerender(
       <ActivityForm
-        accounts={accounts}
+        accounts={reclassificationAccounts}
         open
         onClose={vi.fn()}
         activity={activity("act_2", ActivityType.UNKNOWN)}

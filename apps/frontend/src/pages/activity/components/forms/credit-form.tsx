@@ -3,11 +3,11 @@ import { ActivityType } from "@/lib/constants";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
-import { FormProvider, useForm, type Resolver } from "react-hook-form";
-import { z } from "zod";
 import type { TFunction } from "i18next";
+import { useMemo } from "react";
+import { FormProvider, useForm, type Resolver } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
 import {
   AccountSelect,
   AdvancedOptionsSection,
@@ -19,12 +19,9 @@ import {
   type AccountSelectOption,
 } from "./fields";
 
-// Translated message helper (see buy-form for rationale).
 type MsgFn = TFunction | undefined;
 const msg = (t: MsgFn, key: string, en: string) => (t ? t(key) : en);
 
-// Zod schema factory for CreditForm validation. `t` optional so the exported
-// static schema keeps English messages (used by tests and type inference).
 export const createCreditFormSchema = (t?: TFunction) =>
   z.object({
     accountId: z
@@ -38,11 +35,10 @@ export const createCreditFormSchema = (t?: TFunction) =>
         required_error: msg(t, "activity:form.err_enter_amount", "Please enter an amount."),
         invalid_type_error: msg(t, "activity:form.err_amount_number", "Amount must be a number."),
       })
-      .positive({
-        message: msg(t, "activity:form.err_amount_gt_zero", "Amount must be greater than 0."),
+      .min(0, {
+        message: msg(t, "activity:form.err_amount_non_negative", "Amount must be non-negative."),
       }),
     comment: z.string().optional().nullable(),
-    // Advanced options
     currency: z
       .string()
       .min(1, { message: msg(t, "activity:form.err_currency_required", "Currency is required.") }),
@@ -57,7 +53,6 @@ export const createCreditFormSchema = (t?: TFunction) =>
     subtype: z.string().optional().nullable(),
   });
 
-// Zod schema for CreditForm validation (English messages; used by tests).
 export const creditFormSchema = createCreditFormSchema();
 
 export type CreditFormValues = z.infer<typeof creditFormSchema>;
@@ -71,12 +66,6 @@ interface CreditFormProps {
   isEditing?: boolean;
 }
 
-/**
- * Editor for a CREDIT activity — a cash inflow that is not a deposit (bonus,
- * rebate, refund, reimbursement). Broker sync writes these, and the mobile flow
- * has always been able to edit them, so the subtype is carried through rather
- * than dropped on save.
- */
 export function CreditForm({
   accounts,
   defaultValues,
@@ -88,18 +77,16 @@ export function CreditForm({
   const { t } = useTranslation(["activity"]);
   const { data: settings } = useSettings();
   const baseCurrency = settings?.baseCurrency;
-
   const schema = useMemo(() => createCreditFormSchema(t), [t]);
 
-  // Compute initial account and currency for defaultValues
   const initialAccountId =
     defaultValues?.accountId ?? (accounts.length === 1 ? accounts[0].value : "");
-  const initialAccount = accounts.find((a) => a.value === initialAccountId);
+  const initialAccount = accounts.find((account) => account.value === initialAccountId);
   const initialCurrency = defaultValues?.currency?.trim() || initialAccount?.currency;
 
   const form = useForm<CreditFormValues>({
     resolver: zodResolver(schema) as Resolver<CreditFormValues>,
-    mode: "onSubmit", // Validate only on submit - works correctly with default values
+    mode: "onSubmit",
     defaultValues: {
       accountId: initialAccountId,
       activityDate: new Date(),
@@ -112,13 +99,10 @@ export function CreditForm({
     },
   });
 
-  const { watch } = form;
-  const accountId = watch("accountId");
-  const currency = watch("currency");
-
-  // Get account currency from selected account
+  const accountId = form.watch("accountId");
+  const currency = form.watch("currency");
   const selectedAccount = useMemo(
-    () => accounts.find((a) => a.value === accountId),
+    () => accounts.find((account) => account.value === accountId),
     [accounts, accountId],
   );
   const accountCurrency = selectedAccount?.currency;
@@ -139,7 +123,6 @@ export function CreditForm({
           <AmountInput name="amount" label={t("activity:form.label_amount")} currency={currency} />
         </FormSection>
 
-        {/* Advanced options (currency, FX rate, subtype) and notes, collapsed by default */}
         <AdvancedOptionsSection
           title={t("activity:form.section_advanced_notes")}
           dashed
@@ -157,7 +140,6 @@ export function CreditForm({
           />
         </AdvancedOptionsSection>
 
-        {/* Action Buttons */}
         <div className="flex justify-end gap-2">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>

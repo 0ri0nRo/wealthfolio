@@ -13,10 +13,9 @@ vi.mock("@wealthfolio/ui/components/ui/carousel", () => ({
 }));
 
 describe("ActivityTypePicker reclassification types", () => {
-  it("keeps provider-only types out of the ordinary creation picker", () => {
+  it("keeps ADJUSTMENT out of the ordinary creation picker", () => {
     render(<ActivityTypePicker onSelect={vi.fn()} />);
 
-    expect(screen.queryByTestId("activity-type-credit")).not.toBeInTheDocument();
     expect(screen.queryByTestId("activity-type-adjustment")).not.toBeInTheDocument();
   });
 

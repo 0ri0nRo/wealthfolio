@@ -6,7 +6,7 @@ import {
   METADATA_CONTRACT_MULTIPLIER,
   QuoteMode,
 } from "@/lib/constants";
-import { isSecuritiesTransfer } from "@/lib/activity-utils";
+import { isCashSymbol, isSecuritiesTransfer } from "@/lib/activity-utils";
 import { parseOccSymbol } from "@/lib/occ-symbol";
 import type { ActivityDetails } from "@/lib/types";
 import { BuyForm, type BuyFormValues } from "../components/forms/buy-form";
@@ -35,13 +35,7 @@ export type PickerActivityType =
   | typeof ActivityType.SPLIT
   | typeof ActivityType.FEE
   | typeof ActivityType.INTEREST
-  | typeof ActivityType.TAX;
-
-// Every persisted type that has an editor. CREDIT and ADJUSTMENT are valid types
-// the mobile flow has always been able to edit, but neither is offered as a way
-// to record a new activity, so they are editable without being pickable.
-export type EditableActivityType =
-  | PickerActivityType
+  | typeof ActivityType.TAX
   | typeof ActivityType.CREDIT
   | typeof ActivityType.ADJUSTMENT;
 
@@ -112,9 +106,22 @@ function selectedExistingAsset(
   return id ? { existingAssetId: id } : {};
 }
 
+function hasConcreteAdjustmentAsset(
+  assetSymbol: string | null | undefined,
+  assetId: string | null | undefined,
+): boolean {
+  const symbol = assetSymbol?.trim();
+  if (symbol) {
+    return symbol.toUpperCase() !== "CASH" && !isCashSymbol(symbol);
+  }
+
+  const id = assetId?.trim();
+  return Boolean(id && id.toUpperCase() !== "CASH" && !isCashSymbol(id));
+}
+
 // Configuration for each activity type
 export const ACTIVITY_FORM_CONFIG: Record<
-  EditableActivityType,
+  PickerActivityType,
   ActivityTypeConfig<ActivityFormValues>
 > = {
   BUY: {
@@ -596,6 +603,85 @@ export const ACTIVITY_FORM_CONFIG: Record<
     },
   },
 
+  CREDIT: {
+    component: CreditForm as ComponentType<ActivityFormComponentProps<ActivityFormValues>>,
+    activityType: ActivityType.CREDIT,
+    getDefaults: (activity, accounts) => ({
+      ...getBaseDefaults(activity, accounts),
+      amount: absNum(activity?.amount),
+      currency: activity?.currency,
+      fxRate: activity?.fxRate ?? undefined,
+      subtype: activity?.subtype ?? null,
+    }),
+    toPayload: (data) => {
+      const d = data as CreditFormValues;
+      return {
+        accountId: d.accountId,
+        activityDate: d.activityDate,
+        amount: d.amount,
+        comment: d.comment,
+        currency: d.currency,
+        fxRate: d.fxRate,
+        subtype: d.subtype,
+      };
+    },
+  },
+
+  ADJUSTMENT: {
+    component: AdjustmentForm as ComponentType<ActivityFormComponentProps<ActivityFormValues>>,
+    activityType: ActivityType.ADJUSTMENT,
+    getDefaults: (activity, accounts) => {
+      const isSecurity = hasConcreteAdjustmentAsset(activity?.assetSymbol, activity?.assetId);
+      return {
+        ...getBaseDefaults(activity, accounts),
+        adjustmentMode: isSecurity ? "securities" : "cash",
+        amount: absNum(activity?.amount),
+        assetId: isSecurity ? (activity?.assetSymbol ?? activity?.assetId ?? null) : null,
+        quantity: isSecurity ? (absNum(activity?.quantity) ?? null) : null,
+        unitPrice: isSecurity ? (absNum(activity?.unitPrice) ?? null) : null,
+        currency: activity?.currency,
+        fxRate: activity?.fxRate ?? undefined,
+        subtype: activity?.subtype ?? null,
+        quoteMode:
+          activity?.assetQuoteMode === QuoteMode.MANUAL ? QuoteMode.MANUAL : QuoteMode.MARKET,
+        exchangeMic: activity?.exchangeMic,
+        symbolInstrumentType: activity?.instrumentType,
+      };
+    },
+    toPayload: (data) => {
+      const d = data as AdjustmentFormValues;
+      const isSecurity = d.adjustmentMode === "securities";
+      return {
+        accountId: d.accountId,
+        activityDate: d.activityDate,
+        amount: d.amount ?? null,
+        assetId: isSecurity ? d.assetId?.trim() || undefined : undefined,
+        ...(isSecurity &&
+          selectedExistingAsset(d.assetId, d.existingAssetId, d.symbolInstrumentType)),
+        quantity: isSecurity ? (d.quantity ?? null) : null,
+        unitPrice: isSecurity ? (d.unitPrice ?? null) : null,
+        comment: d.comment,
+        currency: d.currency,
+        fxRate: d.fxRate,
+        subtype: d.subtype ?? null,
+        quoteMode: isSecurity ? d.quoteMode : undefined,
+        exchangeMic: isSecurity ? (d.exchangeMic ?? undefined) : undefined,
+        symbolQuoteCcy: isSecurity ? (d.symbolQuoteCcy ?? undefined) : undefined,
+        symbolInstrumentType: isSecurity ? (d.symbolInstrumentType ?? undefined) : undefined,
+        assetMetadata:
+          isSecurity && d.assetMetadata
+            ? {
+                name: d.assetMetadata.name ?? undefined,
+                kind: d.assetMetadata.kind ?? undefined,
+                exchangeMic: d.assetMetadata.exchangeMic ?? undefined,
+                providerId: d.assetMetadata.providerId ?? undefined,
+                providerSymbol: d.assetMetadata.providerSymbol ?? undefined,
+              }
+            : undefined,
+      };
+    },
+  },
+
   TAX: {
     component: TaxForm as ComponentType<ActivityFormComponentProps<ActivityFormValues>>,
     activityType: ActivityType.TAX,
@@ -625,64 +711,6 @@ export const ACTIVITY_FORM_CONFIG: Record<
       };
     },
   },
-
-  CREDIT: {
-    component: CreditForm as ComponentType<ActivityFormComponentProps<ActivityFormValues>>,
-    activityType: ActivityType.CREDIT,
-    getDefaults: (activity, accounts) => ({
-      ...getBaseDefaults(activity, accounts),
-      amount: absNum(activity?.amount),
-      // Advanced options
-      currency: activity?.currency,
-      fxRate: activity?.fxRate ?? undefined,
-      subtype: activity?.subtype ?? null,
-    }),
-    toPayload: (data) => {
-      const d = data as CreditFormValues;
-      return {
-        accountId: d.accountId,
-        activityDate: d.activityDate,
-        amount: d.amount,
-        comment: d.comment,
-        subtype: d.subtype ?? null,
-        currency: d.currency,
-        fxRate: d.fxRate,
-      };
-    },
-  },
-
-  ADJUSTMENT: {
-    component: AdjustmentForm as ComponentType<ActivityFormComponentProps<ActivityFormValues>>,
-    activityType: ActivityType.ADJUSTMENT,
-    getDefaults: (activity, accounts) => ({
-      ...getBaseDefaults(activity, accounts),
-      symbol: activity?.assetSymbol ?? activity?.assetId ?? "",
-      quantity: absNum(activity?.quantity),
-      amount: absNum(activity?.amount),
-      // Advanced options
-      currency: activity?.currency,
-      subtype: activity?.subtype ?? null,
-      exchangeMic: activity?.exchangeMic,
-    }),
-    toPayload: (data) => {
-      const d = data as AdjustmentFormValues;
-      const symbol = d.symbol?.trim();
-      return {
-        accountId: d.accountId,
-        activityDate: d.activityDate,
-        assetId: symbol || undefined,
-        ...selectedExistingAsset(symbol, d.existingAssetId, d.symbolInstrumentType),
-        quantity: symbol ? d.quantity : null,
-        amount: symbol ? undefined : d.amount,
-        comment: d.comment,
-        subtype: d.subtype ?? null,
-        currency: d.currency,
-        exchangeMic: d.exchangeMic ?? undefined,
-        symbolQuoteCcy: d.symbolQuoteCcy ?? undefined,
-        symbolInstrumentType: d.symbolInstrumentType ?? undefined,
-      };
-    },
-  },
 };
 
 /**
@@ -694,6 +722,6 @@ export const ACTIVITY_FORM_CONFIG: Record<
  */
 export function hasActivityForm(
   activityType: string | undefined,
-): activityType is EditableActivityType {
+): activityType is PickerActivityType {
   return !!activityType && activityType in ACTIVITY_FORM_CONFIG;
 }

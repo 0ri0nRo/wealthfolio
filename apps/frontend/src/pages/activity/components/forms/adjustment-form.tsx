@@ -1,13 +1,14 @@
 import { useSettings } from "@/hooks/use-settings";
-import { ActivityType } from "@/lib/constants";
+import { ACTIVITY_SUBTYPES, ActivityType, InstrumentType, QuoteMode } from "@/lib/constants";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { AnimatedToggleGroup } from "@wealthfolio/ui/components/ui/animated-toggle-group";
 import { Button } from "@wealthfolio/ui/components/ui/button";
 import { Icons } from "@wealthfolio/ui/components/ui/icons";
-import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
-import { FormProvider, useForm, type Resolver } from "react-hook-form";
-import { z } from "zod";
 import type { TFunction } from "i18next";
+import { useMemo } from "react";
+import { FormProvider, useForm, type Resolver } from "react-hook-form";
+import { useTranslation } from "react-i18next";
+import { z } from "zod";
 import {
   AccountSelect,
   AdvancedOptionsSection,
@@ -21,57 +22,124 @@ import {
   type AccountSelectOption,
 } from "./fields";
 
-// Translated message helper (see buy-form for rationale).
+export type AdjustmentMode = "cash" | "securities";
+
 type MsgFn = TFunction | undefined;
 const msg = (t: MsgFn, key: string, en: string) => (t ? t(key) : en);
 
-// Zod schema factory for AdjustmentForm validation. `t` optional so the exported
-// static schema keeps English messages (used by tests and type inference).
-export const createAdjustmentFormSchema = (t?: TFunction, isCashAdjustment = false) => {
-  const quantitySchema = z.coerce.number({
-    required_error: msg(t, "activity:form.err_enter_quantity", "Please enter a quantity."),
-    invalid_type_error: msg(t, "activity:form.err_quantity_number", "Quantity must be a number."),
-  });
-  const amountSchema = z.coerce.number({
-    invalid_type_error: msg(t, "activity:form.err_amount_number", "Amount must be a number."),
-  });
-
-  return z.object({
-    accountId: z
-      .string()
-      .min(1, { message: msg(t, "activity:form.err_select_account", "Please select an account.") }),
-    symbol: isCashAdjustment
-      ? z.string().optional()
-      : z
-          .string()
-          .min(1, { message: msg(t, "activity:form.err_enter_symbol", "Please enter a symbol.") }),
-    existingAssetId: z.string().nullable().optional(),
+const assetMetadataSchema = z
+  .object({
+    name: z.string().nullable().optional(),
+    kind: z.string().nullable().optional(),
     exchangeMic: z.string().nullable().optional(),
-    activityDate: z.date({
-      required_error: msg(t, "activity:form.err_select_date", "Please select a date."),
-    }),
-    quantity: isCashAdjustment
-      ? quantitySchema.optional()
-      : quantitySchema.positive({
-          message: msg(t, "activity:form.err_quantity_gt_zero", "Quantity must be greater than 0."),
-        }),
-    amount: isCashAdjustment
-      ? amountSchema.positive({
-          message: msg(t, "activity:form.err_amount_gt_zero", "Amount must be greater than 0."),
-        })
-      : amountSchema.optional(),
-    comment: z.string().optional().nullable(),
-    // Advanced options
-    currency: z
-      .string()
-      .min(1, { message: msg(t, "activity:form.err_currency_required", "Currency is required.") }),
-    subtype: z.string().optional().nullable(),
-    symbolQuoteCcy: z.string().nullable().optional(),
-    symbolInstrumentType: z.string().nullable().optional(),
-  });
-};
+    providerId: z.string().nullable().optional(),
+    providerSymbol: z.string().nullable().optional(),
+  })
+  .optional();
 
-// Zod schema for AdjustmentForm validation (English messages; used by tests).
+export const createAdjustmentFormSchema = (t?: TFunction) =>
+  z
+    .object({
+      adjustmentMode: z.enum(["cash", "securities"]).default("cash"),
+      accountId: z.string().min(1, {
+        message: msg(t, "activity:form.err_select_account", "Please select an account."),
+      }),
+      activityDate: z.date({
+        required_error: msg(t, "activity:form.err_select_date", "Please select a date."),
+      }),
+      amount: z.coerce
+        .number({
+          invalid_type_error: msg(t, "activity:form.err_amount_number", "Amount must be a number."),
+        })
+        .nonnegative({
+          message: msg(t, "activity:form.err_amount_non_negative", "Amount must be non-negative."),
+        })
+        .optional()
+        .nullable(),
+      assetId: z.string().optional().nullable(),
+      existingAssetId: z.string().nullable().optional(),
+      quantity: z.coerce
+        .number({
+          invalid_type_error: msg(
+            t,
+            "activity:form.err_quantity_number",
+            "Quantity must be a number.",
+          ),
+        })
+        .nonnegative()
+        .optional()
+        .nullable(),
+      unitPrice: z.coerce
+        .number({
+          invalid_type_error: msg(t, "activity:form.err_price_number", "Price must be a number."),
+        })
+        .nonnegative()
+        .optional()
+        .nullable(),
+      comment: z.string().optional().nullable(),
+      currency: z.string().min(1, {
+        message: msg(t, "activity:form.err_currency_required", "Currency is required."),
+      }),
+      fxRate: z.coerce
+        .number({
+          invalid_type_error: msg(
+            t,
+            "activity:form.err_fxrate_number",
+            "FX Rate must be a number.",
+          ),
+        })
+        .positive({
+          message: msg(t, "activity:form.err_fxrate_positive", "FX Rate must be positive."),
+        })
+        .optional(),
+      subtype: z.string().optional().nullable(),
+      quoteMode: z.enum([QuoteMode.MARKET, QuoteMode.MANUAL]).default(QuoteMode.MARKET),
+      exchangeMic: z.string().nullable().optional(),
+      symbolQuoteCcy: z.string().nullable().optional(),
+      symbolInstrumentType: z.string().nullable().optional(),
+      assetMetadata: assetMetadataSchema,
+    })
+    .superRefine((data, ctx) => {
+      if (data.adjustmentMode === "securities" && !data.assetId?.trim()) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["assetId"],
+          message: msg(t, "activity:form.err_select_symbol", "Please select a symbol."),
+        });
+      }
+
+      if (data.subtype?.trim().toUpperCase() === ACTIVITY_SUBTYPES.OPTION_EXPIRY) {
+        if (data.adjustmentMode !== "securities") {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["assetId"],
+            message: msg(t, "activity:form.err_select_symbol", "Please select a symbol."),
+          });
+        }
+        if (
+          data.symbolInstrumentType?.trim() &&
+          data.symbolInstrumentType.trim().toUpperCase() !== InstrumentType.OPTION
+        ) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["assetId"],
+            message: msg(
+              t,
+              "activity:form.err_option_type_required",
+              "An option asset is required.",
+            ),
+          });
+        }
+        if (!(data.quantity != null && data.quantity > 0)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["quantity"],
+            message: msg(t, "activity:form.err_enter_quantity", "Please enter a quantity."),
+          });
+        }
+      }
+    });
+
 export const adjustmentFormSchema = createAdjustmentFormSchema();
 
 export type AdjustmentFormValues = z.infer<typeof adjustmentFormSchema>;
@@ -83,17 +151,8 @@ interface AdjustmentFormProps {
   onCancel?: () => void;
   isLoading?: boolean;
   isEditing?: boolean;
-  /** Whether to show manual symbol input instead of search */
-  isManualSymbol?: boolean;
-  /** Asset currency (from selected symbol) for advanced options */
-  assetCurrency?: string;
 }
 
-/**
- * Editor for an ADJUSTMENT activity. Asset-backed adjustments edit symbol and
- * quantity, while imported cash corrections edit amount. The subtype is carried
- * through so an OPTION_EXPIRY row keeps behaving like one after an edit.
- */
 export function AdjustmentForm({
   accounts,
   defaultValues,
@@ -101,100 +160,168 @@ export function AdjustmentForm({
   onCancel,
   isLoading = false,
   isEditing = false,
-  isManualSymbol = false,
-  assetCurrency,
 }: AdjustmentFormProps) {
   const { t } = useTranslation(["activity"]);
   const { data: settings } = useSettings();
   const baseCurrency = settings?.baseCurrency;
-  const isCashAdjustment = isEditing && !defaultValues?.symbol?.trim();
+  const schema = useMemo(() => createAdjustmentFormSchema(t), [t]);
 
-  const schema = useMemo(
-    () => createAdjustmentFormSchema(t, isCashAdjustment),
-    [isCashAdjustment, t],
-  );
-
-  // Compute initial account and currency for defaultValues
   const initialAccountId =
     defaultValues?.accountId ?? (accounts.length === 1 ? accounts[0].value : "");
-  const initialAccount = accounts.find((a) => a.value === initialAccountId);
-  const initialCurrency =
-    defaultValues?.currency?.trim() || assetCurrency?.trim() || initialAccount?.currency;
+  const initialAccount = accounts.find((account) => account.value === initialAccountId);
+  const initialCurrency = defaultValues?.currency?.trim() || initialAccount?.currency;
 
   const form = useForm<AdjustmentFormValues>({
     resolver: zodResolver(schema) as Resolver<AdjustmentFormValues>,
-    mode: "onSubmit", // Validate only on submit - works correctly with default values
+    mode: "onSubmit",
     defaultValues: {
+      adjustmentMode: "cash",
       accountId: initialAccountId,
-      symbol: "",
       activityDate: new Date(),
-      quantity: undefined,
-      amount: undefined,
+      amount: null,
+      assetId: null,
+      quantity: null,
+      unitPrice: null,
       comment: null,
+      fxRate: undefined,
       subtype: null,
+      quoteMode: QuoteMode.MARKET,
       ...defaultValues,
       currency: defaultValues?.currency?.trim() || initialCurrency,
     },
   });
 
-  const { watch } = form;
-  const accountId = watch("accountId");
-
-  // Get account currency from selected account
+  const adjustmentMode = form.watch("adjustmentMode");
+  const accountId = form.watch("accountId");
+  const currency = form.watch("currency");
+  const subtype = form.watch("subtype");
+  const symbolInstrumentType = form.watch("symbolInstrumentType");
   const selectedAccount = useMemo(
-    () => accounts.find((a) => a.value === accountId),
+    () => accounts.find((account) => account.value === accountId),
     [accounts, accountId],
   );
   const accountCurrency = selectedAccount?.currency;
+  const isCashMode = adjustmentMode === "cash";
+  const subtypeOptions = useMemo(() => {
+    const currentSubtype = subtype?.trim();
+    const isCurrentOptionExpiry = currentSubtype?.toUpperCase() === ACTIVITY_SUBTYPES.OPTION_EXPIRY;
+    const canSelectOptionExpiry =
+      symbolInstrumentType?.trim().toUpperCase() === InstrumentType.OPTION || isCurrentOptionExpiry;
+    const options: string[] = canSelectOptionExpiry
+      ? [isCurrentOptionExpiry && currentSubtype ? currentSubtype : ACTIVITY_SUBTYPES.OPTION_EXPIRY]
+      : [];
+    if (currentSubtype && !options.includes(currentSubtype)) {
+      return [currentSubtype, ...options];
+    }
+    return options;
+  }, [subtype, symbolInstrumentType]);
+
+  const handleModeChange = (mode: AdjustmentMode) => {
+    form.setValue("adjustmentMode", mode, { shouldValidate: false });
+    if (mode === "cash") {
+      form.setValue("assetId", null);
+      form.setValue("existingAssetId", undefined);
+      form.setValue("exchangeMic", undefined);
+      form.setValue("symbolQuoteCcy", undefined);
+      form.setValue("symbolInstrumentType", undefined);
+      form.setValue("assetMetadata", undefined);
+      form.setValue("quantity", null);
+      form.setValue("unitPrice", null);
+      if (subtype?.trim().toUpperCase() === ACTIVITY_SUBTYPES.OPTION_EXPIRY) {
+        form.setValue("subtype", null);
+      }
+    }
+  };
 
   const handleSubmit = createValidatedSubmit(form, async (data) => {
+    if (data.adjustmentMode === "securities" && !data.symbolQuoteCcy && data.currency) {
+      data.symbolQuoteCcy = data.currency;
+    }
     await onSubmit(data);
   });
+
+  const modeItems = [
+    { value: "cash" as const, label: t("activity:form.transfer_mode_cash") },
+    { value: "securities" as const, label: t("activity:form.transfer_mode_securities") },
+  ];
 
   return (
     <FormProvider {...form}>
       <form onSubmit={handleSubmit} className="space-y-4">
-        <FormSection title={t("activity:form.section_asset_account")}>
-          {!isCashAdjustment && (
-            <>
-              <SymbolSearch
-                name="symbol"
-                label={t("activity:form.label_symbol")}
-                isManualAsset={isManualSymbol}
-                exchangeMicName="exchangeMic"
-                currencyName="currency"
-                quoteCcyName="symbolQuoteCcy"
-                instrumentTypeName="symbolInstrumentType"
-                existingAssetIdName="existingAssetId"
-              />
-              <input type="hidden" {...form.register("symbolQuoteCcy")} />
-              <input type="hidden" {...form.register("symbolInstrumentType")} />
-              <input type="hidden" {...form.register("existingAssetId")} />
-            </>
-          )}
-
+        <FormSection
+          title={t("activity:type_adjustment")}
+          action={
+            <AnimatedToggleGroup
+              items={modeItems}
+              value={adjustmentMode}
+              onValueChange={handleModeChange}
+              size="sm"
+              rounded="lg"
+            />
+          }
+        >
           <AccountSelect name="accountId" accounts={accounts} currencyName="currency" />
           <DatePicker name="activityDate" label={t("activity:field_date")} />
         </FormSection>
 
-        <FormSection title={t("activity:type_adjustment")}>
-          {isCashAdjustment ? (
-            <AmountInput name="amount" label={t("activity:form.label_amount")} />
+        <FormSection
+          title={
+            isCashMode ? t("activity:form.section_amount") : t("activity:form.section_securities")
+          }
+        >
+          {isCashMode ? (
+            <AmountInput
+              name="amount"
+              label={t("activity:form.label_amount")}
+              currency={currency}
+            />
           ) : (
-            <QuantityInput name="quantity" label={t("activity:form.label_quantity")} />
+            <>
+              <SymbolSearch
+                name="assetId"
+                isManualAsset={form.watch("quoteMode") === QuoteMode.MANUAL}
+                exchangeMicName="exchangeMic"
+                quoteModeName="quoteMode"
+                currencyName="currency"
+                quoteCcyName="symbolQuoteCcy"
+                instrumentTypeName="symbolInstrumentType"
+                existingAssetIdName="existingAssetId"
+                assetMetadataName="assetMetadata"
+              />
+              <input type="hidden" {...form.register("assetMetadata.name")} />
+              <input type="hidden" {...form.register("assetMetadata.kind")} />
+              <input type="hidden" {...form.register("symbolQuoteCcy")} />
+              <input type="hidden" {...form.register("symbolInstrumentType")} />
+              <input type="hidden" {...form.register("existingAssetId")} />
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <QuantityInput name="quantity" label={t("activity:form.label_quantity")} />
+                <AmountInput
+                  name="unitPrice"
+                  label={t("activity:form.label_price")}
+                  currency={currency}
+                  maxDecimalPlaces={4}
+                />
+              </div>
+              <AmountInput
+                name="amount"
+                label={t("activity:form.label_amount")}
+                currency={currency}
+              />
+            </>
           )}
         </FormSection>
 
-        {/* Advanced options (currency, subtype) and notes, collapsed by default */}
         <AdvancedOptionsSection
           title={t("activity:form.section_advanced_notes")}
           dashed
           currencyName="currency"
+          fxRateName="fxRate"
           subtypeName="subtype"
           activityType={ActivityType.ADJUSTMENT}
-          assetCurrency={assetCurrency}
+          subtypeOptions={subtypeOptions}
           accountCurrency={accountCurrency}
           baseCurrency={baseCurrency}
+          showSubtype={!isCashMode}
         >
           <NotesInput
             name="comment"
@@ -203,7 +330,6 @@ export function AdjustmentForm({
           />
         </AdvancedOptionsSection>
 
-        {/* Action Buttons */}
         <div className="flex justify-end gap-2">
           {onCancel && (
             <Button type="button" variant="outline" onClick={onCancel} disabled={isLoading}>

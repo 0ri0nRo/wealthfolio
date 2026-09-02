@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ActivityType } from "@/lib/constants";
 import { mapActivityTypeToPicker } from "../utils/activity-form-utils";
-import type { AdjustmentFormValues } from "../components/forms/adjustment-form";
-import { ACTIVITY_FORM_CONFIG, hasActivityForm } from "./activity-form-config";
+import { hasActivityForm } from "./activity-form-config";
 
 describe("hasActivityForm", () => {
   it("accepts every type the picker can offer", () => {
@@ -17,15 +16,13 @@ describe("hasActivityForm", () => {
       ActivityType.FEE,
       ActivityType.INTEREST,
       ActivityType.TAX,
+      ActivityType.CREDIT,
     ]) {
       expect(hasActivityForm(pickerType)).toBe(true);
     }
   });
 
-  it("accepts stored types that are hidden from ordinary creation", () => {
-    // CREDIT and ADJUSTMENT remain editable and are offered as reclassification
-    // targets even though ordinary creation does not expose them.
-    expect(hasActivityForm(ActivityType.CREDIT)).toBe(true);
+  it("accepts ADJUSTMENT, which is editable without being offered for creation", () => {
     expect(hasActivityForm(ActivityType.ADJUSTMENT)).toBe(true);
   });
 
@@ -47,30 +44,5 @@ describe("hasActivityForm", () => {
     expect(hasActivityForm(ActivityType.TRANSFER_IN)).toBe(false);
     expect(hasActivityForm(mapActivityTypeToPicker(ActivityType.TRANSFER_IN))).toBe(true);
     expect(hasActivityForm(mapActivityTypeToPicker(ActivityType.TRANSFER_OUT))).toBe(true);
-  });
-});
-
-describe("ADJUSTMENT form config", () => {
-  it("preserves the amount for a cash adjustment without an asset", () => {
-    const defaults = ACTIVITY_FORM_CONFIG.ADJUSTMENT.getDefaults(
-      {
-        activityType: ActivityType.ADJUSTMENT,
-        accountId: "acc-1",
-        amount: "25",
-        currency: "USD",
-      },
-      [],
-    );
-
-    expect(defaults).toMatchObject({ symbol: "", amount: 25, currency: "USD" });
-
-    const payload = ACTIVITY_FORM_CONFIG.ADJUSTMENT.toPayload({
-      accountId: "acc-1",
-      activityDate: new Date("2026-01-15T00:00:00Z"),
-      amount: 25,
-      currency: "USD",
-    } satisfies AdjustmentFormValues);
-
-    expect(payload).toMatchObject({ assetId: undefined, quantity: null, amount: 25 });
   });
 });

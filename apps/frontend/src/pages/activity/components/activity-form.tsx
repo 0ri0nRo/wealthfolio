@@ -20,7 +20,7 @@ import { ActivityFormRenderer } from "./activity-form-renderer";
 import type { AccountSelectOption } from "./forms/fields";
 import { useActivityForm } from "../hooks/use-activity-form";
 import { mapActivityTypeToPicker } from "../utils/activity-form-utils";
-import { hasActivityForm, type EditableActivityType } from "../config/activity-form-config";
+import { hasActivityForm, type PickerActivityType } from "../config/activity-form-config";
 
 // Re-export for consumers
 export type { AccountSelectOption };
@@ -58,7 +58,7 @@ export function ActivityForm({
   const { t } = useTranslation();
   // Derive the editing state and stored type from activity prop
   const isEditing = !!activity?.id;
-  const storedType: EditableActivityType | undefined = mapActivityTypeToPicker(
+  const storedType: PickerActivityType | undefined = mapActivityTypeToPicker(
     activity?.activityType,
   );
 
@@ -72,11 +72,11 @@ export function ActivityForm({
   // to the activity means opening a different row starts unpicked instead of
   // inheriting the previous row's choice.
   const [pick, setPick] = useState<
-    { activityId: string | undefined; type: EditableActivityType } | undefined
+    { activityId: string | undefined; type: PickerActivityType } | undefined
   >(undefined);
   const pickedType = pick && pick.activityId === activity?.id ? pick.type : undefined;
   const handleSelectType = useCallback(
-    (type: EditableActivityType) => setPick({ activityId: activity?.id, type }),
+    (type: PickerActivityType) => setPick({ activityId: activity?.id, type }),
     [activity?.id],
   );
 
@@ -91,11 +91,18 @@ export function ActivityForm({
     const base =
       effectiveSelectedType === "TRANSFER" && transferAccounts ? transferAccounts : accounts;
     if (!effectiveSelectedType) return base;
+    const currentAccountId = isEditing ? activity?.accountId : undefined;
     if (effectiveSelectedType === "TRANSFER") {
-      return base.filter(transferAllowsAccount);
+      return base.filter(
+        (account) => account.value === currentAccountId || transferAllowsAccount(account),
+      );
     }
-    return base.filter((acc) => restrictionAllowsType(acc.restrictionLevel, effectiveSelectedType));
-  }, [accounts, transferAccounts, effectiveSelectedType]);
+    return base.filter(
+      (account) =>
+        account.value === currentAccountId ||
+        restrictionAllowsType(account.restrictionLevel, effectiveSelectedType),
+    );
+  }, [accounts, transferAccounts, effectiveSelectedType, isEditing, activity?.accountId]);
 
   // Use the activity form hook with the effective type
   const { defaultValues, isLoading, isError, error, handleSubmit } = useActivityForm({
