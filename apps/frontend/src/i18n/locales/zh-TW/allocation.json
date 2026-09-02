@@ -110,6 +110,29 @@
     "modeVerbHybrid": "現金與賣出",
     "modeVerbCashFlow": "現金流買入"
   },
+  "eligibleHoldings": {
+    "label": "可納入的持倉",
+    "triggerLabel": "{{label}}：{{summary}}",
+    "rowLabel": "{{symbol}} {{name}} {{details}} — {{state}}",
+    "selected": "已選取",
+    "notSelected": "未選取",
+    "allSelected": "已選取所有持倉",
+    "selectedCount": "已選取 {{selected}}／{{total}}",
+    "searchPlaceholder": "搜尋持倉",
+    "noMatches": "沒有符合的持倉。",
+    "selectAll": "全選",
+    "clear": "清除",
+    "emptyGuidance": "請至少選取一項持倉以計算方案。",
+    "groups": {
+      "equity": "股票",
+      "bond": "債券",
+      "crypto": "加密貨幣",
+      "option": "選擇權",
+      "metal": "金屬",
+      "fx": "外匯",
+      "other": "其他"
+    }
+  },
   "narrative": {
     "liftAndShrink": "{{verb}}將 {{lifted}} 提升至目標，並將 {{shrank}} 的超配從 {{before}} 縮減至 {{after}}。",
     "lift": "{{verb}}將 {{lifted}} 提升至目標。",

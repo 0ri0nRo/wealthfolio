@@ -1,4 +1,10 @@
 {
+  "needs_review_alert": {
+    "title_one": "{{count}} 筆活動需要檢查",
+    "title_other": "{{count}} 筆活動需要檢查",
+    "description": "確認每筆交易的資產、型別和最終金額。",
+    "action": "檢查"
+  },
   "activities": "活動",
   "add_activity": "新增活動",
   "add_holdings": "新增持倉",
@@ -129,7 +135,6 @@
   "duplicate": "複製",
   "delete": "刪除",
   "loading": "載入中……",
-  "load_more": "載入更多……",
   "search_placeholder": "搜尋……",
   "clear_search": "清除搜尋",
   "filter_account": "帳戶",
@@ -555,6 +560,9 @@
     "available_amount": "可用：{{amount}}",
     "total_debit": "借方總額",
     "total_credit": "貸方總額",
+    "help_total_debit": "最終支付的現金，包含費用及稅費。",
+    "help_total_credit": "扣除費用及稅費後最終收到的現金。",
+    "use_calculated_total": "使用計算出的總額（{{amount}}）",
     "warn_buy_while_short": "您目前持有此股票的空頭部位。請使用“買入回補”來減少空頭部位；僅在空頭部位平倉後才輸入普通買入。",
     "warn_cover_without_short": "買入回補需要在所選帳戶中存在此股票的空頭部位。",
     "warn_cover_quantity_excess": "您正在回補 {{covering}} 股，但目前空頭部位為 {{short}} 股。請將超出部分作為單獨的買入活動輸入。",
@@ -602,6 +610,7 @@
     "err_amount_number": "金額必須為數字。",
     "err_amount_positive_number": "金額必須為正數。",
     "err_amount_gt_zero": "金額必須大於 0。",
+    "err_amount_non_negative": "金額不可為負數。",
     "err_enter_quantity": "請輸入數量。",
     "err_quantity_number": "數量必須為數字。",
     "err_quantity_gt_zero": "數量必須大於 0。",
@@ -742,7 +751,10 @@
     "warn_dates_differ_other": "日期相差 {{count}} 天。",
     "approve_count_other": "批准 {{count}}",
     "warn_dates_differ_one": "日期相差 {{count}} 天。",
-    "approve_count_one": "批准 {{count}}"
+    "approve_count_one": "批准 {{count}}",
+    "approve_missing_amount_one": "仍有 {{count}} 筆活動需要最終現金金額",
+    "approve_missing_amount_other": "仍有 {{count}} 筆活動需要最終現金金額",
+    "approve_missing_amount_description": "在批准前，請為每筆空白或零金額交易填入正確的最終現金金額。"
   },
   "table": {
     "cash": "現金",
@@ -1200,7 +1212,9 @@
       "positionsCount_other": "{{count}} 項持倉",
       "readyRows_other": "{{count}} 行",
       "positionsCount_one": "{{count}} 項持倉",
-      "readyRows_one": "{{count}} 行"
+      "readyRows_one": "{{count}} 行",
+      "ambiguousDateTitle": "日期順序不明確",
+      "ambiguousDateHint": "像 {{example}} 這類日期可解讀為日/月或月/日，檔案內容無法判定。請返回選擇日期格式，而非使用自動偵測。"
     },
     "symbolPanel": {
       "unrecognized_one": "{{count}} 個無法辨識的代號",

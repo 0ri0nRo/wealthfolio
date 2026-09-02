@@ -758,7 +758,7 @@
   "cashForm": {
     "accountRequired": "請選擇一個帳戶。",
     "pickDate": "選擇日期",
-    "amountPositive": "金額必須大於零。",
+    "amountNonNegative": "金額不可為負數。",
     "descDeposit": "存入此帳戶的資金",
     "descWithdrawal": "從此帳戶花費或支付的資金",
     "descInterest": "此帳戶所得的利息",
@@ -823,11 +823,7 @@
     "addTransaction": "新增交易",
     "deselectAllVisible": "取消選擇所有可見交易",
     "selectAllVisible": "選擇所有可見交易",
-    "nameNotes": "名稱 / 備註",
-    "loading": "正在載入……",
-    "loadMore": "載入更多（剩餘 {{count}} 項）",
-    "loadMore_other": "載入更多（剩餘 {{count}} 項）",
-    "loadMore_one": "載入更多（剩餘 {{count}} 項）"
+    "nameNotes": "名稱 / 備註"
   },
   "tabContent": {
     "stageWhereLabel": "我的現狀",
