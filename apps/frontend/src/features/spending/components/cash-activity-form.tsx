@@ -334,9 +334,20 @@ export function CashActivityForm({
       // rewrote an existing activity's currency on every save, turning a 9.59
       // USD charge on a CAD card into 9.59 CAD without changing the number.
       const currency = values.currency?.trim() || account?.currency || "USD";
+      // A rate converts `currency` into the ACCOUNT's currency, so it holds only
+      // while both ends are the pair it was entered against. Moving the activity
+      // to a differently-denominated account leaves a seeded rate describing a
+      // pair that no longer exists, and the field is collapsed by default — so a
+      // USD->CAD rate would be reread as USD->EUR rather than questioned. A rate
+      // the user typed themselves is theirs to keep.
+      const seededRate = activity?.fxRate != null ? Number(activity.fxRate) : undefined;
+      const seededAgainst = activity
+        ? spendingAccounts.find((a) => a.id === activity.accountId)?.currency
+        : undefined;
+      const rateHolds = values.fxRate !== seededRate || seededAgainst === account?.currency;
       // Only meaningful when the money moved in something other than the
       // account's own currency; otherwise the rate is 1 and worth nothing.
-      const fxRate = currency !== account?.currency ? (values.fxRate ?? null) : null;
+      const fxRate = currency !== account?.currency && rateHolds ? (values.fxRate ?? null) : null;
       const subtype = resolveCashActivitySubtype({
         activityType: values.activityType,
         accountType: account?.accountType,

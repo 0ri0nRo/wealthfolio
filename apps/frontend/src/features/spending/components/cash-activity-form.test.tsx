@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@/test/render";
+import { fireEvent, render, screen, waitFor } from "@/test/render";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
@@ -26,6 +26,8 @@ vi.mock("@/hooks/use-accounts", () => {
       accountType: "CREDIT_CARD",
       isActive: true,
     },
+    { id: "euro", name: "Spending Euro", currency: "EUR", accountType: "CASH", isActive: true },
+    { id: "chequing", name: "WS Chequing", currency: "CAD", accountType: "CASH", isActive: true },
   ];
   return { useAccounts: () => ({ accounts }) };
 });
@@ -39,7 +41,7 @@ vi.mock("@/hooks/use-taxonomies", () => {
   return { useTaxonomy: () => result };
 });
 vi.mock("../hooks/use-spending-settings", () => {
-  const settings = { accountIds: ["card"] };
+  const settings = { accountIds: ["card", "euro", "chequing"] };
   return { useSpendingSettings: () => ({ settings }) };
 });
 vi.mock("../hooks/use-spending-events", () => {
@@ -97,6 +99,54 @@ describe("CashActivityForm currency", () => {
 
     await waitFor(() => expect(updateActivity).toHaveBeenCalled());
     expect(vi.mocked(updateActivity).mock.calls[0][0]).toMatchObject({ fxRate: 1.37 });
+  });
+
+  /**
+   * An FX rate converts the activity's currency into the ACCOUNT's. Moving the
+   * activity to an account with a different denomination leaves the rate
+   * describing a pair that no longer exists — and the field is collapsed by
+   * default, so a USD->CAD rate would be silently reread as USD->EUR.
+   */
+  it("clears the FX rate when the activity moves to a differently-denominated account", async () => {
+    const user = userEvent.setup();
+    render(<CashActivityForm open onOpenChange={vi.fn()} activity={foreignCharge} />, { wrapper });
+
+    // Radix Select cannot be opened under jsdom, but it mirrors its value into a
+    // hidden native select for form compatibility; driving that is equivalent to
+    // picking the option.
+    const accountSelect = [...document.querySelectorAll("select")].find((element) =>
+      [...element.options].some((option) => option.value === "euro"),
+    );
+    if (!accountSelect) throw new Error("account select not found");
+    fireEvent.change(accountSelect, { target: { value: "euro" } });
+    await user.click(screen.getByRole("button", { name: /update/i }));
+
+    await waitFor(() => expect(updateActivity).toHaveBeenCalled());
+    expect(vi.mocked(updateActivity).mock.calls[0][0]).toMatchObject({
+      accountId: "euro",
+      currency: "USD",
+      fxRate: null,
+    });
+  });
+
+  /** The opposite case: same denomination, so the rate still describes the pair. */
+  it("keeps the FX rate when the new account has the same currency", async () => {
+    const user = userEvent.setup();
+    render(<CashActivityForm open onOpenChange={vi.fn()} activity={foreignCharge} />, { wrapper });
+
+    const accountSelect = [...document.querySelectorAll("select")].find((element) =>
+      [...element.options].some((option) => option.value === "chequing"),
+    );
+    if (!accountSelect) throw new Error("account select not found");
+    fireEvent.change(accountSelect, { target: { value: "chequing" } });
+    await user.click(screen.getByRole("button", { name: /update/i }));
+
+    await waitFor(() => expect(updateActivity).toHaveBeenCalled());
+    expect(vi.mocked(updateActivity).mock.calls[0][0]).toMatchObject({
+      accountId: "chequing",
+      currency: "USD",
+      fxRate: 1.37,
+    });
   });
 
   /**
