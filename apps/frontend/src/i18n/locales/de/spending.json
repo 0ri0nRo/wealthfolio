@@ -825,7 +825,13 @@
     "addTransaction": "Transaktion hinzufügen",
     "deselectAllVisible": "Alle sichtbaren Transaktionen abwählen",
     "selectAllVisible": "Alle sichtbaren Transaktionen auswählen",
-    "nameNotes": "Name / Notizen"
+    "nameNotes": "Name / Notizen",
+    "time": "Uhrzeit",
+    "net": "Netto",
+    "dayCount_one": "{{count}} Transaktion",
+    "dayCount_other": "{{count}} Transaktionen",
+    "selectDay": "Alle Transaktionen vom {{date}} auswählen",
+    "deselectDay": "Alle Transaktionen vom {{date}} abwählen"
   },
   "tabContent": {
     "stageWhereLabel": "Wo ich stehe",

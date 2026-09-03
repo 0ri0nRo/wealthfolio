@@ -825,7 +825,13 @@
     "addTransaction": "Add transaction",
     "deselectAllVisible": "Deselect all visible transactions",
     "selectAllVisible": "Select all visible transactions",
-    "nameNotes": "Name / Notes"
+    "nameNotes": "Name / Notes",
+    "time": "Time",
+    "net": "Net",
+    "dayCount_one": "{{count}} transaction",
+    "dayCount_other": "{{count}} transactions",
+    "selectDay": "Select all transactions on {{date}}",
+    "deselectDay": "Deselect all transactions on {{date}}"
   },
   "tabContent": {
     "stageWhereLabel": "Where I am",

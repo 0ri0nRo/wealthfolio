@@ -816,7 +816,13 @@
     "addTransaction": "거래 추가",
     "deselectAllVisible": "표시된 거래 모두 선택 해제",
     "selectAllVisible": "표시된 거래 모두 선택",
-    "nameNotes": "이름 / 메모"
+    "nameNotes": "이름 / 메모",
+    "time": "시간",
+    "net": "순액",
+    "dayCount_one": "거래 {{count}}건",
+    "dayCount_other": "거래 {{count}}건",
+    "selectDay": "{{date}} 거래 모두 선택",
+    "deselectDay": "{{date}} 거래 모두 선택 해제"
   },
   "tabContent": {
     "stageWhereLabel": "현재 위치",

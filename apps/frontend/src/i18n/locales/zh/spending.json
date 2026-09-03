@@ -816,7 +816,13 @@
     "addTransaction": "添加交易",
     "deselectAllVisible": "取消选择所有可见交易",
     "selectAllVisible": "选择所有可见交易",
-    "nameNotes": "名称 / 备注"
+    "nameNotes": "名称 / 备注",
+    "time": "时间",
+    "net": "净额",
+    "dayCount_one": "{{count}} 笔交易",
+    "dayCount_other": "{{count}} 笔交易",
+    "selectDay": "选择 {{date}} 的所有交易",
+    "deselectDay": "取消选择 {{date}} 的所有交易"
   },
   "tabContent": {
     "stageWhereLabel": "我的现状",
