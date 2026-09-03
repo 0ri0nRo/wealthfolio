@@ -192,7 +192,11 @@ export const ActivityTableMobile = ({
             {(() => {
               const inner = (
                 <>
-                  <TickerAvatar symbol={avatarSymbol} className="h-10 w-10 flex-shrink-0" />
+                  <TickerAvatar
+                    symbol={avatarSymbol}
+                    assetId={activity.assetId}
+                    className="h-10 w-10 flex-shrink-0"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-2">
                       <p className="truncate font-semibold">{displaySymbol}</p>
@@ -262,7 +266,11 @@ export const ActivityTableMobile = ({
             {(() => {
               const inner = (
                 <>
-                  <TickerAvatar symbol={avatarSymbol} className="h-10 w-10" />
+                  <TickerAvatar
+                    symbol={avatarSymbol}
+                    assetId={activity.assetId}
+                    className="h-10 w-10"
+                  />
                   <div>
                     <p className="font-semibold">{displaySymbol}</p>
                     <p className="text-muted-foreground text-xs">
