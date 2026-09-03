@@ -100,6 +100,7 @@ Behavior and rules:
   separately from `zh`. A missing `zh-Hant` string falls back to your `en`
   bundle, never to `zh`: Simplified glyphs in a Traditional UI read as broken
   rather than untranslated.
+
 - **Fallback is your `en` bundle.** If the current language is missing a key (or
   the whole bundle), lookup falls back to your `en` resources; if that is
   missing too, the key itself is rendered. Always ship a complete `en` bundle.

@@ -76,9 +76,9 @@ Bare language codes (`fr`, `ja`) unless the language is written in more than one
 script. Chinese is the case that matters: `zh` means Simplified (CLDR expands it
 to `zh-Hans-CN`) and `zh-Hant` means Traditional. Name Chinese variants by
 **script**, not region — one `zh-Hant` catalog serves Taiwan, Hong Kong and
-Macau, and regional differences belong in `formattingRegion`, which is a separate
-setting. A `zh-Hant-HK` catalog can be added later and will fall back to
-`zh-Hant`; that path does not exist from a region-named `zh-TW`.
+Macau, and regional differences belong in `formattingRegion`, which is a
+separate setting. A `zh-Hant-HK` catalog can be added later and will fall back
+to `zh-Hant`; that path does not exist from a region-named `zh-TW`.
 
 Fallback never crosses a script boundary: a missing `zh-Hant` string resolves to
 `en`, not `zh`. Mixed glyphs read as broken, untranslated text reads as missing.
