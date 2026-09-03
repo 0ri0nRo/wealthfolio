@@ -207,7 +207,9 @@
     "filterTransactions": "篩選交易",
     "clearAll": "全部清除",
     "done": "完成",
-    "refreshing": "正在重新整理"
+    "refreshing": "正在重新整理",
+    "filteredNet": "篩選後淨額",
+    "selectedNet": "所選淨額"
   },
   "period": {
     "thisMonth": "本月",
@@ -821,9 +823,15 @@
     "addFirst": "新增您的第一筆交易以開始使用。",
     "clearFilters": "清除篩選條件",
     "addTransaction": "新增交易",
+    "dayCount_one": "{{count}} 筆交易",
+    "dayCount_other": "{{count}} 筆交易",
+    "deselectDay": "取消選擇 {{date}} 的所有交易",
     "deselectAllVisible": "取消選擇所有可見交易",
+    "net": "淨額",
+    "selectDay": "選擇 {{date}} 的所有交易",
     "selectAllVisible": "選擇所有可見交易",
-    "nameNotes": "名稱 / 備註"
+    "nameNotes": "名稱 / 備註",
+    "time": "時間"
   },
   "tabContent": {
     "stageWhereLabel": "我的現狀",
