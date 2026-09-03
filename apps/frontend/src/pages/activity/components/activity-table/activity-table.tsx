@@ -149,66 +149,6 @@ export const ActivityTable = ({
   const columns: ColumnDef<ActivityDetails>[] = React.useMemo(
     () => [
       {
-        id: "activityType",
-        accessorKey: "activityType",
-        enableHiding: false,
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t("activity:table_type")} />
-        ),
-        cell: ({ row }) => {
-          const activityType = row.getValue("activityType");
-          const normalizedActivityType = String(activityType).trim().toUpperCase();
-          const normalizedSubtype = row.original.subtype?.trim().toUpperCase();
-          const subtypeLabel =
-            normalizedSubtype && normalizedSubtype !== normalizedActivityType
-              ? localizeActivitySubtypeName(t, normalizedSubtype)
-              : undefined;
-
-          return (
-            <div className="flex min-w-0 max-w-[160px] flex-col items-start gap-1 text-sm">
-              <ActivityTypeBadge
-                type={activityType as ActivityType}
-                className="whitespace-nowrap text-xs font-normal"
-              />
-              {subtypeLabel && (
-                <span className="text-muted-foreground max-w-full truncate text-xs font-light">
-                  {subtypeLabel}
-                </span>
-              )}
-            </div>
-          );
-        },
-        filterFn: (row, id, value: string) => {
-          const cellValue = row.getValue(id);
-          if (!cellValue) {
-            return false;
-          }
-
-          return value.includes(cellValue as string);
-        },
-      },
-      {
-        id: "date",
-        accessorKey: "date",
-        enableHiding: false,
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t("activity:table_date")} />
-        ),
-        cell: ({ row }) => {
-          const dateVal = row.getValue("date");
-          const formattedDate =
-            typeof dateVal === "string" || dateVal instanceof Date
-              ? formatDateTime(dateVal, dateFormatting, appTimezone)
-              : formatDateTime(String(dateVal), dateFormatting, appTimezone);
-          return (
-            <div className="ml-2 flex flex-col">
-              <span>{formattedDate.date}</span>
-              <span className="text-muted-foreground text-xs font-light">{formattedDate.time}</span>
-            </div>
-          );
-        },
-      },
-      {
         id: "assetSymbol",
         accessorKey: "assetSymbol",
         header: ({ column }) => (
@@ -288,6 +228,66 @@ export const ActivityTable = ({
           );
         },
         enableHiding: false,
+      },
+      {
+        id: "date",
+        accessorKey: "date",
+        enableHiding: false,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t("activity:table_date")} />
+        ),
+        cell: ({ row }) => {
+          const dateVal = row.getValue("date");
+          const formattedDate =
+            typeof dateVal === "string" || dateVal instanceof Date
+              ? formatDateTime(dateVal, dateFormatting, appTimezone)
+              : formatDateTime(String(dateVal), dateFormatting, appTimezone);
+          return (
+            <div className="ml-2 flex flex-col">
+              <span>{formattedDate.date}</span>
+              <span className="text-muted-foreground text-xs font-light">{formattedDate.time}</span>
+            </div>
+          );
+        },
+      },
+      {
+        id: "activityType",
+        accessorKey: "activityType",
+        enableHiding: false,
+        header: ({ column }) => (
+          <DataTableColumnHeader column={column} title={t("activity:table_type")} />
+        ),
+        cell: ({ row }) => {
+          const activityType = row.getValue("activityType");
+          const normalizedActivityType = String(activityType).trim().toUpperCase();
+          const normalizedSubtype = row.original.subtype?.trim().toUpperCase();
+          const subtypeLabel =
+            normalizedSubtype && normalizedSubtype !== normalizedActivityType
+              ? localizeActivitySubtypeName(t, normalizedSubtype)
+              : undefined;
+
+          return (
+            <div className="flex min-w-0 max-w-[160px] flex-col items-start gap-1 text-sm">
+              <ActivityTypeBadge
+                type={activityType as ActivityType}
+                className="whitespace-nowrap text-xs font-normal"
+              />
+              {subtypeLabel && (
+                <span className="text-muted-foreground max-w-full truncate text-xs font-light">
+                  {subtypeLabel}
+                </span>
+              )}
+            </div>
+          );
+        },
+        filterFn: (row, id, value: string) => {
+          const cellValue = row.getValue(id);
+          if (!cellValue) {
+            return false;
+          }
+
+          return value.includes(cellValue as string);
+        },
       },
       {
         id: "quantity",
@@ -592,6 +592,7 @@ export const ActivityTable = ({
               onDuplicate={handleDuplicate}
               onLinkTransfer={onLinkTransfer}
               onUnlinkTransfer={onUnlinkTransfer}
+              hoverReveal
             />
           );
         },
