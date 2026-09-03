@@ -3,7 +3,7 @@
     "price_manual_valuation_missing": {
       "title_one": "{{symbol}} 缺少手動估值",
       "title_other": "{{count}} 項持倉缺少手動估值",
-      "message": "手動/自訂持倉需要先提供手動估值，才能作為已估值的業績持倉納入統計。"
+      "message": "手動/自訂持倉需要先提供手動估值，才能作為已估值的績效持倉納入統計。"
     },
     "price_no_market_data": {
       "title_one": "{{symbol}} 沒有市場資料",
@@ -78,7 +78,7 @@
     "data_missing_lot_disposal_for_sell": {
       "title_one": "賣出交易缺少成本基礎匹配",
       "title_other": "{{count}} 筆賣出交易缺少成本基礎匹配",
-      "message": "某筆賣出交易無法匹配到對應的批次，因此已實現盈虧和業績歸因可能不完整。"
+      "message": "某筆賣出交易無法匹配到對應的批次，因此已實現損益和績效歸因可能不完整。"
     },
     "data_missing_generated_valuation": {
       "title_one": "生成的估值歷史記錄不完整",
@@ -88,15 +88,15 @@
     "data_incomplete_valuation_value": {
       "title_one": "估值覆蓋不完整",
       "title_other": "{{count}} 行估值記錄的市場價值不完整",
-      "message": "部分生成的估值記錄的市場價值覆蓋不完整。為保證正確性，業績會將受影響的收益標記為不可用或已降級；請檢查缺失的價格或手動估值。"
+      "message": "部分生成的估值記錄的市場價值覆蓋不完整。為保證正確性，績效會將受影響的收益標記為不可用或已降級；請檢查缺失的價格或手動估值。"
     },
     "data_incomplete_valuation_basis": {
       "title_one": "成本基礎覆蓋不完整",
       "title_other": "{{count}} 項持倉的成本基礎不完整",
-      "message": "部分持倉缺少或僅有部分購入成本基礎。仍可顯示市場價值，但在修復相關活動之前，盈虧和成本基礎收益可能不可用。"
+      "message": "部分持倉缺少或僅有部分購入成本基礎。仍可顯示市場價值，但在修復相關活動之前，損益和成本基礎收益可能不可用。"
     },
     "data_unknown_performance_flow_source": {
-      "title_one": "業績資金流邊界未知",
+      "title_one": "績效資金流邊界未知",
       "title_other": "{{count}} 行估值記錄的轉帳分類未知",
       "message": "部分生成的估值記錄包含投資組合邊界未知的轉帳或資金流。請檢查受影響日期的轉帳活動，並將每筆轉帳標記為外部轉帳或將其關聯到對應的帳戶。"
     },
@@ -108,15 +108,15 @@
     },
     "account_timezone_missing": {
       "title": "未設定時區",
-      "message": "請在“一般”設定中設定您的時區，以確保日期與您所在的地區匹配。"
+      "message": "請在「一般」設定中設定您的時區，以確保日期與您所在的地區匹配。"
     },
     "account_timezone_invalid": {
       "title": "所設定的時區無效",
-      "message": "所設定的時區“{{timezone}}”無效。請在“一般”設定中更新它。"
+      "message": "所設定的時區「{{timezone}}」無效。請在「一般」設定中更新它。"
     },
     "account_timezone_mismatch": {
       "title": "瀏覽器時區與應用程式時區不一致",
-      "message": "所設定的時區為“{{configured}}”，但瀏覽器時區為“{{browser}}”。日期以所設定的時區為準。"
+      "message": "所設定的時區為「{{configured}}」，但瀏覽器時區為「{{browser}}」。日期以所設定的時區為準。"
     },
     "quote_sync_error": {
       "title_one": "{{symbol}} 的報價同步失敗",
@@ -180,7 +180,7 @@
   },
   "sheet": {
     "groupedPriceMessage": "Wealthfolio 對這些日期使用了順延價格。請為真實交易日重新取得或新增價格；如果這些日期是節假日或非交易日，請忽略此問題。",
-    "pricesByInvestment": "按投資專案分類的價格",
+    "pricesByInvestment": "按投資項目分類的價格",
     "pricesByInvestmentHint": "開啟某項投資以重新取得或新增價格。如果這些日期是節假日或非交易日，請忽略此問題。",
     "priceHistoryNeedsReview": "價格歷史需要檢查",
     "missingTradingDay_one": "缺少 1 個交易日：{{dates}}",
@@ -224,16 +224,16 @@
       },
       "timezoneInvalid": {
         "label": "時區設定",
-        "description": "您所設定的時區無效。請在“一般”設定中更新它，以恢復一致的日期處理。"
+        "description": "您所設定的時區無效。請在「一般」設定中更新它，以恢復一致的日期處理。"
       },
       "timezoneMismatch": {
         "label": "時區設定",
         "description": "您的瀏覽器時區與所設定的應用程式時區不同。投資組合日期以所設定的時區為準。"
       }
     },
-    "affectedItems": "受影響的專案（{{count}}）",
+    "affectedItems": "受影響的項目（{{count}}）",
     "impact": "影響",
-    "affectedItemsCount": "受影響的專案",
+    "affectedItemsCount": "受影響的項目",
     "portfolioImpact": "對投資組合的影響",
     "details": "詳情",
     "aboutThisIssue": "關於此問題",
@@ -243,7 +243,7 @@
       "message": "這將在您的健康中心隱藏該問題。如果底層資料發生變化，它將重新出現。",
       "pendingText": "正在忽略……"
     },
-    "affectedItems_other": "受影響的專案（{{count}}）",
-    "affectedItems_one": "受影響的專案（{{count}}）"
+    "affectedItems_other": "受影響的項目（{{count}}）",
+    "affectedItems_one": "受影響的項目（{{count}}）"
   }
 }

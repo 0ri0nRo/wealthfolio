@@ -31,7 +31,12 @@ i18n
     lng: getCachedLanguage(),
     fallbackLng: DEFAULT_LOCALE,
     supportedLngs: SUPPORTED_LOCALE_CODES,
-    // Keep regional locales (for example `zh-TW`) distinct from their base language.
+    // Script-qualified locales (`zh-Hant`) must not collapse to their base
+    // language, so no `languageOnly` folding here. Safe because nothing feeds
+    // i18next a raw locale: `getCachedLanguage()` whitelists against
+    // SUPPORTED_LOCALE_CODES, and the settings service normalizes server-side
+    // (`fr-CA` -> `fr`, `zh-HK` -> `zh-Hant`) before it reaches us. Anything
+    // unrecognized would fall back to `en` rather than a base language.
     load: "currentOnly",
     ns: [...NAMESPACES],
     defaultNS: DEFAULT_NAMESPACE,

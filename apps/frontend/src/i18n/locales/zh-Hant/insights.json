@@ -2,7 +2,7 @@
   "insights": {
     "loading_dashboard": "正在載入儀表板……",
     "tab_overview": "概覽",
-    "tab_performance": "表現",
+    "tab_performance": "績效",
     "tab_income": "收入",
     "back_to_allocation": "返回配置",
     "target_allocation": "目標配置",
@@ -20,14 +20,14 @@
       "lens_sectors": "產業",
       "lens_regions": "地區",
       "lens_risk": "風險",
-      "lens_security": "證券型別",
+      "lens_security": "證券類型",
       "lens_currency": "貨幣",
       "unit_categories": "個類別",
       "unit_accounts": "個帳戶",
       "unit_sectors": "個產業",
       "unit_regions": "個地區",
       "unit_levels": "個級別",
-      "unit_types": "個型別",
+      "unit_types": "個類型",
       "unit_currencies": "種貨幣",
       "unit_groups": "個分組",
       "other_units": "其他 {{unit}}",
@@ -99,7 +99,7 @@
     "category_sheet": {
       "over_period": "在 {{period}} 內",
       "trend_period": "趨勢 · {{period}}",
-      "items": "專案"
+      "items": "項目"
     },
     "trend": {
       "not_enough_history": "歷史資料不足"
@@ -118,7 +118,7 @@
       "over_months_other": "在 {{count}} 個月內",
       "trailing_pace": " · 過去 12 個月節奏的 {{multiple}} 倍",
       "drivers_of_change": "變化驅動因素",
-      "market_returns": "市場回報",
+      "market_returns": "市場報酬",
       "contributions": "投入",
       "equity_built": "累積權益",
       "per_month": "/月"

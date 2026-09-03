@@ -47,8 +47,14 @@ function detectDefaultCurrency(locale?: string): string | undefined {
   if (lang.startsWith("es")) return "EUR";
   if (lang.startsWith("it")) return "EUR";
   if (lang.startsWith("ja")) return "JPY";
-  if (localeTag.startsWith("zh-tw") || localeTag.startsWith("zh-hant")) return "TWD";
-  if (lang.startsWith("zh")) return "CNY";
+  if (localeTag.startsWith("zh")) {
+    // The region decides the currency, not the script: `zh-Hant-HK` is HKD, not TWD.
+    const parts = localeTag.split("-");
+    if (parts.includes("hk")) return "HKD";
+    if (parts.includes("mo")) return "MOP";
+    if (parts.includes("tw") || parts.includes("hant")) return "TWD";
+    return "CNY";
+  }
   if (lang.startsWith("ko")) return "KRW";
   if (lang.startsWith("ru")) return "RUB";
   if (lang.startsWith("nl")) return "EUR";

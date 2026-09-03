@@ -69,10 +69,21 @@ describe("locale formatting", () => {
     expect(dateFnsLocaleFor("zh-HK").options?.weekStartsOn).toBe(0);
     expect(dateFnsLocaleFor("es-MX").localize.month(0)).toBe("enero");
     expect(dateFnsLocaleFor("es-MX").options?.weekStartsOn).toBe(0);
-    expect(dateFnsLocaleFor("zh-TW")).toBe(zhTW);
-    expect(dateFnsLocaleFor("zh-Hant-TW")).toBe(zhTW);
     expect(() => dateFnsLocaleFor(undefined)).toThrow("A resolved formatting locale is required");
   });
+
+  it.each(["zh-TW", "zh-Hant", "zh-Hant-TW", "zh-HK", "zh-MO"])(
+    "gives %s Traditional calendar text with a Sunday week start",
+    (tag) => {
+      const locale = dateFnsLocaleFor(tag);
+      // Text comes from date-fns zhTW ...
+      expect(locale.formatDistance).toBe(zhTW.formatDistance);
+      expect(format(new Date(2026, 7, 30), "PPPP", { locale })).toContain("星期日");
+      // ... but the week start comes from CLDR, which says Sunday for all of these.
+      // date-fns ships zhTW with Monday, so returning it verbatim would be wrong.
+      expect(locale.options?.weekStartsOn).toBe(0);
+    },
+  );
 
   it.each(["it-IT", "pt-BR", "nl-NL", "ar-EG", "fa-IR"])(
     "supports the arbitrary system locale %s in date-fns calendars",

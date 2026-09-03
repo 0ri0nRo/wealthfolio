@@ -3,7 +3,12 @@ import { useMemo } from "react";
 import { initReactI18next, useTranslation } from "react-i18next";
 import type { AddonTranslationApi, AddonTranslationResources } from "@wealthfolio/addon-sdk";
 
-import { DEFAULT_LOCALE, SUPPORTED_LOCALE_CODES, type LocaleCode } from "@/i18n/locales";
+import {
+  DEFAULT_LOCALE,
+  SUPPORTED_LOCALE_CODES,
+  normalizeLocaleCode,
+  type LocaleCode,
+} from "@/i18n/locales";
 import deUi from "@/i18n/locales/de/ui.json";
 import enUi from "@/i18n/locales/en/ui.json";
 import esUi from "@/i18n/locales/es/ui.json";
@@ -13,7 +18,7 @@ import jaUi from "@/i18n/locales/ja/ui.json";
 import koUi from "@/i18n/locales/ko/ui.json";
 import ptUi from "@/i18n/locales/pt/ui.json";
 import zhUi from "@/i18n/locales/zh/ui.json";
-import zhTWUi from "@/i18n/locales/zh-TW/ui.json";
+import zhHantUi from "@/i18n/locales/zh-Hant/ui.json";
 
 // The sandbox iframe renders `@wealthfolio/ui` components that call
 // `useTranslation()` against `ui:`-namespaced keys. The iframe is its own realm,
@@ -38,19 +43,8 @@ const resources: Record<LocaleCode, { ui: Record<string, unknown> }> = {
   ko: { ui: koUi },
   pt: { ui: ptUi },
   zh: { ui: zhUi },
-  "zh-TW": { ui: zhTWUi },
+  "zh-Hant": { ui: zhHantUi },
 };
-
-// Preserve supported regional locales (for example `zh-TW`); normalize unknown
-// regional variants such as `fr-CA` to their base language.
-function normalizeLanguage(language: string) {
-  const supported = SUPPORTED_LOCALE_CODES.find(
-    (locale) => locale.toLowerCase() === language.toLowerCase(),
-  );
-  if (supported) return supported;
-
-  return language.split("-")[0].toLowerCase();
-}
 
 function applyDocumentLanguage(language: string) {
   // Han unification: ja/ko/zh share codepoints that render with different
@@ -69,7 +63,7 @@ export function initSandboxI18n(language?: string) {
     return sandboxI18n;
   }
 
-  const initialLanguage = language ? normalizeLanguage(language) : DEFAULT_LOCALE;
+  const initialLanguage = language ? normalizeLocaleCode(language) : DEFAULT_LOCALE;
 
   // `initReactI18next` also registers this instance as react-i18next's default,
   // so `@wealthfolio/ui` components resolve it without an I18nextProvider.
@@ -101,7 +95,7 @@ export function setSandboxLanguage(language?: string) {
     return;
   }
 
-  const normalized = normalizeLanguage(language);
+  const normalized = normalizeLocaleCode(language);
   // Each instance is synced independently and idempotently — returning early
   // because one of them already matches could leave the other out of sync.
   if (sandboxI18n.language !== normalized) {
@@ -162,7 +156,7 @@ export function installAddonTranslationRuntime(addonId: string) {
       if (!bundle) {
         continue;
       }
-      const normalized = normalizeLanguage(language);
+      const normalized = normalizeLocaleCode(language);
       // Only plain base codes may reach i18next: addResourceBundle
       // reinterprets a dotted lng argument as a resource path, and anything
       // else would be stored under a key that never resolves.
