@@ -343,7 +343,8 @@
     "status_all": "모든 활동",
     "status_pending": "검토 대기 중",
     "status_validated": "검증됨",
-    "instrument": "상품"
+    "instrument": "상품",
+    "instrument_all": "모든 상품"
   },
   "detail": {
     "status_posted": "반영됨",

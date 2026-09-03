@@ -345,7 +345,8 @@
     "status_all": "All Activities",
     "status_pending": "Pending Review",
     "status_validated": "Validated",
-    "instrument": "Instrument"
+    "instrument": "Instrument",
+    "instrument_all": "All Instruments"
   },
   "detail": {
     "status_posted": "Posted",

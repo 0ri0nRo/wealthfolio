@@ -347,7 +347,8 @@
     "status_all": "Tutti i movimenti",
     "status_pending": "In attesa di revisione",
     "status_validated": "Convalidati",
-    "instrument": "Strumento"
+    "instrument": "Strumento",
+    "instrument_all": "Tutti gli strumenti"
   },
   "detail": {
     "status_posted": "Registrato",

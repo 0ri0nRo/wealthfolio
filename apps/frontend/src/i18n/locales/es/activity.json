@@ -347,7 +347,8 @@
     "status_all": "Todas las actividades",
     "status_pending": "Pendientes de revisión",
     "status_validated": "Validadas",
-    "instrument": "Instrumento"
+    "instrument": "Instrumento",
+    "instrument_all": "Todos los instrumentos"
   },
   "detail": {
     "status_posted": "Contabilizada",

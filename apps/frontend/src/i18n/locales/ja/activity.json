@@ -343,7 +343,8 @@
     "status_all": "すべての取引",
     "status_pending": "確認待ち",
     "status_validated": "検証済み",
-    "instrument": "商品"
+    "instrument": "商品",
+    "instrument_all": "すべての商品"
   },
   "detail": {
     "status_posted": "確定済み",

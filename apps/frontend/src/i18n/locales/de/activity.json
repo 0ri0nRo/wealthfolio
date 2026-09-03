@@ -240,7 +240,8 @@
     "status_all": "Alle Aktivitäten",
     "status_pending": "Prüfung ausstehend",
     "status_validated": "Validiert",
-    "instrument": "Instrument"
+    "instrument": "Instrument",
+    "instrument_all": "Alle Instrumente"
   },
   "detail": {
     "status_posted": "Gebucht",
