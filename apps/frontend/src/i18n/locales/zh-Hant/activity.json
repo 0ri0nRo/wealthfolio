@@ -345,7 +345,8 @@
     "status_all": "所有活動",
     "status_pending": "待稽核",
     "status_validated": "已驗證",
-    "instrument": "金融工具"
+    "instrument": "金融工具",
+    "instrument_all": "所有金融工具"
   },
   "detail": {
     "status_posted": "已入帳",
