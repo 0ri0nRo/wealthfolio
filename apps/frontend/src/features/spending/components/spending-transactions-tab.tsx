@@ -625,6 +625,7 @@ export const SpendingTransactionsTab = forwardRef<SpendingTransactionsTabHandle>
           activityType,
           subtype: a.subtype,
           currency: a.currency,
+          fxRate: a.fxRate ?? undefined,
           amount: a.amount,
           activityDate:
             typeof a.activityDate === "string" ? a.activityDate : new Date().toISOString(),

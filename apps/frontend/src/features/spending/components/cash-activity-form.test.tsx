@@ -101,6 +101,29 @@ describe("CashActivityForm currency", () => {
     expect(vi.mocked(updateActivity).mock.calls[0][0]).toMatchObject({ fxRate: 1.37 });
   });
 
+  it("clears the FX rate when the activity currency changes", async () => {
+    const user = userEvent.setup();
+    render(
+      <CashActivityForm
+        open
+        onOpenChange={vi.fn()}
+        activity={{ ...foreignCharge, accountId: "euro" } as unknown as Activity}
+      />,
+      { wrapper },
+    );
+
+    await user.click(screen.getByTestId("advanced-options-button"));
+    await user.click(screen.getByRole("button", { name: "CAD" }));
+    await user.click(screen.getByRole("button", { name: /update/i }));
+
+    await waitFor(() => expect(updateActivity).toHaveBeenCalled());
+    expect(vi.mocked(updateActivity).mock.calls[0][0]).toMatchObject({
+      accountId: "euro",
+      currency: "CAD",
+      fxRate: null,
+    });
+  });
+
   /**
    * An FX rate converts the activity's currency into the ACCOUNT's. Moving the
    * activity to an account with a different denomination leaves the rate

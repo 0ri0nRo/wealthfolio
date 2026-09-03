@@ -344,7 +344,9 @@ export function CashActivityForm({
       const seededAgainst = activity
         ? spendingAccounts.find((a) => a.id === activity.accountId)?.currency
         : undefined;
-      const rateHolds = values.fxRate !== seededRate || seededAgainst === account?.currency;
+      const rateHolds =
+        values.fxRate !== seededRate ||
+        (activity?.currency === currency && seededAgainst === account?.currency);
       // Only meaningful when the money moved in something other than the
       // account's own currency; otherwise the rate is 1 and worth nothing.
       const fxRate = currency !== account?.currency && rateHolds ? (values.fxRate ?? null) : null;
