@@ -207,7 +207,9 @@
     "filterTransactions": "Filter transactions",
     "clearAll": "Clear all",
     "done": "Done",
-    "refreshing": "Refreshing"
+    "refreshing": "Refreshing",
+    "selectedNet": "Selected net",
+    "filteredNet": "Filtered net"
   },
   "period": {
     "thisMonth": "This month",

@@ -205,7 +205,9 @@
     "filterTransactions": "筛选交易",
     "clearAll": "全部清除",
     "done": "完成",
-    "refreshing": "正在刷新"
+    "refreshing": "正在刷新",
+    "selectedNet": "所选净额",
+    "filteredNet": "筛选净额"
   },
   "period": {
     "thisMonth": "本月",

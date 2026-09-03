@@ -205,7 +205,9 @@
     "filterTransactions": "取引を絞り込む",
     "clearAll": "すべてクリア",
     "done": "完了",
-    "refreshing": "更新中"
+    "refreshing": "更新中",
+    "selectedNet": "選択の収支",
+    "filteredNet": "絞り込みの収支"
   },
   "period": {
     "thisMonth": "今月",

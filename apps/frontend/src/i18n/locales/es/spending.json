@@ -214,7 +214,9 @@
     "filterTransactions": "Filtrar transacciones",
     "clearAll": "Limpiar todo",
     "done": "Listo",
-    "refreshing": "Actualizando"
+    "refreshing": "Actualizando",
+    "selectedNet": "Neto seleccionado",
+    "filteredNet": "Neto filtrado"
   },
   "period": {
     "thisMonth": "Este mes",

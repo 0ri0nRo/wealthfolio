@@ -205,7 +205,9 @@
     "filterTransactions": "거래 필터링",
     "clearAll": "모두 지우기",
     "done": "완료",
-    "refreshing": "새로고침 중"
+    "refreshing": "새로고침 중",
+    "selectedNet": "선택 순액",
+    "filteredNet": "필터 순액"
   },
   "period": {
     "thisMonth": "이번 달",
