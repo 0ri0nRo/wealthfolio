@@ -291,7 +291,7 @@
   "import_help_docs_activity_ref": "取引リファレンスのドキュメント",
   "import_help_how_to_title": "CSVのインポート方法",
   "import_help_how_to_mobile": "CSVのインポート方法",
-  "pagination_count": "{{fetched}} / {{total}}件の取引",
+  "pagination_count": "{{fetched}}/{{total}}件の取引",
   "manager": {
     "add_to_account": "{{account}}に新しい取引を追加",
     "create_transaction": "口座の新しい取引を作成します",
