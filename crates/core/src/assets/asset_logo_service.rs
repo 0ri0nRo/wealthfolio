@@ -1,7 +1,7 @@
 //! Custom asset logo service.
 //!
-//! Sibling of `AlternativeAssetService`: validates the uploaded PNG, enforces
-//! the total storage budget and persists through `AssetLogoRepositoryTrait`.
+//! Sibling of `AlternativeAssetService`: validates the uploaded PNG and
+//! persists through `AssetLogoRepositoryTrait`.
 //! No domain event is emitted; the frontend refreshes its logo index on the
 //! existing `portfolio:update-complete` signal.
 
@@ -13,8 +13,7 @@ use base64::Engine as _;
 use chrono::Utc;
 
 use super::asset_logo_model::{
-    decode_and_validate, ensure_total_logo_budget, AssetLogo, AssetLogoSummary, UpsertAssetLogo,
-    ASSET_LOGO_MIME_PNG,
+    decode_and_validate, AssetLogo, AssetLogoSummary, UpsertAssetLogo, ASSET_LOGO_MIME_PNG,
 };
 use super::asset_logo_traits::{AssetLogoRepositoryTrait, AssetLogoServiceTrait};
 use super::AssetRepositoryTrait;
@@ -58,9 +57,6 @@ impl AssetLogoServiceTrait for AssetLogoService {
         let validated = decode_and_validate(&payload.data_base64)?;
         // Re-encode so the stored form is canonical (padded, no data: prefix).
         let data_base64 = BASE64_STANDARD.encode(&validated.bytes);
-
-        let existing = self.logo_repository.sum_data_len(Some(asset_id))?;
-        ensure_total_logo_budget(existing, data_base64.len())?;
 
         let now = Utc::now().to_rfc3339();
         self.logo_repository

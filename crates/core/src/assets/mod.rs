@@ -35,7 +35,7 @@ pub use asset_id::{
 pub use asset_logo_model::{
     decode_and_validate as decode_and_validate_asset_logo, AssetLogo, AssetLogoSummary,
     UpsertAssetLogo, ValidatedPng, ASSET_LOGO_MIME_PNG, MAX_ASSET_LOGO_BYTES,
-    MAX_ASSET_LOGO_DIMENSION, MAX_TOTAL_ASSET_LOGO_BASE64_BYTES,
+    MAX_ASSET_LOGO_DIMENSION,
 };
 pub use asset_logo_service::AssetLogoService;
 pub use asset_logo_traits::{AssetLogoRepositoryTrait, AssetLogoServiceTrait};

@@ -4,7 +4,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use diesel::prelude::*;
-use diesel::sql_types::{BigInt, Nullable};
 
 use wealthfolio_core::assets::{AssetLogo, AssetLogoRepositoryTrait, AssetLogoSummary};
 use wealthfolio_core::Result;
@@ -62,18 +61,6 @@ impl AssetLogoRepositoryTrait for AssetLogoRepository {
                 },
             )
             .collect())
-    }
-
-    fn sum_data_len(&self, exclude_asset_id: Option<&str>) -> Result<i64> {
-        let mut conn = get_connection(&self.pool)?;
-        let mut query = asset_logos::table
-            .select(diesel::dsl::sql::<Nullable<BigInt>>("SUM(length(data))"))
-            .into_boxed();
-        if let Some(excluded) = exclude_asset_id {
-            query = query.filter(asset_logos::asset_id.ne(excluded.to_string()));
-        }
-        let total: Option<i64> = query.first(&mut conn).map_err(StorageError::from)?;
-        Ok(total.unwrap_or(0))
     }
 
     async fn upsert(&self, logo: AssetLogo) -> Result<AssetLogo> {
@@ -232,21 +219,6 @@ mod tests {
         assert_eq!(stored.created_at, "2026-09-02T00:00:00+00:00");
         assert_eq!(stored.updated_at, "2026-09-03T00:00:00+00:00");
         assert_eq!(repo.list_summaries().unwrap().len(), 1);
-    }
-
-    #[tokio::test]
-    async fn sum_data_len_supports_exclusion() {
-        let (repo, _dir) = setup().await;
-        insert_asset(&repo, "asset-a", "AAPL");
-        insert_asset(&repo, "asset-b", "MSFT");
-        assert_eq!(repo.sum_data_len(None).unwrap(), 0);
-
-        repo.upsert(logo("asset-a", "AAAA")).await.unwrap();
-        repo.upsert(logo("asset-b", "BBBBBBBB")).await.unwrap();
-
-        assert_eq!(repo.sum_data_len(None).unwrap(), 12);
-        assert_eq!(repo.sum_data_len(Some("asset-a")).unwrap(), 8);
-        assert_eq!(repo.sum_data_len(Some("missing")).unwrap(), 12);
     }
 
     #[tokio::test]

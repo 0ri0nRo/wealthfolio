@@ -18,9 +18,6 @@ use crate::errors::{Error, Result, ValidationError};
 pub const MAX_ASSET_LOGO_BYTES: usize = 150 * 1024;
 /// Maximum width/height (pixels) accepted for a logo.
 pub const MAX_ASSET_LOGO_DIMENSION: u32 = 256;
-/// Total base64 storage budget across all logos. The DB base64 is base64'd
-/// again and encrypted inside the 100 MB cloud snapshot cap.
-pub const MAX_TOTAL_ASSET_LOGO_BASE64_BYTES: i64 = 24 * 1024 * 1024;
 /// MIME type written for every v1 logo.
 pub const ASSET_LOGO_MIME_PNG: &str = "image/png";
 
@@ -125,17 +122,6 @@ pub fn decode_and_validate(input: &str) -> Result<ValidatedPng> {
         width,
         height,
     })
-}
-
-/// Rejects a write that would push total logo storage over the budget.
-pub fn ensure_total_logo_budget(existing_base64_len: i64, new_base64_len: usize) -> Result<()> {
-    let projected = existing_base64_len.saturating_add(new_base64_len as i64);
-    if projected > MAX_TOTAL_ASSET_LOGO_BASE64_BYTES {
-        return Err(invalid(
-            "Logo storage budget exceeded; remove some custom logos first",
-        ));
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -256,16 +242,5 @@ mod tests {
 
         let at_limit = png_header(1, 1, MAX_ASSET_LOGO_BYTES);
         decode_and_validate(&BASE64_STANDARD.encode(&at_limit)).expect("exactly 150 KB accepted");
-    }
-
-    #[test]
-    fn total_budget_rejects_overflow() {
-        ensure_total_logo_budget(0, 10).expect("small write fits");
-        ensure_total_logo_budget(MAX_TOTAL_ASSET_LOGO_BASE64_BYTES - 10, 10)
-            .expect("exactly at budget fits");
-        let msg = error_message(
-            ensure_total_logo_budget(MAX_TOTAL_ASSET_LOGO_BASE64_BYTES - 9, 10).unwrap_err(),
-        );
-        assert!(msg.contains("budget"), "{msg}");
     }
 }

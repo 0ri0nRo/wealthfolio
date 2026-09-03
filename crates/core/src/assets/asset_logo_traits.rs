@@ -13,9 +13,6 @@ pub trait AssetLogoRepositoryTrait: Send + Sync {
     /// Lists every override (no bytes), joined with the asset's codes.
     fn list_summaries(&self) -> Result<Vec<AssetLogoSummary>>;
 
-    /// `SUM(length(data))` across all rows, optionally excluding one asset.
-    fn sum_data_len(&self, exclude_asset_id: Option<&str>) -> Result<i64>;
-
     /// Inserts or replaces the logo for `logo.asset_id`.
     async fn upsert(&self, logo: AssetLogo) -> Result<AssetLogo>;
 
