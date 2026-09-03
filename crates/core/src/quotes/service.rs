@@ -1103,6 +1103,9 @@ where
                 let effective_today = time_utils::market_effective_date(
                     now,
                     asset.and_then(|a| a.instrument_exchange_mic.as_deref()),
+                    asset
+                        .map(|a| matches!(a.instrument_type, Some(InstrumentType::Crypto)))
+                        .unwrap_or(false),
                 );
                 let snapshot = if let Some(quote) = quotes.get(asset_id).cloned() {
                     let quote_day = quote.timestamp.date_naive();
