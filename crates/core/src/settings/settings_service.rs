@@ -10,8 +10,9 @@ use std::sync::Arc;
 const SUPPORTED_FORMATTING_REGIONS: &[&str] = &[
     "system", "CA", "US", "GB", "FR", "DE", "ES", "MX", "BR", "PT", "CN", "TW", "JP", "KR", "IT",
 ];
-const SUPPORTED_UI_LANGUAGES: &[&str] =
-    &["en", "fr", "de", "es", "pt", "zh", "zh-Hant", "ja", "ko", "it"];
+const SUPPORTED_UI_LANGUAGES: &[&str] = &[
+    "en", "fr", "de", "es", "pt", "zh", "zh-Hant", "ja", "ko", "it",
+];
 
 /// Traditional Chinese is written in Taiwan, Hong Kong and Macau. Match the
 /// script subtag (`Hant`) or any of those regions, so a bare `zh-HK` resolves
@@ -289,7 +290,11 @@ mod tests {
             "zh_Hant_HK",
         ] {
             assert_eq!(normalize_ui_language(language), "zh-Hant", "{language}");
-            assert_eq!(validate_ui_language(language).unwrap(), "zh-Hant", "{language}");
+            assert_eq!(
+                validate_ui_language(language).unwrap(),
+                "zh-Hant",
+                "{language}"
+            );
         }
     }
 

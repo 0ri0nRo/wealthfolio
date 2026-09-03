@@ -55,12 +55,12 @@ function offenders(term: string, allowed: ReadonlySet<string> = new Set()) {
  * `use` is Taiwan financial/industry register; `insteadOf` are Mainland register
  * or a different sense of the word in Taiwan usage.
  */
-const GLOSSARY: ReadonlyArray<{
+const GLOSSARY: readonly {
   concept: string;
   use: string;
   insteadOf: readonly string[];
   note?: string;
-}> = [
+}[] = [
   { concept: "Return", use: "報酬", insteadOf: ["回報"], note: "回報 means 'to reciprocate'" },
   { concept: "Type", use: "類型", insteadOf: ["型別"], note: "型別 is a *data* type" },
   { concept: "Plan", use: "計畫", insteadOf: ["計劃"] },
