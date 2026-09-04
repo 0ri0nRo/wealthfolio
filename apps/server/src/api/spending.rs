@@ -288,9 +288,6 @@ async fn bulk_assign_categories(
 async fn list_categorization_rules(
     State(state): State<Arc<AppState>>,
 ) -> ApiResult<Json<Vec<CategorizationRule>>> {
-    if !spending_enabled(&state).await? {
-        return Ok(Json(Vec::new()));
-    }
     Ok(Json(state.categorization_rules_service.list().await?))
 }
 

@@ -552,12 +552,16 @@ export function createSDKHostAPIBridge(
       },
       saveRule: async (input: CategorizationRuleInput): Promise<SDKCategorizationRule> => {
         const id = await deriveRuleId(addonId || "unknown-addon", input.ruleKey);
+        const taxonomyId = SPEND_CATEGORY_KIND_TO_TAXONOMY_ID[input.kind];
+        if (typeof taxonomyId !== "string") {
+          throw new Error(`Unsupported spend category kind '${String(input.kind)}'`);
+        }
         const saved = await internalAPI.upsertCategorizationRule({
           id,
           name: input.name,
           pattern: input.pattern,
           matchType: input.matchType ?? "contains",
-          taxonomyId: SPEND_CATEGORY_KIND_TO_TAXONOMY_ID[input.kind],
+          taxonomyId,
           categoryId: input.categoryId,
           activityType: input.activityType ?? null,
           isGlobal: !input.accountId,

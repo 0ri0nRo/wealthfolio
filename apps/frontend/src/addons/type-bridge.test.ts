@@ -355,6 +355,26 @@ describe("Addon Type Bridge", () => {
       );
     });
 
+    it("rejects an unsupported category kind before saving a rule", async () => {
+      const mockUpsert = vi.fn();
+      const sdkAPI = createSDKHostAPIBridge(
+        { upsertCategorizationRule: mockUpsert, ...loggerMocks } as unknown as InternalHostAPI,
+        "test-addon",
+        spendingGuard("saveRule"),
+      );
+
+      await expect(
+        sdkAPI.spending.saveRule({
+          ruleKey: "pattern-1",
+          name: "Groceries",
+          pattern: "SUPERMARKET",
+          kind: "unsupported" as never,
+          categoryId: "cat_groceries",
+        }),
+      ).rejects.toThrow("Unsupported spend category kind 'unsupported'");
+      expect(mockUpsert).not.toHaveBeenCalled();
+    });
+
     it("scopes different addons to different rule ids for the same ruleKey", async () => {
       const idA = await deriveRuleId("addon-a", "pattern-1");
       const idB = await deriveRuleId("addon-b", "pattern-1");

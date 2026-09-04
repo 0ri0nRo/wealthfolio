@@ -284,9 +284,6 @@ pub async fn bulk_assign_categories(
 pub async fn list_categorization_rules(
     state: State<'_, Arc<ServiceContext>>,
 ) -> Result<Vec<CategorizationRule>, String> {
-    if !spending_enabled(&state).await? {
-        return Ok(Vec::new());
-    }
     state
         .categorization_rules_service()
         .list()
