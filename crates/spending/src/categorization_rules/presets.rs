@@ -148,8 +148,43 @@ pub fn installed_rule_keys<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::categorization_rules::RuleMatchType;
+    use crate::categorization_rules::{match_rules, CategorizationRule, RuleMatchType};
+    use chrono::Utc;
     use regex::Regex;
+
+    fn match_swedish_preset(notes: &str) -> Option<String> {
+        let now = Utc::now().naive_utc();
+        let rules = load_preset("se")
+            .expect("Swedish preset should load")
+            .rules
+            .into_iter()
+            .map(|rule| CategorizationRule {
+                id: rule.key,
+                name: rule.name,
+                pattern: rule.pattern,
+                match_type: RuleMatchType::try_parse(&rule.match_type)
+                    .expect("preset match type should be valid"),
+                taxonomy_id: Some("spending_categories".to_string()),
+                category_id: Some(rule.category_key),
+                activity_type: None,
+                amount_op: None,
+                amount_value: None,
+                amount_value2: None,
+                priority: rule.priority,
+                is_global: true,
+                account_id: None,
+                preset_id: Some("se".to_string()),
+                preset_rule_key: None,
+                preset_version: None,
+                preset_modified: false,
+                created_at: now,
+                updated_at: now,
+            })
+            .collect::<Vec<_>>();
+
+        match_rules(&rules, notes, "WITHDRAWAL", "account", None)
+            .and_then(|matched| matched.rule.category_id.clone())
+    }
 
     #[test]
     fn bundled_presets_have_unique_keys_and_valid_regexes() {
@@ -188,5 +223,50 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn swedish_preset_prioritizes_specific_categories() {
+        assert_eq!(
+            match_swedish_preset("STUDENTKÅRAVGIFT"),
+            Some("education".to_string())
+        );
+        assert_eq!(
+            match_swedish_preset("UPPSALA STUDENTKÅR"),
+            Some("food_restaurants".to_string())
+        );
+        assert_eq!(
+            match_swedish_preset("TELIA MÅNADSAVGIFT"),
+            Some("bills_phone".to_string())
+        );
+        assert_eq!(
+            match_swedish_preset("MÅNADSAVGIFT"),
+            Some("fees_bank".to_string())
+        );
+        assert_eq!(
+            match_swedish_preset("TACO BAR"),
+            Some("food_restaurants".to_string())
+        );
+        assert_eq!(
+            match_swedish_preset("LOKALA BAR"),
+            Some("food_alcohol".to_string())
+        );
+        assert_eq!(
+            match_swedish_preset("UPPSALA KOMMUN VATTEN OCH AVLOPP"),
+            Some("housing_utilities".to_string())
+        );
+        assert_eq!(
+            match_swedish_preset("UPPSALA KOMMUN"),
+            Some("fees".to_string())
+        );
+    }
+
+    #[test]
+    fn swedish_transit_requires_a_transit_descriptor() {
+        assert_eq!(match_swedish_preset("REGION UPPSALA"), None);
+        assert_eq!(
+            match_swedish_preset("UL, REGION UPPSALA"),
+            Some("transport_public".to_string())
+        );
     }
 }

@@ -27,7 +27,7 @@
       "pattern": "(?i)systembolaget|\\bpub\\b|\\bbryggeri\\b|brewing|\\bbar\\b(?:$| )|\\bnattklubb\\b|\\bkrogen\\b",
       "matchType": "regex",
       "categoryKey": "food_alcohol",
-      "priority": 88
+      "priority": 73
     },
     {
       "key": "se.coffee",
@@ -80,7 +80,7 @@
     {
       "key": "se.transit",
       "name": "Public transit",
-      "pattern": "(?i)\\bsl\\b|storstockholms lokaltrafik|\\bul\\b, region|\\bul\\b resekort|v(ä|a)sttrafik|sk(å|a)netrafiken|(ö|o)stg(ö|o)tatrafiken|(ö|o)rebro l(ä|a)ns|m(ä|a)lardalstrafik|\\bm(ä|a)lab\\b|v(ä|a)rmlandstrafik|\\blänstrafik|kollektivtrafik|\\bres(e|)kort\\b|\\bregion [a-zåäö]+",
+      "pattern": "(?i)\\bsl\\b|storstockholms lokaltrafik|\\bul\\b, region|\\bul\\b resekort|v(ä|a)sttrafik|sk(å|a)netrafiken|(ö|o)stg(ö|o)tatrafiken|m(ä|a)lardalstrafik|\\bm(ä|a)lab\\b|v(ä|a)rmlandstrafik|\\blänstrafik|kollektivtrafik|\\bres(e|)kort\\b",
       "matchType": "regex",
       "categoryKey": "transport_public",
       "priority": 86
@@ -331,7 +331,7 @@
       "pattern": "(?i)\\bcsn\\b|\\buniversitet\\b|\\bh(ö|o)gskola\\b|\\bstudentk(å|a)ravgift\\b|\\bk(å|a)ravgift\\b|\\bfolkuniversitetet\\b|\\bkomvux\\b|\\bcoursera\\b|\\budemy\\b|\\bkurslitteratur\\b|\\bf(ö|o)rskola\\b|\\bbarnomsorg\\b",
       "matchType": "regex",
       "categoryKey": "education",
-      "priority": 84
+      "priority": 90
     },
     {
       "key": "se.donations",
@@ -363,7 +363,7 @@
       "pattern": "(?i)\\bskatteverket\\b|\\bkronofogden\\b|\\bkommun\\b|\\bmigrationsverket\\b|\\bpolismyndigheten\\b|\\bpass[a-zåäö]* avgift\\b|\\bl(ä|a)nsstyrelsen\\b",
       "matchType": "regex",
       "categoryKey": "fees",
-      "priority": 88
+      "priority": 70
     },
     {
       "key": "se.bank_fees",
@@ -371,7 +371,7 @@
       "pattern": "(?i)\\b(å|a)rsavgift\\b|\\bm(å|a)nadsavgift\\b|\\bvaluta(p(å|a)slag|avgift)\\b|\\b(ö|o)verf(ö|o)ringsavgift\\b|\\bp(å|a)minnelseavgift\\b|\\bfakturaavgift\\b|\\bdr(ö|o)jsm(å|a)lsr(ä|a)nta\\b|\\bnotifikationsavgift\\b|\\blunar (plus|standard|premium)\\b",
       "matchType": "regex",
       "categoryKey": "fees_bank",
-      "priority": 90
+      "priority": 70
     },
     {
       "key": "se.atm_fees",
