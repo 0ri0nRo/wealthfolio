@@ -308,6 +308,8 @@ export interface ActivityCreate {
   currency?: string;
   fee?: string | number | null;
   tax?: string | number | null;
+  status?: ActivityStatus;
+  needsReview?: boolean;
   comment?: string | null;
   fxRate?: string | number | null;
   metadata?: string | Record<string, unknown>;
@@ -320,6 +322,7 @@ export interface ActivityUpdate {
   subtype?: string | null;
   activityDate: string | Date;
   sourceGroupId?: string;
+  /** Omit to preserve the current asset; pass an empty object to clear it. */
   asset?: AssetResolutionInput;
   /** @deprecated Use asset. */
   symbol?: AssetResolutionInput;
@@ -329,6 +332,8 @@ export interface ActivityUpdate {
   currency?: string;
   fee?: string | number | null;
   tax?: string | number | null;
+  status?: ActivityStatus;
+  needsReview?: boolean;
   comment?: string | null;
   fxRate?: string | number | null;
   metadata?: string | Record<string, unknown>;

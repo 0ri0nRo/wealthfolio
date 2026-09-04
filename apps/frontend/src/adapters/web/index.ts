@@ -281,6 +281,14 @@ export {
   updateAlternativeAssetValuation,
 } from "../shared/alternative-assets";
 
+// Asset Logo Commands
+export {
+  deleteAssetLogo,
+  getAssetLogo,
+  listAssetLogos,
+  upsertAssetLogo,
+} from "../shared/asset-logos";
+
 // Connect Commands (Broker + Device Sync + Auth)
 export {
   approvePairing,
@@ -370,6 +378,7 @@ export {
 export {
   archiveAllocationTarget,
   calculateRebalancePlan,
+  canonicalizeEligibleAssetIds,
   createAllocationTarget,
   deleteAllocationTarget,
   getAllocationTargetDrift,

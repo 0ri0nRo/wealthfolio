@@ -17,6 +17,16 @@ import {
 } from "@wealthfolio/ui";
 import { AmountDisplay } from "@wealthfolio/ui/components/financial/amount-display";
 import { useTranslation } from "react-i18next";
+import { getProviderMappingReasons } from "./activity-data-grid/types";
+
+/** An activity with no stored amount booked no cash; rendering `Number(null)`
+ * would claim it moved exactly zero. */
+function StoredAmount({ activity }: { activity: ActivityDetails }) {
+  if (activity.amount === null || activity.amount.trim() === "") {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return <AmountDisplay value={Number(activity.amount)} currency={activity.currency} />;
+}
 
 interface ActivityDetailSheetProps {
   activity: ActivityDetails | null;
@@ -68,6 +78,32 @@ function DetailSection({ title, icon, children }: DetailSectionProps) {
       </div>
       <div className="bg-muted/30 rounded-lg border p-3">{children}</div>
     </div>
+  );
+}
+
+export function ActivityReviewReasons({
+  activity,
+}: {
+  activity: Pick<ActivityDetails, "metadata" | "needsReview">;
+}) {
+  const { t } = useTranslation();
+  const reviewReasons = getProviderMappingReasons(activity);
+
+  if (!activity.needsReview || reviewReasons.length === 0) {
+    return null;
+  }
+
+  return (
+    <DetailSection
+      title={t("activity:detail.needs_review")}
+      icon={<Icons.AlertCircle className="text-warning h-4 w-4" />}
+    >
+      <ul className="list-disc space-y-1 pl-5 text-sm">
+        {reviewReasons.map((reason) => (
+          <li key={reason}>{reason}</li>
+        ))}
+      </ul>
+    </DetailSection>
   );
 }
 
@@ -175,11 +211,13 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
               <div className="text-right">
                 <div className="text-muted-foreground text-xs">{t("activity:field_amount")}</div>
                 <div className="text-lg font-bold">
-                  <AmountDisplay value={Number(activity.amount)} currency={activity.currency} />
+                  <StoredAmount activity={activity} />
                 </div>
               </div>
             </div>
           </div>
+
+          <ActivityReviewReasons activity={activity} />
 
           {/* Transaction Details */}
           <DetailSection
@@ -246,7 +284,7 @@ export function ActivityDetailSheet({ activity, open, onOpenChange }: ActivityDe
             )}
             <DetailRow
               label={isOption ? t("activity:detail.total_premium") : t("activity:field_amount")}
-              value={<AmountDisplay value={Number(activity.amount)} currency={activity.currency} />}
+              value={<StoredAmount activity={activity} />}
             />
             {Number(activity.fee) !== 0 && (
               <DetailRow
