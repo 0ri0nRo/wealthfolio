@@ -315,6 +315,24 @@ pub async fn update_categorization_rule(
     Ok(updated)
 }
 
+/// Atomically create-or-update the rule identified by `rule.id` (required).
+/// Used by the addon bridge's `spending.saveRule`, which derives a stable id
+/// up front so repeat saves of the same logical rule land on the same row
+/// instead of racing a separate list-then-create-or-update probe.
+#[tauri::command]
+pub async fn upsert_categorization_rule(
+    rule: NewCategorizationRule,
+    state: State<'_, Arc<ServiceContext>>,
+) -> Result<CategorizationRule, String> {
+    let saved = state
+        .categorization_rules_service()
+        .upsert(rule)
+        .await
+        .map_err(|e| format!("Failed to save rule: {}", e))?;
+    spawn_auto_categorize_for_opted_in_accounts(&state).await;
+    Ok(saved)
+}
+
 #[tauri::command]
 pub async fn delete_categorization_rule(
     id: String,

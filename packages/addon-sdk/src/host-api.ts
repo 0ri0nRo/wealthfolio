@@ -38,10 +38,12 @@ import type {
   SnapshotImportResult,
   SnapshotInfo,
   SnapshotInput,
-  SpendCategoryOption,
+  CategorizationRule,
+  CategorizationRuleInput,
+  SpendCategory,
+  SpendCategoryKind,
   SymbolSearchResult,
   UpdateAssetProfile,
-  UpsertCategorizationRuleInput,
 } from './data-types';
 
 export interface ActivitySearchFilters {
@@ -405,36 +407,51 @@ export interface ExchangeRatesAPI {
  */
 export interface SpendingAPI {
   /**
-   * List selectable spend categories, flattened with a display path.
-   * @param taxonomyId Defaults to Wealthfolio's built-in "spending_categories" taxonomy
-   * @returns Promise resolving to array of spend category options
+   * Whether the user has Spending enabled. Rules and categories still work
+   * when it's off, but re-running rules is a no-op until the user opts an
+   * account in — check this to explain a `rerunRules()` result of 0.
+   * @returns Promise resolving to whether Spending is enabled
    */
-  getSpendCategories(taxonomyId?: string): Promise<SpendCategoryOption[]>;
+  isEnabled(): Promise<boolean>;
 
   /**
-   * Create or update a categorization rule identified by `input.ruleKey`.
+   * List selectable spend categories, flattened with a display path.
+   * @param kind Restrict to one taxonomy. Omit to get all three (expense, income, saving).
+   * @returns Promise resolving to array of spend categories
+   */
+  getCategories(kind?: SpendCategoryKind): Promise<SpendCategory[]>;
+
+  /**
+   * List this addon's own categorization rules (those created via `saveRule`).
+   * @returns Promise resolving to array of categorization rules
+   */
+  getRules(): Promise<CategorizationRule[]>;
+
+  /**
+   * Create or update a categorization rule identified by `rule.ruleKey`.
    * Calling this again with the same ruleKey updates the existing rule
    * in place instead of creating a duplicate.
-   * @param input Rule definition
-   * @returns Promise that resolves once the rule is created or updated
+   * @param rule Rule definition
+   * @returns Promise resolving to the created or updated rule
    */
-  upsertCategorizationRule(input: UpsertCategorizationRuleInput): Promise<void>;
+  saveRule(rule: CategorizationRuleInput): Promise<CategorizationRule>;
 
   /**
    * Delete the rule previously created with this ruleKey. No-op if absent.
-   * @param ruleKey The stable key passed to a prior upsertCategorizationRule call
+   * @param ruleKey The stable key passed to a prior saveRule call
    * @returns Promise that resolves once the rule is deleted (or confirmed absent)
    */
-  deleteCategorizationRule(ruleKey: string): Promise<void>;
+  deleteRule(ruleKey: string): Promise<void>;
 
   /**
-   * Re-run all categorization rules. Pass true to only fill in currently
-   * uncategorized activities — this preserves any existing manual or
+   * Re-run all categorization rules. Pass false to overwrite existing
+   * rule/AI/import-assigned categories too — the default only fills in
+   * currently uncategorized activities, preserving any existing manual or
    * AI-assigned categories.
-   * @param onlyUncategorized Defaults to false
+   * @param onlyUncategorized Defaults to true
    * @returns Promise resolving to the number of activities touched
    */
-  rerunCategorizationRules(onlyUncategorized?: boolean): Promise<number>;
+  rerunRules(onlyUncategorized?: boolean): Promise<number>;
 }
 
 /**

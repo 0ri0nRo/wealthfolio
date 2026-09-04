@@ -1,17 +1,41 @@
 // Spending Categorization Commands
-import type { SpendCategoryOption } from "@wealthfolio/addon-sdk";
+import type { SpendCategory, SpendCategoryKind } from "@wealthfolio/addon-sdk";
 import type {
   CategorizationRule,
   NewCategorizationRule,
   UpdateCategorizationRule,
 } from "@/features/spending/types/rule";
+import type { SpendingSettings } from "@/features/spending/types";
 import type { TaxonomyCategory } from "@/lib/types";
 
 import { invoke, logger } from "./platform";
 import { getTaxonomy } from "./taxonomies";
 
-const DEFAULT_SPEND_TAXONOMY_ID = "spending_categories";
 const MAX_CATEGORY_PATH_DEPTH = 8;
+
+/** Maps the addon-facing `SpendCategoryKind` to Wealthfolio's fixed taxonomy ids. */
+export const SPEND_CATEGORY_KIND_TO_TAXONOMY_ID: Record<SpendCategoryKind, string> = {
+  expense: "spending_categories",
+  income: "income_sources",
+  saving: "savings_categories",
+};
+
+/** Reverse of {@link SPEND_CATEGORY_KIND_TO_TAXONOMY_ID}. */
+export const TAXONOMY_ID_TO_SPEND_CATEGORY_KIND: Record<string, SpendCategoryKind> = {
+  spending_categories: "expense",
+  income_sources: "income",
+  savings_categories: "saving",
+};
+
+export const isSpendingEnabled = async (): Promise<boolean> => {
+  try {
+    const settings = await invoke<SpendingSettings>("get_spending_settings");
+    return settings.enabled;
+  } catch (e) {
+    logger.error("Error fetching spending settings.");
+    throw e;
+  }
+};
 
 export const listCategorizationRules = async (): Promise<CategorizationRule[]> => {
   try {
@@ -41,6 +65,22 @@ export const updateCategorizationRule = async (
     return await invoke<CategorizationRule>("update_categorization_rule", { id, patch });
   } catch (e) {
     logger.error("Error updating categorization rule.");
+    throw e;
+  }
+};
+
+/**
+ * Atomically create-or-update the rule identified by `rule.id` (required).
+ * Unlike list-then-create-or-update, this is race-free against itself, so
+ * calling it twice with the same id never collides or duplicates.
+ */
+export const upsertCategorizationRule = async (
+  rule: NewCategorizationRule,
+): Promise<CategorizationRule> => {
+  try {
+    return await invoke<CategorizationRule>("upsert_categorization_rule", { rule });
+  } catch (e) {
+    logger.error("Error saving categorization rule.");
     throw e;
   }
 };
@@ -82,23 +122,32 @@ function buildCategoryPath(
 }
 
 /**
- * Lists a taxonomy's categories flattened into addon-facing options with a
- * display path. Defaults to Wealthfolio's built-in "spending_categories"
- * taxonomy. Returns an empty array if the taxonomy doesn't exist.
+ * Lists spend categories flattened into addon-facing options with a display
+ * path. Omit `kind` to load all three activity-scope taxonomies (expense,
+ * income, saving). Skips a taxonomy that doesn't exist rather than failing.
  */
-export const getSpendCategories = async (
-  taxonomyId: string = DEFAULT_SPEND_TAXONOMY_ID,
-): Promise<SpendCategoryOption[]> => {
-  const taxonomy = await getTaxonomy(taxonomyId);
-  if (!taxonomy) return [];
+export const getSpendCategories = async (kind?: SpendCategoryKind): Promise<SpendCategory[]> => {
+  const kinds = kind
+    ? [kind]
+    : (Object.keys(SPEND_CATEGORY_KIND_TO_TAXONOMY_ID) as SpendCategoryKind[]);
 
-  const byId = new Map(taxonomy.categories.map((category) => [category.id, category]));
+  const perKind = await Promise.all(
+    kinds.map(async (k): Promise<SpendCategory[]> => {
+      const taxonomyId = SPEND_CATEGORY_KIND_TO_TAXONOMY_ID[k];
+      const taxonomy = await getTaxonomy(taxonomyId);
+      if (!taxonomy) return [];
 
-  return taxonomy.categories.map((category) => ({
-    taxonomyId,
-    categoryId: category.id,
-    key: category.key,
-    name: category.name,
-    path: buildCategoryPath(category, byId),
-  }));
+      const byId = new Map(taxonomy.categories.map((category) => [category.id, category]));
+      return taxonomy.categories.map((category) => ({
+        kind: k,
+        taxonomyId,
+        categoryId: category.id,
+        key: category.key,
+        name: category.name,
+        path: buildCategoryPath(category, byId),
+      }));
+    }),
+  );
+
+  return perKind.flat();
 };

@@ -133,10 +133,12 @@ export const PERMISSION_CATEGORIES: PermissionCategory[] = [
     description:
       'View spend categories and manage categorization rules that auto-tag transactions',
     functions: [
-      'getSpendCategories',
-      'upsertCategorizationRule',
-      'deleteCategorizationRule',
-      'rerunCategorizationRules',
+      'isEnabled',
+      'getCategories',
+      'getRules',
+      'saveRule',
+      'deleteRule',
+      'rerunRules',
     ],
     riskLevel: 'medium',
   },

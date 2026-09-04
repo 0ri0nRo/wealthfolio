@@ -303,36 +303,42 @@ describe("Addon Type Bridge", () => {
       logTrace: vi.fn(),
       logDebug: vi.fn(),
     };
+    const savedRule = {
+      id: "will-be-overwritten",
+      name: "Groceries",
+      pattern: "SUPERMARKET",
+      matchType: "contains",
+      taxonomyId: "spending_categories",
+      categoryId: "cat_groceries",
+      activityType: "WITHDRAWAL",
+      accountId: "account-1",
+      priority: 0,
+      isGlobal: false,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+    };
 
-    it("creates a new rule when none exists for the ruleKey", async () => {
-      const mockList = vi.fn().mockResolvedValue([]);
-      const mockCreate = vi.fn().mockResolvedValue({});
-      const mockUpdate = vi.fn();
+    it("saveRule calls the atomic upsert with a stable, addon-scoped id and kind mapped to a taxonomyId", async () => {
+      const expectedId = await deriveRuleId("test-addon", "pattern-1");
+      const mockUpsert = vi.fn().mockResolvedValue({ ...savedRule, id: expectedId });
 
       const sdkAPI = createSDKHostAPIBridge(
-        {
-          listCategorizationRules: mockList,
-          createCategorizationRule: mockCreate,
-          updateCategorizationRule: mockUpdate,
-          ...loggerMocks,
-        } as unknown as InternalHostAPI,
+        { upsertCategorizationRule: mockUpsert, ...loggerMocks } as unknown as InternalHostAPI,
         "test-addon",
-        spendingGuard("upsertCategorizationRule"),
+        spendingGuard("saveRule"),
       );
 
-      await sdkAPI.spending.upsertCategorizationRule({
+      const result = await sdkAPI.spending.saveRule({
         ruleKey: "pattern-1",
         name: "Groceries",
         pattern: "SUPERMARKET",
-        taxonomyId: "spending_categories",
+        kind: "expense",
         categoryId: "cat_groceries",
         activityType: "WITHDRAWAL",
         accountId: "account-1",
       });
 
-      const expectedId = await deriveRuleId("test-addon", "pattern-1");
-      expect(mockUpdate).not.toHaveBeenCalled();
-      expect(mockCreate).toHaveBeenCalledWith({
+      expect(mockUpsert).toHaveBeenCalledWith({
         id: expectedId,
         name: "Groceries",
         pattern: "SUPERMARKET",
@@ -344,37 +350,8 @@ describe("Addon Type Bridge", () => {
         accountId: "account-1",
         priority: 0,
       });
-    });
-
-    it("updates the existing rule in place on a repeat upsert with the same ruleKey", async () => {
-      const expectedId = await deriveRuleId("test-addon", "pattern-1");
-      const mockList = vi.fn().mockResolvedValue([{ id: expectedId }]);
-      const mockCreate = vi.fn();
-      const mockUpdate = vi.fn().mockResolvedValue({});
-
-      const sdkAPI = createSDKHostAPIBridge(
-        {
-          listCategorizationRules: mockList,
-          createCategorizationRule: mockCreate,
-          updateCategorizationRule: mockUpdate,
-          ...loggerMocks,
-        } as unknown as InternalHostAPI,
-        "test-addon",
-        spendingGuard("upsertCategorizationRule"),
-      );
-
-      await sdkAPI.spending.upsertCategorizationRule({
-        ruleKey: "pattern-1",
-        name: "Groceries (renamed)",
-        pattern: "SUPERMARKET",
-        taxonomyId: "spending_categories",
-        categoryId: "cat_groceries",
-      });
-
-      expect(mockCreate).not.toHaveBeenCalled();
-      expect(mockUpdate).toHaveBeenCalledWith(
-        expectedId,
-        expect.objectContaining({ name: "Groceries (renamed)", isGlobal: true, accountId: null }),
+      expect(result).toEqual(
+        expect.objectContaining({ id: expectedId, kind: "expense", categoryId: "cat_groceries" }),
       );
     });
 
@@ -384,43 +361,56 @@ describe("Addon Type Bridge", () => {
       expect(idA).not.toBe(idB);
     });
 
-    it("deleteCategorizationRule is a no-op when no rule exists for the ruleKey", async () => {
-      const mockList = vi.fn().mockResolvedValue([]);
-      const mockDelete = vi.fn();
-
-      const sdkAPI = createSDKHostAPIBridge(
-        {
-          listCategorizationRules: mockList,
-          deleteCategorizationRuleById: mockDelete,
-          ...loggerMocks,
-        } as unknown as InternalHostAPI,
-        "test-addon",
-        spendingGuard("deleteCategorizationRule"),
-      );
-
-      await sdkAPI.spending.deleteCategorizationRule("never-created");
-
-      expect(mockDelete).not.toHaveBeenCalled();
-    });
-
-    it("deleteCategorizationRule removes the matching rule", async () => {
+    it("deleteRule calls through directly without probing via list first", async () => {
       const expectedId = await deriveRuleId("test-addon", "pattern-1");
-      const mockList = vi.fn().mockResolvedValue([{ id: expectedId }]);
       const mockDelete = vi.fn().mockResolvedValue(undefined);
 
       const sdkAPI = createSDKHostAPIBridge(
+        { deleteCategorizationRuleById: mockDelete, ...loggerMocks } as unknown as InternalHostAPI,
+        "test-addon",
+        spendingGuard("deleteRule"),
+      );
+
+      await sdkAPI.spending.deleteRule("pattern-1");
+
+      expect(mockDelete).toHaveBeenCalledWith(expectedId);
+    });
+
+    it("getRules returns only this addon's rules, converted to kind + categoryId", async () => {
+      const ownId = await deriveRuleId("test-addon", "pattern-1");
+      const otherAddonId = await deriveRuleId("other-addon", "pattern-1");
+      const mockList = vi.fn().mockResolvedValue([
+        { ...savedRule, id: ownId },
+        { ...savedRule, id: otherAddonId },
+        // A non-addon rule (e.g. from Wealthfolio's own rules UI) — excluded by prefix.
+        { ...savedRule, id: "manual-rule" },
+      ]);
+
+      const sdkAPI = createSDKHostAPIBridge(
+        { listCategorizationRules: mockList, ...loggerMocks } as unknown as InternalHostAPI,
+        "test-addon",
+        spendingGuard("getRules"),
+      );
+
+      const rules = await sdkAPI.spending.getRules();
+
+      expect(rules).toEqual([expect.objectContaining({ id: ownId, kind: "expense" })]);
+    });
+
+    it("rerunRules defaults to true (only-uncategorized) when called with no argument", async () => {
+      const mockRerun = vi.fn().mockResolvedValue(3);
+      const sdkAPI = createSDKHostAPIBridge(
         {
-          listCategorizationRules: mockList,
-          deleteCategorizationRuleById: mockDelete,
+          rerunCategorizationRulesForAddon: mockRerun,
           ...loggerMocks,
         } as unknown as InternalHostAPI,
         "test-addon",
-        spendingGuard("deleteCategorizationRule"),
+        spendingGuard("rerunRules"),
       );
 
-      await sdkAPI.spending.deleteCategorizationRule("pattern-1");
+      await sdkAPI.spending.rerunRules();
 
-      expect(mockDelete).toHaveBeenCalledWith(expectedId);
+      expect(mockRerun).toHaveBeenCalledWith(true);
     });
 
     it("enforces the spending permission category", () => {
@@ -431,8 +421,8 @@ describe("Addon Type Bridge", () => {
         guard,
       );
 
-      expect(() => sdkAPI.spending.getSpendCategories()).toThrow(
-        "Addon 'test-addon' is not allowed to call spending.getSpendCategories",
+      expect(() => sdkAPI.spending.getCategories()).toThrow(
+        "Addon 'test-addon' is not allowed to call spending.getCategories",
       );
     });
 
@@ -441,10 +431,12 @@ describe("Addon Type Bridge", () => {
       expect(category?.riskLevel).toBe("medium");
       expect(category?.functions).toEqual(
         expect.arrayContaining([
-          "getSpendCategories",
-          "upsertCategorizationRule",
-          "deleteCategorizationRule",
-          "rerunCategorizationRules",
+          "isEnabled",
+          "getCategories",
+          "getRules",
+          "saveRule",
+          "deleteRule",
+          "rerunRules",
         ]),
       );
     });

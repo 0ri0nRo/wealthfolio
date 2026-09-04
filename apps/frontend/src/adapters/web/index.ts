@@ -259,9 +259,13 @@ export {
   createCategorizationRule,
   deleteCategorizationRule,
   getSpendCategories,
+  isSpendingEnabled,
   listCategorizationRules,
   rerunCategorizationRules,
+  SPEND_CATEGORY_KIND_TO_TAXONOMY_ID,
+  TAXONOMY_ID_TO_SPEND_CATEGORY_KIND,
   updateCategorizationRule,
+  upsertCategorizationRule,
 } from "../shared/spending";
 
 // Alternative Assets Commands

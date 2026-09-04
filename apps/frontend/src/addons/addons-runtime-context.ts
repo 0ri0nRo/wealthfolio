@@ -30,12 +30,12 @@ import {
   updateContributionLimit,
 } from "@/adapters";
 import {
-  createCategorizationRule,
   deleteCategorizationRule,
   getSpendCategories,
+  isSpendingEnabled,
   listCategorizationRules,
   rerunCategorizationRules,
-  updateCategorizationRule,
+  upsertCategorizationRule,
 } from "@/adapters";
 import { openCsvFileDialog, openFileSaveDialog } from "@/adapters";
 import { createGoal, getGoals, getGoalFunding, saveGoalFunding, updateGoal } from "@/adapters";
@@ -464,10 +464,10 @@ export function createAddonHostAPI(
       addExchangeRate,
       getExchangeRatesForDates,
 
+      isSpendingEnabled,
       getSpendCategories,
       listCategorizationRules,
-      createCategorizationRule,
-      updateCategorizationRule,
+      upsertCategorizationRule,
       deleteCategorizationRuleById: deleteCategorizationRule,
       rerunCategorizationRulesForAddon: rerunCategorizationRules,
 

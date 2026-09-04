@@ -727,58 +727,85 @@ taxonomy via Wealthfolio's categorization-rules engine, instead of a one-off
 per-activity tag. A rule is reusable — it keeps applying to future matching
 imports, not just the activities that exist when it's created.
 
+`kind` selects which of Wealthfolio's three fixed activity-scope taxonomies a
+category or rule belongs to: `"expense"`, `"income"`, or `"saving"`. Asset
+classification taxonomies aren't reachable through this API.
+
 ### Methods
 
-#### `getSpendCategories(taxonomyId?: string): Promise<SpendCategoryOption[]>`
+#### `isEnabled(): Promise<boolean>`
 
-Lists selectable spend categories, flattened with a display path. Defaults to
-Wealthfolio's built-in `"spending_categories"` taxonomy.
+Whether the user has Spending enabled. Categories and rules still work when it's
+off, but `rerunRules()` is a no-op until the user opts an account in — check
+this to explain a result of `0`.
 
 ```typescript
-const categories = await ctx.api.spending.getSpendCategories();
-// [{ taxonomyId: "spending_categories", categoryId: "cat_groceries",
+if (!(await ctx.api.spending.isEnabled())) {
+  // Nudge the user to enable Spending before offering categorization.
+}
+```
+
+#### `getCategories(kind?: SpendCategoryKind): Promise<SpendCategory[]>`
+
+Lists selectable spend categories, flattened with a display path. Omit `kind` to
+load all three taxonomies at once.
+
+```typescript
+const categories = await ctx.api.spending.getCategories("expense");
+// [{ kind: "expense", taxonomyId: "spending_categories", categoryId: "cat_groceries",
 //    key: "groceries", name: "Groceries", path: "Food & Dining / Groceries" }, ...]
 ```
 
-#### `upsertCategorizationRule(input: UpsertCategorizationRuleInput): Promise<void>`
+#### `getRules(): Promise<CategorizationRule[]>`
 
-Creates or updates a categorization rule identified by `input.ruleKey`. Calling
+Lists this addon's own categorization rules — the ones created via `saveRule`.
+Use this to reconcile after a user deletes one of your rules from Wealthfolio's
+own Settings → Spending → Rules UI.
+
+```typescript
+const rules = await ctx.api.spending.getRules();
+```
+
+#### `saveRule(rule: CategorizationRuleInput): Promise<CategorizationRule>`
+
+Creates or updates a categorization rule identified by `rule.ruleKey`. Calling
 this again with the same `ruleKey` (typically a stable id you already persist in
 your own addon settings) updates the existing rule in place instead of creating
 a duplicate — safe to call on every settings save.
 
 ```typescript
-await ctx.api.spending.upsertCategorizationRule({
+const saved = await ctx.api.spending.saveRule({
   ruleKey: "my-addon-rule-1", // a stable key you choose and reuse
   name: "Groceries via MyBank",
   pattern: "MYBANK GROCERY",
   matchType: "contains", // "contains" | "starts_with" | "exact" | "regex"
-  taxonomyId: "spending_categories",
+  kind: "expense",
   categoryId: "cat_groceries",
   activityType: "WITHDRAWAL", // omit to match any activity type
   accountId: "account-123", // omit for a rule that applies to all accounts
 });
 ```
 
-#### `deleteCategorizationRule(ruleKey: string): Promise<void>`
+#### `deleteRule(ruleKey: string): Promise<void>`
 
 Deletes the rule previously created with this `ruleKey`. No-op if no matching
 rule exists.
 
 ```typescript
-await ctx.api.spending.deleteCategorizationRule("my-addon-rule-1");
+await ctx.api.spending.deleteRule("my-addon-rule-1");
 ```
 
-#### `rerunCategorizationRules(onlyUncategorized?: boolean): Promise<number>`
+#### `rerunRules(onlyUncategorized?: boolean): Promise<number>`
 
-Re-runs all categorization rules. Pass `true` to only fill in currently
-uncategorized activities — this preserves any existing manual or AI-assigned
-categories. Call this after an import so newly created activities pick up
-matching rules, since a rule only recategorizes existing activities at the
+Re-runs all categorization rules. Defaults to `true`, which only fills in
+currently uncategorized activities — this preserves any existing manual or
+AI-assigned categories. Pass `false` to also overwrite existing rule/AI/import-
+assigned categories. Call this after an import so newly created activities pick
+up matching rules, since a rule only recategorizes existing activities at the
 moment it's created or updated.
 
 ```typescript
-const touched = await ctx.api.spending.rerunCategorizationRules(true);
+const touched = await ctx.api.spending.rerunRules();
 ```
 
 ---

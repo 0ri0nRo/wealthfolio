@@ -526,11 +526,18 @@ export interface CategoryWithWeight {
 }
 
 /**
- * A selectable spend category, flattened from a taxonomy's category tree.
- * Used to classify activities (e.g. WITHDRAWALs) via categorization rules,
- * as distinct from the asset-classification taxonomies above.
+ * The three fixed activity-scope taxonomies a categorization rule can target,
+ * in Wealthfolio's own vocabulary (matches the app's quick-categorize picker).
  */
-export interface SpendCategoryOption {
+export type SpendCategoryKind = 'expense' | 'income' | 'saving';
+
+/**
+ * A selectable spend category, flattened from one of the three activity-scope
+ * taxonomies. Used to classify activities (e.g. WITHDRAWALs) via categorization
+ * rules, as distinct from the asset-classification taxonomies above.
+ */
+export interface SpendCategory {
+  kind: SpendCategoryKind;
   taxonomyId: string;
   categoryId: string;
   /** Machine key, e.g. "groceries" */
@@ -543,7 +550,27 @@ export interface SpendCategoryOption {
 
 export type CategorizationRuleMatchType = 'contains' | 'starts_with' | 'exact' | 'regex';
 
-export interface UpsertCategorizationRuleInput {
+/**
+ * A categorization rule as returned by the host. `getRules()` only ever
+ * returns rules this addon created via `saveRule`.
+ */
+export interface CategorizationRule {
+  id: string;
+  name: string;
+  pattern: string;
+  matchType: CategorizationRuleMatchType;
+  kind: SpendCategoryKind;
+  categoryId: string;
+  /** Restricted to one activity type, e.g. "WITHDRAWAL". Absent if it matches any type. */
+  activityType?: ActivityType;
+  /** Restricted to one account. Absent if it applies to all accounts. */
+  accountId?: string;
+  priority: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CategorizationRuleInput {
   /**
    * Stable key you choose and keep reusing for the same logical rule across
    * edits/re-saves. Internally combined with your addon's id, so it can't
@@ -558,10 +585,10 @@ export interface UpsertCategorizationRuleInput {
   pattern: string;
   /** @default "contains" */
   matchType?: CategorizationRuleMatchType;
-  taxonomyId: string;
+  kind: SpendCategoryKind;
   categoryId: string;
   /** Restrict to one activity type, e.g. "WITHDRAWAL". Omit to match any type. */
-  activityType?: string;
+  activityType?: ActivityType;
   /** Restrict the rule to one account. Omit for a rule that applies everywhere. */
   accountId?: string;
   /** @default 0 */
