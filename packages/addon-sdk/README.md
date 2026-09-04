@@ -42,6 +42,8 @@ integrations, and visualizations.
 - **ESM Support**: Modern ECMAScript modules with tree-shaking support
 - **Comprehensive Logging**: Built-in logging system with multiple levels
 - **Event System**: Subscribe to application events and state changes
+- **Spend Categorization**: Manage reusable expense, income, and savings rules
+- **Localization**: Follow the host locale with scoped addon translations
 - **Performance Optimized**: Lightweight bundle with minimal overhead
 - **Developer Tools**: Built-in debugging and development utilities
 - **Backwards Compatible**: Stable API with semantic versioning
@@ -130,7 +132,7 @@ pnpm add @wealthfolio/addon-sdk @tanstack/react-query
 ### Package Information
 
 - **Package Name**: `@wealthfolio/addon-sdk`
-- **Current Version**: 3.7.0
+- **Current Version**: 3.8.0
 - **Bundle Format**: ESM (ECMAScript Modules)
 - **Type Definitions**: Included (TypeScript ready)
 - **License**: MIT
@@ -233,8 +235,8 @@ Create a `manifest.json` file in your addon root:
   "homepage": "https://github.com/yourname/investment-fees-tracker",
   "license": "MIT",
   "main": "dist/addon.js",
-  "sdkVersion": "3.7.0",
-  "minWealthfolioVersion": "3.7.0",
+  "sdkVersion": "3.8.0",
+  "minWealthfolioVersion": "3.8.0",
   "keywords": ["portfolio", "fees", "tracking", "analytics"],
   "icon": "data:image/svg+xml;base64,...",
   "permissions": [
@@ -426,12 +428,9 @@ export function FeesPage({ ctx }: FeesPageProps) {
 
   useEffect(() => {
     if (!isLoading) {
-      ctx.api.logger.info('Fees data loaded successfully', {
-        accountsCount: accounts?.length,
-        holdingsCount: holdings?.length,
-        activitiesCount: activities?.data?.length,
-        totalFees
-      });
+      ctx.api.logger.info(
+        `Fees data loaded successfully (${accounts?.length ?? 0} accounts, ${holdings?.length ?? 0} holdings, ${activities?.data?.length ?? 0} activities, ${totalFees} in fees)`,
+      );
     }
   }, [isLoading, accounts, holdings, activities, totalFees, ctx.api.logger]);
 
@@ -560,11 +559,10 @@ export function usePortfolioData(accountId?: string) {
         setHoldings(holdingsData);
 
         if (accountId) {
-          const performanceData =
-            await ctx.api.portfolio.calculatePerformanceSummary({
-              itemType: 'account',
-              itemId: accountId,
-            });
+          const performanceData = await ctx.api.performance.calculateSummary({
+            itemType: 'account',
+            itemId: accountId,
+          });
           console.log(
             performanceData.returns.twr,
             performanceData.returns.irr,
@@ -594,18 +592,28 @@ cash flows.
 
 ### Permission Categories
 
-| Category             | Risk Level | Description                     |
-| -------------------- | ---------- | ------------------------------- |
-| `ui`                 | Low        | Add navigation items and routes |
-| `market-data`        | Low        | Access market prices and quotes |
-| `events`             | Low        | Listen to application events    |
-| `currency`           | Low        | Access exchange rates           |
-| `portfolio`          | Medium     | Access holdings and valuations  |
-| `files`              | Medium     | File dialog operations          |
-| `financial-planning` | Medium     | Goals and contribution limits   |
-| `activities`         | High       | Transaction history access      |
-| `accounts`           | High       | Account management              |
-| `settings`           | High       | Application configuration       |
+| Category              | Risk Level | Description                                  |
+| --------------------- | ---------- | -------------------------------------------- |
+| `market-data`         | Low        | Search and synchronize market data           |
+| `quotes`              | Low        | Read and update quotes                       |
+| `events`              | Low        | Listen to application events                 |
+| `currency`            | Low        | Access exchange rates                        |
+| `assets`              | Medium     | Read and update financial asset profiles     |
+| `performance`         | Medium     | Calculate portfolio performance              |
+| `spending`            | Medium     | View categories and manage spending rules    |
+| `financial-planning`  | Medium     | Manage goals and allocations                 |
+| `contribution-limits` | Medium     | Manage contribution limits                   |
+| `files`               | Medium     | Open host file dialogs                       |
+| `settings`            | Medium     | Access application configuration             |
+| `portfolio`           | High       | Access holdings and valuations               |
+| `activities`          | High       | Access and modify transaction history        |
+| `accounts`            | High       | Access and create accounts                   |
+| `snapshots`           | High       | Access and modify holdings snapshots         |
+| `network`             | High       | Request declared external HTTPS hosts        |
+| `secrets`             | High       | Store and use secrets through the OS keyring |
+
+`ui`, `query`, `toast`, `logger`, and `storage` are baseline capabilities and
+must not be declared as permissions.
 
 ### Declaring Permissions
 
@@ -614,7 +622,7 @@ cash flows.
   "permissions": [
     {
       "category": "portfolio",
-      "functions": ["getHoldings", "getHolding", "calculatePerformanceSummary"],
+      "functions": ["getHoldings", "getHolding"],
       "purpose": "Display detailed portfolio analytics and performance metrics"
     },
     {
@@ -624,8 +632,13 @@ cash flows.
     },
     {
       "category": "market-data",
-      "functions": ["searchTicker", "getQuoteHistory"],
+      "functions": ["searchTicker"],
       "purpose": "Show price charts and enable ticker search functionality"
+    },
+    {
+      "category": "spending",
+      "functions": ["getCategories", "saveRule"],
+      "purpose": "Save categorization rules selected by the user"
     }
   ]
 }
@@ -794,7 +807,6 @@ Add an item to the application sidebar.
   `chart-bar`, or `calendar-dots`
 - `config.route` (string): Navigation route
 - `config.order` (number): Display order (optional)
-- `config.onClick` (function): Click handler (optional)
 
 **Returns:** `SidebarItemHandle` with `remove()` method
 
@@ -805,8 +817,10 @@ Register a new route in the application.
 **Parameters:**
 
 - `route.path` (string): Route path pattern
-- `route.render` (function): `({ root, location }) => void` — mount your React
-  root into the provided `root` element
+- `route.component` (component): Preferred; the host mounts the React component
+  and passes the current `location`
+- `route.render` (function): Legacy imperative alternative receiving
+  `{ root, location }`
 
 #### `onDisable(callback)`
 
@@ -828,42 +842,65 @@ const holdings = await ctx.api.portfolio.getHoldings(accountId);
 const accounts = await ctx.api.accounts.getAll();
 
 // Market data
-const quotes = await ctx.api.marketData.getQuoteHistory(symbol);
-const profile = await ctx.api.marketData.getAssetProfile(assetId);
+const symbols = await ctx.api.market.searchTicker('AAPL');
+const quotes = await ctx.api.quotes.getHistory(assetId);
+const profile = await ctx.api.assets.getProfile(assetId);
 
 // Financial planning
 const goals = await ctx.api.goals.getAll();
-const limits = await ctx.api.financialPlanning.getContributionLimit();
+const limits = await ctx.api.contributionLimits.getAll();
+
+// Historical exchange rates and spend categorization (Wealthfolio 3.8+)
+const rates = await ctx.api.exchangeRates.getRatesForDates([
+  { fromCurrency: 'USD', toCurrency: 'EUR', date: '2026-09-04' },
+]);
+const spendCategories = await ctx.api.spending.getCategories('expense');
 
 // Settings
-const settings = await ctx.api.getSettings();
+const settings = await ctx.api.settings.get();
 
 // Logging and debugging
 ctx.api.logger.info('Operation completed successfully');
-ctx.api.logger.error('Error occurred:', error);
-ctx.api.logger.debug('Debug info:', debugData);
+ctx.api.logger.error(`Error occurred: ${String(error)}`);
+ctx.api.logger.debug(`Debug info: ${JSON.stringify(debugData)}`);
 ```
 
 ### Available API Methods
 
-| Method                                          | Description                                               | Permission Required  |
-| ----------------------------------------------- | --------------------------------------------------------- | -------------------- |
-| `portfolio.getHoldings(accountId)`              | Get portfolio holdings for account                        | `portfolio`          |
-| `portfolio.getHolding(accountId, assetId)`      | Get specific holding                                      | `portfolio`          |
-| `portfolio.calculatePerformanceSummary(params)` | Calculate performance metrics                             | `portfolio`          |
-| `portfolio.getIncomeSummary()`                  | Get income summary data                                   | `portfolio`          |
-| `accounts.getAll()`                             | Get all account information                               | `accounts`           |
-| `accounts.create(account)`                      | Create new account                                        | `accounts`           |
-| `activities.getAll(accountId?)`                 | Get activity history (optionally filtered to one account) | `activities`         |
-| `activities.create(activity)`                   | Create new activity                                       | `activities`         |
-| `marketData.getQuoteHistory(symbol)`            | Get historical quotes                                     | `market-data`        |
-| `marketData.getAssetProfile(assetId)`           | Get asset profile                                         | `market-data`        |
-| `marketData.searchTicker(query)`                | Search for tickers                                        | `market-data`        |
-| `goals.getAll()`                                | Get financial goals                                       | `financial-planning` |
-| `goals.getFunding(goalId)`                      | Get funding rules for a goal                              | `financial-planning` |
-| `goals.saveFunding(goalId, rules)`              | Save funding rules for a goal                             | `financial-planning` |
-| `settings.get()`                                | Get app settings                                          | `settings`           |
-| `query.getClient()`                             | Get this addon's QueryClient                              | None                 |
+| Method                                     | Description                                 | Permission Required   |
+| ------------------------------------------ | ------------------------------------------- | --------------------- |
+| `portfolio.getHoldings(accountId)`         | Get portfolio holdings for an account       | `portfolio`           |
+| `portfolio.getHolding(accountId, assetId)` | Get a specific holding                      | `portfolio`           |
+| `performance.calculateSummary(params)`     | Calculate performance metrics               | `performance`         |
+| `accounts.getAll()`                        | Get all account information                 | `accounts`            |
+| `accounts.create(account)`                 | Create an account                           | `accounts`            |
+| `activities.getAll(accountId?)`            | Get activity history                        | `activities`          |
+| `activities.create(activity)`              | Create an activity                          | `activities`          |
+| `market.searchTicker(query)`               | Search for tickers                          | `market-data`         |
+| `assets.getProfile(assetId)`               | Get a financial asset profile               | `assets`              |
+| `quotes.getHistory(assetId)`               | Get historical quotes                       | `quotes`              |
+| `exchangeRates.getRatesForDates(pairs)`    | Resolve dated exchange rates                | `currency`            |
+| `spending.isEnabled()`                     | Check whether Spending is enabled           | `spending`            |
+| `spending.getCategories(kind?)`            | List expense, income, or savings categories | `spending`            |
+| `spending.getRules()`                      | List this addon's categorization rules      | `spending`            |
+| `spending.saveRule(rule)`                  | Create or update an addon-owned rule        | `spending`            |
+| `spending.deleteRule(ruleKey)`             | Delete an addon-owned rule                  | `spending`            |
+| `spending.rerunRules(onlyUncategorized?)`  | Re-run categorization rules                 | `spending`            |
+| `goals.getAll()`                           | Get financial goals                         | `financial-planning`  |
+| `contributionLimits.getAll()`              | Get contribution limits                     | `contribution-limits` |
+| `settings.get()`                           | Get application settings                    | `settings`            |
+| `query.getClient()`                        | Get this addon's QueryClient                | None                  |
+
+The Spending and dated exchange-rate APIs require Wealthfolio 3.8 or newer. See
+the [complete API reference](../../docs/addons/addon-api-reference.md).
+
+### Localization
+
+Wealthfolio 3.8 addons can register private translation bundles with
+`registerTranslations()` and read them from React components with
+`useAddonTranslation()`. Addons using these exports must set
+`minWealthfolioVersion` to `3.8.0` or newer. See the
+[localization guide](../../docs/addons/addon-localization.md).
 
 > Tip: `activities.getAll` accepts an optional account ID string to scope
 > results to a single account. The SDK normalizes this for both desktop (Tauri)
@@ -902,19 +939,12 @@ The SDK provides a comprehensive logging system:
 ```typescript
 const ctx = getAddonContext();
 
-// Log levels: 'error', 'warn', 'info', 'debug'
-ctx.api.logger.error('Critical error occurred', { error, context });
-ctx.api.logger.warn('Warning message', additionalData);
+// Each method accepts one string message.
+ctx.api.logger.error(`Critical error occurred: ${String(error)}`);
+ctx.api.logger.warn(`Warning message: ${String(additionalData)}`);
 ctx.api.logger.info('Information message');
-ctx.api.logger.debug('Debug information', debugObject);
-
-// Set log level (for development)
-ctx.api.logger.setLevel('debug');
-
-// Check if logging level is enabled
-if (ctx.api.logger.isLevelEnabled('debug')) {
-  ctx.api.logger.debug('Expensive debug operation', expensiveData);
-}
+ctx.api.logger.debug(`Debug information: ${JSON.stringify(debugObject)}`);
+ctx.api.logger.trace('Detailed trace message');
 ```
 
 ### Addon QueryClient Integration
@@ -1209,8 +1239,7 @@ npm publish --tag beta
 ```typescript
 // In your addon
 const ctx = getAddonContext();
-ctx.api.logger.setLevel('debug');
-ctx.api.logger.debug('Debug information:', data);
+ctx.api.logger.debug(`Debug information: ${JSON.stringify(data)}`);
 ```
 
 #### 2. Development Console
@@ -1254,14 +1283,8 @@ async function fetchPortfolioData() {
     ).then((results) => results.flat());
     return holdings;
   } catch (error) {
-    ctx.api.logger.error('Failed to fetch holdings:', error);
-
-    // Handle different error types
-    if (error.code === 'PERMISSION_DENIED') {
-      // Show permission error to user
-    } else if (error.code === 'NETWORK_ERROR') {
-      // Handle network issues
-    }
+    const message = error instanceof Error ? error.message : String(error);
+    ctx.api.logger.error(`Failed to fetch holdings: ${message}`);
 
     throw error;
   }
@@ -1438,6 +1461,7 @@ We follow [Semantic Versioning](https://semver.org/) (SemVer):
 
 | SDK Version | Wealthfolio Version | Node.js   | React   |
 | ----------- | ------------------- | --------- | ------- |
+| 3.8.x       | >= 3.8.0            | >= 20.0.0 | ^19.2.4 |
 | 3.7.x       | >= 3.7.0            | >= 20.0.0 | ^19.2.4 |
 | 0.9.x       | >= 0.9.0            | >= 16.0.0 | ^17.0.0 |
 
@@ -1450,10 +1474,10 @@ We follow [Semantic Versioning](https://semver.org/) (SemVer):
 npm install @wealthfolio/addon-sdk
 
 # Specific version
-npm install @wealthfolio/addon-sdk@3.7.0
+npm install @wealthfolio/addon-sdk@3.8.0
 
 # Version range
-npm install @wealthfolio/addon-sdk@^3.7.0
+npm install @wealthfolio/addon-sdk@^3.8.0
 ```
 
 #### Beta/Preview Releases
@@ -1779,13 +1803,10 @@ ls -la dist/  # Should update when you save files
 try {
   const accounts = await ctx.api.accounts.getAll();
   const data = await ctx.api.portfolio.getHoldings(accounts[0]?.id);
-  ctx.api.logger.info('Data loaded successfully', { count: data.length });
+  ctx.api.logger.info(`Data loaded successfully (${data.length} holdings)`);
 } catch (error) {
-  ctx.api.logger.error('API call failed', {
-    error: error.message,
-    stack: error.stack,
-    timestamp: new Date().toISOString(),
-  });
+  const message = error instanceof Error ? error.message : String(error);
+  ctx.api.logger.error(`API call failed: ${message}`);
 }
 ```
 

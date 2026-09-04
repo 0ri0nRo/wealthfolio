@@ -93,8 +93,8 @@ permissions it needs:
   "description": "My first Wealthfolio addon",
   "author": "Your Name",
   "main": "dist/addon.js",
-  "sdkVersion": "3.7.0",
-  "minWealthfolioVersion": "3.7.0",
+  "sdkVersion": "3.8.0",
+  "minWealthfolioVersion": "3.8.0",
   "enabled": true,
   "contributes": {
     "routes": [{ "id": "hello-world" }],
@@ -300,7 +300,7 @@ function HelloWorldPage({ ctx }: { ctx: AddonContext }) {
     queryKey: ['accounts'],
     queryFn: () => ctx.api.accounts.getAll(),
     onError: (error) => {
-      ctx.api.logger.error('Failed to load accounts:', error);
+      ctx.api.logger.error(`Failed to load accounts: ${String(error)}`);
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
@@ -417,8 +417,8 @@ declaring a data `category`, the `functions` you call, and a human-readable
   "description": "My first Wealthfolio addon",
   "author": "Your Name",
   "main": "dist/addon.js",
-  "sdkVersion": "3.7.0",
-  "minWealthfolioVersion": "3.7.0",
+  "sdkVersion": "3.8.0",
+  "minWealthfolioVersion": "3.8.0",
   "enabled": true,
   "contributes": {
     "routes": [{ "id": "hello-world" }],
