@@ -127,7 +127,7 @@ pnpm add @wealthfolio/addon-sdk @tanstack/react-query
 - **Node.js**: >= 20.0.0
 - **React**: ^19.2.4 (peer dependency and host-provided version)
 - **TypeScript**: ^5.0.0 (recommended for development)
-- **React Query**: ^4.0.0 or ^5.0.0 (for data fetching)
+- **React Query**: ^5.90.0 (for data fetching)
 
 ### Package Information
 
@@ -142,22 +142,27 @@ pnpm add @wealthfolio/addon-sdk @tanstack/react-query
 
 ### Import Methods
 
-The SDK supports multiple import patterns:
+The SDK supports a public entry point plus focused subpath imports:
 
 ```typescript
-// Default import (recommended)
-import { getAddonContext } from '@wealthfolio/addon-sdk';
+// Public entry point (recommended)
+import type {
+  AddonContext,
+  AddonManifest,
+  Holding,
+  Permission,
+  RiskLevel,
+} from '@wealthfolio/addon-sdk';
+import { PERMISSION_CATEGORIES } from '@wealthfolio/addon-sdk';
 
-// Named imports
-import { AddonContext, PermissionLevel } from '@wealthfolio/addon-sdk';
-
-// Type-only imports
-import type { AddonManifest, Permission } from '@wealthfolio/addon-sdk';
-
-// Subpath imports
-import type { PortfolioHolding } from '@wealthfolio/addon-sdk/types';
-import { PERMISSION_CATEGORIES } from '@wealthfolio/addon-sdk/permissions';
+// Optional module-specific subpath imports
+import type { AddonManifest as Manifest } from '@wealthfolio/addon-sdk/manifest';
+import type { Permission as AddonPermission } from '@wealthfolio/addon-sdk/permissions';
 ```
+
+The `/types` subpath contains core context, routing, sidebar, and event types.
+Financial data types such as `Account`, `Activity`, and `Holding` are exported
+from the package root.
 
 ## 🏗️ Project Structure
 
@@ -241,6 +246,11 @@ Create a `manifest.json` file in your addon root:
   "icon": "data:image/svg+xml;base64,...",
   "permissions": [
     {
+      "category": "accounts",
+      "functions": ["getAll"],
+      "purpose": "List accounts whose holdings will be analyzed"
+    },
+    {
       "category": "portfolio",
       "functions": ["getHoldings"],
       "purpose": "Access portfolio data to calculate fee analytics"
@@ -249,6 +259,11 @@ Create a `manifest.json` file in your addon root:
       "category": "activities",
       "functions": ["getAll"],
       "purpose": "Analyze transaction history for fee calculations"
+    },
+    {
+      "category": "performance",
+      "functions": ["calculateSummary"],
+      "purpose": "Calculate account performance alongside fee totals"
     }
   ]
 }
@@ -287,7 +302,11 @@ example:
 ```typescript
 // src/addon.tsx
 import { QueryClientProvider } from '@tanstack/react-query';
-import type { AddonContext, AddonEnableFunction } from '@wealthfolio/addon-sdk';
+import type {
+  AddonContext,
+  AddonEnableFunction,
+  QueryClient,
+} from '@wealthfolio/addon-sdk';
 import FeesPage from './pages/fees-page';
 
 // Main addon component
@@ -321,7 +340,7 @@ const enable: AddonEnableFunction = (context) => {
 
     // Create wrapper component with this addon's QueryClient
     const InvestmentFeesTrackerWrapper = () => {
-      const addonQueryClient = context.api.query.getClient();
+      const addonQueryClient = context.api.query.getClient() as QueryClient;
       return (
         <QueryClientProvider client={addonQueryClient}>
           <InvestmentFeesTrackerAddon ctx={context} />
@@ -369,7 +388,7 @@ export default enable;
 
 1. **Addon Query Client**: Uses `context.api.query.getClient()` for local data
    fetching with host invalidation bridging
-2. **UI Icons**: Leverages `@wealthfolio/ui` for consistent iconography
+2. **UI Icons**: Uses a host-supported icon token for consistent navigation
 3. **Error Handling**: Comprehensive error handling with logging
 4. **Resource Management**: Proper cleanup of sidebar items and event listeners
 5. **TypeScript**: Full type safety with proper imports
@@ -379,10 +398,9 @@ export default enable;
 
 ```typescript
 // components/FeesPage.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { AddonContext } from '@wealthfolio/addon-sdk';
-import type { Holding, Account, Activity } from '@wealthfolio/addon-sdk/types';
 
 interface FeesPageProps {
   ctx: AddonContext;
@@ -417,11 +435,11 @@ export function FeesPage({ ctx }: FeesPageProps) {
 
   // Calculate total fees from activities
   const totalFees = React.useMemo(() => {
-    if (!activities?.data) return 0;
+    if (!activities) return 0;
 
-    return activities.data.reduce((total, activity) => {
+    return activities.reduce((total, activity) => {
       // Look for fee-related activities or transaction costs
-      const fee = activity.fee || 0;
+      const fee = Number(activity.fee ?? 0);
       return total + fee;
     }, 0);
   }, [activities]);
@@ -429,7 +447,7 @@ export function FeesPage({ ctx }: FeesPageProps) {
   useEffect(() => {
     if (!isLoading) {
       ctx.api.logger.info(
-        `Fees data loaded successfully (${accounts?.length ?? 0} accounts, ${holdings?.length ?? 0} holdings, ${activities?.data?.length ?? 0} activities, ${totalFees} in fees)`,
+        `Fees data loaded successfully (${accounts?.length ?? 0} accounts, ${holdings?.length ?? 0} holdings, ${activities?.length ?? 0} activities, ${totalFees} in fees)`,
       );
     }
   }, [isLoading, accounts, holdings, activities, totalFees, ctx.api.logger]);
@@ -475,14 +493,16 @@ export function FeesPage({ ctx }: FeesPageProps) {
         <div className="bg-white p-6 rounded-lg shadow border">
           <h2 className="text-xl font-semibold mb-4">Recent Fee Activities</h2>
           <div className="space-y-3">
-            {activities?.data?.slice(0, 5).map((activity) => (
+            {activities?.slice(0, 5).map((activity) => (
               <div key={activity.id} className="flex justify-between items-center py-2 border-b">
                 <div>
                   <p className="font-medium">{activity.activityType}</p>
-                  <p className="text-sm text-gray-600">{activity.date}</p>
+                  <p className="text-sm text-gray-600">
+                    {activity.date.toLocaleDateString()}
+                  </p>
                 </div>
                 <span className="text-red-600 font-medium">
-                  ${(activity.fee || 0).toFixed(2)}
+                  ${Number(activity.fee ?? 0).toFixed(2)}
                 </span>
               </div>
             ))}
@@ -534,10 +554,13 @@ export default AnalyticsDashboard;
 ```typescript
 // hooks/usePortfolioData.ts
 import { useState, useEffect } from 'react';
-import { getAddonContext } from '@wealthfolio/addon-sdk';
-import type { Holding, PerformanceResult } from '@wealthfolio/addon-sdk/types';
+import type {
+  AddonContext,
+  Holding,
+  PerformanceResult,
+} from '@wealthfolio/addon-sdk';
 
-export function usePortfolioData(accountId?: string) {
+export function usePortfolioData(ctx: AddonContext, accountId?: string) {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [performance, setPerformance] = useState<PerformanceResult | null>(
     null,
@@ -551,25 +574,25 @@ export function usePortfolioData(accountId?: string) {
         setLoading(true);
         setError(null);
 
-        const ctx = getAddonContext();
+        if (!accountId) {
+          setHoldings([]);
+          setPerformance(null);
+          return;
+        }
 
-        const holdingsData = await ctx.api.portfolio.getHoldings(
-          accountId || '',
-        );
+        const holdingsData = await ctx.api.portfolio.getHoldings(accountId);
         setHoldings(holdingsData);
 
-        if (accountId) {
-          const performanceData = await ctx.api.performance.calculateSummary({
-            itemType: 'account',
-            itemId: accountId,
-          });
-          console.log(
-            performanceData.returns.twr,
-            performanceData.returns.irr,
-            performanceData.risk.maxDrawdown,
-          );
-          setPerformance(performanceData);
-        }
+        const performanceData = await ctx.api.performance.calculateSummary({
+          itemType: 'account',
+          itemId: accountId,
+        });
+        console.log(
+          performanceData.returns.twr,
+          performanceData.returns.irr,
+          performanceData.risk.maxDrawdown,
+        );
+        setPerformance(performanceData);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Unknown error');
       } finally {
@@ -578,7 +601,7 @@ export function usePortfolioData(accountId?: string) {
     }
 
     fetchData();
-  }, [accountId]);
+  }, [accountId, ctx]);
 
   return { holdings, performance, loading, error };
 }
@@ -612,8 +635,8 @@ cash flows.
 | `network`             | High       | Request declared external HTTPS hosts        |
 | `secrets`             | High       | Store and use secrets through the OS keyring |
 
-`ui`, `query`, `toast`, `logger`, and `storage` are baseline capabilities and
-must not be declared as permissions.
+`ui`, `navigation`, `query`, `toast`, `logger`, and `storage` are baseline
+capabilities and must not be declared as permissions.
 
 ### Declaring Permissions
 
@@ -835,7 +858,7 @@ Register cleanup callback for addon disable.
 All data access is performed through the context's `api` property:
 
 ```typescript
-const ctx = getAddonContext();
+// Use the ctx parameter supplied to enable(ctx), or pass it to this helper.
 
 // Portfolio data
 const holdings = await ctx.api.portfolio.getHoldings(accountId);
@@ -937,7 +960,7 @@ const response = await ctx.api.activities.search(
 The SDK provides a comprehensive logging system:
 
 ```typescript
-const ctx = getAddonContext();
+// Use the ctx parameter supplied to enable(ctx), or pass it to this helper.
 
 // Each method accepts one string message.
 ctx.api.logger.error(`Critical error occurred: ${String(error)}`);
@@ -954,28 +977,34 @@ across that addon's route renders, not shared with the host or other addons.
 Invalidate/refetch operations are mirrored to the host:
 
 ```typescript
-// Access this addon's QueryClient instance
-const addonQueryClient = context.api.query.getClient();
+import { QueryClientProvider, useQuery } from '@tanstack/react-query';
+import type { AddonContext, QueryClient } from '@wealthfolio/addon-sdk';
 
 // Wrap your components with QueryClientProvider
-const MyAddonWrapper = () => {
+const MyAddonWrapper = ({ ctx }: { ctx: AddonContext }) => {
+  const addonQueryClient = ctx.api.query.getClient() as QueryClient;
+
   return (
     <QueryClientProvider client={addonQueryClient}>
-      <MyAddonComponent />
+      <MyAddonComponent ctx={ctx} />
     </QueryClientProvider>
   );
 };
 
 // Use React Query hooks in your components
-function MyAddonComponent() {
+function MyAddonComponent({ ctx }: { ctx: AddonContext }) {
   const { data: accounts, isLoading } = useQuery({
     queryKey: ['accounts'],
     queryFn: () => ctx.api.accounts.getAll()
   });
 
+  const selectedAccountId = accounts?.[0]?.id;
   const { data: holdings } = useQuery({
     queryKey: ['holdings', selectedAccountId],
-    queryFn: () => ctx.api.portfolio.getHoldings(selectedAccountId),
+    queryFn: () =>
+      selectedAccountId
+        ? ctx.api.portfolio.getHoldings(selectedAccountId)
+        : Promise.resolve([]),
     enabled: !!selectedAccountId
   });
 
@@ -1009,9 +1038,14 @@ the required development-tools upgrade.
 // Before
 import ctx from '@wealthfolio/addon-sdk';
 
-// After (recommended)
-import { getAddonContext } from '@wealthfolio/addon-sdk';
-const ctx = getAddonContext();
+// Current SDK
+import type { AddonEnableFunction } from '@wealthfolio/addon-sdk';
+
+const enable: AddonEnableFunction = (ctx) => {
+  // Pass ctx to components, hooks, and helper functions that need host APIs.
+};
+
+export default enable;
 ```
 
 #### Type Imports
@@ -1238,8 +1272,9 @@ npm publish --tag beta
 
 ```typescript
 // In your addon
-const ctx = getAddonContext();
-ctx.api.logger.debug(`Debug information: ${JSON.stringify(data)}`);
+function logDebug(ctx: AddonContext, data: unknown) {
+  ctx.api.logger.debug(`Debug information: ${JSON.stringify(data)}`);
+}
 ```
 
 #### 2. Development Console
@@ -1270,11 +1305,9 @@ if (process.env.NODE_ENV === 'development') {
 #### 1. Error Handling
 
 ```typescript
-import { getAddonContext } from '@wealthfolio/addon-sdk';
+import type { AddonContext } from '@wealthfolio/addon-sdk';
 
-async function fetchPortfolioData() {
-  const ctx = getAddonContext();
-
+async function fetchPortfolioData(ctx: AddonContext) {
   try {
     // Get all accounts first, then holdings for each
     const accounts = await ctx.api.accounts.getAll();
@@ -1348,17 +1381,15 @@ const HeavyChart = lazy(() => import('./components/HeavyChart'));
 
 ```typescript
 // Use React Query or SWR for caching
-import { useQuery } from 'react-query';
+import { useQuery } from '@tanstack/react-query';
 
 function usePortfolioData(accountId: string) {
-  return useQuery(
-    ['portfolio', accountId],
-    () => ctx.api.portfolio.getHoldings(accountId),
-    {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
-    },
-  );
+  return useQuery({
+    queryKey: ['portfolio', accountId],
+    queryFn: () => ctx.api.portfolio.getHoldings(accountId),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+  });
 }
 ```
 
@@ -1733,31 +1764,29 @@ export default defineConfig({
   "permissions": [
     {
       "category": "portfolio",
-      "functions": ["holdings"],
+      "functions": ["getHoldings"],
       "purpose": "Access portfolio data for analytics"
     }
   ]
 }
 ```
 
-#### 6. Context Not Available
+#### 6. Context Not Available in a Component or Helper
 
-**Error**: `getAddonContext() returns undefined`
+**Error**: A component or helper cannot access the addon context.
 
 **Solutions**:
 
 ```typescript
-// Ensure you're calling it within addon context
-function MyComponent() {
-  useEffect(() => {
-    // Call context inside useEffect or event handlers
-    const ctx = getAddonContext();
-    // ... use context
-  }, []);
+import type { AddonContext, AddonEnableFunction } from '@wealthfolio/addon-sdk';
+
+function MyComponent({ ctx }: { ctx: AddonContext }) {
+  return <button onClick={() => ctx.api.toast.success('Ready')}>Test API</button>;
 }
 
-// Don't call at module level
-// const ctx = getAddonContext(); // ❌ Wrong
+const enable: AddonEnableFunction = (ctx) => {
+  // Capture ctx for a route wrapper, or pass it directly to helpers/components.
+};
 ```
 
 ### Development Environment Issues

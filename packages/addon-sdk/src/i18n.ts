@@ -34,7 +34,7 @@ export interface AddonTranslationApi {
    * literally, and `$t()` nesting inside translation values is disabled.
    */
   t: (key: string, options?: Record<string, unknown>) => string;
-  /** Current UI language as a base code (`en`, `fr`, ...). Follows the host setting. */
+  /** Current UI language as a canonical host code (`en`, `fr`, `zh-Hant`, ...). */
   language: string;
 }
 

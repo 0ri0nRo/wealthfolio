@@ -129,11 +129,11 @@ const accounts = await ctx.api.accounts.getAll();
 | `network`             | High       | request                                                              |
 | `secrets`             | High       | set, get, use, delete                                                |
 
-> **Baseline capabilities are not permissions.** `ui`, packaged `assets`,
-> `query`, `toast`, `logger`, and `storage` are granted to every addon and must
-> **not** appear in `manifest.json` `permissions`. Only data categories plus
-> `files`, `network`, `secrets`, `events`, `snapshots`, and `settings` require
-> declaration and consent.
+> **Baseline capabilities are not permissions.** `ui`, `navigation`, packaged
+> `assets`, `query`, `toast`, `logger`, and `storage` are granted to every addon
+> and must **not** appear in `manifest.json` `permissions`. Only data categories
+> plus `files`, `network`, `secrets`, `events`, `snapshots`, and `settings`
+> require declaration and consent.
 
 #### 3. User Approval
 
@@ -143,27 +143,29 @@ approve or reject the addon installation.
 ## Available APIs
 
 The addon context provides access to domain-specific data APIs plus a set of
-**baseline capabilities** (`ui`, packaged `assets`, `query`, `storage`, `toast`,
-`logger`) that every addon gets without declaring a permission:
+**baseline capabilities** (`ui`, `navigation`, packaged `assets`, `query`,
+`storage`, `toast`, `logger`) that every addon gets without declaring a
+permission:
 
 ```typescript
 interface AddonContext {
   ui: { root: HTMLElement };
-  sidebar: SidebarAPI;
-  router: RouterAPI;
+  sidebar: SidebarManager;
+  router: RouterManager;
   assets: AddonAssets;
-  onDisable: (callback: () => void) => void;
+  onDisable(callback: () => void): void;
   api: {
     // Baseline capabilities — no permission declaration required
     query: QueryAPI; // addon-local QueryClient with host invalidation bridge
     storage: StorageAPI; // durable, per-addon key/value store
     toast: ToastAPI; // user-facing notifications
     logger: LoggerAPI; // scoped logging
+    navigation: NavigationAPI; // application route navigation
     // Domain data APIs — declared in manifest `permissions`
     accounts: AccountsAPI;
     portfolio: PortfolioAPI;
     activities: ActivitiesAPI;
-    market: MarketAPI;
+    market: MarketDataAPI;
     assets: AssetsAPI;
     quotes: QuotesAPI;
     performance: PerformanceAPI;
@@ -177,7 +179,6 @@ interface AddonContext {
     events: EventsAPI;
     secrets: SecretsAPI;
     network: NetworkAPI;
-    navigation: NavigationAPI;
   };
 }
 ```

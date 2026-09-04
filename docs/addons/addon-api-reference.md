@@ -2,8 +2,8 @@
 
 Complete reference for Wealthfolio addon APIs. Data APIs require an appropriate
 permission entry in `manifest.json`. The baseline capabilities — `query`,
-`storage`, `toast`, `logger`, UI integration, and packaged assets — are
-available to every addon and need no declaration.
+`storage`, `toast`, `logger`, navigation, UI integration, and packaged assets —
+are available to every addon and need no declaration.
 
 ## Context Overview
 
@@ -12,11 +12,11 @@ The `AddonContext` is provided to your addon's `enable` function:
 ```typescript
 export interface AddonContext {
   api: HostAPI;
-  sidebar: SidebarAPI;
-  router: RouterAPI;
+  sidebar: SidebarManager;
+  router: RouterManager;
   ui: { root: HTMLElement };
   assets: AddonAssets;
-  onDisable: (callback: () => void) => void;
+  onDisable(callback: () => void): void;
 }
 ```
 
@@ -155,14 +155,18 @@ host.
 
 ### Methods
 
-#### `getClient(): QueryClient`
+#### `getClient(): unknown`
 
-Gets the sandbox's addon-local QueryClient. It is reused across this addon's
-routes, but its cache is not shared with the host or other addons. Calls to the
-client's `invalidateQueries()` and `refetchQueries()` are mirrored to the host.
+Gets the sandbox's addon-local QueryClient as an opaque bridge value. Cast it to
+the exported `QueryClient` type before using TanStack Query methods or passing
+it to `QueryClientProvider`. It is reused across this addon's routes, but its
+cache is not shared with the host or other addons. Calls to the client's
+`invalidateQueries()` and `refetchQueries()` are mirrored to the host.
 
 ```typescript
-const queryClient = ctx.api.query.getClient();
+import type { QueryClient } from "@wealthfolio/addon-sdk";
+
+const queryClient = ctx.api.query.getClient() as QueryClient;
 
 // Use standard React Query methods
 const accounts = await queryClient.fetchQuery({
@@ -263,7 +267,7 @@ which is what enables lazy activation. Two primitives:
 Runtime sidebar registration still exists for **genuinely dynamic** items;
 static nav should be declared in the manifest instead.
 
-#### `addItem(item: SidebarItem): SidebarItemHandle`
+#### `addItem(config: SidebarItemConfig): SidebarItemHandle`
 
 ```typescript
 const sidebarItem = ctx.sidebar.addItem({
@@ -577,7 +581,7 @@ import type {
   Account,
   Activity,
   Holding,
-  PerformanceHistory,
+  PerformanceResult,
   PerformanceSummary,
   // ... and many more
 } from "@wealthfolio/addon-sdk";
@@ -602,30 +606,29 @@ const holdings: Holding[] = await ctx.api.portfolio.getHoldings(accounts[0].id);
 [official addon examples](https://github.com/wealthfolio/wealthfolio-addons/tree/main/official)
 to see these APIs in action.
 
-````
-
 ---
 
 ## Performance API
 
 Calculate portfolio and account performance metrics with historical analysis.
-`returns.irr` is the selected-period money-weighted return. `returns.annualizedIrr`
-is the annualized XIRR on the same dated cash flows.
+`returns.irr` is the selected-period money-weighted return.
+`returns.annualizedIrr` is the annualized XIRR on the same dated cash flows.
 
 ### Methods
 
-#### `calculateHistory(itemType: 'account' | 'symbol', itemId: string, startDate: string, endDate: string): Promise<PerformanceResult>`
+#### `calculateHistory(itemType: 'account' | 'symbol', itemId: string, startDate?: string, endDate?: string): Promise<PerformanceResult>`
+
 Calculates detailed performance history for charts and analysis.
 
 ```typescript
 const history = await ctx.api.performance.calculateHistory(
-  'account',
-  'account-123',
-  '2024-01-01',
-  '2024-12-31'
+  "account",
+  "account-123",
+  "2024-01-01",
+  "2024-12-31",
 );
 console.log(history.returns.twr, history.returns.irr, history.series);
-````
+```
 
 #### `calculateSummary(args: { itemType: 'account' | 'symbol'; itemId: string; startDate?: string | null; endDate?: string | null; }): Promise<PerformanceResult>`
 
@@ -682,7 +685,8 @@ const updatedRate = await ctx.api.exchangeRates.update({
   fromCurrency: "USD",
   toCurrency: "EUR",
   rate: 0.85,
-  // ... other rate data
+  source: "MANUAL",
+  timestamp: "2024-12-01T00:00:00Z",
 });
 ```
 
@@ -695,7 +699,8 @@ const newRate = await ctx.api.exchangeRates.add({
   fromCurrency: "USD",
   toCurrency: "GBP",
   rate: 0.75,
-  // ... other rate data
+  source: "MANUAL",
+  timestamp: "2024-12-01T00:00:00Z",
 });
 ```
 
@@ -844,11 +849,9 @@ Creates a new contribution limit.
 
 ```typescript
 const limit = await ctx.api.contributionLimits.create({
-  name: "RRSP 2024",
-  limitType: "RRSP",
-  maxAmount: 30000,
-  year: 2024,
-  // ... other limit data
+  groupName: "RRSP",
+  contributionYear: 2024,
+  limitAmount: 30000,
 });
 ```
 
@@ -858,9 +861,9 @@ Updates an existing contribution limit.
 
 ```typescript
 const updatedLimit = await ctx.api.contributionLimits.update("limit-123", {
-  name: "Updated RRSP 2024",
-  maxAmount: 31000,
-  // ... other updated data
+  groupName: "RRSP",
+  contributionYear: 2024,
+  limitAmount: 31000,
 });
 ```
 
@@ -889,16 +892,16 @@ Gets all goals.
 const goals = await ctx.api.goals.getAll();
 ```
 
-#### `create(goal: any): Promise<Goal>`
+#### `create(goal: unknown): Promise<Goal>`
 
 Creates a new goal.
 
 ```typescript
 const goal = await ctx.api.goals.create({
-  name: "Retirement Fund",
+  goalType: "retirement",
+  title: "Retirement Fund",
   targetAmount: 500000,
   targetDate: "2040-01-01",
-  // ... other goal data
 });
 ```
 
@@ -921,13 +924,18 @@ Gets funding rules for a goal.
 const allocations = await ctx.api.goals.getFunding("goal-123");
 ```
 
-#### `saveFunding(goalId: string, allocations: GoalAllocation[]): Promise<GoalAllocation[]>`
+#### `saveFunding(goalId: string, rules: GoalAllocation[]): Promise<GoalAllocation[]>`
 
 Saves funding rules for a goal.
 
 ```typescript
 await ctx.api.goals.saveFunding("goal-123", [
-  { goalId: "goal-123", accountId: "account-456", sharePercent: 50 },
+  {
+    id: "allocation-123",
+    goalId: "goal-123",
+    accountId: "account-456",
+    sharePercent: 50,
+  },
 ]);
 ```
 
@@ -939,7 +947,12 @@ Deprecated: use `saveFunding(goalId, allocations)` instead.
 
 ```typescript
 await ctx.api.goals.updateAllocations([
-  { goalId: "goal-123", accountId: "account-456", sharePercent: 50 },
+  {
+    id: "allocation-123",
+    goalId: "goal-123",
+    accountId: "account-456",
+    sharePercent: 50,
+  },
   // ... other allocations
 ]);
 ```
@@ -1007,7 +1020,7 @@ if (files) {
 }
 ```
 
-#### `openSaveDialog(fileContent: Uint8Array | Blob | string, fileName: string): Promise<any>`
+#### `openSaveDialog(fileContent: Uint8Array | Blob | string, fileName: string): Promise<unknown>`
 
 Opens a file save dialog.
 

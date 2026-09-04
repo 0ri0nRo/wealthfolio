@@ -126,11 +126,11 @@ The host derives the route URL from the manifest `id`, so this root page is
 mounted at `/addons/hello-world-addon`. Omit `path` for the root; nested pages
 use a relative suffix such as `"path": "reports/:year"`.
 
-> **Permissions:** `ui`, `query`, `toast`, `logger`, and `storage` are implicit
-> **baseline capabilities** — you do not declare them. Only data categories
-> (`accounts`, `portfolio`, `activities`, …) plus `files`, `network`, `secrets`,
-> `events`, `snapshots`, and `settings` require a permission entry and user
-> consent.
+> **Permissions:** `ui`, `navigation`, `query`, `toast`, `logger`, and `storage`
+> are implicit **baseline capabilities** — you do not declare them. Only data
+> categories (`accounts`, `portfolio`, `activities`, …) plus `files`, `network`,
+> `secrets`, `events`, `snapshots`, and `settings` require a permission entry
+> and user consent.
 
 ## Main Addon File
 
@@ -283,6 +283,7 @@ import {
   QueryClientProvider,
   useQuery,
 } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import type {
   Account,
   AddonContext,
@@ -299,12 +300,15 @@ function HelloWorldPage({ ctx }: { ctx: AddonContext }) {
   } = useQuery<Account[]>({
     queryKey: ['accounts'],
     queryFn: () => ctx.api.accounts.getAll(),
-    onError: (error) => {
-      ctx.api.logger.error(`Failed to load accounts: ${String(error)}`);
-    },
     staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
   });
+
+  useEffect(() => {
+    if (isError) {
+      ctx.api.logger.error(`Failed to load accounts: ${String(error)}`);
+    }
+  }, [ctx, error, isError]);
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -356,9 +360,9 @@ function HelloWorldPage({ ctx }: { ctx: AddonContext }) {
                       </div>
                       <div className="text-right">
                         <div className="text-lg font-semibold">
-                          {account.totalValue?.toLocaleString() || 'N/A'}
+                          {account.balance.toLocaleString()}
                         </div>
-                        <div className="text-sm text-muted-foreground">Total Value</div>
+                        <div className="text-sm text-muted-foreground">Balance</div>
                       </div>
                     </div>
                   </div>

@@ -159,10 +159,10 @@ Based on the actual code, these are the permission categories:
 | `network`             | High       | request                                                              |
 | `secrets`             | High       | set, get, use, delete                                                |
 
-> **Baseline capabilities are not permissions.** `ui`, packaged `assets`,
-> `query`, `toast`, `logger`, and `storage` are granted to every addon and are
-> **not** declared in `manifest.json`. Only data categories plus `files`,
-> `network`, `secrets`, `events`, `snapshots`, and `settings` require
+> **Baseline capabilities are not permissions.** `ui`, `navigation`, packaged
+> `assets`, `query`, `toast`, `logger`, and `storage` are granted to every addon
+> and are **not** declared in `manifest.json`. Only data categories plus
+> `files`, `network`, `secrets`, `events`, `snapshots`, and `settings` require
 > declaration and consent.
 
 ### Permission Enforcement
@@ -247,11 +247,12 @@ interface HostAPI {
   storage: StorageAPI;
   toast: ToastAPI;
   logger: LoggerAPI;
+  navigation: NavigationAPI;
   // Domain data APIs — gated by manifest permissions
   accounts: AccountsAPI;
   portfolio: PortfolioAPI;
   activities: ActivitiesAPI;
-  market: MarketAPI;
+  market: MarketDataAPI;
   assets: AssetsAPI;
   quotes: QuotesAPI;
   performance: PerformanceAPI;
@@ -265,7 +266,6 @@ interface HostAPI {
   events: EventsAPI;
   secrets: SecretsAPI;
   network: NetworkAPI;
-  navigation: NavigationAPI;
 }
 ```
 
