@@ -446,11 +446,9 @@ export function FeesPage({ ctx }: FeesPageProps) {
 
   useEffect(() => {
     if (!isLoading) {
-      ctx.api.logger.info(
-        `Fees data loaded successfully (${accounts?.length ?? 0} accounts, ${holdings?.length ?? 0} holdings, ${activities?.length ?? 0} activities, ${totalFees} in fees)`,
-      );
+      ctx.api.logger.info("Fees data loaded successfully");
     }
-  }, [isLoading, accounts, holdings, activities, totalFees, ctx.api.logger]);
+  }, [isLoading, ctx.api.logger]);
 
   if (isLoading) {
     return (
