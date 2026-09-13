@@ -2,8 +2,8 @@ import { getAccounts } from "@/adapters";
 import { ActionPalette, type ActionPaletteGroup } from "@/components/action-palette";
 import { SwipablePage, type SwipablePageView } from "@/components/page";
 import {
-    SpendingTransactionsTab,
-    type SpendingTransactionsTabHandle,
+  SpendingTransactionsTab,
+  type SpendingTransactionsTabHandle,
 } from "@/features/spending/components/spending-transactions-tab";
 import { useSpendingSettings } from "@/features/spending/hooks/use-spending-settings";
 import { SyncButton } from "@/features/wealthfolio-connect/components/sync-button";
@@ -39,9 +39,9 @@ import { TransferMatchDialog } from "./components/transfer-match-dialog";
 import { useActivityActionDialogs } from "./hooks/use-activity-action-dialogs";
 import { useActivitySearch, type ActivityStatusFilter } from "./hooks/use-activity-search";
 import {
-    clearActivityUrlFilters,
-    resolveActivityTabFromUrlFilters,
-    resolveActivityUrlFilters,
+  clearActivityUrlFilters,
+  resolveActivityTabFromUrlFilters,
+  resolveActivityUrlFilters,
 } from "./utils/url-filters";
 
 interface ActivityDateRangeFilter {
