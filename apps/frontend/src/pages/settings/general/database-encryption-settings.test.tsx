@@ -25,18 +25,16 @@ describe("database encryption guidance", () => {
       runtime.enabled = enabled;
       render(<DatabaseEncryptionSettings />);
       expect(screen.getByText(settings.database_encryption_server_backup_warning)).toBeVisible();
-      expect(
-        screen.queryByText(settings.database_encryption_export_warning),
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText(settings.backup_portable_help)).not.toBeInTheDocument();
       expect(screen.getByRole("switch")).toBeDisabled();
     },
   );
 
-  it("native apps expose the switch and describe unencrypted portable exports", () => {
+  it("native apps expose the switch and explain portable backup passwords", () => {
     runtime.web = false;
     runtime.enabled = true;
     render(<DatabaseEncryptionSettings />);
-    expect(screen.getByText(settings.database_encryption_export_warning)).toBeVisible();
+    expect(screen.getByText(settings.backup_portable_help)).toBeVisible();
     expect(screen.queryByText(settings.database_encryption_server_managed)).not.toBeInTheDocument();
     expect(screen.getByRole("switch")).toBeEnabled();
     expect(screen.getByRole("switch")).toBeChecked();

@@ -78,7 +78,7 @@ export function DatabaseEncryptionSettings() {
           <p className="text-muted-foreground text-xs">
             {isWeb
               ? t("settings:database_encryption_server_backup_warning")
-              : t("settings:database_encryption_export_warning")}
+              : t("settings:backup_portable_help")}
           </p>
         </CardContent>
       </Card>

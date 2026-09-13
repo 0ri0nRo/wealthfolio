@@ -2,7 +2,8 @@
 
 import { API_PREFIX, invoke, logger } from "./core";
 import type { Settings, UpdateInfo } from "@/lib/types";
-import type { AppInfo, PlatformInfo } from "../types";
+import type { AppInfo, PlatformInfo, BackupImportPreview } from "../types";
+export type { BackupImportPreview } from "../types";
 
 // ============================================================================
 // Settings Commands
@@ -39,6 +40,8 @@ export interface DatabaseBackup {
   filename: string;
   sizeBytes: number;
   modifiedAt: string;
+  protection: "encrypted" | "unencrypted" | "unavailable";
+  reason: "manual" | "before-restore" | "before-maintenance" | "legacy";
 }
 
 export const backupDatabase = async (): Promise<{ filename: string }> => {
@@ -70,6 +73,42 @@ export const deleteDatabaseBackup = async (filename: string): Promise<void> => {
 
 export const getDatabaseBackupDownloadUrl = (filename: string): string =>
   `${API_PREFIX}/utilities/database/backups/${encodeURIComponent(filename)}/download`;
+
+export const exportDatabaseBackup = async (
+  filename: string,
+  password: string | null,
+  unencrypted: boolean,
+  signal?: AbortSignal,
+): Promise<boolean> => {
+  if (
+    !unencrypted &&
+    window.location.protocol !== "https:" &&
+    !["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)
+  ) {
+    throw new Error("Use HTTPS to export a password-protected backup.");
+  }
+  const response = await fetch(
+    `${API_PREFIX}/utilities/database/backups/${encodeURIComponent(filename)}/export`,
+    {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Wealthfolio-Backup": "1" },
+      body: JSON.stringify({ password, unencrypted }),
+      signal,
+    },
+  );
+  const result = await response
+    .json()
+    .catch(() => ({ message: "Backup export timed out or failed" }));
+  if (!response.ok) throw new Error(result.message || "Backup export failed");
+  const link = document.createElement("a");
+  link.href = `${API_PREFIX}/utilities/database/exports/${encodeURIComponent(result.id)}`;
+  link.download = result.filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  return true;
+};
 
 export const backupDatabaseToPath = (_backupDir: string): Promise<string> =>
   Promise.reject(new Error("Backing up to a local path is only supported in the Tauri app"));
@@ -220,3 +259,25 @@ export const getPlatform = (): Promise<PlatformInfo> => {
     },
   });
 };
+
+// These exports preserve the shared native/web adapter interface. Server restore
+// is an offline operator action; no browser request is sent.
+export const discardDatabaseBackupImport = (_id: string): Promise<void> => restoreDatabase("");
+
+export const inspectDatabaseBackup = (
+  _file: string | File,
+  _password: string | null,
+  _signal?: AbortSignal,
+): Promise<BackupImportPreview | null> =>
+  Promise.reject(new Error("Database restore is only available in the native app"));
+
+export const inspectSavedDatabaseBackup = (
+  _filename: string,
+  _signal?: AbortSignal,
+): Promise<BackupImportPreview | null> =>
+  Promise.reject(new Error("Database restore is only available in the native app"));
+
+export const restoreDatabaseBackupImport = (_id: string): Promise<void> => restoreDatabase("");
+
+export const openDatabaseBackupFolder = (): Promise<void> =>
+  Promise.reject(new Error("Backup folders can only be opened on desktop"));

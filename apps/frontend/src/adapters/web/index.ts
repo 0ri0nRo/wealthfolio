@@ -458,6 +458,11 @@ export {
   backupDatabaseToPath,
   checkForUpdates,
   deleteDatabaseBackup,
+  discardDatabaseBackupImport,
+  inspectDatabaseBackup,
+  inspectSavedDatabaseBackup,
+  restoreDatabaseBackupImport,
+  exportDatabaseBackup,
   getAppInfo,
   getDatabaseBackupDownloadUrl,
   getPlatform,
@@ -465,12 +470,13 @@ export {
   installUpdate,
   isAutoUpdateCheckEnabled,
   listDatabaseBackups,
+  openDatabaseBackupFolder,
   getDatabaseEncryptionStatus,
   setDatabaseEncryptionEnabled,
   restoreDatabase,
   updateSettings,
 } from "./settings";
-export type { DatabaseBackup, DatabaseEncryptionStatus } from "./settings";
+export type { BackupImportPreview, DatabaseBackup, DatabaseEncryptionStatus } from "./settings";
 
 // Addon Commands (web-specific implementations)
 export {

@@ -1,47 +1,126 @@
-import { render, screen } from "@/test/render";
-import { expect, it, vi } from "vitest";
-import { TooltipProvider } from "@wealthfolio/ui/components/ui/tooltip";
-import settings from "@/i18n/locales/en/settings.json";
+import { fireEvent, render, screen } from "@/test/render";
+import { beforeEach, expect, it, vi } from "vitest";
+import copy from "@/i18n/locales/en/settings.json";
 import { BackupRestoreForm } from "./backup-restore-form";
-
-const runtime = vi.hoisted(() => ({ mode: "web" }));
+const mocks = vi.hoisted(() => ({
+  create: vi.fn(),
+  remove: vi.fn(),
+  retry: vi.fn(),
+  loading: false,
+  error: false,
+  web: true,
+  data: [
+    {
+      filename: "old.db",
+      sizeBytes: 4096,
+      modifiedAt: "2026-09-01T12:00:00Z",
+      protection: "encrypted",
+      reason: "manual",
+    },
+  ],
+}));
+vi.mock("@/adapters", () => ({
+  get isWeb() {
+    return mocks.web;
+  },
+  openDatabaseBackupFolder: vi.fn(),
+  getDatabaseBackupDownloadUrl: (filename: string) => `/backups/${filename}/download`,
+}));
+vi.mock("@/hooks/use-platform", () => ({
+  usePlatform: () => ({ platform: { is_desktop: false } }),
+}));
 vi.mock("./use-backup-restore", () => ({
   useBackupRestore: () => ({
-    platformMode: runtime.mode,
-    performBackup: vi.fn(),
-    performRestore: vi.fn(),
-    deleteWebBackup: vi.fn(),
-    getWebBackupDownloadUrl: (filename: string) => `/backups/${filename}`,
-    isBackingUp: false,
-    isRestoring: false,
-    isDeletingWebBackup: false,
-    isLoadingWebBackups: false,
-    webBackupsError: null,
-    canBackup: true,
-    canRestore: true,
-    webBackups: [{ filename: "old.db", sizeBytes: 4096, modifiedAt: "2026-09-01T12:00:00Z" }],
+    backups: {
+      data: mocks.data,
+      isPending: mocks.loading,
+      isError: mocks.error,
+      refetch: mocks.retry,
+    },
+    create: { mutate: mocks.create, isPending: false },
+    remove: { mutate: mocks.remove, isPending: false },
   }),
 }));
-
-it("explains creation-time encryption beside server downloads, including old backups", () => {
-  runtime.mode = "web";
-  render(
-    <TooltipProvider>
-      <BackupRestoreForm />
-    </TooltipProvider>,
-  );
-  expect(screen.getByText(settings.database_encryption_server_backup_warning)).toBeVisible();
-  expect(screen.getByRole("link", { name: /old.db/ })).toHaveAccessibleDescription(
-    settings.database_encryption_server_backup_warning,
-  );
-  expect(screen.queryByText(settings.database_encryption_export_warning)).not.toBeInTheDocument();
+vi.mock("./backup-export-dialog", () => ({
+  BackupExportDialog: ({ filename }: { filename: string }) => <p>Exporting {filename}</p>,
+}));
+vi.mock("./backup-import-dialog", () => ({
+  BackupImportDialog: ({ filename }: { filename?: string }) => (
+    <p>Inspecting {filename || "picked file"}</p>
+  ),
+}));
+beforeEach(() => {
+  mocks.loading = false;
+  mocks.error = false;
+  mocks.web = true;
+  mocks.data = [
+    {
+      filename: "old.db",
+      sizeBytes: 4096,
+      modifiedAt: "2026-09-01T12:00:00Z",
+      protection: "encrypted",
+      reason: "manual",
+    },
+  ];
+});
+it("shows actual snapshot protection and exports the selected snapshot", () => {
+  render(<BackupRestoreForm />);
+  expect(screen.getByText(new RegExp(copy.backup_protection_encrypted))).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Export old.db" }));
+  expect(screen.getByText("Exporting old.db")).toBeVisible();
+});
+it("native opens review for saved snapshots and disables unavailable snapshots", () => {
+  mocks.web = false;
+  mocks.data.push({ ...mocks.data[0], filename: "unknown.db", protection: "unavailable" });
+  render(<BackupRestoreForm />);
+  expect(screen.getByRole("button", { name: "Restore unknown.db" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Export unknown.db" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /Delete.*unknown.db/ })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: "Restore old.db" }));
+  expect(screen.getByText("Inspecting old.db")).toBeVisible();
+});
+it("native offers file restore alongside managed creation", () => {
+  mocks.web = false;
+  render(<BackupRestoreForm />);
+  fireEvent.click(screen.getByRole("button", { name: copy.backup_now }));
+  expect(mocks.create).toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: copy.backup_restore_from_file }));
+  expect(screen.getByText("Inspecting picked file")).toBeVisible();
+});
+it("shows list failure and retry instead of an empty success state", () => {
+  mocks.error = true;
+  render(<BackupRestoreForm />);
+  expect(screen.getByRole("alert")).toHaveTextContent(copy.backup_load_error);
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(mocks.retry).toHaveBeenCalled();
 });
 
-it.each(["desktop", "mobile"])("warns before creating a portable export on %s", (mode) => {
-  runtime.mode = mode;
+it("keeps original server snapshots behind an explicit key warning, including unavailable keys", () => {
+  mocks.data[0].protection = "unavailable";
   render(<BackupRestoreForm />);
-  expect(screen.getByText(settings.database_encryption_export_warning)).toBeVisible();
+  expect(screen.getByRole("link", { name: copy.backup_original_save })).not.toBeVisible();
+  fireEvent.click(screen.getByText(copy.backup_original_advanced));
+  expect(screen.getByText(copy.backup_original_warning)).toBeVisible();
+  expect(screen.getByRole("link", { name: copy.backup_original_save })).toHaveAttribute(
+    "href",
+    "/backups/old.db/download",
+  );
+});
+
+it("does not offer a server snapshot URL on native", () => {
+  mocks.web = false;
+  render(<BackupRestoreForm />);
+  expect(screen.queryByText(copy.backup_original_advanced)).not.toBeInTheDocument();
+});
+
+it("web offers backup management without any restore controls", () => {
+  render(<BackupRestoreForm />);
   expect(
-    screen.queryByText(settings.database_encryption_server_backup_warning),
+    screen.queryByRole("button", { name: copy.backup_restore_from_file }),
   ).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Restore old.db" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Export old.db" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: /Delete.*old.db/ })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: copy.backup_now }));
+  expect(mocks.create).toHaveBeenCalled();
 });

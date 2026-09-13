@@ -158,8 +158,14 @@ export {
   isAutoUpdateCheckEnabled,
   backupDatabase,
   deleteDatabaseBackup,
+  discardDatabaseBackupImport,
+  inspectDatabaseBackup,
+  inspectSavedDatabaseBackup,
+  restoreDatabaseBackupImport,
+  exportDatabaseBackup,
   getDatabaseBackupDownloadUrl,
   listDatabaseBackups,
+  openDatabaseBackupFolder,
   backupDatabaseToPath,
   backupDatabaseToPendingExport,
   getDatabaseEncryptionStatus,
@@ -170,7 +176,7 @@ export {
   installUpdate,
   getPlatform,
 } from "./settings";
-export type { DatabaseBackup, DatabaseEncryptionStatus } from "./settings";
+export type { BackupImportPreview, DatabaseBackup, DatabaseEncryptionStatus } from "./settings";
 
 // Addon Commands (platform-specific)
 export {
