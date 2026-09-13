@@ -60,7 +60,7 @@ COPY apps/tauri/Cargo.toml apps/tauri/Cargo.toml
 RUN mkdir -p apps/tauri/src && echo "fn main(){}" > apps/tauri/src/main.rs && echo "" > apps/tauri/src/lib.rs
 RUN mkdir -p apps/server/src && \
     echo "fn main(){}" > apps/server/src/main.rs && \
-    xx-cargo fetch --manifest-path apps/server/Cargo.toml
+    xx-cargo fetch --locked --manifest-path apps/server/Cargo.toml
 
 # Now copy full sources
 COPY crates ./crates
@@ -68,7 +68,7 @@ COPY apps/server ./apps/server
 ENV CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse
 ENV OPENSSL_STATIC=1
 # Build using xx-cargo which handles target flags
-RUN xx-cargo build --release --manifest-path apps/server/Cargo.toml && \
+RUN xx-cargo build --locked --release --manifest-path apps/server/Cargo.toml && \
     # Move the binary to a predictable location because the target dir changes with --target
     cp target/$(xx-cargo --print-target-triple)/release/wealthfolio-server /wealthfolio-server
 
