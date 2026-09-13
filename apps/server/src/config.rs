@@ -2,7 +2,9 @@ use std::{ffi::OsString, net::SocketAddr, time::Duration};
 
 use anyhow::Context;
 
-use crate::auth::{decode_secret_key, derive_keys, AuthConfig, CookieSecurePolicy};
+use crate::auth::{
+    decode_secret_key, derive_database_key, derive_keys, AuthConfig, CookieSecurePolicy,
+};
 use crate::oidc::OidcConfig;
 
 pub struct Config {
@@ -16,6 +18,17 @@ pub struct Config {
     pub raw_secret_key: Vec<u8>,
     /// HKDF-derived key for secrets encryption
     pub secrets_encryption_key: [u8; 32],
+    /// HKDF-derived key for database encryption. Always derivable; whether it is
+    /// *used* is decided by `db_encryption_required`.
+    pub database_key: [u8; 32],
+    /// Whether this instance requires an encrypted database
+    /// (`WF_DB_REQUIRE_ENCRYPTION`).
+    ///
+    /// A requirement, not an action: it decides how a database that does not
+    /// exist yet is created, and is checked against the observed state of one
+    /// that does. Converting an existing database is `wealthfolio-server db
+    /// encrypt`, never this flag.
+    pub db_encryption_required: bool,
     /// Session-signing config. Present when password login OR OIDC is configured.
     pub auth: Option<AuthConfig>,
     /// OIDC SSO config. Present when `WF_OIDC_ISSUER_URL` + `WF_OIDC_CLIENT_ID` are set.
@@ -42,7 +55,8 @@ impl Config {
             .unwrap_or_else(|_| "0.0.0.0:8088".to_string())
             .parse()
             .expect("Invalid WF_LISTEN_ADDR");
-        let db_path = std::env::var("WF_DB_PATH").unwrap_or_else(|_| "./db/app.db".into());
+        let db_path = std::env::var("WF_DB_PATH")
+            .unwrap_or_else(|_| crate::main_lib::DEFAULT_DB_PATH.to_string());
         let cors_allow: Vec<String> = std::env::var("WF_CORS_ALLOW_ORIGINS")
             .ok()
             .filter(|s| !s.is_empty())
@@ -62,6 +76,10 @@ impl Config {
         )
         .unwrap_or_else(|e| panic!("Failed to load server secret key: {e:#}"));
         let (jwt_key, secrets_encryption_key) = derive_keys(&raw_secret_key);
+        let database_key = derive_database_key(&raw_secret_key);
+        let db_encryption_required = std::env::var("WF_DB_REQUIRE_ENCRYPTION")
+            .map(|v| matches!(v.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes"))
+            .unwrap_or(false);
         let addons_root = std::env::var("WF_ADDONS_DIR").unwrap_or_else(|_| {
             std::path::Path::new(&db_path)
                 .parent()
@@ -170,6 +188,8 @@ impl Config {
         Self {
             listen_addr,
             db_path,
+            database_key,
+            db_encryption_required,
             cors_allow,
             request_timeout: Duration::from_millis(timeout_ms),
             static_dir,
@@ -187,7 +207,10 @@ impl Config {
 
 // Empty environment values are unset, allowing Compose to pass optional inputs.
 // File paths are OS-native and must not be trimmed or converted lossily.
-fn load_secret_key(key: Option<OsString>, key_file: Option<OsString>) -> anyhow::Result<Vec<u8>> {
+pub(crate) fn load_secret_key(
+    key: Option<OsString>,
+    key_file: Option<OsString>,
+) -> anyhow::Result<Vec<u8>> {
     let key = key.filter(|value| !value.is_empty());
     let key_file = key_file.filter(|value| !value.is_empty());
     let (value, source) = match (key, key_file) {

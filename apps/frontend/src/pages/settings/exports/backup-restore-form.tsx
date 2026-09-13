@@ -201,6 +201,9 @@ const WebBackupPanel = ({
               {t("settings:backup_web_list_title")}
             </CardTitle>
             <CardDescription>{t("settings:backup_web_list_description")}</CardDescription>
+            <p id="server-backup-encryption" className="text-muted-foreground text-sm">
+              {t("settings:database_encryption_server_backup_warning")}
+            </p>
           </div>
           <Button
             onClick={performBackup}
@@ -261,7 +264,11 @@ const WebBackupPanel = ({
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <Button asChild size="icon" variant="ghost" className="h-8 w-8">
-                          <a href={getDownloadUrl(backup.filename)} download={backup.filename}>
+                          <a
+                            href={getDownloadUrl(backup.filename)}
+                            download={backup.filename}
+                            aria-describedby="server-backup-encryption"
+                          >
                             <Icons.Download className="h-4 w-4" />
                             <span className="sr-only">
                               {t("settings:backup_download_item", { filename: backup.filename })}
@@ -427,6 +434,9 @@ const BackupCard = ({
           {title}
         </CardTitle>
         <CardDescription>{description}</CardDescription>
+        <p className="text-muted-foreground text-sm">
+          {t("settings:database_encryption_export_warning")}
+        </p>
       </CardHeader>
       <CardContent className="mt-auto">
         <Button onClick={onAction} disabled={disabled ?? isLoading} className="w-full">

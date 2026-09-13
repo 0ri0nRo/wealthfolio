@@ -8,6 +8,7 @@ use crate::commands::device_sync::{
     get_sync_identity_from_store, sync_identity_can_run_background,
 };
 use crate::context::ServiceContext;
+use crate::database::DatabaseRuntime;
 use crate::secret_store::KeyringSecretStore;
 use log::{debug, error};
 use serde::Serialize;
@@ -77,8 +78,9 @@ where
 #[tauri::command]
 pub async fn store_sync_session(
     refresh_token: Option<String>,
-    state: State<'_, Arc<ServiceContext>>,
+    state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
+    let state = state.context()?;
     match refresh_token
         .as_deref()
         .map(str::trim)
@@ -96,9 +98,10 @@ pub async fn store_sync_session(
 #[tauri::command]
 pub async fn post_login_bootstrap(
     app: AppHandle,
-    state: State<'_, Arc<ServiceContext>>,
+    state: State<'_, DatabaseRuntime>,
 ) -> Result<PostLoginBootstrapResult, String> {
-    let context = state.inner().clone();
+    let state = state.context()?;
+    let context = state.clone();
     let broker_sync = run_post_login_broker_bootstrap(app, Arc::clone(&context)).await;
     let device_sync = run_post_login_device_bootstrap(context).await;
 
@@ -230,7 +233,8 @@ async fn run_post_login_device_bootstrap(
 }
 
 #[tauri::command]
-pub async fn clear_sync_session(state: State<'_, Arc<ServiceContext>>) -> Result<(), String> {
+pub async fn clear_sync_session(state: State<'_, DatabaseRuntime>) -> Result<(), String> {
+    let state = state.context()?;
     disconnect_cloud_session(&state).await
 }
 
@@ -242,8 +246,9 @@ pub struct SyncSessionStatus {
 
 #[tauri::command]
 pub fn get_sync_session_status(
-    state: State<'_, Arc<ServiceContext>>,
+    state: State<'_, DatabaseRuntime>,
 ) -> Result<SyncSessionStatus, String> {
+    let state = state.context()?;
     Ok(SyncSessionStatus {
         is_configured: state.connect_service().is_session_configured()?,
     })
@@ -279,8 +284,9 @@ pub struct RestoreSyncSessionResponse {
 
 #[tauri::command]
 pub async fn restore_sync_session(
-    state: State<'_, Arc<ServiceContext>>,
+    state: State<'_, DatabaseRuntime>,
 ) -> Result<RestoreSyncSessionResponse, String> {
+    let state = state.context()?;
     let access_token = state.connect_service().get_valid_access_token().await?;
 
     let refresh_token = KeyringSecretStore

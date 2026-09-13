@@ -1,3 +1,4 @@
+use crate::database::DatabaseRuntime;
 use futures::FutureExt;
 use log::{error, info, warn};
 use std::future::Future;
@@ -105,7 +106,7 @@ fn handle_portfolio_request(handle: AppHandle, payload_str: &str, force_recalc: 
                 let market_sync_mode = payload.market_sync_mode.clone();
                 let accounts_to_recalc = payload.account_ids.clone();
                 let since_date = payload.since_date;
-                let context_result = handle_clone.try_state::<Arc<ServiceContext>>();
+                let context_result = handle_clone.state::<DatabaseRuntime>().try_context();
 
                 if let Some(context) = context_result {
                     // Only perform market sync if the mode requires it
@@ -273,11 +274,10 @@ fn handle_portfolio_calculation(
     }
 
     spawn(async move {
-        let context = match app_handle.try_state::<Arc<ServiceContext>>() {
+        let context = match app_handle.state::<DatabaseRuntime>().try_context() {
             Some(ctx) => ctx,
             None => {
-                let err_msg =
-                    "ServiceContext not found in state when triggering portfolio calculation.";
+                let err_msg = "The database is unavailable; skipping portfolio calculation.";
                 error!("{}", err_msg);
                 if let Err(e_emit) = app_handle.emit(PORTFOLIO_UPDATE_ERROR, err_msg) {
                     error!(
