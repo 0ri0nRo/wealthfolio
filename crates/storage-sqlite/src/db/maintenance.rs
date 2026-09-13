@@ -5,9 +5,9 @@
 //! while nothing is connected — so one implementation serves all three.
 //!
 //! The work runs in process and finishes *before* the caller's intentional
-//! restart. Normal startup therefore never inspects candidate files, pending
-//! markers or staged restores: it opens `app.db` and nothing else. Any candidate
-//! left behind by a crash is inert, and is swept the next time maintenance runs.
+//! restart. Normal startup never resumes candidates, pending markers or staged
+//! restores: it opens `app.db` and nothing else. Any candidate
+//! left behind by a crash is inert, and is swept on startup or before maintenance.
 //!
 //! # Precondition
 //!
@@ -27,13 +27,19 @@ use rusqlite::Connection as RusqliteConnection;
 use wealthfolio_core::errors::{DatabaseError, Error, Result};
 
 use super::{
-    backup_database_to_file, copy_database, create_backup_filename, probe, remove_database_files,
-    remove_database_sidecars, verify_key, DatabaseOwner, DbAccess, DbEncryptionKey,
+    copy_database, probe, remove_database_files, remove_database_sidecars, verify_key,
+    DatabaseOwner, DbAccess, DbEncryptionKey,
 };
 
-/// Marks the files this module creates beside the live database. Startup ignores
-/// them; maintenance sweeps them when it next begins.
+/// Marks disposable files beside the live database, swept while ownership is held.
 const CANDIDATE_MARKER: &str = ".maintenance-";
+
+/// Startup cleanup must run under database ownership before any operation starts.
+pub(super) fn purge_abandoned_candidates(db_path: &Path) {
+    if let Ok(workspace) = Workspace::new(db_path) {
+        workspace.sweep_stale_candidates();
+    }
+}
 
 /// What to replace the live database with.
 pub enum MaintenanceRequest {
@@ -76,9 +82,8 @@ impl MaintenanceRequest {
 pub struct MaintenanceOutcome {
     /// How to reopen the database now that the operation has completed.
     pub access: DbAccess,
-    /// The pre-operation backup, when one is still on disk. Enabling encryption
-    /// deletes its own, because that copy is plaintext — so a path here after an
-    /// enable means the deletion failed and a readable copy remains.
+    /// The pre-operation backup, when one is still on disk. Enable uses the
+    /// destination key and deletes its recovery copy after durable success.
     pub pre_operation_backup: Option<String>,
 }
 
@@ -120,29 +125,37 @@ pub fn run(
         return Err(e);
     }
 
-    // Step 7: a consistent pre-operation backup, the rollback artifact. It is a
-    // faithful copy, so it inherits the source database's encryption.
-    //
-    // Enabling encryption puts its copy in the scratch directory rather than in
-    // `backups/`: that copy is plaintext, it is deleted at step 10, and startup
-    // clears scratch — so a crash between the install and that deletion cannot
-    // leave a complete readable copy of the database sitting beside the
-    // encrypted one for good. Every other operation writes a backup the user is
-    // meant to keep, which belongs in `backups/`.
+    // Enable changes only encryption, so its verified candidate contains the
+    // original data under the already-stored destination key. Preserve that as
+    // an encrypted managed snapshot: it remains recoverable after a failed
+    // rollback/restart without leaving a plaintext scratch copy.
     let enabling = matches!(request, MaintenanceRequest::Enable { .. });
-    let pre_operation_backup = if enabling {
-        // Creates the directory owner-only, which matters more here than for a
-        // snapshot: this file is the whole database in the clear.
-        super::scratch_dir_beside(&db_path)?;
-        path_str(&workspace.pre_operation)?.to_string()
+    let backup_source = if enabling { &candidate } else { current };
+    let reason = if matches!(request, MaintenanceRequest::Restore { .. }) {
+        super::snapshots::SnapshotReason::BeforeRestore
     } else {
-        create_unused_backup_path(app_data_dir)?
+        super::snapshots::SnapshotReason::BeforeMaintenance
     };
-    if let Err(e) = backup_database_to_file(current, &pre_operation_backup) {
-        workspace.discard();
-        return Err(e);
-    }
+    let pre_operation_backup = super::snapshots::create(backup_source, app_data_dir, reason)
+        .map_err(|error| {
+            workspace.discard();
+            Error::Database(DatabaseError::BackupFailed(error.to_string()))
+        })?
+        .to_string_lossy()
+        .into_owned();
+    let backup_access = DbAccess::new(&pre_operation_backup, backup_source.key().cloned());
     info!("Pre-operation backup written to {}", pre_operation_backup);
+
+    // Candidate and pre-operation snapshot are already on disk. Before replacing
+    // the live file, require room to stage that snapshot if rollback is needed.
+    // Other writers can still consume space; all subsequent write errors remain
+    // authoritative and must preserve the recovery artifact.
+    let space = fs::metadata(&pre_operation_backup)
+        .and_then(|metadata| super::space::require(&workspace.dir, metadata.len()));
+    if let Err(error) = space {
+        workspace.discard();
+        return Err(error.into());
+    }
 
     // Step 8: install the candidate. `fs::rename` over the live database is
     // atomic on the same filesystem, so a crash here leaves either the complete
@@ -152,36 +165,36 @@ pub fn run(
         return Err(e);
     }
 
-    // Step 9: reopen the installed file with the intended key and verify it.
+    // After rename, a failure must roll back rather than run pre-install cleanup.
+    // The rollback snapshot remains managed even if another filesystem operation
+    // fails; startup cleanup cannot erase the only recovery copy.
     let installed = DbAccess::new(current.path(), target_key);
-    if let Err(e) = verify_installed(&installed) {
-        error!(
-            "Verification of the installed database failed ({}); rolling back",
-            e
-        );
-        roll_back(&workspace, &pre_operation_backup, current)?;
-        return Err(e);
+    if let Err(error) = fsync_parent_dir(&db_path).and_then(|()| verify_installed(&installed)) {
+        error!("Installed database could not be confirmed ({error}); rolling back");
+        if let Err(rollback_error) = roll_back(&workspace, &backup_access, current) {
+            return Err(Error::Database(DatabaseError::RestoreFailed(format!(
+                "Database installation failed ({error}); rollback failed ({rollback_error}). \
+                 Recovery snapshot retained at {pre_operation_backup}."
+            ))));
+        }
+        workspace.discard();
+        if enabling {
+            let _ = remove_database_files(&pre_operation_backup);
+        }
+        return Err(error);
     }
 
-    // Step 10: enabling encryption is the one operation that must clean up after
-    // itself. Its source was plaintext, so the pre-operation backup is a
-    // complete readable copy of every account, holding and transaction — leaving
-    // it behind would defeat the feature for the user who just enabled it. The
-    // replaced file is already gone, consumed by the atomic rename above.
-    //
-    // A failure here is reported, not propagated: the new database is installed
-    // and verified, and returning an error now would make the caller reopen an
-    // encrypted file with the outgoing plaintext key.
+    // The original-data copy used only for Enable is no longer needed after
+    // durable success. Cleanup failure is harmless to encryption: it is keyed.
     let pre_operation_backup = if enabling {
         match remove_database_files(&pre_operation_backup) {
             Ok(()) => {
-                info!("Removed the plaintext pre-operation backup after verification");
+                info!("Removed the enable-encryption recovery snapshot after verification");
                 None
             }
             Err(e) => {
                 error!(
-                    "The database is encrypted, but the plaintext pre-operation backup at {} \
-                     could not be removed ({}). Delete it manually.",
+                    "The encrypted recovery snapshot at {} could not be removed ({}). Delete it manually.",
                     pre_operation_backup, e
                 );
                 Some(pre_operation_backup)
@@ -202,7 +215,7 @@ pub fn run(
 /// guard: an unqueried connection may hold no SQLite lock, and the connection
 /// below releases its lock on return. Keep external database tools closed.
 pub fn check_sqlite_locks(access: &DbAccess) -> Result<()> {
-    let conn = access.connect_rusqlite()?;
+    let conn = access.connect_existing_rusqlite()?;
     conn.execute_batch(
         "PRAGMA locking_mode = EXCLUSIVE;
          BEGIN IMMEDIATE;
@@ -310,6 +323,31 @@ fn verify_candidate(candidate: &DbAccess) -> Result<()> {
     fsync_file(Path::new(candidate.path()))
 }
 
+/// Validate an existing database before retrying service construction after an
+/// ambiguous maintenance failure. Never turn a missing file into an empty app.
+pub fn verify_for_reopen(access: &DbAccess) -> Result<()> {
+    if !std::fs::metadata(access.path())
+        .is_ok_and(|metadata| metadata.is_file() && metadata.len() > 0)
+    {
+        return Err(Error::Database(DatabaseError::RestoreFailed(
+            "Database file is missing or empty; recovery is required".into(),
+        )));
+    }
+    let conn = access.connect_existing_rusqlite()?;
+    let tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_master WHERE type='table' AND name IN ('accounts', 'activities', 'app_settings', '__diesel_schema_migrations')", [], |row| row.get(0)).map_err(|error| Error::Database(DatabaseError::RestoreFailed(error.to_string())))?;
+    if tables != 4 {
+        return Err(Error::Database(DatabaseError::RestoreFailed(
+            "This file is not a Wealthfolio database".into(),
+        )));
+    }
+    verify_key(&conn)?;
+    integrity_check(&conn)?;
+    if access.is_encrypted() {
+        cipher_integrity_check(&conn)?;
+    }
+    Ok(())
+}
+
 fn verify_installed(installed: &DbAccess) -> Result<()> {
     let conn = installed.connect_rusqlite()?;
     verify_key(&conn)
@@ -317,7 +355,7 @@ fn verify_installed(installed: &DbAccess) -> Result<()> {
 
 /// Level 2: standard SQLite structural integrity. A healthy database returns
 /// **exactly one row containing `ok`**; anything else is a failure.
-fn integrity_check(conn: &RusqliteConnection) -> Result<()> {
+pub(super) fn integrity_check(conn: &RusqliteConnection) -> Result<()> {
     let rows = pragma_rows(conn, "PRAGMA integrity_check;")?;
     if rows.len() == 1 && rows[0].eq_ignore_ascii_case("ok") {
         return Ok(());
@@ -333,7 +371,7 @@ fn integrity_check(conn: &RusqliteConnection) -> Result<()> {
 /// **Success is signalled by returning no rows at all.** Applying level 2's
 /// "one row saying `ok`" condition here would report every healthy encrypted
 /// database as corrupt.
-fn cipher_integrity_check(conn: &RusqliteConnection) -> Result<()> {
+pub(super) fn cipher_integrity_check(conn: &RusqliteConnection) -> Result<()> {
     let rows = pragma_rows(conn, "PRAGMA cipher_integrity_check;")?;
     if rows.is_empty() {
         return Ok(());
@@ -368,8 +406,29 @@ fn install(candidate: &Path, db_path: &Path) -> Result<()> {
             "Failed to install the verified database: {e}"
         )))
     })?;
-    fsync_parent_dir(db_path);
     Ok(())
+}
+
+/// Recover after service construction failed over an otherwise valid installed
+/// database. The runtime must first stop and join all failed-build users. This
+/// reuses the verified pre-operation snapshot without requiring another backup.
+pub fn rollback_after_rebuild(
+    installed: &DbAccess,
+    original: &DbAccess,
+    pre_operation_backup: &str,
+    owner: &DatabaseOwner,
+) -> Result<()> {
+    owner.check_path(installed.path())?;
+    owner.check_path(original.path())?;
+    check_sqlite_locks(installed)?;
+    let workspace = Workspace::new(Path::new(original.path()))?;
+    let backup = probe(
+        pre_operation_backup,
+        installed.key().cloned().or_else(|| original.key().cloned()),
+    )?;
+    let result = roll_back(&workspace, &backup, original);
+    workspace.discard();
+    result
 }
 
 /// Reinstates the pre-operation backup and confirms it opens.
@@ -377,16 +436,33 @@ fn install(candidate: &Path, db_path: &Path) -> Result<()> {
 /// A rollback that leaves an unopenable database is worse than the failure it is
 /// recovering from, so it stages the copy and installs it through the same
 /// atomic rename, then reports its own failure loudly.
-fn roll_back(workspace: &Workspace, pre_operation_backup: &str, original: &DbAccess) -> Result<()> {
+fn roll_back(workspace: &Workspace, backup: &DbAccess, original: &DbAccess) -> Result<()> {
     let staged = &workspace.rollback;
-    fs::copy(pre_operation_backup, staged).map_err(|e| {
+    let pre_operation_backup = backup.path();
+    let copied = if backup.is_encrypted() && !original.is_encrypted() {
+        copy_database(backup, path_str(staged)?, None)
+    } else {
+        fs::copy(pre_operation_backup, staged)
+            .map(|_| ())
+            .map_err(Error::from)
+    };
+    copied.map_err(|e| {
         Error::Database(DatabaseError::RestoreFailed(format!(
             "Rollback failed: could not stage {pre_operation_backup}: {e}. \
              The database is unusable; restore this file manually."
         )))
     })?;
+    let staged_access = DbAccess::new(path_str(staged)?, original.key().cloned());
+    {
+        let conn = staged_access.connect_rusqlite()?;
+        integrity_check(&conn)?;
+        if staged_access.is_encrypted() {
+            cipher_integrity_check(&conn)?;
+        }
+    }
     fsync_file(staged)?;
     install(staged, Path::new(original.path()))?;
+    fsync_parent_dir(Path::new(original.path()))?;
 
     let conn = original.connect_rusqlite()?;
     verify_key(&conn)?;
@@ -402,11 +478,6 @@ struct Workspace {
     candidate: PathBuf,
     scratch: PathBuf,
     rollback: PathBuf,
-    /// Where an enable puts its pre-operation backup: inside the scratch
-    /// directory, which startup clears. That copy is plaintext and is deleted
-    /// once the encrypted database verifies, so the only way it outlives the
-    /// operation is a crash — and then it must not survive the next launch.
-    pre_operation: PathBuf,
 }
 
 impl Workspace {
@@ -432,16 +503,13 @@ impl Workspace {
             candidate: dir.join(format!("{file_name}{CANDIDATE_MARKER}{token}.new")),
             scratch: dir.join(format!("{file_name}{CANDIDATE_MARKER}{token}.src")),
             rollback: dir.join(format!("{file_name}{CANDIDATE_MARKER}{token}.rollback")),
-            pre_operation: dir
-                .join(super::SCRATCH_DIR_NAME)
-                .join(format!("{file_name}{CANDIDATE_MARKER}{token}.pre")),
             dir,
             file_name,
         })
     }
 
-    /// Removes candidates left behind by an interrupted run. Startup never does
-    /// this: candidates are inert, and sweeping them is maintenance's job.
+    /// Removes candidates left behind by an interrupted run. A disable candidate
+    /// can be plaintext even while the live database remains encrypted.
     fn sweep_stale_candidates(&self) {
         let prefix = format!("{}{}", self.file_name, CANDIDATE_MARKER);
         let Ok(entries) = fs::read_dir(&self.dir) else {
@@ -464,41 +532,12 @@ impl Workspace {
     }
 
     fn discard(&self) {
-        for path in [
-            &self.candidate,
-            &self.scratch,
-            &self.rollback,
-            &self.pre_operation,
-        ] {
+        for path in [&self.candidate, &self.scratch, &self.rollback] {
             if let Some(path) = path.to_str() {
                 let _ = remove_database_files(path);
             }
         }
     }
-}
-
-/// A backup path in the standard directory that does not overwrite an existing
-/// backup. `create_backup_path` alone resolves to the second, and the rollback
-/// artifact must never clobber a backup the user just took.
-fn create_unused_backup_path(app_data_dir: &str) -> Result<String> {
-    let backup_dir = Path::new(app_data_dir).join("backups");
-    fs::create_dir_all(&backup_dir).map_err(|e| {
-        error!("Failed to create backup directory: {}", e);
-        Error::Database(DatabaseError::BackupFailed(e.to_string()))
-    })?;
-
-    let mut timestamp = chrono::Local::now();
-    for _ in 0..60 {
-        let candidate = backup_dir.join(create_backup_filename(timestamp));
-        if !candidate.exists() {
-            return Ok(candidate.to_string_lossy().into_owned());
-        }
-        timestamp += chrono::Duration::seconds(1);
-    }
-
-    Err(Error::Database(DatabaseError::BackupFailed(
-        "Could not find an unused backup filename".to_string(),
-    )))
 }
 
 fn fsync_file(path: &Path) -> Result<()> {
@@ -517,17 +556,42 @@ fn fsync_file(path: &Path) -> Result<()> {
         })
 }
 
-/// Flushing the directory entry is what makes the rename durable. Windows has no
-/// equivalent and does not need one.
-fn fsync_parent_dir(path: &Path) {
+/// Unix directory sync makes the renamed entry durable. Other platforms retain
+/// their existing rename behavior; do not claim a Unix durability barrier there.
+fn fsync_parent_dir(path: &Path) -> Result<()> {
     #[cfg(unix)]
-    if let Some(dir) = path.parent() {
-        if let Err(e) = fs::File::open(dir).and_then(|file| file.sync_all()) {
-            warn!("Failed to flush directory {}: {}", dir.display(), e);
-        }
+    {
+        let dir = path
+            .parent()
+            .filter(|dir| !dir.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        fs::File::open(dir)
+            .and_then(|file| {
+                #[cfg(test)]
+                if SYNC_FAILURES.with(|remaining| {
+                    let count = remaining.get();
+                    remaining.set(count.saturating_sub(1));
+                    count > 0
+                }) {
+                    return Err(std::io::Error::other("injected directory sync failure"));
+                }
+                file.sync_all()
+            })
+            .map_err(|error| {
+                Error::Database(DatabaseError::RestoreFailed(format!(
+                    "Failed to flush database directory {}: {error}",
+                    dir.display()
+                )))
+            })?;
     }
     #[cfg(not(unix))]
     let _ = path;
+    Ok(())
+}
+
+#[cfg(all(test, unix))]
+thread_local! {
+    static SYNC_FAILURES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 fn path_str(path: &Path) -> Result<&str> {
@@ -549,8 +613,257 @@ fn state_label(encrypted: bool) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use super::super::backup_database_to_file;
     use super::*;
     use tempfile::TempDir;
+
+    #[cfg(unix)]
+    #[test]
+    fn relative_database_path_syncs_the_current_directory() {
+        SYNC_FAILURES.with(|value| value.set(1));
+        let result = fsync_parent_dir(Path::new("app.db"));
+        let remaining = SYNC_FAILURES.with(|value| value.replace(0));
+        let error = result
+            .expect_err("the directory flush must be attempted")
+            .to_string();
+        assert!(error.contains("directory .:"), "{error}");
+        assert_eq!(remaining, 0);
+        fsync_parent_dir(Path::new("app.db")).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_sync_failure_rolls_back_and_preserves_uncertain_recovery() {
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                SYNC_FAILURES.with(|value| value.set(0));
+            }
+        }
+        for operation in ["enable", "disable", "restore-plain", "restore-encrypted"] {
+            for failures in [1, 2] {
+                let dir = TempDir::new().unwrap();
+                let source_dir = TempDir::new().unwrap();
+                let key = Arc::new(DbEncryptionKey::generate());
+                let encrypted = matches!(operation, "disable" | "restore-encrypted");
+                let current = seeded_database(&dir, encrypted.then(|| key.clone()));
+                let source = seeded_database(&source_dir, None);
+                set_setting(&source, "base_currency", "EUR");
+                let request = match operation {
+                    "enable" => MaintenanceRequest::Enable { key: key.clone() },
+                    "disable" => MaintenanceRequest::Disable,
+                    _ => MaintenanceRequest::Restore {
+                        backup_path: source.path().into(),
+                        device_key: None,
+                    },
+                };
+                let _reset = Reset;
+                SYNC_FAILURES.with(|value| value.set(failures));
+                let error = run(dir.path().to_str().unwrap(), &current, request)
+                    .err()
+                    .expect("a failed durability barrier must not report success")
+                    .to_string();
+                assert!(error.contains("directory sync failure"), "{error}");
+                assert_eq!(SYNC_FAILURES.with(|value| value.get()), 0);
+                assert_eq!(
+                    read_setting(&current, "base_currency").as_deref(),
+                    Some("CAD")
+                );
+                assert_eq!(
+                    probe(current.path(), Some(key.clone()))
+                        .unwrap()
+                        .is_encrypted(),
+                    encrypted
+                );
+                let backups = fs::read_dir(dir.path().join("backups"))
+                    .unwrap()
+                    .map(|entry| entry.unwrap().path())
+                    .collect::<Vec<_>>();
+                if failures == 2 {
+                    assert!(error.contains("rollback failed"), "{error}");
+                    assert_eq!(backups.len(), 1);
+                    assert!(error.contains(backups[0].to_str().unwrap()));
+                    let _owner = DatabaseOwner::acquire(current.path()).unwrap();
+                    super::super::purge_scratch_dir(Path::new(current.path()));
+                    let backup = probe(backups[0].to_str().unwrap(), Some(key.clone())).unwrap();
+                    assert_eq!(backup.is_encrypted(), encrypted || operation == "enable");
+                    assert_eq!(
+                        read_setting(&backup, "base_currency").as_deref(),
+                        Some("CAD")
+                    );
+                } else if operation == "enable" {
+                    assert!(
+                        backups.is_empty(),
+                        "durable rollback can remove Enable's copy"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn startup_removes_plaintext_candidate_after_process_exit() {
+        const CHILD_PATH: &str = "WF_TEST_INTERRUPTED_DISABLE_DB";
+        let key = Arc::new(DbEncryptionKey::from_bytes(&[37; 32]));
+        if let Some(path) = std::env::var_os(CHILD_PATH) {
+            let path = PathBuf::from(path);
+            let current = DbAccess::encrypted(path.to_str().unwrap(), key);
+            let _owner = DatabaseOwner::acquire(current.path()).unwrap();
+            let workspace = Workspace::new(&path).unwrap();
+            let candidate = DbAccess::plaintext(workspace.candidate.to_str().unwrap());
+            build_candidate(
+                &MaintenanceRequest::Disable,
+                &current,
+                &candidate,
+                &workspace,
+            )
+            .unwrap();
+            assert_eq!(
+                read_setting(&candidate, "base_currency").as_deref(),
+                Some("CAD")
+            );
+            // Exit without unwinding or running destructors after real candidate
+            // creation and verification, before live-file replacement.
+            std::process::exit(86);
+        }
+
+        let dir = TempDir::new().unwrap();
+        let current = seeded_database(&dir, Some(key));
+        let original = fs::read(current.path()).unwrap();
+        let saved = dir.path().join("backups/retained.db");
+        let archive = dir.path().join("recovery-original-retained/app.db");
+        let other = dir.path().join("other.db.maintenance-retained.new");
+        for path in [&saved, &archive, &other] {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, b"retained").unwrap();
+        }
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "db::maintenance::tests::startup_removes_plaintext_candidate_after_process_exit",
+            ])
+            .env(CHILD_PATH, current.path())
+            .status()
+            .unwrap();
+        assert_eq!(status.code(), Some(86));
+        let candidate = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .find(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with("app.db.maintenance-")
+                    && path.extension().is_some_and(|extension| extension == "new")
+            })
+            .expect("interrupted conversion must leave its candidate");
+        assert!(fs::read(&candidate)
+            .unwrap()
+            .starts_with(b"SQLite format 3\0"));
+        let _owner = DatabaseOwner::acquire(current.path()).unwrap();
+        super::super::purge_scratch_dir(Path::new(current.path()));
+        assert!(!candidate.exists());
+        assert_eq!(fs::read(current.path()).unwrap(), original);
+        assert_eq!(
+            read_setting(&current, "base_currency").as_deref(),
+            Some("CAD")
+        );
+        for path in [&saved, &archive, &other] {
+            assert_eq!(fs::read(path).unwrap(), b"retained");
+        }
+    }
+
+    #[test]
+    fn insufficient_rollback_space_does_not_replace_the_live_database() {
+        for encrypted in [false, true] {
+            let dir = TempDir::new().unwrap();
+            let key = encrypted.then(|| Arc::new(DbEncryptionKey::generate()));
+            let current = seeded_database(&dir, key);
+            let source_dir = TempDir::new().unwrap();
+            let source = seeded_database(&source_dir, None);
+            set_setting(&source, "base_currency", "EUR");
+            let result = super::super::space::with_available(0, || {
+                run(
+                    dir.path().to_str().unwrap(),
+                    &current,
+                    MaintenanceRequest::Restore {
+                        backup_path: source.path().into(),
+                        device_key: None,
+                    },
+                )
+            });
+            assert!(result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Not enough free space"));
+            assert_eq!(
+                read_setting(&current, "base_currency").as_deref(),
+                Some("CAD")
+            );
+            assert_eq!(
+                read_setting(&source, "base_currency").as_deref(),
+                Some("EUR")
+            );
+            let snapshots =
+                super::super::snapshots::list(dir.path().to_str().unwrap(), current.key().cloned())
+                    .unwrap();
+            assert_eq!(snapshots.len(), 1, "keep the verified pre-restore snapshot");
+            assert!(!fs::read_dir(dir.path()).unwrap().any(|entry| entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .contains(CANDIDATE_MARKER)));
+        }
+    }
+
+    #[test]
+    fn insufficient_space_keeps_conversion_policy_and_removes_plaintext_scratch() {
+        for encrypted in [false, true] {
+            let dir = TempDir::new().unwrap();
+            let key = Arc::new(DbEncryptionKey::generate());
+            let current = seeded_database(&dir, encrypted.then(|| key.clone()));
+            let request = if encrypted {
+                MaintenanceRequest::Disable
+            } else {
+                MaintenanceRequest::Enable { key: key.clone() }
+            };
+            let result = super::super::space::with_available(0, || {
+                run(dir.path().to_str().unwrap(), &current, request)
+            });
+            assert!(result
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("Not enough free space"));
+            assert_eq!(
+                probe(current.path(), Some(key.clone()))
+                    .unwrap()
+                    .is_encrypted(),
+                encrypted
+            );
+            assert_eq!(
+                read_setting(&current, "base_currency").as_deref(),
+                Some("CAD")
+            );
+            let snapshots =
+                super::super::snapshots::list(dir.path().to_str().unwrap(), Some(key)).unwrap();
+            assert_eq!(
+                snapshots.len(),
+                1,
+                "retain the encrypted recovery snapshot on refusal"
+            );
+            assert_eq!(snapshots[0].protection, "encrypted");
+            let scratch = dir.path().join(super::super::SCRATCH_DIR_NAME);
+            if scratch.exists() {
+                assert_eq!(
+                    fs::read_dir(scratch).unwrap().count(),
+                    0,
+                    "do not retain the failed enable's plaintext scratch backup"
+                );
+            }
+        }
+    }
 
     fn run(
         app_data_dir: &str,
@@ -599,6 +912,73 @@ mod tests {
             .collect();
         names.sort();
         names
+    }
+
+    #[test]
+    fn rebuild_rollback_can_decrypt_enables_recovery_snapshot() {
+        let dir = TempDir::new().unwrap();
+        let original = seeded_database(&dir, None);
+        let installed = run(
+            dir.path().to_str().unwrap(),
+            &original,
+            MaintenanceRequest::Enable {
+                key: Arc::new(DbEncryptionKey::generate()),
+            },
+        )
+        .unwrap()
+        .access;
+        let backup = super::super::snapshots::create(
+            &installed,
+            dir.path().to_str().unwrap(),
+            super::super::snapshots::SnapshotReason::BeforeMaintenance,
+        )
+        .unwrap();
+        set_setting(&installed, "base_currency", "EUR");
+        let owner = DatabaseOwner::acquire(original.path()).unwrap();
+        rollback_after_rebuild(&installed, &original, backup.to_str().unwrap(), &owner).unwrap();
+        assert_eq!(
+            read_setting(&original, "base_currency").as_deref(),
+            Some("CAD")
+        );
+        assert!(fs::read(original.path())
+            .unwrap()
+            .starts_with(b"SQLite format 3\0"));
+        assert!(!fs::read(backup).unwrap().starts_with(b"SQLite format 3\0"));
+    }
+
+    #[test]
+    fn rebuild_rollback_uses_existing_snapshot_and_rejects_damage_before_replace() {
+        for encrypted in [false, true] {
+            let dir = TempDir::new().unwrap();
+            let original = seeded_database(
+                &dir,
+                encrypted.then(|| Arc::new(DbEncryptionKey::generate())),
+            );
+            let owner = DatabaseOwner::acquire(original.path()).unwrap();
+            let backup = super::super::snapshots::create(
+                &original,
+                dir.path().to_str().unwrap(),
+                super::super::snapshots::SnapshotReason::BeforeRestore,
+            )
+            .unwrap();
+            set_setting(&original, "base_currency", "USD");
+            let before = file_names(&dir.path().join("backups"));
+            rollback_after_rebuild(&original, &original, backup.to_str().unwrap(), &owner).unwrap();
+            assert_eq!(
+                read_setting(&original, "base_currency").as_deref(),
+                Some("CAD")
+            );
+            assert_eq!(file_names(&dir.path().join("backups")), before);
+            fs::write(&backup, b"damaged rollback file").unwrap();
+            assert!(
+                rollback_after_rebuild(&original, &original, backup.to_str().unwrap(), &owner)
+                    .is_err()
+            );
+            assert_eq!(
+                read_setting(&original, "base_currency").as_deref(),
+                Some("CAD")
+            );
+        }
     }
 
     #[test]
@@ -706,43 +1086,24 @@ mod tests {
         assert!(
             !dir.path().join("backups").exists()
                 || file_names(&dir.path().join("backups")).is_empty(),
-            "the plaintext pre-operation backup must be deleted"
+            "the enable recovery snapshot is no longer needed after durable success"
         );
         assert!(
-            file_names(&dir.path().join(super::super::SCRATCH_DIR_NAME)).is_empty(),
+            !dir.path().join(super::super::SCRATCH_DIR_NAME).exists()
+                || file_names(&dir.path().join(super::super::SCRATCH_DIR_NAME)).is_empty(),
             "the plaintext pre-operation backup must not linger in scratch either"
         );
     }
 
     #[test]
-    fn an_interrupted_enable_leaves_its_plaintext_copy_where_startup_sweeps_it() {
-        // The pre-operation backup of an enable is a complete readable copy of
-        // the database. It is deleted once the encrypted file verifies, so the
-        // only way it outlives the operation is a crash in that window — and
-        // then it must be somewhere startup clears, not in `backups/`, which
-        // nothing ever sweeps.
+    fn startup_still_removes_legacy_plaintext_enable_scratch() {
         let dir = TempDir::new().unwrap();
         let access = seeded_database(&dir, None);
-        let workspace = Workspace::new(Path::new(access.path())).unwrap();
-
-        assert!(
-            workspace
-                .pre_operation
-                .starts_with(dir.path().join(super::super::SCRATCH_DIR_NAME)),
-            "an enable's pre-operation backup must live in the scratch directory"
-        );
-
-        // Stand in for the crash: the copy exists, the deletion never ran.
-        super::super::scratch_dir_beside(Path::new(access.path())).unwrap();
-        backup_database_to_file(&access, workspace.pre_operation.to_str().unwrap()).unwrap();
-        assert!(workspace.pre_operation.exists());
-
+        let scratch = super::super::scratch_dir_beside(Path::new(access.path())).unwrap();
+        let legacy = scratch.join("app.db.maintenance-legacy.pre");
+        backup_database_to_file(&access, legacy.to_str().unwrap()).unwrap();
         super::super::purge_scratch_dir(Path::new(access.path()));
-
-        assert!(
-            !workspace.pre_operation.exists(),
-            "startup must clear a plaintext copy an interrupted enable left behind"
-        );
+        assert!(!legacy.exists());
     }
 
     #[test]
@@ -1052,14 +1413,20 @@ mod tests {
         let access = seeded_database(&dir, None);
         let workspace = Workspace::new(Path::new(access.path())).unwrap();
 
-        let backup = create_unused_backup_path(dir.path().to_str().unwrap()).unwrap();
+        let backup = super::super::snapshots::new_path(
+            dir.path().to_str().unwrap(),
+            super::super::snapshots::SnapshotReason::BeforeRestore,
+        )
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
         backup_database_to_file(&access, &backup).unwrap();
 
         // Stand in for a half-installed database that fails verification.
         remove_database_files(access.path()).unwrap();
         fs::write(access.path(), b"not a database").unwrap();
 
-        roll_back(&workspace, &backup, &access).expect("rollback");
+        roll_back(&workspace, &DbAccess::plaintext(&backup), &access).expect("rollback");
 
         assert_eq!(
             read_setting(&access, "base_currency").as_deref(),

@@ -40,14 +40,20 @@ impl DatabaseOwner {
         Ok(Self { path, _lock: lock })
     }
 
-    pub(super) fn check_path(&self, db_path: &str) -> Result<()> {
+    /// Verify that this owner protects the requested, non-symlink database path.
+    pub fn check_path(&self, db_path: &str) -> Result<()> {
         // Replacing a symlink would install a new database at the alias while
         // ownership still protects the original target's lock file.
-        if std::fs::symlink_metadata(db_path)?.file_type().is_symlink() {
-            return Err(Error::Database(DatabaseError::TransactionFailed(
-                "Database maintenance cannot replace a symbolic link. Use the real database path."
-                    .to_string(),
-            )));
+        match std::fs::symlink_metadata(db_path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(Error::Database(DatabaseError::TransactionFailed(
+                    "Database maintenance cannot replace a symbolic link. Use the real database path."
+                        .to_string(),
+                )));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
         }
         if self.path != resolved_path(Path::new(db_path))? {
             return Err(Error::Database(DatabaseError::TransactionFailed(

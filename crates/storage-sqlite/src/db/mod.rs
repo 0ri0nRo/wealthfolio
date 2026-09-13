@@ -1,3 +1,4 @@
+#[cfg(test)]
 use chrono::Local;
 use log::{error, info, warn};
 use rusqlite::Connection as RusqliteConnection;
@@ -37,8 +38,13 @@ pub type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 pub type DbConnection = PooledConnection<ConnectionManager<SqliteConnection>>;
 
 pub mod encryption;
+pub mod imports;
 pub mod maintenance;
 mod ownership;
+pub mod portable;
+pub mod recovery;
+pub mod snapshots;
+mod space;
 pub mod write_actor;
 
 pub use encryption::{DbEncryptionKey, KeyProvider, NoKeyProvider};
@@ -117,6 +123,14 @@ impl DbAccess {
         open_rusqlite(self.path(), self.key.as_deref())
     }
 
+    fn connect_existing_rusqlite(&self) -> Result<RusqliteConnection> {
+        open_rusqlite_with_flags(
+            self.path(),
+            self.key.as_deref(),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+    }
+
     /// Creates the database directory and applies the app's connection pragmas.
     ///
     /// Opening also creates the file when it is missing — encrypted, when a key
@@ -139,6 +153,16 @@ impl DbAccess {
     }
 
     pub fn create_pool(&self) -> Result<Arc<DbPool>> {
+        self.create_pool_inner(None)
+    }
+
+    /// Retain ownership in r2d2, including raw clones and late connector tasks.
+    pub fn create_pool_with_owner(&self, owner: Arc<DatabaseOwner>) -> Result<Arc<DbPool>> {
+        owner.check_path(self.path())?;
+        self.create_pool_inner(Some(owner))
+    }
+
+    fn create_pool_inner(&self, owner: Option<Arc<DatabaseOwner>>) -> Result<Arc<DbPool>> {
         let manager = ConnectionManager::<SqliteConnection>::new(self.path());
         let pool = r2d2::Pool::builder()
             .max_size(8)
@@ -146,6 +170,7 @@ impl DbAccess {
             .connection_timeout(Duration::from_secs(30))
             .connection_customizer(Box::new(ConnectionCustomizer {
                 key: self.key.clone(),
+                _owner: owner,
             }))
             .build(manager)
             .map_err(|e| DatabaseError::PoolCreationFailed(e.to_string()))?;
@@ -394,7 +419,15 @@ fn create_parent_dir(path: &Path) -> Result<()> {
 }
 
 fn open_rusqlite(db_path: &str, key: Option<&DbEncryptionKey>) -> Result<RusqliteConnection> {
-    let conn = RusqliteConnection::open(db_path)
+    open_rusqlite_with_flags(db_path, key, rusqlite::OpenFlags::default())
+}
+
+fn open_rusqlite_with_flags(
+    db_path: &str,
+    key: Option<&DbEncryptionKey>,
+    flags: rusqlite::OpenFlags,
+) -> Result<RusqliteConnection> {
+    let conn = RusqliteConnection::open_with_flags(db_path, flags)
         .map_err(|e| Error::Database(DatabaseError::ConnectionFailed(e.to_string())))?;
     // `busy_timeout` goes through sqlite3_busy_timeout(), not SQL, so it does not
     // break SQLCipher's "key must be the first statement" rule either way.
@@ -473,6 +506,18 @@ mod encryption_tests {
         let scratch = scratch_dir_beside(Path::new(&db)).unwrap();
         let leaked = scratch.join("wf_snapshot_export_leaked.db");
         fs::write(&leaked, b"plaintext financial rows").unwrap();
+        let portable = scratch.join("portable-abc123");
+        let snapshot = dir.path().join("backups/.snapshot-abc123");
+        for private in [&portable, &snapshot] {
+            fs::create_dir_all(private).unwrap();
+            fs::write(private.join("candidate.db"), b"staging").unwrap();
+        }
+        let saved = dir
+            .path()
+            .join("backups/wealthfolio_backup_20260913_120000.db");
+        fs::write(&saved, b"saved snapshot").unwrap();
+        let unrelated = scratch.join("user-folder");
+        fs::create_dir(&unrelated).unwrap();
 
         purge_scratch_dir(Path::new(&db));
 
@@ -481,6 +526,10 @@ mod encryption_tests {
             "a leaked plaintext snapshot must not survive startup"
         );
         assert!(scratch.exists(), "the directory itself is kept");
+        assert!(!portable.exists());
+        assert!(!snapshot.exists());
+        assert_eq!(fs::read(saved).unwrap(), b"saved snapshot");
+        assert!(unrelated.exists());
     }
 
     #[test]
@@ -1254,6 +1303,7 @@ mod migration_tests {
     }
 }
 
+#[cfg(test)]
 fn create_backup_filename(timestamp: chrono::DateTime<Local>) -> String {
     format!(
         "{}{}{}",
@@ -1267,15 +1317,18 @@ pub fn is_valid_backup_filename(filename: &str) -> bool {
     const EXPECTED_LEN: usize =
         BACKUP_FILENAME_PREFIX.len() + "YYYYMMDD_HHMMSS".len() + BACKUP_FILENAME_SUFFIX.len();
 
-    if filename.len() != EXPECTED_LEN
+    if filename.len() != EXPECTED_LEN && !snapshots::is_current_filename(filename) {
+        return false;
+    }
+    if !filename.is_ascii()
+        || filename.contains(['/', '\\'])
         || !filename.starts_with(BACKUP_FILENAME_PREFIX)
         || !filename.ends_with(BACKUP_FILENAME_SUFFIX)
     {
         return false;
     }
 
-    let timestamp =
-        &filename[BACKUP_FILENAME_PREFIX.len()..filename.len() - BACKUP_FILENAME_SUFFIX.len()];
+    let timestamp = &filename[BACKUP_FILENAME_PREFIX.len()..BACKUP_FILENAME_PREFIX.len() + 15];
     if timestamp.as_bytes().get(8) != Some(&b'_') {
         return false;
     }
@@ -1289,16 +1342,9 @@ pub fn is_valid_backup_filename(filename: &str) -> bool {
 }
 
 pub fn create_backup_path(app_data_dir: &str) -> Result<String> {
-    let backup_dir = Path::new(app_data_dir).join("backups");
-    fs::create_dir_all(&backup_dir).map_err(|e| {
-        error!("Failed to create backup directory: {}", e);
-        Error::Database(DatabaseError::BackupFailed(e.to_string()))
-    })?;
-
-    let backup_file = create_backup_filename(Local::now());
-    let backup_path = backup_dir.join(backup_file);
-
-    Ok(backup_path.to_str().unwrap().to_string())
+    snapshots::new_path(app_data_dir, snapshots::SnapshotReason::Manual)
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| Error::Database(DatabaseError::BackupFailed(error.to_string())))
 }
 
 /// Name of the private directory used for short-lived database files.
@@ -1316,7 +1362,7 @@ pub fn scratch_dir(app_data_dir: &str) -> Result<std::path::PathBuf> {
     scratch_dir_beside(Path::new(&get_db_path(app_data_dir)))
 }
 
-/// Empties the scratch directory.
+/// Cleans scratch files and abandoned maintenance candidates.
 ///
 /// Snapshot files are plaintext copies of synced financial rows, deleted as soon
 /// as they are consumed — but a crash between the write and the delete leaves
@@ -1330,6 +1376,27 @@ pub fn scratch_dir(app_data_dir: &str) -> Result<std::path::PathBuf> {
 /// from anything short-lived — the offline `db encrypt`/`db decrypt` command,
 /// say — deletes a running instance's in-flight snapshot out from under it.
 pub fn purge_scratch_dir(db_path: &Path) {
+    maintenance::purge_abandoned_candidates(db_path);
+    // Only private operation directories are recursive cleanup targets. Both
+    // callers hold DatabaseOwner before reaching startup cleanup.
+    if let Some(root) = db_path.parent() {
+        for (directory, prefix) in [
+            (root.join("backups"), ".snapshot-"),
+            (root.join(SCRATCH_DIR_NAME), "portable-"),
+        ] {
+            if let Ok(entries) = fs::read_dir(directory) {
+                for entry in entries.flatten() {
+                    if entry.file_name().to_string_lossy().starts_with(prefix)
+                        && entry.file_type().is_ok_and(|kind| kind.is_dir())
+                    {
+                        if let Err(error) = fs::remove_dir_all(entry.path()) {
+                            warn!("Failed to clean abandoned backup staging: {error}");
+                        }
+                    }
+                }
+            }
+        }
+    }
     // Read without creating: a device that never syncs should not grow a
     // `scratch/` directory just by starting up.
     let Some(dir) = db_path.parent().map(|parent| parent.join(SCRATCH_DIR_NAME)) else {
@@ -1454,10 +1521,9 @@ pub fn export_portable_backup(access: &DbAccess, export_path: &str) -> Result<()
 }
 
 pub fn backup_database(access: &DbAccess, app_data_dir: &str) -> Result<String> {
-    let backup_path = create_backup_path(app_data_dir)?;
-
-    backup_database_to_file(access, &backup_path)?;
-    Ok(backup_path)
+    snapshots::create(access, app_data_dir, snapshots::SnapshotReason::Manual)
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| Error::Database(DatabaseError::BackupFailed(error.to_string())))
 }
 
 /// Gets a connection from the pool
@@ -1468,6 +1534,7 @@ pub fn get_connection(pool: &Pool<ConnectionManager<SqliteConnection>>) -> Resul
 #[derive(Debug)]
 struct ConnectionCustomizer {
     key: Option<Arc<DbEncryptionKey>>,
+    _owner: Option<Arc<DatabaseOwner>>,
 }
 
 impl r2d2::CustomizeConnection<SqliteConnection, diesel::r2d2::Error> for ConnectionCustomizer {
@@ -1672,3 +1739,6 @@ mod tests {
         assert!(is_valid_backup_filename(filename));
     }
 }
+
+#[cfg(test)]
+mod pool_lifetime_tests;
