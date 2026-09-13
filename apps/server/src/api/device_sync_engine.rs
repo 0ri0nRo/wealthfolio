@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
+use wealthfolio_core::settings::SettingsServiceTrait;
 
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine};
@@ -637,6 +638,14 @@ impl SyncTransport for ServerEnginePorts {
 #[async_trait]
 impl CredentialStore for ServerEnginePorts {
     fn has_cloud_session(&self) -> Result<bool, String> {
+        if self
+            .state
+            .settings_service
+            .requires_cloud_reconnect()
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(false);
+        }
         self.state
             .token_lifecycle
             .is_session_configured(self.state.secret_store.as_ref())
@@ -919,6 +928,13 @@ pub async fn reconcile_ready_state(
 
 pub async fn ensure_background_engine_started(state: Arc<AppState>) -> Result<(), String> {
     ensure_device_sync_enabled()?;
+    if state
+        .settings_service
+        .requires_cloud_reconnect()
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(());
+    }
     let has_session = state
         .token_lifecycle
         .is_session_configured(state.secret_store.as_ref())

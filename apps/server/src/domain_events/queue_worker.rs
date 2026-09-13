@@ -33,6 +33,7 @@ const DEBOUNCE_DURATION: Duration = Duration::from_millis(1000);
 
 /// Dependencies needed by the queue worker for processing events.
 pub struct QueueWorkerDeps {
+    pub settings_service: Arc<dyn wealthfolio_core::settings::SettingsServiceTrait>,
     pub asset_service: Arc<dyn AssetServiceTrait + Send + Sync>,
     pub connect_sync_service: Arc<dyn BrokerSyncServiceTrait + Send + Sync>,
     pub event_bus: EventBus,
@@ -260,6 +261,7 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
         let event_bus = deps.event_bus.clone();
         let secret_store = deps.secret_store.clone();
         let token_lifecycle = deps.token_lifecycle.clone();
+        let settings_service = deps.settings_service.clone();
         let broker_sync_running = deps.broker_sync_running.clone();
 
         tokio::spawn(async move {
@@ -271,6 +273,7 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
             };
 
             match perform_broker_sync(
+                settings_service,
                 connect_sync_service,
                 event_bus,
                 secret_store,
@@ -708,9 +711,16 @@ impl wealthfolio_connect::SyncProgressReporter for EventBusProgressReporter {
 
 /// Mint a fresh access token using the stored refresh token.
 async fn mint_access_token(
+    settings: &dyn wealthfolio_core::settings::SettingsServiceTrait,
     secret_store: &Arc<dyn SecretStore>,
     token_lifecycle: &TokenLifecycleState,
 ) -> Result<String, String> {
+    if settings
+        .requires_cloud_reconnect()
+        .map_err(|e| e.to_string())?
+    {
+        return Err("Reconnect Wealthfolio Connect after restoring this backup.".into());
+    }
     let config = token_lifecycle_config();
     ensure_valid_access_token(secret_store.as_ref(), token_lifecycle, config.as_ref())
         .await
@@ -721,6 +731,7 @@ async fn mint_access_token(
 /// Uses the centralized SyncOrchestrator for full pagination support.
 /// Asset enrichment is handled automatically via domain events (AssetsCreated).
 async fn perform_broker_sync(
+    settings: Arc<dyn wealthfolio_core::settings::SettingsServiceTrait>,
     connect_sync_service: Arc<dyn BrokerSyncServiceTrait + Send + Sync>,
     event_bus: EventBus,
     secret_store: Arc<dyn SecretStore>,
@@ -733,7 +744,8 @@ async fn perform_broker_sync(
     }
 
     // Create API client with fresh access token
-    let token = mint_access_token(&secret_store, token_lifecycle.as_ref()).await?;
+    let token =
+        mint_access_token(settings.as_ref(), &secret_store, token_lifecycle.as_ref()).await?;
     let client = ConnectApiClient::new(&cloud_api_base_url(), &token).map_err(|e| e.to_string())?;
 
     // Check plan entitlement before syncing

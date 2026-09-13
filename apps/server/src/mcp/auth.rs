@@ -38,7 +38,7 @@ struct Inner {
 }
 
 impl PatAuthState {
-    pub fn new(repo: Arc<PatRepository>) -> Self {
+    pub(crate) fn new(repo: Arc<PatRepository>) -> Self {
         Self(Arc::new(Inner {
             repo,
             last_touch: Mutex::new(HashMap::new()),

@@ -6,7 +6,7 @@ use crate::{
     domain_events::WebDomainEventSink, events::EventBus, oidc::OidcManager,
     secrets::build_secret_store,
 };
-use tracing::{error, warn};
+use tracing::warn;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::{fmt, EnvFilter};
 use wealthfolio_ai::{AiProviderService, AiProviderServiceTrait, ChatConfig, ChatService};
@@ -71,6 +71,7 @@ use wealthfolio_storage_sqlite::{
 };
 
 pub struct AppState {
+    pub backup_exports: crate::api::portable_backups::BackupExports,
     /// Domain event sink for emitting events after mutations.
     /// Note: The sink is used by services injected at construction time; this field
     /// is kept for documentation and possible future access patterns.
@@ -111,6 +112,7 @@ pub struct AppState {
     pub db_path: String,
     /// Path plus key for the live database, so backups apply `PRAGMA key`.
     pub db_access: db::DbAccess,
+    pub database_key: Arc<db::DbEncryptionKey>,
     pub secret_store: Arc<dyn SecretStore>,
     pub event_bus: EventBus,
     pub auth: Option<Arc<AuthManager>>,
@@ -149,7 +151,7 @@ pub struct AppState {
     /// Whether agent tool calls are audited (from `Config::mcp_audit_enabled`).
     pub mcp_audit_enabled: bool,
     // Drop after the services; retained even when all SQLite connections are idle.
-    _database_owner: db::DatabaseOwner,
+    _database_owner: Arc<db::DatabaseOwner>,
 }
 
 pub fn init_tracing() {
@@ -401,9 +403,9 @@ pub fn run_database_maintenance(encrypt: bool) -> anyhow::Result<()> {
 pub const DEFAULT_DB_PATH: &str = "./db/app.db";
 
 pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
+    let database_owner = Arc::new(db::DatabaseOwner::acquire(&config.db_path)?);
     // Ensure DATABASE_URL aligns with WF_DB_PATH so core picks the right file
     std::env::set_var("DATABASE_URL", &config.db_path);
-    let database_owner = db::DatabaseOwner::acquire(&config.db_path)?;
     let db_access = open_database(config, &config.db_path)?;
     let db_path = db_access.path().to_string();
     tracing::info!("Database path in use: {}", db_path);
@@ -430,19 +432,20 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
 
     db_access.run_migrations()?;
 
-    let pool = db_access.create_pool()?;
+    let pool = db_access.create_pool_with_owner(database_owner.clone())?;
     let (sync_outbox_wake_sender, sync_outbox_wake_receiver) = tokio::sync::mpsc::channel(128);
-    let (writer, _writer_task) = write_actor::spawn_writer_with_outbox_observer(
+    let writer_result = write_actor::spawn_writer_with_outbox_observer(
         (*pool).clone(),
         Arc::new(move || {
             let _ = sync_outbox_wake_sender.try_send(());
         }),
-    )
-    .map_err(|e| {
-        error!("Failed to initialize writer actor: {}", e);
-        e
-    })?;
+    );
+    let (writer, writer_task) = writer_result?;
 
+    let mut writer_task = Some(writer_task);
+    // Drop partially constructed services before draining the writer on failure.
+    // Retain the owner outside this future until cleanup has finished.
+    let result: anyhow::Result<Arc<AppState>> = async {
     // Domain event sink - two-phase initialization to handle circular dependencies
     // Phase 1: Create the sink (can receive events immediately, buffers until worker starts)
     let domain_event_sink = Arc::new(WebDomainEventSink::new());
@@ -736,31 +739,6 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     )
     .await?;
     recalculation_gate.replace_pending_accounts(final_cash_migration.pending_account_ids.clone());
-    if !final_cash_migration.pending_account_ids.is_empty() {
-        // The recalculation gate already serializes and forces full
-        // recomputation for pending accounts, so the rebuild can always run
-        // in the background instead of blocking (or failing) startup.
-        tracing::info!(
-            "Rebuilding {} account(s) after final-cash migration in the background",
-            final_cash_migration.pending_account_ids.len()
-        );
-        let settings_service = settings_service.clone();
-        let snapshot_service = snapshot_service.clone();
-        let valuation_service = valuation_service.clone();
-        let recalculation_gate = recalculation_gate.clone();
-        tokio::spawn(async move {
-            if let Err(error) = rebuild_pending_final_cash_accounts(
-                settings_service.as_ref(),
-                snapshot_service.as_ref(),
-                valuation_service.as_ref(),
-                recalculation_gate.as_ref(),
-            )
-            .await
-            {
-                tracing::warn!("Background final-cash rebuild failed: {}", error);
-            }
-        });
-    }
 
     // Spending: events + event_types
     let event_types_repo: Arc<dyn wealthfolio_spending::events::EventTypesRepositoryTrait> =
@@ -998,8 +976,48 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         warn!("Failed to prune local sync outbox: {}", err);
     }
 
+
+    let addon_storage_repository =
+        Arc::new(AddonStorageRepository::new(pool.clone(), writer.clone()));
+    let addon_service: Arc<dyn AddonServiceTrait + Send + Sync> = Arc::new(AddonService::new(
+        &config.addons_root,
+        rating_instance_id,
+        addon_storage_repository,
+    ));
+
+    let auth = crate::auth::AuthState::from_config(config).await?;
+    let auth_manager = auth.auth;
+    let oidc_manager = auth.oidc;
+
+    if !final_cash_migration.pending_account_ids.is_empty() {
+        // The recalculation gate already serializes and forces full
+        // recomputation for pending accounts, so the rebuild can always run
+        // in the background instead of blocking (or failing) startup.
+        tracing::info!(
+            "Rebuilding {} account(s) after final-cash migration in the background",
+            final_cash_migration.pending_account_ids.len()
+        );
+        let settings_service = settings_service.clone();
+        let snapshot_service = snapshot_service.clone();
+        let valuation_service = valuation_service.clone();
+        let recalculation_gate = recalculation_gate.clone();
+        tokio::spawn(async move {
+            if let Err(error) = rebuild_pending_final_cash_accounts(
+                settings_service.as_ref(),
+                snapshot_service.as_ref(),
+                valuation_service.as_ref(),
+                recalculation_gate.as_ref(),
+            )
+            .await
+            {
+                tracing::warn!("Background final-cash rebuild failed: {}", error);
+            }
+        });
+    }
+
     // Domain event sink - Phase 2: Start the worker now that all services are ready
     domain_event_sink.start_worker(
+        settings_service.clone(),
         asset_service.clone(),
         connect_sync_service.clone(),
         event_bus.clone(),
@@ -1020,29 +1038,8 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         categorization_rules_service.clone(),
     );
 
-    let addon_storage_repository =
-        Arc::new(AddonStorageRepository::new(pool.clone(), writer.clone()));
-    let addon_service: Arc<dyn AddonServiceTrait + Send + Sync> = Arc::new(AddonService::new(
-        &config.addons_root,
-        rating_instance_id,
-        addon_storage_repository,
-    ));
-
-    let auth_manager = config
-        .auth
-        .as_ref()
-        .map(AuthManager::new)
-        .transpose()?
-        .map(Arc::new);
-
-    let oidc_manager = match config.oidc.as_ref() {
-        Some(oidc_config) => Some(Arc::new(
-            OidcManager::discover(oidc_config, config.secrets_encryption_key).await?,
-        )),
-        None => None,
-    };
-
     let state = Arc::new(AppState {
+        backup_exports: crate::api::portable_backups::BackupExports::default(),
         domain_event_sink,
         account_service,
         settings_service,
@@ -1073,7 +1070,8 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         data_root,
         db_path,
         db_access,
-        _database_owner: database_owner,
+        database_key: Arc::new(db::DbEncryptionKey::from_bytes(&config.database_key)),
+        _database_owner: Arc::clone(&database_owner),
         secret_store,
         event_bus,
         auth: auth_manager,
@@ -1114,4 +1112,13 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     }
 
     Ok(state)
+    }.await;
+    if result.is_err() {
+        writer.shutdown().await;
+        if let Some(task) = writer_task.take() {
+            task.join().await;
+        }
+        drop(pool);
+    }
+    result
 }

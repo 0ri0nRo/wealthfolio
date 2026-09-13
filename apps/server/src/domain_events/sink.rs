@@ -57,6 +57,7 @@ impl WebDomainEventSink {
     #[allow(clippy::too_many_arguments)]
     pub fn start_worker(
         &self,
+        settings_service: Arc<dyn wealthfolio_core::settings::SettingsServiceTrait>,
         asset_service: Arc<dyn AssetServiceTrait + Send + Sync>,
         connect_sync_service: Arc<dyn BrokerSyncServiceTrait + Send + Sync>,
         event_bus: EventBus,
@@ -92,6 +93,7 @@ impl WebDomainEventSink {
             .expect("start_worker() can only be called once");
 
         let deps = Arc::new(QueueWorkerDeps {
+            settings_service,
             asset_service,
             connect_sync_service,
             event_bus,

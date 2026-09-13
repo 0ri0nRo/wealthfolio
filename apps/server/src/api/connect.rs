@@ -5,6 +5,7 @@
 
 use std::future::Future;
 use std::sync::Arc;
+use wealthfolio_core::settings::SettingsServiceTrait;
 
 use axum::{
     extract::{Query, State},
@@ -366,7 +367,11 @@ async fn store_sync_session(
     ensure_cloud_sync_enabled()?;
     state
         .token_lifecycle
-        .store_session(state.secret_store.as_ref(), &body.refresh_token)
+        .store_session_after_restore(
+            state.secret_store.as_ref(),
+            state.settings_service.as_ref(),
+            &body.refresh_token,
+        )
         .await
         .map_err(map_token_lifecycle_error)?;
 
@@ -514,10 +519,14 @@ async fn get_sync_session_status(
     State(state): State<Arc<AppState>>,
 ) -> ApiResult<Json<SyncSessionStatus>> {
     ensure_cloud_sync_enabled()?;
-    let is_configured = state
-        .token_lifecycle
-        .is_session_configured(state.secret_store.as_ref())
-        .map_err(map_token_lifecycle_error)?;
+    let is_configured = !state
+        .settings_service
+        .requires_cloud_reconnect()
+        .map_err(|e| ApiError::Internal(e.to_string()))?
+        && state
+            .token_lifecycle
+            .is_session_configured(state.secret_store.as_ref())
+            .map_err(map_token_lifecycle_error)?;
 
     Ok(Json(SyncSessionStatus { is_configured }))
 }
@@ -545,6 +554,15 @@ async fn restore_sync_session(
 
 pub(crate) async fn mint_access_token(state: &AppState) -> ApiResult<String> {
     ensure_cloud_sync_enabled()?;
+    if state
+        .settings_service
+        .requires_cloud_reconnect()
+        .map_err(|e| ApiError::Internal(e.to_string()))?
+    {
+        return Err(ApiError::Forbidden(
+            "Reconnect Wealthfolio Connect after restoring this backup.".into(),
+        ));
+    }
     let config = token_lifecycle_config();
     ensure_valid_access_token(
         state.secret_store.as_ref(),

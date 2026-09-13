@@ -10,7 +10,7 @@
 //! stateless and survives restarts.
 
 use reqwest_oidc as reqwest;
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::Duration;
 
 use axum::{
@@ -34,7 +34,7 @@ use openidconnect::{
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
-use crate::main_lib::AppState;
+use crate::auth::AuthState;
 
 const TX_COOKIE_NAME: &str = "wf_oidc_tx";
 const TX_COOKIE_PATH: &str = "/api/v1/auth/oidc";
@@ -335,7 +335,7 @@ struct OidcTx {
 
 /// `GET /api/v1/auth/oidc/login` — start the flow: build the authorize URL and
 /// stash PKCE/nonce/CSRF in an encrypted cookie, then redirect to the IdP.
-pub async fn oidc_login(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+pub async fn oidc_login(State(state): State<AuthState>, headers: HeaderMap) -> Response {
     let Some(oidc) = state.oidc.clone() else {
         return error_redirect("oidc_not_configured");
     };
@@ -386,7 +386,7 @@ pub struct CallbackQuery {
 /// `GET /api/v1/auth/oidc/callback` — finish the flow: verify state, exchange the
 /// code, validate the ID token, enforce the allowlist, then mint `wf_session`.
 pub async fn oidc_callback(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AuthState>,
     headers: HeaderMap,
     Query(query): Query<CallbackQuery>,
 ) -> Response {
@@ -528,7 +528,7 @@ pub async fn oidc_callback(
 /// session (the encrypted ID-token cookie), redirects to the provider for
 /// RP-Initiated Logout. Otherwise redirects locally to `/`. Password sessions
 /// (no ID-token cookie) therefore only get a local logout.
-pub async fn oidc_logout(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+pub async fn oidc_logout(State(state): State<AuthState>, headers: HeaderMap) -> Response {
     let secure = cookie_secure(&state, &headers);
 
     let target = state
@@ -693,7 +693,7 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     diff == 0
 }
 
-fn cookie_secure(state: &AppState, headers: &HeaderMap) -> bool {
+fn cookie_secure(state: &AuthState, headers: &HeaderMap) -> bool {
     state
         .auth
         .as_ref()
