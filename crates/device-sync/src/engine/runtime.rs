@@ -165,6 +165,7 @@ impl DeviceSyncRuntimeState {
         let mut guard = self.background_task.lock().await;
         if let Some(handle) = guard.take() {
             handle.abort();
+            let _ = handle.await;
         }
     }
 
@@ -202,5 +203,28 @@ impl DeviceSyncRuntimeState {
     pub fn remove_flow(&self, flow_id: &str) {
         let mut flows = self.pairing_flows.lock().unwrap();
         flows.remove(flow_id);
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn stopping_background_waits_for_captured_resources_to_drop() {
+        let runtime = DeviceSyncRuntimeState::new();
+        let resource = Arc::new(());
+        let captured = resource.clone();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        *runtime.background_task.lock().await = Some(tokio::spawn(async move {
+            let _resource = captured;
+            let _ = started.send(());
+            std::future::pending::<()>().await;
+        }));
+        ready.await.unwrap();
+        runtime.ensure_background_stopped().await;
+        assert_eq!(Arc::strong_count(&resource), 1);
+        assert!(!runtime.is_background_running().await);
+        runtime.ensure_background_stopped().await;
     }
 }
