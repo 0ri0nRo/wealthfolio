@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use log::{error, info, warn};
 use tauri::async_runtime::JoinHandle;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use wealthfolio_ai::ProviderApiError;
 use wealthfolio_core::errors::{DatabaseError, Error, Result as CoreResult};
 use wealthfolio_core::events::DomainEvent;
@@ -162,6 +162,7 @@ impl KeyProvider for KeychainKeyProvider {
 /// Everything that holds a database handle, so that all of it can be released
 /// together.
 struct Live {
+    generation: uuid::Uuid,
     /// Which database the rest of this struct is serving. It belongs here, not
     /// in a field of its own: the two are set and cleared together, and a
     /// location that outlived the services would describe a database nothing is
@@ -190,7 +191,21 @@ impl std::ops::Deref for DatabaseFileAccess {
     }
 }
 
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseStartupStatus {
+    pub generation: Option<uuid::Uuid>,
+    pub ready: bool,
+    pub maintenance: bool,
+    pub error: Option<String>,
+    pub can_recover: bool,
+    pub recovery_encrypted: Option<bool>,
+}
+
 pub struct DatabaseRuntime {
+    startup_error: Mutex<Option<String>>,
+    pub backup_imports: db::imports::PendingImports,
+    pub backup_export_slot: Arc<tokio::sync::Semaphore>,
     app_data_dir: String,
     key_provider: Arc<dyn KeyProvider>,
     live: Mutex<Option<Live>>,
@@ -207,6 +222,9 @@ pub struct DatabaseRuntime {
 impl DatabaseRuntime {
     pub fn new(app_data_dir: String) -> Self {
         Self {
+            startup_error: Mutex::new(None),
+            backup_imports: db::imports::PendingImports::default(),
+            backup_export_slot: Arc::new(tokio::sync::Semaphore::new(1)),
             app_data_dir,
             key_provider: Arc::new(KeychainKeyProvider::new(shared_secret_store())),
             live: Mutex::new(None),
@@ -219,6 +237,62 @@ impl DatabaseRuntime {
 
     pub fn app_data_dir(&self) -> &str {
         &self.app_data_dir
+    }
+
+    pub fn startup_status(&self) -> DatabaseStartupStatus {
+        let maintenance = self.maintenance.load(Ordering::SeqCst);
+        let (ready, generation) = {
+            let live = self.live.lock().unwrap();
+            (
+                live.is_some() && !maintenance,
+                live.as_ref().map(|live| live.generation),
+            )
+        };
+        let error = self.startup_error.lock().unwrap().clone();
+        let can_recover = !ready
+            && error.is_some()
+            && self.owner.lock().unwrap().is_some()
+            && !self.maintenance.load(Ordering::SeqCst);
+        let path = db::get_db_path(&self.app_data_dir);
+        let recovery_encrypted = can_recover.then(|| {
+            db::recovery::requires_encryption(
+                std::path::Path::new(&path),
+                encryption_marker(&path).exists(),
+            )
+        });
+        DatabaseStartupStatus {
+            generation,
+            ready,
+            maintenance,
+            error,
+            can_recover,
+            recovery_encrypted,
+        }
+    }
+
+    /// Import inspection can run without an open database after startup failed,
+    /// but still participates in the runtime's file-job admission proof.
+    pub fn import_lease(&self) -> std::result::Result<Arc<()>, String> {
+        // Share the live-state lock with teardown/recovery admission so a lease
+        // cannot appear after their final outstanding-job check.
+        let live = self.live.lock().unwrap();
+        if self.maintenance.load(Ordering::SeqCst) {
+            return Err(DatabaseUnavailable::Maintenance.to_string());
+        }
+        if live.is_none()
+            && (self.startup_error.lock().unwrap().is_none()
+                || self.owner.lock().unwrap().is_none())
+        {
+            return Err(DatabaseUnavailable::NotInitialized.to_string());
+        }
+        Ok(Arc::clone(&self.file_jobs))
+    }
+
+    pub fn retained_key(&self) -> std::result::Result<Option<Arc<DbEncryptionKey>>, String> {
+        self.key_provider
+            .existing()
+            .map(|key| key.map(Arc::new))
+            .map_err(|error| error.to_string())
     }
 
     /// The live services.
@@ -293,6 +367,16 @@ impl DatabaseRuntime {
         &self,
         handle: &AppHandle,
     ) -> std::result::Result<Arc<ServiceContext>, String> {
+        let result = self.initialize_inner(handle, true).await;
+        *self.startup_error.lock().unwrap() = result.as_ref().err().cloned();
+        result
+    }
+
+    async fn initialize_inner(
+        &self,
+        handle: &AppHandle,
+        purge_staging: bool,
+    ) -> std::result::Result<Arc<ServiceContext>, String> {
         let db_path = db::get_db_path(&self.app_data_dir);
         {
             let mut owner = self.owner.lock().unwrap();
@@ -305,7 +389,9 @@ impl DatabaseRuntime {
 
         // Startup owns the database, so it is the one place allowed to clear the
         // scratch directory of snapshots a crash left behind.
-        db::purge_scratch_dir(std::path::Path::new(&db_path));
+        if purge_staging {
+            db::purge_scratch_dir(std::path::Path::new(&db_path));
+        }
 
         // Native apps are opt-in: a database that does not exist yet is
         // created plaintext, and only the explicit enable path mints a key.
@@ -324,6 +410,38 @@ impl DatabaseRuntime {
         self.install(handle, access).await
     }
 
+    /// Retry startup without removing the immutable previews staged since the
+    /// first attempt. App ownership and file-job admission still apply.
+    pub async fn retry_startup(&self, handle: &AppHandle) -> std::result::Result<(), String> {
+        let handle = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let runtime = handle.state::<DatabaseRuntime>();
+            if runtime
+                .maintenance
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
+                return Err(DatabaseUnavailable::Maintenance.to_string());
+            }
+            let _gate = MaintenanceGate(&runtime.maintenance);
+            {
+                let live = runtime.live.lock().unwrap();
+                if live.is_some() {
+                    return Ok(());
+                }
+                if runtime.startup_error.lock().unwrap().is_none() || runtime.has_outstanding_jobs()
+                {
+                    return Err("Database startup or backup inspection is still running.".into());
+                }
+            }
+            let result = runtime.initialize_inner(&handle, false).await;
+            *runtime.startup_error.lock().unwrap() = result.as_ref().err().cloned();
+            result.map(|_| ())
+        })
+        .await
+        .map_err(|e| format!("Database startup task failed: {e}"))?
+    }
+
     async fn install(
         &self,
         handle: &AppHandle,
@@ -334,15 +452,31 @@ impl DatabaseRuntime {
             .map_err(|e| e.to_string())?;
 
         let context = Arc::new(init.context);
-        let workers = start_workers(
+        match context.settings_service().requires_cloud_reconnect() {
+            Ok(true) => {
+                if let Err(error) = wealthfolio_connect::clear_restored_installation_credentials(
+                    shared_secret_store().as_ref(),
+                ) {
+                    warn!("Cloud reconnection remains required: {error}");
+                }
+            }
+            Err(error) => warn!("Could not read cloud reconnection policy: {error}"),
+            Ok(false) => {}
+        }
+        let mut workers = start_workers(
             handle,
             &context,
             init.event_receiver,
             init.sync_outbox_wake_receiver,
         );
 
+        if let Some(rebuild) = init.final_cash_rebuild {
+            workers.push(tauri::async_runtime::spawn(rebuild));
+        }
+
         self.record_encryption_state(&access);
         *self.live.lock().unwrap() = Some(Live {
+            generation: uuid::Uuid::new_v4(),
             access,
             context: Arc::clone(&context),
             writer: init.writer,
@@ -396,6 +530,22 @@ impl DatabaseRuntime {
         handle: &AppHandle,
         request: MaintenanceRequest,
     ) -> std::result::Result<MaintenanceOutcome, String> {
+        // The caller may close its window or cancel IPC while a blocking copy
+        // runs. Keep the gate, teardown and rebuild owned by the app task.
+        let handle = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let runtime = handle.state::<DatabaseRuntime>();
+            runtime.run_owned_maintenance(&handle, request).await
+        })
+        .await
+        .map_err(|error| format!("Database maintenance task failed: {error}"))?
+    }
+
+    async fn run_owned_maintenance(
+        &self,
+        handle: &AppHandle,
+        request: MaintenanceRequest,
+    ) -> std::result::Result<MaintenanceOutcome, String> {
         if self
             .maintenance
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -407,7 +557,20 @@ impl DatabaseRuntime {
         // reject database work for the rest of the process's life.
         let _gate = MaintenanceGate(&self.maintenance);
 
-        self.run_maintenance_inner(handle, request).await
+        let result = self.run_maintenance_inner(handle, request).await;
+        self.record_maintenance_error(result.as_ref().err().map(String::as_str));
+        result
+    }
+
+    fn record_maintenance_error(&self, error: Option<&str>) {
+        // A failed restore can leave no live services even though initial startup
+        // succeeded. Expose that state to the same recovery UI and import guard.
+        let unavailable = self.live.lock().unwrap().is_none();
+        *self.startup_error.lock().unwrap() = if unavailable {
+            error.map(str::to_owned)
+        } else {
+            None
+        };
     }
 
     async fn run_maintenance_inner(
@@ -446,12 +609,46 @@ impl DatabaseRuntime {
 
         let next_access = match &outcome {
             Ok(outcome) => outcome.access.clone(),
-            Err(_) => access,
+            Err(_) => access.clone(),
         };
-        if let Err(rebuild_error) = self.install(handle, next_access).await {
+        if let Err(rebuild_error) = self.install(handle, next_access.clone()).await {
             error!("Failed to rebuild the database runtime: {}", rebuild_error);
+            if let Ok(completed) = &outcome {
+                if let Some(backup) = &completed.pre_operation_backup {
+                    // Construction failure stops and joins its writer before
+                    // returning. No background work starts on that path.
+                    let owner = self
+                        .owner
+                        .lock()
+                        .unwrap()
+                        .clone()
+                        .ok_or_else(|| "Database ownership is not available.".to_string())?;
+                    let backup = backup.clone();
+                    let original = access.clone();
+                    tauri::async_runtime::spawn_blocking(move || {
+                        maintenance::rollback_after_rebuild(
+                            &next_access,
+                            &original,
+                            &backup,
+                            &owner,
+                        )
+                    })
+                    .await
+                    .map_err(|e| format!("Database rollback task failed: {e}"))?
+                    .map_err(|e| {
+                        format!("Database rebuild failed ({rebuild_error}); rollback failed: {e}")
+                    })?;
+                    self.install(handle, access).await.map_err(|e| format!(
+                        "The previous database was restored, but its services could not restart: {e}. Restart the application."
+                    ))?;
+                    return Err(format!("The database could not be reopened: {rebuild_error}. The previous database was restored."));
+                }
+            }
             if let Err(e) = outcome {
                 error!("Maintenance had already failed: {}", e);
+                return Err(format!(
+                    "Database maintenance failed: {e}. The database could not be reopened: {rebuild_error}."
+                ));
             }
             return Err(format!(
                 "The database could not be reopened after maintenance: {rebuild_error}. \
@@ -472,20 +669,13 @@ impl DatabaseRuntime {
             return Ok(());
         };
         let Live {
+            generation: _,
             access: _,
             context,
             writer,
             writer_task,
             workers,
         } = live;
-
-        // Stop the device-sync engine gracefully before its task is aborted, so
-        // an in-flight cycle is not cut mid-request.
-        #[cfg(feature = "device-sync")]
-        context
-            .device_sync_runtime()
-            .ensure_background_stopped()
-            .await;
 
         // Aborting drops each task's future, which is what releases the context
         // and service clones it captured. Awaiting each handle is what makes the
@@ -494,6 +684,14 @@ impl DatabaseRuntime {
             worker.abort();
             let _ = worker.await;
         }
+
+        // Startup and outbox workers can start the engine, so stop and join
+        // them first. Then wait for the engine to release its own services.
+        #[cfg(feature = "device-sync")]
+        context
+            .device_sync_runtime()
+            .ensure_background_stopped()
+            .await;
 
         // The MCP server holds service clones — and therefore pool clones — that
         // do not travel through the context, so it must be stopped explicitly.
@@ -568,6 +766,81 @@ impl DatabaseRuntime {
             },
         )
         .await
+    }
+
+    /// The validated candidate and its quota remain owned by the restore task,
+    /// even if the confirmation IPC caller disappears.
+    pub async fn restore_validated_import(
+        &self,
+        handle: &AppHandle,
+        id: uuid::Uuid,
+    ) -> std::result::Result<(), String> {
+        let handle = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let runtime = handle.state::<DatabaseRuntime>();
+            let candidate = runtime
+                .backup_imports
+                .take(id, "native")
+                .map_err(|e| e.to_string())?;
+            let request = MaintenanceRequest::Restore {
+                backup_path: std::path::PathBuf::from(candidate.backup.access.path()),
+                device_key: candidate.backup.access.key().cloned(),
+            };
+            let result = runtime.run_owned_maintenance(&handle, request).await;
+            drop(candidate);
+            result?;
+            crate::commands::utilities::finish_database_maintenance(&handle, "database-restored")
+        })
+        .await
+        .map_err(|error| format!("Database restore task failed: {error}"))?
+    }
+
+    pub async fn recover_validated_import(
+        &self,
+        handle: &AppHandle,
+        id: uuid::Uuid,
+    ) -> std::result::Result<(), String> {
+        let handle = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let runtime = handle.state::<DatabaseRuntime>();
+            if !runtime.startup_status().can_recover {
+                return Err("Recovery is only available after database startup fails.".into());
+            }
+            if runtime.maintenance.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+                return Err(DatabaseUnavailable::Maintenance.to_string());
+            }
+            let _gate = MaintenanceGate(&runtime.maintenance);
+            {
+                let live = runtime.live.lock().unwrap();
+                if live.is_some() || runtime.has_outstanding_jobs() {
+                    return Err("Wait for backup inspection to finish before recovery.".into());
+                }
+            }
+            let candidate = runtime.backup_imports.take(id, "native").map_err(|e| e.to_string())?;
+            let path = db::get_db_path(runtime.app_data_dir());
+            let encrypted = db::recovery::requires_encryption(std::path::Path::new(&path), encryption_marker(&path).exists());
+            let key = if encrypted {
+                Some(Arc::new(runtime.key_provider.create().map_err(|e| e.to_string())?))
+            } else { None };
+            let owner = runtime.owner.lock().unwrap().clone()
+                .ok_or_else(|| "Database ownership is not available.".to_string())?;
+            let recovered = tauri::async_runtime::spawn_blocking(move || {
+                // The candidate survives cancellation and every file copy.
+                let result = db::recovery::install_recovery(&candidate.backup.access,
+                    std::path::Path::new(&path), key, &owner);
+                drop(candidate);
+                result
+            }).await.map_err(|e| format!("Database recovery task failed: {e}"))?
+                .map_err(|e| e.to_string())?;
+            info!("Original database files preserved in {}", recovered.preserved_directory.display());
+            if let Err(error) = runtime.install(&handle, recovered.access).await {
+                *runtime.startup_error.lock().unwrap() = Some(error.clone());
+                return Err(format!("The backup was installed but could not be opened: {error}. Original files are preserved in {}", recovered.preserved_directory.display()));
+            }
+            *runtime.startup_error.lock().unwrap() = None;
+            drop(_gate);
+            crate::commands::utilities::finish_database_maintenance(&handle, "database-restored")
+        }).await.map_err(|e| format!("Database recovery task failed: {e}"))?
     }
 
     /// Enables at-rest encryption, minting the device key if it does not exist.
@@ -706,6 +979,47 @@ mod tests {
 
     fn runtime() -> DatabaseRuntime {
         DatabaseRuntime::new("/tmp/wealthfolio-test".to_string())
+    }
+
+    #[test]
+    fn failed_startup_inspection_requires_ownership_and_obeys_maintenance() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = DatabaseRuntime::new(directory.path().to_string_lossy().into_owned());
+        assert!(!runtime.startup_status().can_recover);
+        assert!(runtime.import_lease().is_err());
+        *runtime.startup_error.lock().unwrap() = Some("missing device key".into());
+        assert!(!runtime.startup_status().can_recover);
+        let path = db::get_db_path(runtime.app_data_dir());
+        *runtime.owner.lock().unwrap() = Some(Arc::new(DatabaseOwner::acquire(&path).unwrap()));
+        assert!(runtime.startup_status().can_recover);
+        assert_eq!(runtime.startup_status().recovery_encrypted, Some(false));
+        std::fs::write(encryption_marker(&path), b"").unwrap();
+        assert_eq!(runtime.startup_status().recovery_encrypted, Some(true));
+        let lease = runtime.import_lease().unwrap();
+        assert!(runtime.has_outstanding_jobs());
+        runtime.maintenance.store(true, Ordering::SeqCst);
+        assert!(!runtime.startup_status().can_recover);
+        assert!(runtime.import_lease().is_err());
+        drop(lease);
+        assert!(!runtime.has_outstanding_jobs());
+    }
+
+    #[test]
+    fn failed_live_maintenance_exposes_recovery_after_teardown() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = DatabaseRuntime::new(directory.path().to_string_lossy().into_owned());
+        let path = db::get_db_path(runtime.app_data_dir());
+        *runtime.owner.lock().unwrap() = Some(Arc::new(DatabaseOwner::acquire(&path).unwrap()));
+        runtime.maintenance.store(true, Ordering::SeqCst);
+        runtime.record_maintenance_error(Some("Restored services and rollback could not reopen"));
+        assert!(!runtime.startup_status().can_recover);
+        runtime.maintenance.store(false, Ordering::SeqCst);
+        let status = runtime.startup_status();
+        assert!(!status.ready);
+        assert!(status.can_recover);
+        assert!(status.error.unwrap().contains("rollback"));
+        assert!(runtime.import_lease().is_ok());
+        assert!(DatabaseOwner::acquire(&path).is_err());
     }
 
     /// A key store that accepts writes and keeps them, like a working keychain.

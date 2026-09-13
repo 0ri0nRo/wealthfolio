@@ -534,6 +534,164 @@ pub async fn backup_database(runtime: State<'_, DatabaseRuntime>) -> Result<Stri
         .to_string())
 }
 
+#[tauri::command]
+pub async fn open_database_backup_folder(
+    app_handle: AppHandle,
+    runtime: State<'_, DatabaseRuntime>,
+) -> Result<(), String> {
+    #[cfg(desktop)]
+    {
+        let _access = runtime.access()?;
+        let folder = Path::new(runtime.app_data_dir()).join("backups");
+        fs::create_dir_all(&folder).map_err(|e| e.to_string())?;
+        open_external_link(&app_handle, &folder.to_string_lossy())
+    }
+    #[cfg(mobile)]
+    {
+        let _ = (app_handle, runtime);
+        Err("Backup folders can only be opened on desktop".into())
+    }
+}
+
+#[tauri::command]
+pub async fn list_database_backups(
+    runtime: State<'_, DatabaseRuntime>,
+) -> Result<Vec<db::snapshots::Snapshot>, String> {
+    let access = runtime.access()?;
+    let root = runtime.app_data_dir().to_string();
+    let key = runtime.retained_key()?;
+    spawn_blocking(move || {
+        let _access = access;
+        db::snapshots::list(&root, key)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_database_backup(
+    runtime: State<'_, DatabaseRuntime>,
+    filename: String,
+) -> Result<(), String> {
+    let access = runtime.access()?;
+    let root = runtime.app_data_dir().to_string();
+    spawn_blocking(move || {
+        let _access = access;
+        db::snapshots::delete(&root, &filename)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
+}
+
+fn check_pending_backup_capacity(root: &Path) -> Result<(), String> {
+    cleanup_stale_pending_exports(root);
+    let directory = root.join(PENDING_EXPORTS_DIR);
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut count = 0;
+    for entry in entries {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if !entry
+            .file_type()
+            .map_err(|error| error.to_string())?
+            .is_dir()
+        {
+            continue;
+        }
+        for file in fs::read_dir(entry.path()).map_err(|error| error.to_string())? {
+            let path = file.map_err(|error| error.to_string())?.path();
+            if matches!(
+                path.extension().and_then(|ext| ext.to_str()),
+                Some("db" | "wfbackup")
+            ) {
+                count += 1;
+            }
+        }
+    }
+    if count >= 2 {
+        return Err("Finish or discard pending backup exports before creating another".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod backup_export_tests {
+    use super::*;
+    #[test]
+    fn pending_backup_capacity_is_released_by_picker_cleanup() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(check_pending_backup_capacity(root.path()).is_ok());
+        for index in 0..2 {
+            let folder = root
+                .path()
+                .join(PENDING_EXPORTS_DIR)
+                .join(index.to_string());
+            fs::create_dir_all(&folder).unwrap();
+            fs::write(folder.join("wealthfolio-test.wfbackup"), b"test").unwrap();
+        }
+        assert!(check_pending_backup_capacity(root.path()).is_err());
+        fs::remove_dir_all(root.path().join(PENDING_EXPORTS_DIR).join("0")).unwrap();
+        assert!(check_pending_backup_capacity(root.path()).is_ok());
+    }
+}
+
+/// Export the selected saved snapshot; never silently substitute live data.
+#[tauri::command]
+pub async fn export_database_backup(
+    runtime: State<'_, DatabaseRuntime>,
+    filename: String,
+    password: Option<String>,
+    unencrypted: bool,
+) -> Result<PendingExport, String> {
+    let password = password.map(zeroize::Zeroizing::new);
+    if unencrypted == password.is_some() {
+        return Err("Choose password protection or explicitly choose an unencrypted export".into());
+    }
+    let permit = runtime
+        .backup_export_slot
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| "Another backup export is running".to_string())?;
+    let access = runtime.access()?;
+    let root = runtime.app_data_dir().to_string();
+    let key = runtime.retained_key()?;
+    spawn_blocking(move || {
+        // These leases survive caller cancellation until all blocking work ends.
+        let _permit = permit;
+        let _access = access;
+        check_pending_backup_capacity(Path::new(&root))?;
+        let lease = db::snapshots::acquire(&root, &filename).map_err(|e| e.to_string())?;
+        let source = lease.access(key).map_err(|e| e.to_string())?;
+        let scratch = db::scratch_dir(&root).map_err(|e| e.to_string())?;
+        let output =
+            db::portable::export(&source, &scratch, password.as_deref().map(String::as_str))
+                .map_err(|e| e.to_string())?;
+        let (relative_path, path) =
+            prepare_pending_export_path(Path::new(&root), &output.filename)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path.parent().unwrap(), fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
+        }
+        if let Err(error) = fs::copy(&output.path, &path) {
+            let _ = fs::remove_dir_all(path.parent().unwrap());
+            return Err(error.to_string());
+        }
+        Ok(PendingExport {
+            relative_path,
+            filename: output.filename.clone(),
+        })
+    })
+    .await
+    .map_err(|_| "Backup export task failed".to_string())?
+}
+
 /// User-facing export for the mobile share sheet.
 ///
 /// Explicitly decrypted and portable, so the file restores on any machine. The
@@ -595,6 +753,112 @@ pub async fn backup_database_to_path(
         .map_err(|e| format!("Failed to backup database: {}", e))?;
 
     Ok(backup_path_str)
+}
+
+/// Inspect a private immutable candidate without changing the live database.
+#[tauri::command]
+pub async fn inspect_database_backup(
+    runtime: State<'_, DatabaseRuntime>,
+    backup_file_path: String,
+    password: Option<String>,
+) -> Result<db::imports::ImportPreview, String> {
+    let password = password.map(zeroize::Zeroizing::new);
+    let access = runtime.import_lease()?;
+    let reservation = runtime
+        .backup_imports
+        .reserve()
+        .map_err(|e| e.to_string())?;
+    let key = runtime.retained_key()?;
+    let scratch = db::scratch_dir(runtime.app_data_dir()).map_err(|e| e.to_string())?;
+    let path = PathBuf::from(normalize_file_path(&backup_file_path));
+    let candidate = spawn_blocking(move || {
+        let _access = access;
+        reservation.prepare(
+            &path,
+            &scratch,
+            password.as_deref().map(String::as_str),
+            key,
+        )
+    })
+    .await
+    .map_err(|_| "Backup inspection task failed".to_string())?
+    .map_err(|e| e.to_string())?;
+    Ok(runtime.backup_imports.publish(candidate, "native".into()))
+}
+
+/// Inspect a managed snapshot while its catalogue lease prevents deletion.
+#[tauri::command]
+pub async fn inspect_saved_database_backup(
+    runtime: State<'_, DatabaseRuntime>,
+    filename: String,
+) -> Result<db::imports::ImportPreview, String> {
+    let access = runtime.import_lease()?;
+    let reservation = runtime
+        .backup_imports
+        .reserve()
+        .map_err(|e| e.to_string())?;
+    let key = runtime.retained_key()?;
+    let root = runtime.app_data_dir().to_string();
+    let candidate = spawn_blocking(move || {
+        let _access = access;
+        let lease = db::snapshots::acquire(&root, &filename)?;
+        let scratch = db::scratch_dir(&root)?;
+        reservation.prepare(&lease.path, &scratch, None, key)
+    })
+    .await
+    .map_err(|_| "Backup inspection task failed".to_string())?
+    .map_err(|error: anyhow::Error| error.to_string())?;
+    Ok(runtime.backup_imports.publish(candidate, "native".into()))
+}
+
+#[tauri::command]
+pub async fn discard_database_backup_import(
+    runtime: State<'_, DatabaseRuntime>,
+    id: String,
+) -> Result<(), String> {
+    let id = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid backup preview".to_string())?;
+    drop(
+        runtime
+            .backup_imports
+            .take(id, "native")
+            .map_err(|e| e.to_string())?,
+    );
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn restore_database_backup_import(
+    app_handle: AppHandle,
+    runtime: State<'_, DatabaseRuntime>,
+    id: String,
+) -> Result<(), String> {
+    let id = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid backup preview".to_string())?;
+    runtime.restore_validated_import(&app_handle, id).await
+}
+
+#[tauri::command]
+pub async fn recover_database_from_import(
+    app_handle: AppHandle,
+    runtime: State<'_, DatabaseRuntime>,
+    id: String,
+) -> Result<(), String> {
+    let id = uuid::Uuid::parse_str(&id).map_err(|_| "Invalid backup preview".to_string())?;
+    runtime.recover_validated_import(&app_handle, id).await
+}
+
+#[tauri::command]
+pub async fn get_database_startup_status(
+    runtime: State<'_, DatabaseRuntime>,
+) -> Result<crate::database::DatabaseStartupStatus, String> {
+    Ok(runtime.startup_status())
+}
+
+#[tauri::command]
+pub async fn retry_database_startup(
+    app_handle: AppHandle,
+    runtime: State<'_, DatabaseRuntime>,
+) -> Result<(), String> {
+    runtime.retry_startup(&app_handle).await
 }
 
 /// Replaces the live database with a backup, through the maintenance
