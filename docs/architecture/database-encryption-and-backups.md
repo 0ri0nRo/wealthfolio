@@ -130,11 +130,13 @@ failure cleanup.
 
 ### Portable data scope
 
-Portable copies retain portfolio data and an allowlist of preferences. They
-remove personal access tokens, MCP audit data, addon storage, broker
-associations and sync state; clear custom provider configuration and credential
-references; and disable synchronization. Import generates a fresh installation
-identity.
+Portable copies retain portfolio data and an allowlist of preferences, including
+Spending enablement and its selected accounts. Built-in quote provider choices
+and symbol overrides are retained; custom-provider references and unknown
+provider configuration fields are removed. They remove personal access tokens,
+MCP audit data, addon storage, broker associations and sync state; clear custom
+provider configuration and credential references; and disable synchronization.
+Import generates a fresh installation identity.
 
 The persisted `restore_reconnect_required` flag prevents restored services from
 reusing the destination's previous cloud credentials. Token access and

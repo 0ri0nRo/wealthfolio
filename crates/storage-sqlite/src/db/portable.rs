@@ -10,6 +10,9 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use wealthfolio_core::quotes::{DATA_SOURCE_CUSTOM_SCRAPER, MARKET_DATA_PROVIDER_IDS};
+use wealthfolio_market_data::ProviderOverrides;
+use wealthfolio_spending::settings::{SETTING_KEY_ACCOUNT_IDS, SETTING_KEY_ENABLED};
 use zeroize::Zeroizing;
 
 use super::{copy_database, DbAccess, DbEncryptionKey};
@@ -147,12 +150,7 @@ fn validate_database(conn: &Connection, encrypted: bool, file_len: u64) -> anyho
             "This backup contains an unsupported trigger or view"
         );
     }
-    for table in [
-        "accounts",
-        "activities",
-        "app_settings",
-        "__diesel_schema_migrations",
-    ] {
+    for table in ["accounts", "activities", "__diesel_schema_migrations"] {
         let exists: bool = conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",
             [table],
@@ -160,6 +158,14 @@ fn validate_database(conn: &Connection, encrypted: bool, file_len: u64) -> anyho
         )?;
         ensure!(exists, "This file is not a Wealthfolio database");
     }
+    // Backups before the key/value settings migration must reach the staged
+    // migrations. The complete current schema is verified afterward.
+    let settings_exist: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name IN ('app_settings','settings'))",
+        [],
+        |r| r.get(0),
+    )?;
+    ensure!(settings_exist, "This file is not a Wealthfolio database");
     use diesel::migration::MigrationSource;
     let known = <diesel_migrations::EmbeddedMigrations as MigrationSource<
         diesel::sqlite::Sqlite,
@@ -217,6 +223,33 @@ fn validate_foreign_keys(conn: &Connection) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn portable_asset_provider_config(raw: &str) -> Option<String> {
+    let config: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let builtin =
+        |id: &str| MARKET_DATA_PROVIDER_IDS.contains(&id) && id != DATA_SOURCE_CUSTOM_SCRAPER;
+    let mut clean = serde_json::Map::new();
+    if let Some(provider) = config.get("preferred_provider").and_then(|v| v.as_str()) {
+        if builtin(provider) {
+            clean.insert("preferred_provider".into(), provider.into());
+        }
+    }
+    if let Some(overrides) = config.get("overrides").and_then(|v| v.as_object()) {
+        let filtered = overrides
+            .iter()
+            .filter(|(id, _)| builtin(id))
+            .map(|(id, value)| (id.clone(), value.clone()))
+            .collect();
+        // Deserialize and reserialize known instrument fields so arbitrary
+        // nested credentials cannot travel inside an otherwise valid override.
+        if let Ok(overrides) = ProviderOverrides::from_json(&serde_json::Value::Object(filtered)) {
+            if !overrides.is_empty() {
+                clean.insert("overrides".into(), serde_json::to_value(overrides).ok()?);
+            }
+        }
+    }
+    (!clean.is_empty()).then(|| serde_json::Value::Object(clean).to_string())
+}
+
 fn sanitize(conn: &Connection) -> anyhow::Result<()> {
     conn.execute_batch(
         "PRAGMA secure_delete = ON; PRAGMA foreign_keys = OFF; PRAGMA temp_store = MEMORY;",
@@ -246,13 +279,29 @@ fn sanitize(conn: &Connection) -> anyhow::Result<()> {
             conn.execute(&format!("DELETE FROM \"{table}\""), [])?;
         }
     }
+    let mut stmt =
+        conn.prepare("SELECT id, provider_config FROM assets WHERE provider_config IS NOT NULL")?;
+    let configs = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+    for (id, config) in configs {
+        conn.execute(
+            "UPDATE assets SET provider_config=?1 WHERE id=?2",
+            params![portable_asset_provider_config(&config), id],
+        )?;
+    }
+    conn.execute(
+        "DELETE FROM app_settings WHERE setting_key NOT IN (
+            'theme','font','language','formatting_region','base_currency','timezone',
+            'onboarding_completed','auto_update_check_enabled','menu_bar_visible','default_return_metric',?1,?2)",
+        params![SETTING_KEY_ENABLED, SETTING_KEY_ACCOUNT_IDS],
+    )?;
     conn.execute_batch(
         "UPDATE market_data_providers SET config=NULL, enabled=0, url=NULL,
             last_synced_at=NULL, last_sync_status=NULL, last_sync_error=NULL;
-         UPDATE assets SET provider_config=NULL;
-         DELETE FROM app_settings WHERE setting_key NOT IN (
-            'theme','font','language','formatting_region','base_currency','timezone',
-            'onboarding_completed','auto_update_check_enabled','menu_bar_visible','default_return_metric');
          INSERT INTO app_settings(setting_key, setting_value) VALUES ('sync_enabled','false')
             ON CONFLICT(setting_key) DO UPDATE SET setting_value='false';
          INSERT INTO app_settings(setting_key, setting_value) VALUES ('restore_reconnect_required','true')
@@ -488,6 +537,7 @@ pub fn prepare_import(
 mod tests {
     use super::*;
     use crate::db::{DbAccess, DbEncryptionKey};
+    use rusqlite::OptionalExtension;
     use std::sync::Arc;
 
     fn seeded(dir: &Path, encrypted: bool) -> DbAccess {
@@ -691,6 +741,7 @@ mod tests {
     fn known_migration_history_cannot_hide_a_broken_schema() {
         for mutation in [
             "DROP TABLE goals",
+            "ALTER TABLE app_settings RENAME TO settings",
             "ALTER TABLE accounts ADD COLUMN unexpected TEXT",
             "DELETE FROM __diesel_schema_migrations",
             "CREATE TABLE sqliteXprivate(secret TEXT)",
@@ -807,6 +858,135 @@ mod tests {
             .err()
             .unwrap();
         assert!(error.to_string().contains("WAL"));
+    }
+
+    #[test]
+    fn portable_spending_settings_survive_roundtrip() {
+        use wealthfolio_spending::settings::{SETTING_KEY_ACCOUNT_IDS, SETTING_KEY_ENABLED};
+        for password in [None, Some("synthetic backup password")] {
+            let dir = tempfile::tempdir().unwrap();
+            let source = seeded(dir.path(), false);
+            let settings = [
+                (SETTING_KEY_ENABLED, "true"),
+                (SETTING_KEY_ACCOUNT_IDS, r#"["spending-account"]"#),
+            ];
+            {
+                let conn = source.connect_rusqlite().unwrap();
+                conn.execute_batch("INSERT INTO accounts(id,name,currency) VALUES('spending-account','Spending','USD'),('other-account','Other','USD');").unwrap();
+                for (key, value) in settings {
+                    conn.execute(
+                        "INSERT INTO app_settings(setting_key,setting_value) VALUES (?1,?2) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value",
+                        params![key, value],
+                    )
+                    .unwrap();
+                }
+            }
+            let output = export(&source, dir.path(), password).unwrap();
+            let restored = prepare_import(&output.path, dir.path(), password, None).unwrap();
+            let conn = restored.access.connect_rusqlite().unwrap();
+            assert_eq!(restored.summary.account_count, 2);
+            for (key, value) in settings {
+                let actual: Option<String> = conn
+                    .query_row(
+                        "SELECT setting_value FROM app_settings WHERE setting_key=?1",
+                        [key],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .unwrap();
+                assert_eq!(actual.as_deref(), Some(value), "Lost {key}");
+            }
+        }
+    }
+
+    #[test]
+    fn portable_builtin_quote_overrides_survive_roundtrip() {
+        for password in [None, Some("synthetic backup password")] {
+            let dir = tempfile::tempdir().unwrap();
+            let source = seeded(dir.path(), false);
+            let config = serde_json::json!({
+                "preferred_provider": "YAHOO",
+                "overrides": {
+                    "YAHOO": {"type":"equity_symbol", "symbol":"SHOP.TO", "secret":"SYNTHETIC_NESTED_SECRET"},
+                    "CUSTOM:private": {"type":"equity_symbol", "symbol":"SYNTHETIC_CUSTOM_SYMBOL"}
+                },
+                "custom_provider_code":"SYNTHETIC_CUSTOM_REFERENCE",
+                "headers":{"Authorization":"SYNTHETIC_AUTHORIZATION"}
+            });
+            {
+                let conn = source.connect_rusqlite().unwrap();
+                conn.execute("INSERT INTO assets(id,kind,quote_mode,quote_ccy,instrument_type,instrument_symbol,provider_config) VALUES('quote-asset','INVESTMENT','MARKET','CAD','EQUITY','SHOP',?1)", [config.to_string()]).unwrap();
+            }
+            let output = export(&source, dir.path(), password).unwrap();
+            let restored = prepare_import(&output.path, dir.path(), password, None).unwrap();
+            let conn = restored.access.connect_rusqlite().unwrap();
+            let actual: Option<String> = conn
+                .query_row(
+                    "SELECT provider_config FROM assets WHERE id='quote-asset'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let actual: serde_json::Value =
+                serde_json::from_str(&actual.expect("Built-in overrides must survive")).unwrap();
+            assert_eq!(
+                actual,
+                serde_json::json!({"preferred_provider":"YAHOO", "overrides":{"YAHOO":{"type":"equity_symbol","symbol":"SHOP.TO"}}})
+            );
+            if password.is_none() {
+                let bytes = fs::read(output.path).unwrap();
+                for sentinel in [
+                    "SYNTHETIC_NESTED_SECRET",
+                    "SYNTHETIC_CUSTOM_SYMBOL",
+                    "SYNTHETIC_CUSTOM_REFERENCE",
+                    "SYNTHETIC_AUTHORIZATION",
+                ] {
+                    assert!(
+                        !bytes
+                            .windows(sentinel.len())
+                            .any(|part| part == sentinel.as_bytes()),
+                        "Leaked {sentinel}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn portable_legacy_settings_table_reaches_staged_migrations() {
+        use diesel::migration::{MigrationConnection, MigrationSource};
+        use diesel_migrations::MigrationHarness;
+        let dir = tempfile::tempdir().unwrap();
+        let source = DbAccess::plaintext(dir.path().join("legacy.db").to_str().unwrap());
+        source.prepare().unwrap();
+        {
+            let mut conn = source.connect().unwrap();
+            conn.setup().unwrap();
+            let mut migrations = <diesel_migrations::EmbeddedMigrations as MigrationSource<
+                diesel::sqlite::Sqlite,
+            >>::migrations(&super::super::MIGRATIONS)
+            .unwrap();
+            migrations.sort_by(|a, b| a.name().version().cmp(&b.name().version()));
+            conn.run_migrations(&migrations[..2]).unwrap();
+        }
+        {
+            let conn = source.connect_rusqlite().unwrap();
+            conn.execute_batch("INSERT INTO settings(theme,font,base_currency) VALUES('dark','font-mono','USD'); INSERT INTO accounts(id,name,currency) VALUES('legacy-account','Legacy','USD');").unwrap();
+        }
+        let original = fs::read(source.path()).unwrap();
+        let restored = prepare_import(Path::new(source.path()), dir.path(), None, None).unwrap();
+        let conn = restored.access.connect_rusqlite().unwrap();
+        assert_eq!(restored.summary.account_count, 1);
+        assert_eq!(
+            conn.query_row(
+                "SELECT setting_value FROM app_settings WHERE setting_key='theme'",
+                [],
+                |r| r.get::<_, String>(0)
+            )
+            .unwrap(),
+            "dark"
+        );
+        assert_eq!(fs::read(source.path()).unwrap(), original);
     }
 
     #[test]
