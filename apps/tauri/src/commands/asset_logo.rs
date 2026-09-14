@@ -7,8 +7,8 @@ pub async fn get_asset_logo(
     asset_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Option<AssetLogo>, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .asset_logo_service()
         .get_asset_logo(&asset_id)
         .map_err(|e| e.to_string())
@@ -18,8 +18,8 @@ pub async fn get_asset_logo(
 pub async fn list_asset_logos(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<AssetLogoSummary>, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .asset_logo_service()
         .list_asset_logos()
         .map_err(|e| e.to_string())
@@ -31,8 +31,8 @@ pub async fn upsert_asset_logo(
     payload: UpsertAssetLogo,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<AssetLogo, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .asset_logo_service()
         .upsert_asset_logo(&asset_id, payload)
         .await
@@ -44,8 +44,8 @@ pub async fn delete_asset_logo(
     asset_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .asset_logo_service()
         .delete_asset_logo(&asset_id)
         .await

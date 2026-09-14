@@ -80,15 +80,15 @@ pub async fn store_sync_session(
     refresh_token: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     match refresh_token
         .as_deref()
         .map(str::trim)
         .filter(|token| !token.is_empty())
     {
-        Some(token) => state.connect_service().store_session(token).await?,
+        Some(token) => context.connect_service().store_session(token).await?,
         None => {
-            disconnect_cloud_session(&state).await?;
+            disconnect_cloud_session(&context).await?;
         }
     }
 
@@ -100,10 +100,10 @@ pub async fn post_login_bootstrap(
     app: AppHandle,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<PostLoginBootstrapResult, String> {
-    let state = state.context()?;
-    let context = state.clone();
-    let broker_sync = run_post_login_broker_bootstrap(app, Arc::clone(&context)).await;
-    let device_sync = run_post_login_device_bootstrap(context).await;
+    let context = state.context()?;
+    let cloned_context = context.clone();
+    let broker_sync = run_post_login_broker_bootstrap(app, Arc::clone(&cloned_context)).await;
+    let device_sync = run_post_login_device_bootstrap(cloned_context).await;
 
     Ok(PostLoginBootstrapResult {
         broker_sync,
@@ -234,8 +234,8 @@ async fn run_post_login_device_bootstrap(
 
 #[tauri::command]
 pub async fn clear_sync_session(state: State<'_, DatabaseRuntime>) -> Result<(), String> {
-    let state = state.context()?;
-    disconnect_cloud_session(&state).await
+    let context = state.context()?;
+    disconnect_cloud_session(&context).await
 }
 
 #[derive(Serialize)]
@@ -248,9 +248,9 @@ pub struct SyncSessionStatus {
 pub fn get_sync_session_status(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<SyncSessionStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     Ok(SyncSessionStatus {
-        is_configured: state.connect_service().is_session_configured()?,
+        is_configured: context.connect_service().is_session_configured()?,
     })
 }
 
@@ -286,8 +286,8 @@ pub struct RestoreSyncSessionResponse {
 pub async fn restore_sync_session(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<RestoreSyncSessionResponse, String> {
-    let state = state.context()?;
-    let access_token = state.connect_service().get_valid_access_token().await?;
+    let context = state.context()?;
+    let access_token = context.connect_service().get_valid_access_token().await?;
 
     let refresh_token = KeyringSecretStore
         .get_secret(SYNC_REFRESH_TOKEN_KEY)

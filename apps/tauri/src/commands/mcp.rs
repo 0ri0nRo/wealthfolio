@@ -126,14 +126,14 @@ pub async fn mcp_get_status(
     state: State<'_, DatabaseRuntime>,
     mcp_state: State<'_, McpServerState>,
 ) -> Result<McpStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
-        Ok(build_status(&mcp_state, &state).await)
+        Ok(build_status(&mcp_state, &context).await)
     }
     #[cfg(not(desktop))]
     {
-        let _ = (&state, &mcp_state);
+        let _ = (&context, &mcp_state);
         Err("MCP server is not available on mobile".to_string())
     }
 }
@@ -145,16 +145,16 @@ pub async fn mcp_set_enabled(
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
         debug!("Setting Agent Access feature enabled={}", enabled);
-        mcp::set_enabled(&handle, &state, enabled).await?;
-        Ok(build_status(&mcp_state, &state).await)
+        mcp::set_enabled(&handle, &context, enabled).await?;
+        Ok(build_status(&mcp_state, &context).await)
     }
     #[cfg(not(desktop))]
     {
-        let _ = (enabled, &state, &mcp_state, &handle);
+        let _ = (enabled, &context, &mcp_state, &handle);
         Err("MCP server is not available on mobile".to_string())
     }
 }
@@ -166,16 +166,16 @@ pub async fn mcp_set_auto_start(
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
         debug!("Setting MCP auto-start={}", auto_start);
-        mcp::set_auto_start(&handle, &state, auto_start).await?;
-        Ok(build_status(&mcp_state, &state).await)
+        mcp::set_auto_start(&handle, &context, auto_start).await?;
+        Ok(build_status(&mcp_state, &context).await)
     }
     #[cfg(not(desktop))]
     {
-        let _ = (auto_start, &state, &mcp_state, &handle);
+        let _ = (auto_start, &context, &mcp_state, &handle);
         Err("MCP server is not available on mobile".to_string())
     }
 }
@@ -186,16 +186,16 @@ pub async fn mcp_start(
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
         debug!("Starting MCP server");
-        mcp::start_server(&handle, &state).await?;
-        Ok(build_status(&mcp_state, &state).await)
+        mcp::start_server(&handle, &context).await?;
+        Ok(build_status(&mcp_state, &context).await)
     }
     #[cfg(not(desktop))]
     {
-        let _ = (&state, &mcp_state, &handle);
+        let _ = (&context, &mcp_state, &handle);
         Err("MCP server is not available on mobile".to_string())
     }
 }
@@ -206,16 +206,16 @@ pub async fn mcp_stop(
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
         debug!("Stopping MCP server");
         mcp::stop_server(&handle).await;
-        Ok(build_status(&mcp_state, &state).await)
+        Ok(build_status(&mcp_state, &context).await)
     }
     #[cfg(not(desktop))]
     {
-        let _ = (&state, &mcp_state, &handle);
+        let _ = (&context, &mcp_state, &handle);
         Err("MCP server is not available on mobile".to_string())
     }
 }
@@ -227,16 +227,16 @@ pub async fn mcp_set_audit_enabled(
     mcp_state: State<'_, McpServerState>,
     handle: AppHandle,
 ) -> Result<McpStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
         debug!("Setting MCP audit logging enabled={}", enabled);
-        mcp::set_audit_enabled(&handle, &state, enabled).await?;
-        Ok(build_status(&mcp_state, &state).await)
+        mcp::set_audit_enabled(&handle, &context, enabled).await?;
+        Ok(build_status(&mcp_state, &context).await)
     }
     #[cfg(not(desktop))]
     {
-        let _ = (enabled, &state, &mcp_state, &handle);
+        let _ = (enabled, &context, &mcp_state, &handle);
         Err("MCP server is not available on mobile".to_string())
     }
 }
@@ -251,7 +251,7 @@ pub async fn mcp_list_audit_log(
     actor_kinds: Option<Vec<String>>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<McpAuditPage, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
         let tools = tools.unwrap_or_default();
@@ -263,7 +263,7 @@ pub async fn mcp_list_audit_log(
             outcomes: &outcomes,
             actor_kinds: &actor_kinds,
         };
-        let repo = state.mcp_audit_repository();
+        let repo = context.mcp_audit_repository();
         let (items, total_count) = repo
             .list_paged(page as i64, page_size as i64, &filter)
             .map_err(|e| format!("Failed to list MCP audit log: {e}"))?;
@@ -278,17 +278,25 @@ pub async fn mcp_list_audit_log(
     }
     #[cfg(not(desktop))]
     {
-        let _ = (page, page_size, &q, &tools, &outcomes, &actor_kinds, &state);
+        let _ = (
+            page,
+            page_size,
+            &q,
+            &tools,
+            &outcomes,
+            &actor_kinds,
+            &context,
+        );
         Err("MCP server is not available on mobile".to_string())
     }
 }
 
 #[tauri::command]
 pub async fn mcp_list_tokens(state: State<'_, DatabaseRuntime>) -> Result<Vec<TokenInfo>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
-        let tokens = state
+        let tokens = context
             .pat_repository()
             .list()
             .map_err(|e| format!("Failed to list access tokens: {e}"))?;
@@ -296,7 +304,7 @@ pub async fn mcp_list_tokens(state: State<'_, DatabaseRuntime>) -> Result<Vec<To
     }
     #[cfg(not(desktop))]
     {
-        let _ = &state;
+        let _ = &context;
         Err("MCP server is not available on mobile".to_string())
     }
 }
@@ -308,7 +316,7 @@ pub async fn mcp_create_token(
     scopes: Vec<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<CreatedToken, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
         let name = name.trim().to_string();
@@ -326,7 +334,7 @@ pub async fn mcp_create_token(
         let prefix = wealthfolio_mcp::pat::token_prefix(&token)
             .ok_or_else(|| "Generated token has invalid format".to_string())?
             .to_string();
-        let row = state
+        let row = context
             .pat_repository()
             .create(NewPersonalAccessToken {
                 name,
@@ -350,17 +358,17 @@ pub async fn mcp_create_token(
     }
     #[cfg(not(desktop))]
     {
-        let _ = (name, expires_at, scopes, &state);
+        let _ = (name, expires_at, scopes, &context);
         Err("MCP server is not available on mobile".to_string())
     }
 }
 
 #[tauri::command]
 pub async fn mcp_delete_token(id: String, state: State<'_, DatabaseRuntime>) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
-        let deleted = state
+        let deleted = context
             .pat_repository()
             .delete(&id)
             .await
@@ -373,18 +381,18 @@ pub async fn mcp_delete_token(id: String, state: State<'_, DatabaseRuntime>) -> 
     }
     #[cfg(not(desktop))]
     {
-        let _ = (id, &state);
+        let _ = (id, &context);
         Err("MCP server is not available on mobile".to_string())
     }
 }
 
 #[tauri::command]
 pub async fn mcp_purge_audit_log(state: State<'_, DatabaseRuntime>) -> Result<u64, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     #[cfg(desktop)]
     {
         debug!("Purging MCP audit log");
-        state
+        context
             .mcp_audit_repository()
             .purge_all()
             .await
@@ -392,7 +400,7 @@ pub async fn mcp_purge_audit_log(state: State<'_, DatabaseRuntime>) -> Result<u6
     }
     #[cfg(not(desktop))]
     {
-        let _ = &state;
+        let _ = &context;
         Err("MCP server is not available on mobile".to_string())
     }
 }

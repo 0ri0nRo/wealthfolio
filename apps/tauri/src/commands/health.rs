@@ -17,10 +17,10 @@ pub async fn get_health_status(
     client_timezone: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<HealthStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Getting health status...");
 
-    let health_service = state.health_service();
+    let health_service = context.health_service();
 
     // Try to get cached status first
     if let Some(status) = health_service.get_cached_status().await {
@@ -30,8 +30,8 @@ pub async fn get_health_status(
     }
 
     // Run fresh checks
-    let base_currency = state.get_base_currency();
-    run_health_checks_internal(&state, &base_currency, client_timezone.as_deref()).await
+    let base_currency = context.get_base_currency();
+    run_health_checks_internal(&context, &base_currency, client_timezone.as_deref()).await
 }
 
 /// Run health checks and return fresh status.
@@ -40,10 +40,10 @@ pub async fn run_health_checks(
     client_timezone: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<HealthStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Running health checks...");
-    let base_currency = state.get_base_currency();
-    run_health_checks_internal(&state, &base_currency, client_timezone.as_deref()).await
+    let base_currency = context.get_base_currency();
+    run_health_checks_internal(&context, &base_currency, client_timezone.as_deref()).await
 }
 
 /// Internal function to run health checks.
@@ -80,9 +80,9 @@ pub async fn dismiss_health_issue(
     data_hash: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Dismissing health issue: {}", issue_id);
-    state
+    context
         .health_service()
         .dismiss_issue(&issue_id, &data_hash)
         .await
@@ -95,9 +95,9 @@ pub async fn restore_health_issue(
     issue_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Restoring health issue: {}", issue_id);
-    state
+    context
         .health_service()
         .restore_issue(&issue_id)
         .await
@@ -109,9 +109,9 @@ pub async fn restore_health_issue(
 pub async fn get_dismissed_health_issues(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<String>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Getting dismissed health issues...");
-    state
+    context
         .health_service()
         .get_dismissed_ids()
         .await
@@ -125,13 +125,13 @@ pub async fn execute_health_fix(
     app_handle: AppHandle,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Executing health fix: {} ({})", action.label, action.id);
 
     // Handle migrate_legacy_classifications action specially since it needs taxonomy service
     if action.id == "migrate_legacy_classifications" {
         // Use the shared migration function from taxonomy module
-        crate::commands::taxonomy::run_legacy_migration(&state).await?;
+        crate::commands::taxonomy::run_legacy_migration(&context).await?;
         return Ok(());
     }
 
@@ -153,7 +153,7 @@ pub async fn execute_health_fix(
             error!("Failed to emit market:sync-start event: {}", e);
         }
 
-        let quote_service = state.quote_service();
+        let quote_service = context.quote_service();
         match quote_service
             .sync(SyncMode::Incremental, Some(asset_ids))
             .await
@@ -187,7 +187,7 @@ pub async fn execute_health_fix(
         }
 
         // Clear health cache so next check reflects the sync results
-        state.health_service().clear_cache().await;
+        context.health_service().clear_cache().await;
 
         return Ok(());
     }
@@ -219,7 +219,7 @@ pub async fn execute_health_fix(
         return Ok(());
     }
 
-    state
+    context
         .health_service()
         .execute_fix(&action)
         .await
@@ -229,9 +229,9 @@ pub async fn execute_health_fix(
 /// Get health configuration.
 #[tauri::command]
 pub async fn get_health_config(state: State<'_, DatabaseRuntime>) -> Result<HealthConfig, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Getting health config...");
-    Ok(state.health_service().get_config().await)
+    Ok(context.health_service().get_config().await)
 }
 
 /// Update health configuration.
@@ -240,9 +240,9 @@ pub async fn update_health_config(
     config: HealthConfig,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Updating health config...");
-    state
+    context
         .health_service()
         .update_config(config)
         .await

@@ -88,9 +88,9 @@ async fn spending_enabled(state: &Arc<ServiceContext>) -> Result<bool, String> {
 pub async fn get_spending_settings(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<SpendingSettings, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Fetching spending settings...");
-    state
+    context
         .spending_settings_service()
         .get()
         .await
@@ -102,9 +102,9 @@ pub async fn update_spending_settings(
     update: SpendingSettingsUpdate,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<SpendingSettings, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Updating spending settings...");
-    let settings_service = state.spending_settings_service();
+    let settings_service = context.spending_settings_service();
     let (before, after) = settings_service
         .update_with_previous(update)
         .await
@@ -127,7 +127,7 @@ pub async fn update_spending_settings(
     } else {
         Vec::new()
     };
-    spawn_auto_categorize(state.categorization_rules_service(), to_categorize);
+    spawn_auto_categorize(context.categorization_rules_service(), to_categorize);
     Ok(after)
 }
 
@@ -136,12 +136,12 @@ pub async fn list_cash_activities(
     filter: Option<CashActivityFilter>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<CashActivity>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Listing cash activities...");
-    if !spending_enabled(&state).await? {
+    if !spending_enabled(&context).await? {
         return Ok(Vec::new());
     }
-    state
+    context
         .cash_activity_service()
         .list(filter.unwrap_or_default())
         .await
@@ -153,9 +153,9 @@ pub async fn search_cash_activities(
     request: Option<CashActivitySearchRequest>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<CashActivitySearchResponse, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Searching cash activities...");
-    if !spending_enabled(&state).await? {
+    if !spending_enabled(&context).await? {
         return Ok(CashActivitySearchResponse {
             items: Vec::new(),
             total_count: 0,
@@ -163,9 +163,9 @@ pub async fn search_cash_activities(
             base_currency: None,
         });
     }
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .cash_activity_service()
         .search(
             request.unwrap_or_default(),
@@ -182,8 +182,8 @@ pub async fn set_activity_event(
     event_id: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Activity, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .cash_activity_service()
         .set_event(&activity_id, event_id)
         .await
@@ -195,8 +195,8 @@ pub async fn get_activity_assignments(
     activity_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<ActivityTaxonomyAssignment>, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .cash_activity_service()
         .list_assignments(&activity_id)
         .await
@@ -210,8 +210,8 @@ pub async fn assign_activity_category(
     category_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<ActivityTaxonomyAssignment, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .cash_activity_service()
         .assign_category(&activity_id, &taxonomy_id, &category_id)
         .await
@@ -224,8 +224,8 @@ pub async fn unassign_activity_category(
     taxonomy_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .cash_activity_service()
         .unassign_category(&activity_id, &taxonomy_id)
         .await
@@ -237,8 +237,8 @@ pub async fn get_activity_splits(
     activity_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<ActivitySplit>, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .cash_activity_service()
         .list_splits(&activity_id)
         .await
@@ -251,8 +251,8 @@ pub async fn replace_activity_splits(
     splits: Vec<NewActivitySplit>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<ActivitySplit>, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .cash_activity_service()
         .replace_splits(&activity_id, splits)
         .await
@@ -264,8 +264,8 @@ pub async fn clear_activity_splits(
     activity_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .cash_activity_service()
         .clear_splits(&activity_id)
         .await
@@ -280,13 +280,13 @@ pub async fn bulk_assign_categories(
     items: Vec<BulkCategoryAssignment>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<ActivityTaxonomyAssignment>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     if items.len() > MAX_BULK_CATEGORY_ASSIGNMENTS {
         return Err(format!(
             "At most {MAX_BULK_CATEGORY_ASSIGNMENTS} category assignments can be submitted at once"
         ));
     }
-    state
+    context
         .cash_activity_service()
         .bulk_assign_categories(&items)
         .await
@@ -297,8 +297,8 @@ pub async fn bulk_assign_categories(
 pub async fn list_categorization_rules(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<CategorizationRule>, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .categorization_rules_service()
         .list()
         .await
@@ -310,13 +310,13 @@ pub async fn create_categorization_rule(
     rule: NewCategorizationRule,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<CategorizationRule, String> {
-    let state = state.context()?;
-    let created = state
+    let context = state.context()?;
+    let created = context
         .categorization_rules_service()
         .create(rule)
         .await
         .map_err(|e| format!("Failed to create rule: {}", e))?;
-    spawn_auto_categorize_for_opted_in_accounts(&state).await;
+    spawn_auto_categorize_for_opted_in_accounts(&context).await;
     Ok(created)
 }
 
@@ -326,13 +326,13 @@ pub async fn update_categorization_rule(
     patch: UpdateCategorizationRule,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<CategorizationRule, String> {
-    let state = state.context()?;
-    let updated = state
+    let context = state.context()?;
+    let updated = context
         .categorization_rules_service()
         .update(&id, patch)
         .await
         .map_err(|e| format!("Failed to update rule: {}", e))?;
-    spawn_auto_categorize_for_opted_in_accounts(&state).await;
+    spawn_auto_categorize_for_opted_in_accounts(&context).await;
     Ok(updated)
 }
 
@@ -345,13 +345,13 @@ pub async fn upsert_categorization_rule(
     rule: NewCategorizationRule,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<CategorizationRule, String> {
-    let state = state.context()?;
-    let saved = state
+    let context = state.context()?;
+    let saved = context
         .categorization_rules_service()
         .upsert(rule)
         .await
         .map_err(|e| format!("Failed to save rule: {}", e))?;
-    spawn_auto_categorize_for_opted_in_accounts(&state).await;
+    spawn_auto_categorize_for_opted_in_accounts(&context).await;
     Ok(saved)
 }
 
@@ -360,8 +360,8 @@ pub async fn delete_categorization_rule(
     id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .categorization_rules_service()
         .delete(&id)
         .await
@@ -373,8 +373,8 @@ pub async fn rerun_categorization_rules(
     only_uncategorized: bool,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<usize, String> {
-    let state = state.context()?;
-    let s = state
+    let context = state.context()?;
+    let s = context
         .spending_settings_service()
         .get()
         .await
@@ -382,7 +382,7 @@ pub async fn rerun_categorization_rules(
     if !s.enabled {
         return Ok(0);
     }
-    state
+    context
         .categorization_rules_service()
         .rerun_all(&s.account_ids, only_uncategorized)
         .await
@@ -393,11 +393,11 @@ pub async fn rerun_categorization_rules(
 pub async fn list_rule_presets(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<RulePresetSummary>, String> {
-    let state = state.context()?;
-    if !spending_enabled(&state).await? {
+    let context = state.context()?;
+    if !spending_enabled(&context).await? {
         return Ok(Vec::new());
     }
-    state
+    context
         .categorization_rules_service()
         .list_presets()
         .await
@@ -409,10 +409,10 @@ pub async fn import_rule_preset(
     preset_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<ImportPresetResult, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     // Build the categoryKey → (taxonomy_id, category_id) resolver from the
     // activity-scope taxonomies (spending_categories + income_sources).
-    let taxonomies = state
+    let taxonomies = context
         .taxonomy_service()
         .get_taxonomies_with_categories()
         .map_err(|e| format!("Failed to load taxonomies: {}", e))?;
@@ -425,12 +425,12 @@ pub async fn import_rule_preset(
         }
     }
 
-    let result = state
+    let result = context
         .categorization_rules_service()
         .import_preset(&preset_id, &resolver)
         .await
         .map_err(|e| format!("Failed to import rule preset: {}", e))?;
-    spawn_auto_categorize_for_opted_in_accounts(&state).await;
+    spawn_auto_categorize_for_opted_in_accounts(&context).await;
     Ok(result)
 }
 
@@ -439,8 +439,8 @@ pub async fn remove_rule_preset(
     preset_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<RemovePresetResult, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .categorization_rules_service()
         .remove_preset(&preset_id)
         .await
@@ -449,11 +449,11 @@ pub async fn remove_rule_preset(
 
 #[tauri::command]
 pub async fn list_event_types(state: State<'_, DatabaseRuntime>) -> Result<Vec<EventType>, String> {
-    let state = state.context()?;
-    if !spending_enabled(&state).await? {
+    let context = state.context()?;
+    if !spending_enabled(&context).await? {
         return Ok(Vec::new());
     }
-    state
+    context
         .events_service()
         .list_types()
         .await
@@ -465,8 +465,8 @@ pub async fn create_event_type(
     new_type: NewEventType,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<EventType, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .events_service()
         .create_type(new_type)
         .await
@@ -495,8 +495,8 @@ pub async fn update_event_type(
     patch: UpdateEventType,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<EventType, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .events_service()
         .update_type(&id, patch.name, patch.color)
         .await
@@ -508,8 +508,8 @@ pub async fn delete_event_type(
     id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .events_service()
         .delete_type(&id)
         .await
@@ -518,11 +518,11 @@ pub async fn delete_event_type(
 
 #[tauri::command]
 pub async fn list_events(state: State<'_, DatabaseRuntime>) -> Result<Vec<Event>, String> {
-    let state = state.context()?;
-    if !spending_enabled(&state).await? {
+    let context = state.context()?;
+    if !spending_enabled(&context).await? {
         return Ok(Vec::new());
     }
-    state
+    context
         .events_service()
         .list_events()
         .await
@@ -534,8 +534,8 @@ pub async fn create_event(
     event: NewEvent,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Event, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .events_service()
         .create_event(event)
         .await
@@ -548,8 +548,8 @@ pub async fn update_event(
     patch: UpdateEvent,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Event, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .events_service()
         .update_event(&id, patch)
         .await
@@ -558,8 +558,8 @@ pub async fn update_event(
 
 #[tauri::command]
 pub async fn delete_event(id: String, state: State<'_, DatabaseRuntime>) -> Result<(), String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .events_service()
         .delete_event(&id)
         .await
@@ -571,10 +571,10 @@ pub async fn get_budget(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .get(period_key, &base_currency, &timezone)
         .await
@@ -587,10 +587,10 @@ pub async fn upsert_budget_target(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .upsert_target(target, period_key, &base_currency, &timezone)
         .await
@@ -603,10 +603,10 @@ pub async fn delete_budget_target(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .delete_target(&id, period_key, &base_currency, &timezone)
         .await
@@ -619,10 +619,10 @@ pub async fn upsert_budget_rollover_setting(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .upsert_rollover_setting(setting, period_key, &base_currency, &timezone)
         .await
@@ -635,10 +635,10 @@ pub async fn delete_budget_rollover_setting(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .delete_rollover_setting(&id, period_key, &base_currency, &timezone)
         .await
@@ -651,10 +651,10 @@ pub async fn create_budget_group(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .create_group(group, period_key, &base_currency, &timezone)
         .await
@@ -668,10 +668,10 @@ pub async fn update_budget_group(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .update_group(&id, patch, period_key, &base_currency, &timezone)
         .await
@@ -685,10 +685,10 @@ pub async fn delete_budget_group(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .delete_group(
             &id,
@@ -708,10 +708,10 @@ pub async fn assign_category_to_group(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .assign_category_to_group(category_id, group_id, period_key, &base_currency, &timezone)
         .await
@@ -723,10 +723,10 @@ pub async fn reset_budget_groups(
     period_key: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .reset_groups(period_key, &base_currency, &timezone)
         .await
@@ -740,10 +740,10 @@ pub async fn copy_budget_targets(
     overwrite: bool,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<BudgetSnapshot, String> {
-    let state = state.context()?;
-    let base_currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let base_currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .budget_service()
         .copy_period_targets(
             &source_period_key,
@@ -761,10 +761,10 @@ pub async fn get_spending_report(
     request: ReportRequest,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<MonthlyReport, String> {
-    let state = state.context()?;
-    let timezone = state.get_timezone();
-    let base_currency = state.get_base_currency();
-    state
+    let context = state.context()?;
+    let timezone = context.get_timezone();
+    let base_currency = context.get_base_currency();
+    context
         .spending_analytics_service()
         .monthly_report(request, &timezone, &base_currency)
         .await
@@ -776,10 +776,10 @@ pub async fn get_spending_insight(
     request: SpendingInsightRequest,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<SpendingInsight, String> {
-    let state = state.context()?;
-    let currency = state.get_base_currency();
-    let timezone = state.get_timezone();
-    state
+    let context = state.context()?;
+    let currency = context.get_base_currency();
+    let timezone = context.get_timezone();
+    context
         .spending_insight_service()
         .compute(request, &currency, &timezone)
         .await
@@ -791,17 +791,17 @@ pub async fn get_event_spending_summaries(
     request: Option<EventSummariesRequest>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<EventSpendingSummary>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let mut req = request.unwrap_or(EventSummariesRequest {
         start_date: None,
         end_date: None,
         currency: None,
     });
     if req.currency.is_none() {
-        req.currency = Some(state.get_base_currency());
+        req.currency = Some(context.get_base_currency());
     }
-    let timezone = state.get_timezone();
-    state
+    let timezone = context.get_timezone();
+    context
         .spending_analytics_service()
         .event_spending_summaries(req, &timezone)
         .await

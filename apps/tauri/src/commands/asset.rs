@@ -8,8 +8,8 @@ pub async fn get_asset_profile(
     asset_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<AssetProfile, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .asset_service()
         .get_asset_profile(&asset_id)
         .map_err(|e| e.to_string())
@@ -17,8 +17,8 @@ pub async fn get_asset_profile(
 
 #[tauri::command]
 pub async fn get_assets(state: State<'_, DatabaseRuntime>) -> Result<Vec<Asset>, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .asset_service()
         .get_assets()
         .map_err(|e| e.to_string())
@@ -30,8 +30,8 @@ pub async fn update_asset_profile(
     payload: UpdateAssetProfile,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Asset, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .asset_service()
         .update_asset_profile(&id, payload)
         .await
@@ -44,8 +44,8 @@ pub async fn update_quote_mode(
     quote_mode: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Asset, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .asset_service()
         .update_quote_mode(&id, &quote_mode)
         .await
@@ -57,8 +57,8 @@ pub async fn create_asset(
     payload: NewAsset,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Asset, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .asset_service()
         .create_asset(payload)
         .await
@@ -67,9 +67,9 @@ pub async fn create_asset(
 
 #[tauri::command]
 pub async fn delete_asset(id: String, state: State<'_, DatabaseRuntime>) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     // Domain events handle quote sync state cleanup automatically
-    state
+    context
         .asset_service()
         .delete_asset(&id)
         .await

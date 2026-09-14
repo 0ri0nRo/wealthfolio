@@ -13,9 +13,9 @@ use crate::context::ServiceContext;
 
 #[tauri::command]
 pub async fn get_taxonomies(state: State<'_, DatabaseRuntime>) -> Result<Vec<Taxonomy>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Fetching all taxonomies...");
-    state
+    context
         .taxonomy_service()
         .get_taxonomies()
         .map_err(|e| format!("Failed to load taxonomies: {}", e))
@@ -26,9 +26,9 @@ pub async fn get_taxonomy(
     id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Option<TaxonomyWithCategories>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Fetching taxonomy {}...", id);
-    state
+    context
         .taxonomy_service()
         .get_taxonomy(&id)
         .map_err(|e| format!("Failed to load taxonomy: {}", e))
@@ -39,9 +39,9 @@ pub async fn create_taxonomy(
     taxonomy: NewTaxonomy,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Taxonomy, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Creating taxonomy {}...", taxonomy.name);
-    state
+    context
         .taxonomy_service()
         .create_taxonomy(taxonomy)
         .await
@@ -53,9 +53,9 @@ pub async fn update_taxonomy(
     taxonomy: Taxonomy,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Taxonomy, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Updating taxonomy {}...", taxonomy.id);
-    state
+    context
         .taxonomy_service()
         .update_taxonomy(taxonomy)
         .await
@@ -67,9 +67,9 @@ pub async fn delete_taxonomy(
     id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<usize, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Deleting taxonomy {}...", id);
-    state
+    context
         .taxonomy_service()
         .delete_taxonomy(&id)
         .await
@@ -81,9 +81,9 @@ pub async fn create_category(
     category: NewCategory,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Category, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Creating category {}...", category.name);
-    state
+    context
         .taxonomy_service()
         .create_category(category)
         .await
@@ -95,9 +95,9 @@ pub async fn update_category(
     category: Category,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Category, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Updating category {}...", category.id);
-    state
+    context
         .taxonomy_service()
         .update_category(category)
         .await
@@ -110,9 +110,9 @@ pub async fn delete_category(
     category_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<usize, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Deleting category {}...", category_id);
-    state
+    context
         .taxonomy_service()
         .delete_category(&taxonomy_id, &category_id)
         .await
@@ -127,12 +127,12 @@ pub async fn move_category(
     position: i32,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Category, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!(
         "Moving category {} to position {}...",
         category_id, position
     );
-    state
+    context
         .taxonomy_service()
         .move_category(&taxonomy_id, &category_id, new_parent_id, position)
         .await
@@ -144,9 +144,9 @@ pub async fn import_taxonomy_json(
     json_str: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Taxonomy, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Importing taxonomy from JSON...");
-    state
+    context
         .taxonomy_service()
         .import_taxonomy_json(&json_str)
         .await
@@ -158,9 +158,9 @@ pub async fn export_taxonomy_json(
     id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<String, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Exporting taxonomy {} to JSON...", id);
-    state
+    context
         .taxonomy_service()
         .export_taxonomy_json(&id)
         .map_err(|e| format!("Failed to export taxonomy: {}", e))
@@ -171,9 +171,9 @@ pub async fn get_asset_taxonomy_assignments(
     asset_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<AssetTaxonomyAssignment>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Fetching taxonomy assignments for asset {}...", asset_id);
-    state
+    context
         .taxonomy_service()
         .get_asset_assignments(&asset_id)
         .map_err(|e| format!("Failed to load assignments: {}", e))
@@ -184,12 +184,12 @@ pub async fn assign_asset_to_category(
     assignment: NewAssetTaxonomyAssignment,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<AssetTaxonomyAssignment, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!(
         "Assigning asset {} to category {}...",
         assignment.asset_id, assignment.category_id
     );
-    state
+    context
         .taxonomy_service()
         .assign_asset_to_category(assignment)
         .await
@@ -203,12 +203,12 @@ pub async fn replace_asset_taxonomy_assignments(
     assignments: Vec<NewAssetTaxonomyAssignment>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<AssetTaxonomyAssignment>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!(
         "Replacing taxonomy {} assignments for asset {}...",
         taxonomy_id, asset_id
     );
-    state
+    context
         .taxonomy_service()
         .replace_asset_taxonomy_assignments(&asset_id, &taxonomy_id, assignments)
         .await
@@ -220,9 +220,9 @@ pub async fn remove_asset_taxonomy_assignment(
     id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<usize, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Removing taxonomy assignment {}...", id);
-    state
+    context
         .taxonomy_service()
         .remove_asset_assignment(&id)
         .await
@@ -238,11 +238,11 @@ pub async fn remove_asset_taxonomy_assignment(
 pub async fn get_migration_status(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<MigrationStatus, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Checking migration status...");
     wealthfolio_core::health::get_migration_status(
-        state.asset_service().as_ref(),
-        state.taxonomy_service().as_ref(),
+        context.asset_service().as_ref(),
+        context.taxonomy_service().as_ref(),
     )
     .map_err(|e| e.to_string())
 }
@@ -252,8 +252,8 @@ pub async fn get_migration_status(
 pub async fn migrate_legacy_classifications(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<MigrationResult, String> {
-    let state = state.context()?;
-    run_legacy_migration(&state).await
+    let context = state.context()?;
+    run_legacy_migration(&context).await
 }
 
 /// Core migration logic - can be called from Tauri command or health fix action

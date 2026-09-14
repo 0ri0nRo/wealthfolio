@@ -142,9 +142,10 @@ pub async fn calculate_retirement_projection(
     planner_mode: Option<RetirementTimingMode>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<FireProjection, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let (plan, current_portfolio, planner_mode) =
-        resolve_retirement_inputs(&state, &goal_id, planner_mode, plan, current_portfolio).await?;
+        resolve_retirement_inputs(&context, &goal_id, planner_mode, plan, current_portfolio)
+            .await?;
     Ok(project_retirement_with_mode(
         &plan,
         current_portfolio,
@@ -162,10 +163,11 @@ pub async fn run_retirement_monte_carlo(
     planner_mode: Option<RetirementTimingMode>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<MonteCarloResult, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let n = normalize_sim_count(n_sims);
     let (plan, current_portfolio, planner_mode) =
-        resolve_retirement_inputs(&state, &goal_id, planner_mode, plan, current_portfolio).await?;
+        resolve_retirement_inputs(&context, &goal_id, planner_mode, plan, current_portfolio)
+            .await?;
     run_retirement_blocking(move || {
         run_monte_carlo_with_mode_and_seed(&plan, current_portfolio, n, planner_mode, seed)
     })
@@ -180,9 +182,10 @@ pub async fn run_retirement_stress_tests(
     planner_mode: Option<RetirementTimingMode>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<StressTestResult>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let (plan, current_portfolio, planner_mode) =
-        resolve_retirement_inputs(&state, &goal_id, planner_mode, plan, current_portfolio).await?;
+        resolve_retirement_inputs(&context, &goal_id, planner_mode, plan, current_portfolio)
+            .await?;
     run_retirement_blocking(move || {
         run_stress_tests_with_mode(&plan, current_portfolio, planner_mode)
     })
@@ -197,9 +200,10 @@ pub async fn run_retirement_scenario_analysis(
     planner_mode: Option<RetirementTimingMode>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<ScenarioResult>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let (plan, current_portfolio, planner_mode) =
-        resolve_retirement_inputs(&state, &goal_id, planner_mode, plan, current_portfolio).await?;
+        resolve_retirement_inputs(&context, &goal_id, planner_mode, plan, current_portfolio)
+            .await?;
     run_retirement_blocking(move || {
         run_scenario_analysis_with_mode(&plan, current_portfolio, planner_mode)
     })
@@ -214,10 +218,10 @@ pub async fn run_retirement_sorr(
     goal_id: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<SorrScenario>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let plan = if let Some(goal_id) = &goal_id {
-        let valuation_map = build_valuation_map(&state).await?;
-        state
+        let valuation_map = build_valuation_map(&context).await?;
+        context
             .goal_service()
             .prepare_retirement_simulation_input(goal_id, &valuation_map)
             .await
@@ -238,9 +242,10 @@ pub async fn run_retirement_decision_sensitivity_map(
     planner_mode: Option<RetirementTimingMode>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<DecisionSensitivityMatrix, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let (plan, current_portfolio, planner_mode) =
-        resolve_retirement_inputs(&state, &goal_id, planner_mode, plan, current_portfolio).await?;
+        resolve_retirement_inputs(&context, &goal_id, planner_mode, plan, current_portfolio)
+            .await?;
     run_retirement_blocking(move || {
         run_decision_sensitivity_matrix_with_mode(&plan, current_portfolio, planner_mode, map)
     })

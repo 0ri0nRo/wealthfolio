@@ -415,10 +415,11 @@ pub async fn export_data_file(
     data_type: String,
     format: String,
 ) -> Result<DataExportResult, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let data_type = ExportDataType::parse(&data_type).map_err(|e| e.to_string())?;
     let format = ExportFileFormat::parse(&format).map_err(|e| e.to_string())?;
-    let Some(content) = build_data_export_content(state.as_ref(), data_type, format).await? else {
+    let Some(content) = build_data_export_content(context.as_ref(), data_type, format).await?
+    else {
         return Ok(DataExportResult::empty());
     };
 

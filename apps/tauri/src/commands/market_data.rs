@@ -18,8 +18,8 @@ pub async fn search_symbol(
     query: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<SymbolSearchResult>, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .quote_service()
         .search_symbol(&query)
         .await
@@ -55,8 +55,8 @@ pub async fn sync_market_data(
 
 #[tauri::command]
 pub async fn synch_quotes(state: State<'_, DatabaseRuntime>) -> Result<(), String> {
-    let state = state.context()?;
-    let result = state
+    let context = state.context()?;
+    let result = context
         .quote_service()
         .resync(None)
         .await
@@ -73,9 +73,9 @@ pub async fn update_quote(
     state: State<'_, DatabaseRuntime>,
     handle: AppHandle,
 ) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Updating quote: {:?}", quote);
-    state
+    context
         .quote_service()
         .update_quote(quote.clone())
         .await
@@ -101,9 +101,9 @@ pub async fn delete_quote(
     state: State<'_, DatabaseRuntime>,
     handle: AppHandle,
 ) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Deleting quote: {}", id);
-    state
+    context
         .quote_service()
         .delete_quote(&id)
         .await
@@ -127,9 +127,9 @@ pub async fn get_quote_history(
     symbol: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<Quote>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Fetching quote history for symbol: {}", symbol);
-    state
+    context
         .quote_service()
         .get_historical_quotes(&symbol)
         .map_err(|e| e.to_string())
@@ -140,8 +140,8 @@ pub async fn get_latest_quotes(
     asset_ids: Vec<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<HashMap<String, LatestQuoteSnapshot>, String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .quote_service()
         .get_latest_quotes_snapshot(&asset_ids)
         .map_err(|e| e.to_string())
@@ -151,9 +151,9 @@ pub async fn get_latest_quotes(
 pub async fn get_market_data_providers(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<ProviderInfo>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!("Received request to get market data providers");
-    state
+    context
         .quote_service()
         .get_providers_info()
         .await
@@ -169,13 +169,13 @@ pub async fn check_quotes_import(
     has_header_row: bool,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<QuoteImport>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!(
         "Checking quotes import from {} bytes CSV (has_header={})",
         content.len(),
         has_header_row
     );
-    state
+    context
         .quote_service()
         .check_quotes_import(&content, has_header_row)
         .await
@@ -192,13 +192,13 @@ pub async fn import_quotes_csv(
     state: State<'_, DatabaseRuntime>,
     handle: AppHandle,
 ) -> Result<Vec<QuoteImport>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     debug!(
         "Importing {} quotes from CSV (overwrite_existing={})",
         quotes.len(),
         overwrite_existing
     );
-    let result = state
+    let result = context
         .quote_service()
         .import_quotes(quotes, overwrite_existing)
         .await
@@ -230,11 +230,11 @@ pub async fn resolve_symbol_quote(
     provider_id: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<wealthfolio_core::quotes::ResolvedQuote, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let inst_type = instrument_type
         .as_deref()
         .and_then(wealthfolio_core::assets::InstrumentType::from_external_str);
-    state
+    context
         .quote_service()
         .resolve_symbol_quote(
             &symbol,
@@ -265,7 +265,7 @@ pub async fn fetch_dividends(
     end_date: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<DividendEvent>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let inst_type = instrument_type
         .as_deref()
         .and_then(wealthfolio_core::assets::InstrumentType::from_external_str);
@@ -280,7 +280,7 @@ pub async fn fetch_dividends(
         .transpose()
         .map_err(|e| format!("Invalid endDate: {}", e))?;
 
-    state
+    context
         .quote_service()
         .fetch_dividends(FetchDividendsParams {
             symbol,

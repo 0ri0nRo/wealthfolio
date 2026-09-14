@@ -199,7 +199,7 @@ pub async fn create_alternative_asset(
     request: CreateAlternativeAssetRequest,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<CreateAlternativeAssetResponse, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     // Parse string values to typed values
     let current_value: Decimal = request
         .current_value
@@ -234,7 +234,7 @@ pub async fn create_alternative_asset(
     };
 
     // Delegate to core service
-    let response = state
+    let response = context
         .alternative_asset_service()
         .create_alternative_asset(core_request)
         .await
@@ -256,7 +256,7 @@ pub async fn update_alternative_asset_valuation(
     request: UpdateValuationRequest,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<UpdateValuationResponse, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     // Parse string values
     let value: Decimal = request
         .value
@@ -274,7 +274,7 @@ pub async fn update_alternative_asset_valuation(
     };
 
     // Delegate to core service
-    let response = state
+    let response = context
         .alternative_asset_service()
         .update_valuation(core_request)
         .await
@@ -300,7 +300,7 @@ pub async fn update_alternative_asset_metadata(
     notes: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     // Convert HashMap<String, String> to HashMap<String, Option<String>>
     // Empty strings mean "remove this key"
     let metadata_map: std::collections::HashMap<String, Option<String>> = metadata
@@ -323,7 +323,7 @@ pub async fn update_alternative_asset_metadata(
     };
 
     // Delegate to core service
-    state
+    context
         .alternative_asset_service()
         .update_asset_details(core_request)
         .await
@@ -341,8 +341,8 @@ pub async fn delete_alternative_asset(
     asset_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .alternative_asset_service()
         .delete_alternative_asset(&asset_id)
         .await
@@ -359,13 +359,13 @@ pub async fn link_liability(
     request: LinkLiabilityRequest,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let core_request = CoreLinkRequest {
         liability_id,
         target_asset_id: request.target_asset_id,
     };
 
-    state
+    context
         .alternative_asset_service()
         .link_liability(core_request)
         .await
@@ -383,8 +383,8 @@ pub async fn unlink_liability(
     liability_id: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
-    let state = state.context()?;
-    state
+    let context = state.context()?;
+    context
         .alternative_asset_service()
         .unlink_liability(&liability_id)
         .await
@@ -401,8 +401,8 @@ pub async fn unlink_liability(
 pub async fn get_alternative_holdings(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<AlternativeHoldingResponse>, String> {
-    let state = state.context()?;
-    let holdings = state
+    let context = state.context()?;
+    let holdings = context
         .alternative_asset_service()
         .get_alternative_holdings()
         .map_err(|e| format!("Failed to get holdings: {}", e))?;
@@ -449,7 +449,7 @@ pub async fn get_net_worth(
     date: Option<String>,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<NetWorthResponse, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let as_of_date = match date {
         Some(d) => {
             NaiveDate::parse_from_str(&d, "%Y-%m-%d").map_err(|e| format!("Invalid date: {}", e))?
@@ -457,7 +457,7 @@ pub async fn get_net_worth(
         None => Utc::now().date_naive(),
     };
 
-    let core_response = state
+    let core_response = context
         .net_worth_service()
         .get_net_worth(as_of_date)
         .await
@@ -506,13 +506,13 @@ pub fn get_net_worth_history(
     end_date: String,
     state: State<'_, DatabaseRuntime>,
 ) -> Result<Vec<NetWorthHistoryPoint>, String> {
-    let state = state.context()?;
+    let context = state.context()?;
     let start = NaiveDate::parse_from_str(&start_date, "%Y-%m-%d")
         .map_err(|e| format!("Invalid start date: {}", e))?;
     let end = NaiveDate::parse_from_str(&end_date, "%Y-%m-%d")
         .map_err(|e| format!("Invalid end date: {}", e))?;
 
-    let history = state
+    let history = context
         .net_worth_service()
         .get_net_worth_history(start, end)
         .map_err(|e| format!("Failed to get net worth history: {}", e))?;
