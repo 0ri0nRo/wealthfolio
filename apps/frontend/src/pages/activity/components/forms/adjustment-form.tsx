@@ -260,7 +260,12 @@ export function AdjustmentForm({
             />
           }
         >
-          <AccountSelect name="accountId" accounts={accounts} currencyName="currency" />
+          <AccountSelect
+            name="accountId"
+            accounts={accounts}
+            currencyName="currency"
+            isEditing={isEditing}
+          />
           <DatePicker name="activityDate" label={t("activity:field_date")} />
         </FormSection>
 

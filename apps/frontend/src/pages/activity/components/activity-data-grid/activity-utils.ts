@@ -409,8 +409,10 @@ export function applyTransactionUpdate(params: TransactionUpdateParams): LocalTr
     if (account) {
       updated = { ...updated, accountName: account.name, accountCurrency: account.currency };
 
-      // Auto-fill currency: account currency (users enter prices in account currency)
-      updated = { ...updated, currency: account.currency };
+      // Account defaults apply to new rows, not the currency of an existing activity.
+      if (updated.isNew || !updated.currency) {
+        updated = { ...updated, currency: account.currency };
+      }
     }
     updated = applyCashDefaults(updated, resolveTransactionCurrency, fallbackCurrency);
     updated = applySplitDefaults(updated);

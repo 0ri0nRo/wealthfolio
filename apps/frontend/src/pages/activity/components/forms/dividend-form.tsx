@@ -300,7 +300,12 @@ export function DividendForm({
           <input type="hidden" {...form.register("symbolInstrumentType")} />
           <input type="hidden" {...form.register("existingAssetId")} />
 
-          <AccountSelect name="accountId" accounts={accounts} currencyName="currency" />
+          <AccountSelect
+            name="accountId"
+            accounts={accounts}
+            currencyName="currency"
+            isEditing={isEditing}
+          />
           <DatePicker name="activityDate" label={t("activity:field_date")} />
         </FormSection>
 

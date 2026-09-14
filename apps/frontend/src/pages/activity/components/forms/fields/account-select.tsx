@@ -30,6 +30,7 @@ interface AccountSelectProps<TFieldValues extends FieldValues = FieldValues> {
   placeholder?: string;
   /** Optional currency field to auto-populate from selected account when untouched/empty */
   currencyName?: FieldPath<TFieldValues>;
+  isEditing?: boolean;
 }
 
 export function AccountSelect<TFieldValues extends FieldValues = FieldValues>({
@@ -38,6 +39,7 @@ export function AccountSelect<TFieldValues extends FieldValues = FieldValues>({
   label,
   placeholder,
   currencyName,
+  isEditing = false,
 }: AccountSelectProps<TFieldValues>) {
   const { t } = useTranslation(["activity"]);
   const resolvedLabel = label ?? t("activity:field_account");
@@ -82,7 +84,7 @@ export function AccountSelect<TFieldValues extends FieldValues = FieldValues>({
                 if (!selected) return;
                 const currentCurrency = (getValues(currencyName) as string | undefined)?.trim();
                 const shouldAutoSetCurrency =
-                  !getFieldState(currencyName).isDirty || !currentCurrency;
+                  (!isEditing && !getFieldState(currencyName).isDirty) || !currentCurrency;
                 if (shouldAutoSetCurrency) {
                   setValue(
                     currencyName,

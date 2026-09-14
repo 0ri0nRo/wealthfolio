@@ -55,6 +55,28 @@ const createMockTransaction = (overrides: Partial<LocalTransaction> = {}): Local
 });
 
 describe("activity-utils", () => {
+  it.each([true, false])("handles account changes for a row with isNew=%s", (isNew) => {
+    const updated = applyTransactionUpdate({
+      transaction: createMockTransaction({
+        activityType: ActivityType.FEE,
+        currency: "EUR",
+        amount: "5",
+        isNew,
+      }),
+      field: "accountId",
+      value: "account-2",
+      accountLookup: new Map([
+        ["account-2", createMockAccount({ id: "account-2", name: "Other USD account" })],
+      ]),
+      assetCurrencyLookup: new Map(),
+      resolveTransactionCurrency: createCurrencyResolver(new Map(), "USD"),
+      fallbackCurrency: "USD",
+    });
+    expect(updated.accountId).toBe("account-2");
+    expect(updated.accountCurrency).toBe("USD");
+    expect(updated.amount).toBe("5");
+    expect(updated.currency).toBe(isNew ? "USD" : "EUR");
+  });
   describe("valuesAreEqual", () => {
     describe("numeric fields", () => {
       it("should compare numbers correctly", () => {

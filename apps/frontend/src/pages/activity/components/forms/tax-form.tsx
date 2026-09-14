@@ -116,7 +116,12 @@ export function TaxForm({
     <FormProvider {...form}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <FormSection title={t("activity:form.section_account")}>
-          <AccountSelect name="accountId" accounts={accounts} currencyName="currency" />
+          <AccountSelect
+            name="accountId"
+            accounts={accounts}
+            currencyName="currency"
+            isEditing={isEditing}
+          />
           <DatePicker name="activityDate" label={t("activity:field_date")} />
         </FormSection>
 

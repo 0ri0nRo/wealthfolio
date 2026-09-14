@@ -722,6 +722,7 @@ export function TransferForm({
               name="accountId"
               accounts={externalAccountOptions}
               currencyName="currency"
+              isEditing={isEditing}
               label={
                 direction === "in"
                   ? t("activity:form.label_to_account")
@@ -736,6 +737,7 @@ export function TransferForm({
                 name="fromAccountId"
                 accounts={sourceAccountOptions}
                 currencyName="currency"
+                isEditing={isEditing}
                 label={t("activity:form.label_from_account")}
                 placeholder={t("activity:form.placeholder_select_source_account")}
               />

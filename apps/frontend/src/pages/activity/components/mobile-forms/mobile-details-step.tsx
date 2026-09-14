@@ -1186,7 +1186,8 @@ export function MobileDetailsStep({
             setValue("accountId", accountValue);
             const selected = filteredAccounts.find((account) => account.value === accountValue);
             const currentCurrency = getValues("currency")?.trim();
-            const shouldAutoSetCurrency = !getFieldState("currency").isDirty || !currentCurrency;
+            const shouldAutoSetCurrency =
+              (!isEditing && !getFieldState("currency").isDirty) || !currentCurrency;
             if (selected && shouldAutoSetCurrency) {
               setValue("currency", selected.currency, {
                 shouldDirty: false,

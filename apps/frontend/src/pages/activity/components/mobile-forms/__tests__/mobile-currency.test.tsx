@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@/test/render";
 import userEvent from "@testing-library/user-event";
 import { useRef } from "react";
 import { FormProvider, useForm } from "react-hook-form";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountSelectOption } from "../../forms/fields";
 import type { NewActivityFormValues } from "../../forms/schemas";
 import { MobileDetailsStep } from "../mobile-details-step";
@@ -14,16 +14,19 @@ vi.mock("@/lib/settings-provider", () => ({
 
 const accounts: AccountSelectOption[] = [
   { value: "cad-account", label: "CAD account", currency: "CAD" },
+  { value: "other-account", label: "Other CAD account", currency: "CAD" },
 ];
 
 function TestForm({
   currency,
   options = accounts,
   onSubmit = vi.fn(),
+  isEditing = true,
 }: {
   currency: string;
   options?: AccountSelectOption[];
   onSubmit?: (values: NewActivityFormValues) => void;
+  isEditing?: boolean;
 }) {
   const form = useForm<NewActivityFormValues>({
     defaultValues: {
@@ -41,7 +44,7 @@ function TestForm({
         <MobileDetailsStep
           accounts={options}
           activityType={ActivityType.DEPOSIT}
-          isEditing
+          isEditing={isEditing}
           amountWasEdited={amountWasEdited}
         />
         <output data-testid="currency">{form.watch("currency")}</output>
@@ -52,6 +55,31 @@ function TestForm({
 }
 
 describe("mobile activity currency backfill", () => {
+  beforeEach(() => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+  it.each([true, false])(
+    "handles an explicit account change with isEditing=%s",
+    async (isEditing) => {
+      const onSubmit = vi.fn();
+      render(<TestForm currency="USD" isEditing={isEditing} onSubmit={onSubmit} />);
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("combobox", { name: "Account" }));
+      await user.click(screen.getByRole("button", { name: /Other CAD account/ }));
+      await user.click(screen.getByRole("button", { name: "Save test activity" }));
+      await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+      expect(onSubmit.mock.calls[0][0].accountId).toBe("other-account");
+      expect(onSubmit.mock.calls[0][0].currency).toBe(isEditing ? "USD" : "CAD");
+    },
+  );
   it("preserves a stored activity currency when saving without edits", async () => {
     const onSubmit = vi.fn();
     render(<TestForm currency="USD" onSubmit={onSubmit} />);

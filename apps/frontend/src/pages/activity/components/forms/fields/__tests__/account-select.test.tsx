@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { AccountSelect, type AccountSelectOption } from "../account-select";
 
@@ -20,13 +20,16 @@ vi.mock("@wealthfolio/ui", () => ({
   Select: ({
     children,
     value,
-    onValueChange: _onValueChange,
+    onValueChange,
   }: {
     children: React.ReactNode;
     value?: string;
     onValueChange?: (value: string) => void;
   }) => (
     <div data-testid="account-select" data-value={value}>
+      <button type="button" onClick={() => onValueChange?.("acc-usd")}>
+        Choose USD account
+      </button>
       {children}
     </div>
   ),
@@ -46,15 +49,21 @@ interface FormValues {
 interface TestHarnessProps {
   defaultValues: FormValues;
   accounts: AccountSelectOption[];
+  isEditing?: boolean;
 }
 
-function TestHarness({ defaultValues, accounts }: TestHarnessProps) {
+function TestHarness({ defaultValues, accounts, isEditing }: TestHarnessProps) {
   const form = useForm<FormValues>({ defaultValues });
   const currency = form.watch("currency");
 
   return (
     <FormProvider {...form}>
-      <AccountSelect<FormValues> name="accountId" accounts={accounts} currencyName="currency" />
+      <AccountSelect<FormValues>
+        name="accountId"
+        accounts={accounts}
+        currencyName="currency"
+        isEditing={isEditing}
+      />
       <div data-testid="currency-value">{currency}</div>
       <button type="button" onClick={() => form.setValue("accountId", "acc-usd")}>
         Select USD account
@@ -69,6 +78,18 @@ const accounts: AccountSelectOption[] = [
 ];
 
 describe("AccountSelect", () => {
+  it.each([true, false])("handles an explicit account change with isEditing=%s", (isEditing) => {
+    render(
+      <TestHarness
+        accounts={accounts}
+        defaultValues={{ accountId: "acc-eur", currency: "EUR" }}
+        isEditing={isEditing}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Choose USD account" }));
+    expect(screen.getByTestId("account-select")).toHaveAttribute("data-value", "acc-usd");
+    expect(screen.getByTestId("currency-value")).toHaveTextContent(isEditing ? "EUR" : "USD");
+  });
   it("does not overwrite a prefilled currency when editing", async () => {
     render(
       <TestHarness
