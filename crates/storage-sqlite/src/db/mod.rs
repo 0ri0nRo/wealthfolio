@@ -734,22 +734,6 @@ mod encryption_tests {
     }
 
     #[test]
-    fn the_portable_export_of_an_encrypted_database_is_plaintext() {
-        let dir = TempDir::new().unwrap();
-        let key = Arc::new(DbEncryptionKey::generate());
-        let access = DbAccess::encrypted(temp_db_path(&dir), key);
-        seed(&access);
-
-        let export_path = dir.path().join("portable.db");
-        let export_path = export_path.to_str().unwrap();
-        export_portable_backup(&access, export_path).unwrap();
-
-        assert!(looks_like_plaintext_sqlite(export_path));
-        let conn = DbAccess::plaintext(export_path).connect_rusqlite().unwrap();
-        verify_key(&conn).expect("a portable export must open with no key");
-    }
-
-    #[test]
     fn an_internal_backup_inherits_the_sources_encryption() {
         let dir = TempDir::new().unwrap();
         let key = Arc::new(DbEncryptionKey::generate());
@@ -1510,14 +1494,6 @@ pub fn backup_database_to_file(access: &DbAccess, backup_path: &str) -> Result<(
         backup_path
     );
     copy_database(access, backup_path, access.key().map(Arc::as_ref))
-}
-
-/// The user-facing export is explicitly decrypted and portable, preserving the
-/// long-standing promise that an exported backup restores on any machine. The
-/// UI must say plainly that the exported file is unencrypted.
-pub fn export_portable_backup(access: &DbAccess, export_path: &str) -> Result<()> {
-    info!("Exporting portable (unencrypted) backup to {}", export_path);
-    copy_database(access, export_path, None)
 }
 
 pub fn backup_database(access: &DbAccess, app_data_dir: &str) -> Result<String> {

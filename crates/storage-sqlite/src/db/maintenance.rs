@@ -1225,7 +1225,7 @@ mod tests {
         let backup_path = backup_dir.path().join("portable.db");
         let plaintext_source = seeded_database(&backup_dir, None);
         set_setting(&plaintext_source, "base_currency", "EUR");
-        super::super::export_portable_backup(&plaintext_source, backup_path.to_str().unwrap())
+        super::super::backup_database_to_file(&plaintext_source, backup_path.to_str().unwrap())
             .unwrap();
         let backup_bytes_before = fs::read(&backup_path).unwrap();
 

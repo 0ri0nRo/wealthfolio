@@ -502,9 +502,6 @@ pub fn run() {
             commands::utilities::recover_database_from_import,
             commands::utilities::get_database_startup_status,
             commands::utilities::retry_database_startup,
-            commands::utilities::backup_database_to_pending_export,
-            commands::utilities::backup_database_to_path,
-            commands::utilities::restore_database,
             // Database encryption commands
             commands::database::get_database_encryption_status,
             commands::database::set_database_encryption_enabled,

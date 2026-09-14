@@ -52,8 +52,8 @@ pub mod taxonomies;
 
 // Re-export database utilities
 pub use db::{
-    backup_database, backup_database_to_file, bootstrap, export_portable_backup, get_connection,
-    get_db_path, is_valid_backup_filename, DbAccess, DbConnection, DbEncryptionKey, DbPool,
+    backup_database, backup_database_to_file, bootstrap, get_connection, get_db_path,
+    is_valid_backup_filename, DbAccess, DbConnection, DbEncryptionKey, DbPool,
     DbTransactionExecutor, EncryptionPolicy, KeyProvider, NoKeyProvider, WriteHandle, WriterTask,
 };
 

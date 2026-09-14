@@ -2,6 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 import { act, renderHook, waitFor } from "@/test/render";
+import { QueryKeys } from "@/lib/query-keys";
 import { useBackupRestore } from "./use-backup-restore";
 const mocks = vi.hoisted(() => ({
   create: vi.fn(),
@@ -21,8 +22,7 @@ beforeEach(() => {
   mocks.create.mockResolvedValue({ filename: "saved.db" });
   mocks.remove.mockResolvedValue(undefined);
 });
-function mount() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function mount(client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   return renderHook(useBackupRestore, {
     wrapper: ({ children }: { children: ReactNode }) =>
       createElement(QueryClientProvider, { client }, children),
@@ -47,4 +47,16 @@ it("reports failures without a success message", async () => {
   expect(mocks.toast).toHaveBeenCalledWith(
     expect.objectContaining({ description: "Error: Disk full", variant: "destructive" }),
   );
+});
+
+it("refreshes a fresh cached list when reopening after a sync backup", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  client.setQueryData([QueryKeys.DATABASE_BACKUPS], []);
+  const snapshots = [{ filename: "sync-backup.db" }];
+  mocks.list.mockResolvedValue(snapshots);
+  const { result } = mount(client);
+  await waitFor(() => expect(result.current.backups.data).toEqual(snapshots));
+  expect(mocks.list).toHaveBeenCalledTimes(1);
 });

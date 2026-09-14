@@ -20,7 +20,6 @@ import {
   inspectSavedDatabaseBackup,
   restoreDatabaseBackupImport,
   discardDatabaseBackupImport,
-  restoreDatabase,
 } from "./settings";
 
 afterEach(() => {
@@ -73,6 +72,5 @@ it("rejects every restore entry point without making a server request", async ()
   await expect(inspectSavedDatabaseBackup("backup.db")).rejects.toThrow();
   await expect(restoreDatabaseBackupImport("preview-id")).rejects.toThrow();
   await expect(discardDatabaseBackupImport("preview-id")).rejects.toThrow();
-  await expect(restoreDatabase("backup.db")).rejects.toThrow();
   expect(fetch).not.toHaveBeenCalled();
 });

@@ -773,32 +773,6 @@ impl DatabaseRuntime {
         Arc::strong_count(&self.file_jobs) > 1 || !retired.is_empty()
     }
 
-    /// Reinstates a backup.
-    ///
-    /// Supplies the device's retained key so that a backup taken while
-    /// encryption was on still opens after it has been turned off — the reason
-    /// the key is never deleted.
-    pub async fn restore(
-        &self,
-        handle: &AppHandle,
-        backup_path: std::path::PathBuf,
-    ) -> std::result::Result<MaintenanceOutcome, String> {
-        let device_key = self
-            .key_provider
-            .existing()
-            .map_err(|e: Error| format!("Failed to read the database key: {e}"))?
-            .map(Arc::new);
-
-        self.run_maintenance(
-            handle,
-            MaintenanceRequest::Restore {
-                backup_path,
-                device_key,
-            },
-        )
-        .await
-    }
-
     /// The validated candidate and its quota remain owned by the restore task,
     /// even if the confirmation IPC caller disappears.
     pub async fn restore_validated_import(

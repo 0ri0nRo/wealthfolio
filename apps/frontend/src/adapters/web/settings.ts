@@ -110,17 +110,6 @@ export const exportDatabaseBackup = async (
   return true;
 };
 
-export const backupDatabaseToPath = (_backupDir: string): Promise<string> =>
-  Promise.reject(new Error("Backing up to a local path is only supported in the Tauri app"));
-
-export interface PendingExport {
-  relativePath: string;
-  filename: string;
-}
-
-export const backupDatabaseToPendingExport = (): Promise<PendingExport> =>
-  Promise.reject(new Error("Pending backup exports are only supported in the Tauri app"));
-
 export interface DatabaseEncryptionStatus {
   enabled: boolean;
   supported: boolean;
@@ -141,11 +130,6 @@ export const setDatabaseEncryptionEnabled = (_enabled: boolean): Promise<void> =
       "Server database encryption is converted with `wealthfolio-server db encrypt` " +
         "and required with WF_DB_REQUIRE_ENCRYPTION",
     ),
-  );
-
-export const restoreDatabase = (_backupFilePath: string): Promise<void> =>
-  Promise.reject(
-    new Error("Restore in web mode requires stopping Wealthfolio and replacing app.db"),
   );
 
 // ============================================================================
@@ -262,7 +246,8 @@ export const getPlatform = (): Promise<PlatformInfo> => {
 
 // These exports preserve the shared native/web adapter interface. Server restore
 // is an offline operator action; no browser request is sent.
-export const discardDatabaseBackupImport = (_id: string): Promise<void> => restoreDatabase("");
+export const discardDatabaseBackupImport = (_id: string): Promise<void> =>
+  Promise.reject(new Error("Database restore is only available in the native app"));
 
 export const inspectDatabaseBackup = (
   _file: string | File,
@@ -277,7 +262,8 @@ export const inspectSavedDatabaseBackup = (
 ): Promise<BackupImportPreview | null> =>
   Promise.reject(new Error("Database restore is only available in the native app"));
 
-export const restoreDatabaseBackupImport = (_id: string): Promise<void> => restoreDatabase("");
+export const restoreDatabaseBackupImport = (_id: string): Promise<void> =>
+  Promise.reject(new Error("Database restore is only available in the native app"));
 
 export const openDatabaseBackupFolder = (): Promise<void> =>
   Promise.reject(new Error("Backup folders can only be opened on desktop"));

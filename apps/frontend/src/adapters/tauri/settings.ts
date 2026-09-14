@@ -85,28 +85,10 @@ export const getDatabaseBackupDownloadUrl = (_filename: string): string => {
   throw new Error("Server backup downloads are only supported in web mode");
 };
 
-export const backupDatabaseToPath = async (backupDir: string): Promise<string> => {
-  try {
-    return await invoke<string>("backup_database_to_path", { backupDir });
-  } catch (error) {
-    logger.error("Error backing up database to path.");
-    throw error;
-  }
-};
-
 export interface PendingExport {
   relativePath: string;
   filename: string;
 }
-
-export const backupDatabaseToPendingExport = async (): Promise<PendingExport> => {
-  try {
-    return await invoke<PendingExport>("backup_database_to_pending_export");
-  } catch (error) {
-    logger.error("Error backing up database to pending export.");
-    throw error;
-  }
-};
 
 export interface DatabaseEncryptionStatus {
   /** Whether the database file is encrypted right now. */
@@ -137,32 +119,6 @@ export const setDatabaseEncryptionEnabled = async (enabled: boolean): Promise<vo
   } catch (error) {
     logger.error("Error changing database encryption.");
     throw error;
-  }
-};
-
-export const restoreDatabase = async (backupFilePath: string): Promise<void> => {
-  let stagedRestore: { relativePath: string; pendingDir: string } | null = null;
-
-  try {
-    const platform = await invoke<{ is_mobile?: boolean; os?: string }>("get_platform").catch(
-      () => null,
-    );
-    const shouldStageRestore =
-      platform?.is_mobile === true || platform?.os === "ios" || platform?.os === "android";
-    let restorePath = backupFilePath;
-    if (shouldStageRestore) {
-      stagedRestore = await stagePickedDatabaseFileForRestore(backupFilePath);
-      restorePath = await join(await appDataDir(), stagedRestore.relativePath);
-    }
-
-    await invoke<void>("restore_database", { backupFilePath: restorePath });
-  } catch (error) {
-    logger.error("Error restoring database.");
-    throw error;
-  } finally {
-    if (stagedRestore) {
-      await removeAppDataPath(stagedRestore.pendingDir);
-    }
   }
 };
 

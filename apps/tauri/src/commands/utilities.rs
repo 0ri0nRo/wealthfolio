@@ -693,69 +693,6 @@ pub async fn export_database_backup(
     .map_err(|_| "Backup export task failed".to_string())?
 }
 
-/// User-facing export for the mobile share sheet.
-///
-/// Explicitly decrypted and portable, so the file restores on any machine. The
-/// UI must state that the exported file is unencrypted.
-#[tauri::command]
-pub async fn backup_database_to_pending_export(
-    app_handle: AppHandle,
-    runtime: State<'_, DatabaseRuntime>,
-) -> Result<PendingExport, String> {
-    let access = runtime.access()?;
-
-    let app_data_dir_path = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-
-    let filename = format!(
-        "wealthfolio_backup_{}.db",
-        chrono::Local::now().format("%Y%m%d_%H%M%S_%3f")
-    );
-    let (relative_path, backup_path) = prepare_pending_export_path(&app_data_dir_path, &filename)?;
-    let backup_path_str = backup_path
-        .to_str()
-        .ok_or_else(|| "Failed to convert backup export path to string".to_string())?
-        .to_string();
-
-    spawn_blocking(move || db::export_portable_backup(&access, &backup_path_str))
-        .await
-        .map_err(|e| format!("Backup export task failed: {e}"))?
-        .map_err(|e| format!("Failed to create backup export: {}", e))?;
-
-    Ok(PendingExport {
-        relative_path,
-        filename,
-    })
-}
-
-/// User-facing export to a directory the user chose. Decrypted and portable,
-/// like the pending export above.
-#[tauri::command]
-pub async fn backup_database_to_path(
-    runtime: State<'_, DatabaseRuntime>,
-    backup_dir: String,
-) -> Result<String, String> {
-    let access = runtime.access()?;
-
-    // Normalize the backup directory path (remove file:// prefix if present on iOS/Android)
-    let normalized_backup_dir = normalize_file_path(&backup_dir);
-
-    let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-    let backup_filename = format!("wealthfolio_backup_{}.db", timestamp);
-    let backup_path = Path::new(&normalized_backup_dir).join(&backup_filename);
-    let backup_path_str = backup_path.to_string_lossy().to_string();
-
-    let target = backup_path_str.clone();
-    spawn_blocking(move || db::export_portable_backup(&access, &target))
-        .await
-        .map_err(|e| format!("Backup task failed: {e}"))?
-        .map_err(|e| format!("Failed to backup database: {}", e))?;
-
-    Ok(backup_path_str)
-}
-
 /// Inspect a private immutable candidate without changing the live database.
 #[tauri::command]
 pub async fn inspect_database_backup(
@@ -860,26 +797,6 @@ pub async fn retry_database_startup(
     runtime: State<'_, DatabaseRuntime>,
 ) -> Result<(), String> {
     runtime.retry_startup(&app_handle).await
-}
-
-/// Replaces the live database with a backup, through the maintenance
-/// coordinator.
-///
-/// The restored database lands on *this device's* encryption state, whatever
-/// the backup's own was, and the user's backup file is never modified or
-/// consumed.
-#[tauri::command]
-pub async fn restore_database(
-    app_handle: AppHandle,
-    runtime: State<'_, DatabaseRuntime>,
-    backup_file_path: String,
-) -> Result<(), String> {
-    // Normalize the backup file path (remove file:// prefix if present on iOS/Android)
-    let backup_path = PathBuf::from(normalize_file_path(&backup_file_path));
-
-    runtime.restore(&app_handle, backup_path).await?;
-
-    finish_database_maintenance(&app_handle, "database-restored")
 }
 
 /// Announces a completed maintenance operation and continues safely.

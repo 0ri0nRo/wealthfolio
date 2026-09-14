@@ -454,8 +454,6 @@ export {
 // Settings Commands (web-specific API for backups and updates)
 export {
   backupDatabase,
-  backupDatabaseToPendingExport,
-  backupDatabaseToPath,
   checkForUpdates,
   deleteDatabaseBackup,
   discardDatabaseBackupImport,
@@ -473,7 +471,6 @@ export {
   openDatabaseBackupFolder,
   getDatabaseEncryptionStatus,
   setDatabaseEncryptionEnabled,
-  restoreDatabase,
   updateSettings,
 } from "./settings";
 export type { BackupImportPreview, DatabaseBackup, DatabaseEncryptionStatus } from "./settings";

@@ -10,6 +10,8 @@ export function useBackupRestore() {
   const backups = useQuery({
     queryKey: [QueryKeys.DATABASE_BACKUPS],
     queryFn: listDatabaseBackups,
+    // Sync and maintenance can create snapshots outside this screen.
+    refetchOnMount: "always",
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: [QueryKeys.DATABASE_BACKUPS] });
   const reportError = (error: unknown) =>
