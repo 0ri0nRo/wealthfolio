@@ -1697,14 +1697,14 @@ pub async fn begin_pairing_confirm(
                     .collect(),
             },
         };
-        let flow_id = runtime.create_flow(pairing_id, phase.clone());
+        let flow_id = runtime.create_flow(pairing_id, phase.clone())?;
         return Ok(PairingFlowResponse { flow_id, phase });
     }
 
     // 5. Bootstrap snapshot
     let bootstrap = snapshot::sync_bootstrap_snapshot_if_needed(handle, &cloned_context).await?;
     if let Some(phase) = pairing_bootstrap_phase(&bootstrap)? {
-        let flow_id = runtime.create_flow(pairing_id, phase.clone());
+        let flow_id = runtime.create_flow(pairing_id, phase.clone())?;
         return Ok(PairingFlowResponse { flow_id, phase });
     }
 
@@ -1735,7 +1735,7 @@ pub async fn get_pairing_flow_state(
     let runtime = cloned_context.device_sync_runtime();
 
     let phase = runtime
-        .get_flow_phase(&flow_id)
+        .get_flow_phase(&flow_id)?
         .ok_or_else(|| "Flow not found".to_string())?;
 
     // If syncing, re-check bootstrap
@@ -1744,7 +1744,7 @@ pub async fn get_pairing_flow_state(
             match snapshot::sync_bootstrap_snapshot_if_needed(handle, &cloned_context).await {
                 Ok(bootstrap) => match pairing_bootstrap_phase(&bootstrap) {
                     Ok(Some(phase)) => {
-                        runtime.set_flow_phase(&flow_id, phase.clone());
+                        runtime.set_flow_phase(&flow_id, phase.clone())?;
                         return Ok(PairingFlowResponse { flow_id, phase });
                     }
                     Ok(None) => {
@@ -1760,20 +1760,20 @@ pub async fn get_pairing_flow_state(
                                 );
                             }
                         });
-                        if let Some(pid) = runtime.get_flow_pairing_id(&flow_id) {
+                        if let Some(pid) = runtime.get_flow_pairing_id(&flow_id)? {
                             clear_pairing_overwrite_approval(&pid);
                         }
-                        runtime.remove_flow(&flow_id);
+                        runtime.remove_flow(&flow_id)?;
                         return Ok(PairingFlowResponse {
                             flow_id,
                             phase: PairingFlowPhase::Success,
                         });
                     }
                     Err(e) => {
-                        if let Some(pid) = runtime.get_flow_pairing_id(&flow_id) {
+                        if let Some(pid) = runtime.get_flow_pairing_id(&flow_id)? {
                             clear_pairing_overwrite_approval(&pid);
                         }
-                        runtime.remove_flow(&flow_id);
+                        runtime.remove_flow(&flow_id)?;
                         return Ok(PairingFlowResponse {
                             flow_id,
                             phase: PairingFlowPhase::Error { message: e },
@@ -1781,10 +1781,10 @@ pub async fn get_pairing_flow_state(
                     }
                 },
                 Err(e) => {
-                    if let Some(pid) = runtime.get_flow_pairing_id(&flow_id) {
+                    if let Some(pid) = runtime.get_flow_pairing_id(&flow_id)? {
                         clear_pairing_overwrite_approval(&pid);
                     }
-                    runtime.remove_flow(&flow_id);
+                    runtime.remove_flow(&flow_id)?;
                     return Ok(PairingFlowResponse {
                         flow_id,
                         phase: PairingFlowPhase::Error { message: e },
@@ -1809,14 +1809,14 @@ pub async fn approve_pairing_overwrite(
     let runtime = cloned_context.device_sync_runtime();
 
     let phase = runtime
-        .get_flow_phase(&flow_id)
+        .get_flow_phase(&flow_id)?
         .ok_or_else(|| "Flow not found".to_string())?;
     if !matches!(phase, PairingFlowPhase::OverwriteRequired { .. }) {
         return Err("Flow is not in overwrite_required phase".to_string());
     }
 
     let pairing_id = runtime
-        .get_flow_pairing_id(&flow_id)
+        .get_flow_pairing_id(&flow_id)?
         .ok_or_else(|| "Flow not found".to_string())?;
 
     // Set approval flag so bootstrap proceeds
@@ -1828,7 +1828,7 @@ pub async fn approve_pairing_overwrite(
         PairingFlowPhase::Syncing {
             detail: "bootstrapping".to_string(),
         },
-    );
+    )?;
 
     // Run bootstrap
     match snapshot::sync_bootstrap_snapshot_if_needed(handle, &cloned_context).await {
@@ -1837,14 +1837,14 @@ pub async fn approve_pairing_overwrite(
                 Ok(phase) => phase,
                 Err(e) => {
                     clear_pairing_overwrite_approval(&pairing_id);
-                    runtime.remove_flow(&flow_id);
+                    runtime.remove_flow(&flow_id)?;
                     return Ok(PairingFlowResponse {
                         flow_id,
                         phase: PairingFlowPhase::Error { message: e },
                     });
                 }
             } {
-                runtime.set_flow_phase(&flow_id, phase.clone());
+                runtime.set_flow_phase(&flow_id, phase.clone())?;
                 return Ok(PairingFlowResponse { flow_id, phase });
             }
 
@@ -1857,7 +1857,7 @@ pub async fn approve_pairing_overwrite(
                 }
             });
             clear_pairing_overwrite_approval(&pairing_id);
-            runtime.remove_flow(&flow_id);
+            runtime.remove_flow(&flow_id)?;
             Ok(PairingFlowResponse {
                 flow_id,
                 phase: PairingFlowPhase::Success,
@@ -1865,7 +1865,7 @@ pub async fn approve_pairing_overwrite(
         }
         Err(e) => {
             clear_pairing_overwrite_approval(&pairing_id);
-            runtime.remove_flow(&flow_id);
+            runtime.remove_flow(&flow_id)?;
             Ok(PairingFlowResponse {
                 flow_id,
                 phase: PairingFlowPhase::Error { message: e },
@@ -1884,11 +1884,11 @@ pub async fn cancel_pairing_flow(
     let cloned_context = Arc::clone(&context);
     let runtime = cloned_context.device_sync_runtime();
 
-    if let Some(pairing_id) = runtime.get_flow_pairing_id(&flow_id) {
+    if let Some(pairing_id) = runtime.get_flow_pairing_id(&flow_id)? {
         abort_pairing_flow_local_state(&cloned_context, &pairing_id).await;
     }
 
-    runtime.remove_flow(&flow_id);
+    runtime.remove_flow(&flow_id)?;
 
     Ok(PairingFlowResponse {
         flow_id,
