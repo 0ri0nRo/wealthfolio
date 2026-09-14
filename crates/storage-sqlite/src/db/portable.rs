@@ -131,9 +131,11 @@ fn validate_database(conn: &Connection, encrypted: bool, file_len: u64) -> anyho
         u64::from(pages).checked_mul(u64::from(size)) == Some(file_len),
         "The backup has an invalid length"
     );
-    // Only application-owned trigger definitions may cross the boundary.
+    // Only application-owned trigger definitions may cross the boundary. Git
+    // checkouts can embed CRLF migrations; backups retain their producer's SQL.
     let known_triggers =
-        include_str!("../../migrations/2026-05-25-000002_allocation_targets/up.sql");
+        include_str!("../../migrations/2026-05-25-000002_allocation_targets/up.sql")
+            .replace("\r\n", "\n");
     let mut schema =
         conn.prepare("SELECT type, sql FROM sqlite_master WHERE type IN ('trigger', 'view')")?;
     for object in schema.query_map([], |row| {
@@ -141,7 +143,7 @@ fn validate_database(conn: &Connection, encrypted: bool, file_len: u64) -> anyho
     })? {
         let (kind, sql) = object?;
         ensure!(
-            kind == "trigger" && known_triggers.contains(sql.trim()),
+            kind == "trigger" && known_triggers.contains(sql.replace("\r\n", "\n").trim()),
             "This backup contains an unsupported trigger or view"
         );
     }
@@ -193,7 +195,10 @@ fn migrate_and_validate(access: &DbAccess, root: &Path) -> anyhow::Result<()> {
              AND sql IS NOT NULL ORDER BY type,name",
         )?;
         let rows = stmt
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .query_map([], |r| {
+                let sql: String = r.get(2)?;
+                Ok((r.get(0)?, r.get(1)?, sql.replace("\r\n", "\n")))
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
@@ -661,12 +666,36 @@ mod tests {
     }
 
     #[test]
+    fn portable_import_accepts_lf_and_crlf_schema_definitions() {
+        for line_ending in ["\n", "\r\n"] {
+            let dir = tempfile::tempdir().unwrap();
+            let source = seeded(dir.path(), false);
+            {
+                let conn = source.connect_rusqlite().unwrap();
+                // Simulate SQLite preserving migration text from either checkout
+                // style. Reopen afterward so SQLite reloads the changed schema.
+                conn.execute_batch("PRAGMA writable_schema = ON;").unwrap();
+                conn.execute(
+                    "UPDATE sqlite_master SET sql = replace(replace(sql, char(13) || char(10), char(10)), char(10), ?1) WHERE sql IS NOT NULL",
+                    [line_ending],
+                ).unwrap();
+                conn.execute_batch("PRAGMA writable_schema = OFF;").unwrap();
+            }
+            let prepared = prepare_import(Path::new(source.path()), dir.path(), None, None)
+                .expect("Platform line endings must not change schema compatibility");
+            assert_eq!(prepared.summary.account_count, 0);
+        }
+    }
+
+    #[test]
     fn known_migration_history_cannot_hide_a_broken_schema() {
         for mutation in [
             "DROP TABLE goals",
             "ALTER TABLE accounts ADD COLUMN unexpected TEXT",
             "DELETE FROM __diesel_schema_migrations",
             "CREATE TABLE sqliteXprivate(secret TEXT)",
+            "CREATE VIEW unexpected AS SELECT id FROM accounts",
+            "CREATE TRIGGER unexpected AFTER INSERT ON accounts BEGIN SELECT 1; END",
         ] {
             let dir = tempfile::tempdir().unwrap();
             let source = seeded(dir.path(), false);

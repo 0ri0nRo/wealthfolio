@@ -40,7 +40,8 @@ fn frozen_v1_exports_restore_without_the_source_installation_key() {
             }
         }
         let root = tempfile::tempdir().unwrap();
-        let prepared = portable::prepare_import(&path, root.path(), password, None).unwrap();
+        let prepared = portable::prepare_import(&path, root.path(), password, None)
+            .unwrap_or_else(|error| panic!("Cannot prepare frozen fixture {filename}: {error}"));
         assert_eq!(prepared.summary.account_count, 1);
         assert_eq!(prepared.summary.activity_count, 1);
         assert_eq!(
