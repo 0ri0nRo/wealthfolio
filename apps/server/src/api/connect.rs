@@ -40,9 +40,6 @@ use wealthfolio_connect::{
 use wealthfolio_device_sync::{EnableSyncResult, SyncState, SyncStateResult};
 
 #[cfg(feature = "device-sync")]
-const DEVICE_ID_KEY: &str = "sync_device_id";
-
-#[cfg(feature = "device-sync")]
 enum PostLoginDeviceBootstrapDecision {
     StartBackground,
     Skip(PostLoginBootstrapReason),
@@ -1059,11 +1056,6 @@ async fn enable_device_sync(
         .await
         .map_err(|e| ApiError::Internal(e.message))?;
 
-    // Backward compatibility: keep legacy device-id key in sync.
-    state
-        .secret_store
-        .set_secret(DEVICE_ID_KEY, &result.device_id)
-        .map_err(|e| ApiError::Internal(format!("Failed to store device ID: {}", e)))?;
     device_sync_engine::clear_min_snapshot_created_at_from_store();
     let _ = state
         .app_sync_repository
@@ -1096,10 +1088,6 @@ async fn clear_device_sync_data(State(state): State<Arc<AppState>>) -> ApiResult
         .clear_sync_data()
         .map_err(|e| ApiError::Internal(e.message))?;
     let _ = state.app_sync_repository.reset_local_sync_session().await;
-    state
-        .secret_store
-        .delete_secret(DEVICE_ID_KEY)
-        .map_err(|e| ApiError::Internal(format!("Failed to clear device ID: {}", e)))?;
     device_sync_engine::clear_min_snapshot_created_at_from_store();
     let _ = state
         .app_sync_repository
@@ -1126,11 +1114,6 @@ async fn reinitialize_device_sync(
         .await
         .map_err(|e| ApiError::Internal(e.message))?;
 
-    // Backward compatibility: keep legacy device-id key in sync.
-    state
-        .secret_store
-        .set_secret(DEVICE_ID_KEY, &result.device_id)
-        .map_err(|e| ApiError::Internal(format!("Failed to store device ID: {}", e)))?;
     device_sync_engine::clear_min_snapshot_created_at_from_store();
     let _ = state
         .app_sync_repository

@@ -48,6 +48,7 @@ pub fn clear_restored_installation_credentials(store: &dyn SecretStore) -> Resul
         CLOUD_ACCESS_TOKEN_KEY,
         CLOUD_REFRESH_TOKEN_KEY,
         "sync_identity",
+        "sync_device_id",
     ] {
         if store.get_secret(key).map_err(|e| e.to_string())?.is_some() {
             store.delete_secret(key).map_err(|e| e.to_string())?;
@@ -507,6 +508,7 @@ mod tests {
             CLOUD_ACCESS_TOKEN_KEY,
             CLOUD_REFRESH_TOKEN_KEY,
             "sync_identity",
+            "sync_device_id",
             "database_encryption_key",
         ] {
             store.set_secret(key, "synthetic secret").unwrap();
@@ -516,6 +518,7 @@ mod tests {
             CLOUD_ACCESS_TOKEN_KEY,
             CLOUD_REFRESH_TOKEN_KEY,
             "sync_identity",
+            "sync_device_id",
         ] {
             assert!(store.get_secret(key).unwrap().is_none());
         }
@@ -528,10 +531,10 @@ mod tests {
 
     #[test]
     fn restored_credentials_reject_a_store_that_does_not_delete() {
-        struct BrokenStore;
+        struct BrokenStore(&'static str);
         impl SecretStore for BrokenStore {
-            fn get_secret(&self, _: &str) -> wealthfolio_core::errors::Result<Option<String>> {
-                Ok(Some("still present".into()))
+            fn get_secret(&self, key: &str) -> wealthfolio_core::errors::Result<Option<String>> {
+                Ok((key == self.0).then(|| "still present".into()))
             }
             fn set_secret(&self, _: &str, _: &str) -> wealthfolio_core::errors::Result<()> {
                 Ok(())
@@ -540,7 +543,14 @@ mod tests {
                 Ok(())
             }
         }
-        assert!(clear_restored_installation_credentials(&BrokenStore).is_err());
+        for key in [
+            CLOUD_ACCESS_TOKEN_KEY,
+            CLOUD_REFRESH_TOKEN_KEY,
+            "sync_identity",
+            "sync_device_id",
+        ] {
+            assert!(clear_restored_installation_credentials(&BrokenStore(key)).is_err());
+        }
     }
 
     struct ReconnectSettings {
@@ -600,6 +610,7 @@ mod tests {
                 release: tokio::sync::Notify::new(),
             });
             store.set_secret("sync_identity", "old identity").unwrap();
+            store.set_secret("sync_device_id", "old device").unwrap();
             let first = {
                 let (state, store, settings) = (state.clone(), store.clone(), settings.clone());
                 tokio::spawn(async move {
@@ -652,6 +663,7 @@ mod tests {
                 if logout { None } else { Some("second login") }
             );
             assert!(store.get_secret("sync_identity").unwrap().is_none());
+            assert!(store.get_secret("sync_device_id").unwrap().is_none());
         }
     }
 

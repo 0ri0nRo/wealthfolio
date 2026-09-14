@@ -22,12 +22,8 @@ use wealthfolio_device_sync::{
     CompletePairingRequest, CompletePairingResponse, ConfirmPairingRequest, ConfirmPairingResponse,
     CreatePairingRequest, CreatePairingResponse, Device, DeviceSyncClient, EnrollDeviceResponse,
     GetPairingResponse, InitializeKeysResult, PairingMessagesResponse, RegisterDeviceRequest,
-    ResetTeamSyncResponse, RotateKeysResponse, SuccessResponse, SyncIdentity, UpdateDeviceRequest,
+    ResetTeamSyncResponse, RotateKeysResponse, SuccessResponse, UpdateDeviceRequest,
 };
-
-// Storage keys (without prefix - the SecretStore adds "wealthfolio_" prefix)
-const DEVICE_ID_KEY: &str = "sync_device_id";
-const SYNC_IDENTITY_KEY: &str = "sync_identity";
 
 fn cloud_api_base_url() -> String {
     crate::features::cloud_api_base_url().unwrap_or_default()
@@ -40,46 +36,7 @@ async fn get_access_token(state: &AppState) -> ApiResult<String> {
 
 /// Get the device ID from secret store.
 fn get_device_id(state: &AppState) -> Option<String> {
-    // Preferred source: sync_identity (used by DeviceEnrollService).
-    match state.secret_store.get_secret(SYNC_IDENTITY_KEY) {
-        Ok(Some(identity_json)) => match serde_json::from_str::<SyncIdentity>(&identity_json) {
-            Ok(identity) => {
-                if let Some(device_id) = identity.device_id {
-                    debug!(
-                        "[DeviceSync] Using device ID from sync_identity: {}",
-                        device_id
-                    );
-                    return Some(device_id);
-                }
-                debug!("[DeviceSync] sync_identity present but missing deviceId");
-            }
-            Err(e) => {
-                tracing::warn!("[DeviceSync] Failed to parse sync_identity: {}", e);
-            }
-        },
-        Ok(None) => {
-            debug!("[DeviceSync] No sync_identity in store");
-        }
-        Err(e) => {
-            tracing::warn!("[DeviceSync] Failed to read sync_identity: {}", e);
-        }
-    }
-
-    // Legacy fallback for older flows.
-    match state.secret_store.get_secret(DEVICE_ID_KEY) {
-        Ok(Some(id)) => {
-            debug!("[DeviceSync] Using legacy device ID from store: {}", id);
-            Some(id)
-        }
-        Ok(None) => {
-            debug!("[DeviceSync] No legacy device ID in store");
-            None
-        }
-        Err(e) => {
-            tracing::warn!("[DeviceSync] Failed to read legacy device ID: {}", e);
-            None
-        }
-    }
+    device_sync_engine::get_sync_identity_from_store(state).and_then(|identity| identity.device_id)
 }
 
 /// Create a device sync client.
@@ -204,7 +161,6 @@ async fn register_device(
     info!("[DeviceSync] Registering device: {}", body.display_name);
 
     let token = get_access_token(&state).await?;
-    let client = create_client();
 
     let request = RegisterDeviceRequest {
         device_nonce: body.device_nonce,
@@ -214,8 +170,9 @@ async fn register_device(
         app_version: body.app_version,
     };
 
-    let result = client
-        .enroll_device(&token, request)
+    let result = state
+        .device_enroll_service
+        .register_device(&token, request)
         .await
         .map_err(|e| ApiError::Internal(e.to_string()))?;
 
@@ -225,13 +182,6 @@ async fn register_device(
         EnrollDeviceResponse::Pair { device_id, .. } => device_id,
         EnrollDeviceResponse::Ready { device_id, .. } => device_id,
     };
-
-    // Store the device ID
-    info!("[DeviceSync] Storing device ID: {}", device_id);
-    state
-        .secret_store
-        .set_secret(DEVICE_ID_KEY, device_id)
-        .map_err(|e| ApiError::Internal(format!("Failed to store device ID: {}", e)))?;
 
     info!("[DeviceSync] Device enrolled successfully: {}", device_id);
     Ok(Json(result))

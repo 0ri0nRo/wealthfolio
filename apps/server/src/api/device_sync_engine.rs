@@ -36,7 +36,6 @@ fn transport_err_from_sync(e: wealthfolio_device_sync::DeviceSyncError) -> Trans
 }
 
 const SYNC_IDENTITY_KEY: &str = "sync_identity";
-const DEVICE_ID_KEY: &str = "sync_device_id";
 static MIN_SNAPSHOT_CREATED_AT: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
 static READY_STATE_OVERWRITE_APPROVALS: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 static PAIRING_OVERWRITE_APPROVALS: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
@@ -336,7 +335,6 @@ async fn abort_pairing_flow_local_state(state: &Arc<AppState>, pairing_id: &str)
         );
     }
     let _ = state.app_sync_repository.reset_local_sync_session().await;
-    let _ = state.secret_store.delete_secret(DEVICE_ID_KEY);
     clear_min_snapshot_created_at_from_store();
     let _ = state
         .app_sync_repository

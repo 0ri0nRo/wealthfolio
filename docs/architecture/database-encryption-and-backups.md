@@ -143,6 +143,14 @@ cleanup, new-session storage and gate clearing. A dismissed completion notice
 does not clear the gate. Unrelated secrets and the destination database
 encryption key are preserved.
 
+Device sync now uses `sync_identity` exclusively. Server registration stores the
+device nonce and ID in that record and preserves existing keys when registering
+the same identity again. The legacy `sync_device_id` fallback and compatibility
+writes are removed. Installations with only the legacy ID must enroll again and
+pair when required; complete identities remain usable. Restore cleanup also
+deletes leftover legacy IDs. Removing a local identity does not revoke its cloud
+device registration.
+
 ## Maintenance and recovery
 
 `DatabaseOwner` acquires an OS-backed sidecar lock before startup cleanup,
