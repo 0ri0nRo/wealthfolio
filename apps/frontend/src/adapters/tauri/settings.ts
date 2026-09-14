@@ -115,7 +115,7 @@ export const getDatabaseEncryptionStatus = async (): Promise<DatabaseEncryptionS
  */
 export const setDatabaseEncryptionEnabled = async (enabled: boolean): Promise<void> => {
   try {
-    await invoke<void>("set_database_encryption_enabled", { enabled });
+    await tauriInvoke<void>("set_database_encryption_enabled", { enabled });
   } catch (error) {
     logger.error("Error changing database encryption.");
     throw error;

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setUnauthorizedHandler } from "@/lib/auth-token";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -23,9 +24,29 @@ import {
 } from "./settings";
 
 afterEach(() => {
+  setUnauthorizedHandler(null);
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
+
+it.each([401, 500])(
+  "notifies the auth gate only for an unauthorized export: %s",
+  async (status) => {
+    const handler = vi.fn();
+    setUnauthorizedHandler(handler);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        status,
+        ok: false,
+        json: () => Promise.resolve({ message: "Export rejected" }),
+      }),
+    );
+
+    await expect(exportDatabaseBackup("backup.db", null, true)).rejects.toThrow("Export rejected");
+    expect(handler).toHaveBeenCalledTimes(status === 401 ? 1 : 0);
+  },
+);
 
 it("downloads through a browser link without buffering the backup into a Blob", async () => {
   const blob = vi.fn();

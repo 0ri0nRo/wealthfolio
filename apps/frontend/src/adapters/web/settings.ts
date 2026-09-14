@@ -1,6 +1,7 @@
 // Web adapter - Settings, App Info, Updater Commands
 
 import { API_PREFIX, invoke, logger } from "./core";
+import { notifyUnauthorized } from "@/lib/auth-token";
 import type { Settings, UpdateInfo } from "@/lib/types";
 import type { AppInfo, PlatformInfo, BackupImportPreview } from "../types";
 export type { BackupImportPreview } from "../types";
@@ -97,6 +98,9 @@ export const exportDatabaseBackup = async (
       signal,
     },
   );
+  if (response.status === 401) {
+    notifyUnauthorized();
+  }
   const result = await response
     .json()
     .catch(() => ({ message: "Backup export timed out or failed" }));
