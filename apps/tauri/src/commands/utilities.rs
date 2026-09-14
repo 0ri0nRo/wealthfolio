@@ -496,7 +496,10 @@ pub async fn check_for_updates(app_handle: AppHandle) -> Result<Option<serde_jso
     #[cfg(desktop)]
     {
         let result = check_for_update(app_handle).await?;
-        Ok(result.map(|info| serde_json::to_value(info).unwrap()))
+        result
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|error| error.to_string())
     }
     #[cfg(not(desktop))]
     {
@@ -674,14 +677,15 @@ pub async fn export_database_backup(
                 .map_err(|e| e.to_string())?;
         let (relative_path, path) =
             prepare_pending_export_path(Path::new(&root), &output.filename)?;
+        let directory = path.parent().ok_or("Missing export directory")?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path.parent().unwrap(), fs::Permissions::from_mode(0o700))
+            fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
                 .map_err(|e| e.to_string())?;
         }
         if let Err(error) = fs::copy(&output.path, &path) {
-            let _ = fs::remove_dir_all(path.parent().unwrap());
+            let _ = fs::remove_dir_all(directory);
             return Err(error.to_string());
         }
         Ok(PendingExport {
@@ -721,7 +725,10 @@ pub async fn inspect_database_backup(
     .await
     .map_err(|_| "Backup inspection task failed".to_string())?
     .map_err(|e| e.to_string())?;
-    Ok(runtime.backup_imports.publish(candidate, "native".into()))
+    runtime
+        .backup_imports
+        .publish(candidate, "native".into())
+        .map_err(|error| error.to_string())
 }
 
 /// Inspect a managed snapshot while its catalogue lease prevents deletion.
@@ -746,7 +753,10 @@ pub async fn inspect_saved_database_backup(
     .await
     .map_err(|_| "Backup inspection task failed".to_string())?
     .map_err(|error: anyhow::Error| error.to_string())?;
-    Ok(runtime.backup_imports.publish(candidate, "native".into()))
+    runtime
+        .backup_imports
+        .publish(candidate, "native".into())
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

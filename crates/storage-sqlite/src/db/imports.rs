@@ -4,7 +4,7 @@ use anyhow::{ensure, Result};
 use serde::Serialize;
 use std::{
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -77,12 +77,18 @@ impl ImportReservation {
 }
 
 impl PendingImports {
+    fn entries(&self) -> Result<MutexGuard<'_, Vec<Entry>>> {
+        self.entries.lock().map_err(|_| {
+            anyhow::anyhow!(
+                "Backup import state is unavailable. Restart the application before importing again."
+            )
+        })
+    }
+
     /// Expiration is enforced on access, and abandoned files are also removed
     /// by owner-protected startup cleanup after a process exit.
     pub fn reserve(&self) -> Result<ImportReservation> {
-        self.entries
-            .lock()
-            .unwrap()
+        self.entries()?
             .retain(|entry| entry.created.elapsed() < TTL);
         let processing = self
             .processing
@@ -102,22 +108,22 @@ impl PendingImports {
 
     /// Publish only after the caller receives the blocking result. If its
     /// future was cancelled, the unpublished candidate is dropped instead.
-    pub fn publish(&self, candidate: ValidatedImport, session: String) -> ImportPreview {
+    pub fn publish(&self, candidate: ValidatedImport, session: String) -> Result<ImportPreview> {
         let preview = ImportPreview {
             id: Uuid::new_v4(),
             summary: candidate.backup.summary.clone(),
         };
-        self.entries.lock().unwrap().push(Entry {
+        self.entries()?.push(Entry {
             id: preview.id,
             session,
             created: Instant::now(),
             candidate,
         });
-        preview
+        Ok(preview)
     }
 
     pub fn take(&self, id: Uuid, session: &str) -> Result<ValidatedImport> {
-        let mut entries = self.entries.lock().unwrap();
+        let mut entries = self.entries()?;
         entries.retain(|entry| entry.created.elapsed() < TTL);
         let index = entries
             .iter()
@@ -130,6 +136,28 @@ impl PendingImports {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn poisoned_imports_reject_work_and_release_unpublished_staging() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = source(dir.path());
+        let pending = PendingImports::default();
+        let candidate = pending
+            .reserve()
+            .unwrap()
+            .prepare(Path::new(source.path()), dir.path(), None, None)
+            .unwrap();
+        let staged = candidate.backup.access.path().to_owned();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = pending.entries.lock().unwrap();
+            panic!("interrupted import publication");
+        }));
+        assert!(pending.reserve().is_err());
+        assert!(pending.take(Uuid::new_v4(), "session").is_err());
+        assert!(pending.publish(candidate, "session".into()).is_err());
+        assert!(!Path::new(&staged).exists());
+        assert_eq!(pending.capacity.available_permits(), 2);
+    }
 
     fn source(root: &Path) -> super::super::DbAccess {
         let source = super::super::DbAccess::new(root.join("source.db").to_str().unwrap(), None);
@@ -150,8 +178,8 @@ mod tests {
                 .prepare(Path::new(source.path()), dir.path(), None, None)
                 .unwrap()
         };
-        let first = pending.publish(prepare(), "first".into());
-        let second = pending.publish(prepare(), "first".into());
+        let first = pending.publish(prepare(), "first".into()).unwrap();
+        let second = pending.publish(prepare(), "first".into()).unwrap();
         assert!(pending.reserve().is_err());
         assert!(pending.take(first.id, "other").is_err());
         let candidate = pending.take(first.id, "first").unwrap();
@@ -196,7 +224,7 @@ mod tests {
             .prepare(Path::new(source.path()), dir.path(), None, None)
             .unwrap();
         let staged = candidate.backup.access.path().to_owned();
-        let preview = pending.publish(candidate, "first".into());
+        let preview = pending.publish(candidate, "first".into()).unwrap();
         pending.entries.lock().unwrap()[0].created = Instant::now() - TTL;
         assert!(pending.take(preview.id, "first").is_err());
         assert!(!Path::new(&staged).exists());

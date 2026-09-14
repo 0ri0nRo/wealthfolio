@@ -64,8 +64,7 @@ async fn download_backup_file_route(
     State(state): State<Arc<AppState>>,
     Path(filename): Path<String>,
 ) -> ApiResult<Response> {
-    let lease = db::snapshots::acquire(&state.data_root, &filename)
-        .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+    let lease = db::snapshots::acquire(&state.data_root, &filename).map_err(ApiError::backup)?;
     let file = fs::File::open(&lease.path)
         .await
         .with_context(|| format!("Failed to open backup file {}", filename))?;
@@ -109,7 +108,7 @@ async fn delete_backup_file_route(
     task::spawn_blocking(move || db::snapshots::delete(&root, &filename))
         .await
         .map_err(|error| anyhow::anyhow!(error))?
-        .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+        .map_err(ApiError::backup)?;
 
     Ok(StatusCode::NO_CONTENT)
 }

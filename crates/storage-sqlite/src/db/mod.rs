@@ -818,9 +818,8 @@ pub fn get_db_path(input: &str) -> String {
         // to avoid permission issues. Ignore DATABASE_URL entirely.
         return Path::new(input)
             .join("app.db")
-            .to_str()
-            .unwrap()
-            .to_string();
+            .to_string_lossy()
+            .into_owned();
     }
 
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -836,9 +835,8 @@ pub fn get_db_path(input: &str) -> String {
 
         Path::new(input)
             .join("app.db")
-            .to_str()
-            .unwrap()
-            .to_string()
+            .to_string_lossy()
+            .into_owned()
     }
 }
 

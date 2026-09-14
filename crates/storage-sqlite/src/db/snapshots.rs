@@ -9,6 +9,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
 };
+use wealthfolio_core::errors::{DatabaseError, Error};
 
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -74,6 +75,7 @@ pub fn new_path(root: &str, reason: SnapshotReason) -> anyhow::Result<PathBuf> {
 static ACTIVE: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
 pub struct SnapshotLease {
     pub path: PathBuf,
+    active: &'static Mutex<HashSet<PathBuf>>,
 }
 impl SnapshotLease {
     pub fn access(&self, key: Option<Arc<DbEncryptionKey>>) -> anyhow::Result<DbAccess> {
@@ -84,7 +86,13 @@ impl SnapshotLease {
 }
 impl Drop for SnapshotLease {
     fn drop(&mut self) {
-        ACTIVE.get().unwrap().lock().unwrap().remove(&self.path);
+        // A poisoned registry stays closed to new leases. Removing this lease
+        // is bookkeeping only; it neither reads database state nor clears poison.
+        let mut active = match self.active.lock() {
+            Ok(active) => active,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        active.remove(&self.path);
     }
 }
 
@@ -95,7 +103,13 @@ pub fn acquire(root: &str, filename: &str) -> anyhow::Result<SnapshotLease> {
     );
     let directory = fs::canonicalize(Path::new(root).join("backups"))?;
     let path = directory.join(filename);
-    let mut active = ACTIVE.get_or_init(Default::default).lock().unwrap();
+    let registry = ACTIVE.get_or_init(Default::default);
+    let mut active = registry.lock().map_err(|_| {
+        Error::Database(DatabaseError::Internal(
+            "Backup snapshot state is unavailable. Restart the application before trying again."
+                .into(),
+        ))
+    })?;
     ensure!(
         !active.contains(&path),
         "This backup is in use; try again when the operation finishes"
@@ -106,7 +120,10 @@ pub fn acquire(root: &str, filename: &str) -> anyhow::Result<SnapshotLease> {
         "Backup must be a regular file"
     );
     active.insert(path.clone());
-    Ok(SnapshotLease { path })
+    Ok(SnapshotLease {
+        path,
+        active: registry,
+    })
 }
 
 pub fn delete(root: &str, filename: &str) -> anyhow::Result<()> {
@@ -117,14 +134,16 @@ pub fn delete(root: &str, filename: &str) -> anyhow::Result<()> {
 
 pub fn create(access: &DbAccess, root: &str, reason: SnapshotReason) -> anyhow::Result<PathBuf> {
     let destination = new_path(root, reason)?;
+    let directory = destination.parent().context("Missing backup directory")?;
     // Partial copies are private and never match a listed filename. Publishing
     // with persist_noclobber cannot overwrite an earlier backup.
     let work = tempfile::Builder::new()
         .prefix(".snapshot-")
-        .tempdir_in(destination.parent().unwrap())?;
+        .tempdir_in(directory)?;
     let candidate = work.path().join("candidate.db");
-    super::backup_database_to_file(access, candidate.to_str().context("Invalid backup path")?)?;
-    let backup = DbAccess::new(candidate.to_str().unwrap(), access.key().cloned());
+    let candidate_path = candidate.to_str().context("Invalid backup path")?;
+    super::backup_database_to_file(access, candidate_path)?;
+    let backup = DbAccess::new(candidate_path, access.key().cloned());
     let conn = backup.connect_rusqlite()?;
     super::maintenance::integrity_check(&conn)?;
     if backup.is_encrypted() {
@@ -142,7 +161,7 @@ pub fn create(access: &DbAccess, root: &str, reason: SnapshotReason) -> anyhow::
         .sync_all()?;
     tempfile::TempPath::try_from_path(candidate)?.persist_noclobber(&destination)?;
     #[cfg(unix)]
-    fs::File::open(destination.parent().unwrap())?.sync_all()?;
+    fs::File::open(directory)?.sync_all()?;
     Ok(destination)
 }
 
@@ -209,6 +228,26 @@ pub fn list(root: &str, key: Option<Arc<DbEncryptionKey>>) -> anyhow::Result<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn poisoned_lease_cleanup_during_unwinding_does_not_panic() {
+        // An isolated registry avoids poisoning the process-wide test registry.
+        let active: &'static Mutex<HashSet<PathBuf>> =
+            Box::leak(Box::new(Mutex::new(HashSet::new())));
+        let path = PathBuf::from("snapshot.db");
+        active.lock().unwrap().insert(path.clone());
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = active.lock().unwrap();
+            panic!("interrupted registry operation");
+        });
+        let unwound = std::panic::catch_unwind(|| {
+            let _lease = SnapshotLease { path, active };
+            panic!("operation failed while retaining a lease");
+        });
+        assert!(unwound.is_err());
+        assert!(active.is_poisoned());
+        assert!(active.lock().unwrap_err().into_inner().is_empty());
+    }
 
     #[test]
     fn snapshot_names_are_unique_and_legacy_names_still_work() {

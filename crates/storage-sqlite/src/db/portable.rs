@@ -402,8 +402,12 @@ pub fn prepare_import(
     let work = workspace(root)?;
     let staged = work.path().join("input.db");
     let mut input = fs::File::open(path)?;
-    if protected {
-        let password = password.context("A backup password is required")?;
+    let password = if protected {
+        Some(password.context("A backup password is required")?)
+    } else {
+        None
+    };
+    if let Some(password) = password {
         validate_password(password)?;
         let mut header = [0; 16];
         input.read_exact(&mut header)?;
@@ -420,8 +424,8 @@ pub fn prepare_import(
     );
     out.sync_all()?;
     drop(out);
-    let conn = if protected {
-        password_connection(&staged, password.unwrap())?
+    let conn = if let Some(password) = password {
+        password_connection(&staged, password)?
     } else {
         super::probe(staged.to_str().context("Invalid backup path")?, legacy_key)
             .map_err(|_| {
@@ -447,7 +451,13 @@ pub fn prepare_import(
     }
     let details = summary(&conn)?;
     let clean = encrypted_access(&work.path().join("clean.db"))?;
-    let raw_key = Zeroizing::new(format!("x'{}'", clean.key().unwrap().as_hex()));
+    let raw_key = Zeroizing::new(format!(
+        "x'{}'",
+        clean
+            .key()
+            .expect("encrypted_access should supply a key")
+            .as_hex()
+    ));
     copy_with_key(&conn, Path::new(clean.path()), &raw_key)?;
     drop(conn);
     migrate_and_validate(&clean, work.path())?;

@@ -14,7 +14,7 @@ use axum::{
 };
 use futures::stream;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 use tokio::{io::AsyncReadExt, sync::Semaphore};
@@ -45,15 +45,23 @@ impl Default for BackupExports {
     }
 }
 impl BackupExports {
-    fn purge_expired(&self) {
-        self.jobs
-            .lock()
-            .unwrap()
+    fn jobs(&self) -> ApiResult<MutexGuard<'_, Vec<ExportJob>>> {
+        self.jobs.lock().map_err(|_| {
+            ApiError::Internal(
+                "Backup export state is unavailable. Restart the server before exporting again."
+                    .into(),
+            )
+        })
+    }
+
+    fn purge_expired(&self) -> ApiResult<()> {
+        self.jobs()?
             .retain(|job| job.created.elapsed() < EXPORT_TTL);
+        Ok(())
     }
     fn take(&self, id: Uuid, session: &str) -> ApiResult<ExportJob> {
-        self.purge_expired();
-        let mut jobs = self.jobs.lock().unwrap();
+        self.purge_expired()?;
+        let mut jobs = self.jobs()?;
         let index = jobs
             .iter()
             .position(|job| job.id == id && job.session == session)
@@ -134,7 +142,7 @@ async fn export_snapshot(
         ));
     }
     check_export_request(&headers, password.is_some())?;
-    state.backup_exports.purge_expired();
+    state.backup_exports.purge_expired()?;
     let permit = state
         .backup_exports
         .slot
@@ -171,9 +179,9 @@ async fn export_snapshot(
     })
     .await
     .map_err(|_| ApiError::Internal("Backup export task failed".into()))?
-    .map_err(|error| ApiError::BadRequest(error.to_string()))?;
+    .map_err(ApiError::backup)?;
     let filename = output.file.filename.clone();
-    state.backup_exports.jobs.lock().unwrap().push(output);
+    state.backup_exports.jobs()?.push(output);
     Ok(Json(ExportResponse { id, filename }))
 }
 
@@ -229,4 +237,27 @@ pub fn router() -> Router<Arc<AppState>> {
             "/utilities/database/exports/{id}",
             get(download_export).delete(discard_export),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn poisoned_exports_return_internal_errors() {
+        let exports = BackupExports::default();
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = exports.jobs.lock().unwrap();
+            panic!("interrupted export publication");
+        }));
+        assert!(matches!(
+            exports.purge_expired(),
+            Err(ApiError::Internal(_))
+        ));
+        assert!(matches!(
+            exports.take(Uuid::new_v4(), "session"),
+            Err(ApiError::Internal(_))
+        ));
+        assert!(exports.jobs().is_err());
+    }
 }

@@ -48,12 +48,9 @@ pub fn install_recovery(
         .prefix("portable-recovery-")
         .tempdir_in(super::scratch_dir_beside(destination)?)?;
     let staged = staging.path().join("restored.db");
-    copy_database(
-        candidate,
-        staged.to_str().context("Invalid staging path")?,
-        key.as_deref(),
-    )?;
-    let staged_access = DbAccess::new(staged.to_str().unwrap(), key.clone());
+    let staged_path = staged.to_str().context("Invalid staging path")?;
+    copy_database(candidate, staged_path, key.as_deref())?;
+    let staged_access = DbAccess::new(staged_path, key.clone());
     {
         let conn = staged_access.connect_rusqlite()?;
         maintenance::integrity_check(&conn)?;
@@ -103,7 +100,11 @@ pub fn install_recovery(
     // Do not clean this directory on failure. Even a partial archive can contain
     // the only surviving copy after a subsequent filesystem/device failure.
     for original in &existing {
-        let saved = archive.join(original.file_name().unwrap());
+        let saved = archive.join(
+            original
+                .file_name()
+                .context("Missing original database filename")?,
+        );
         let mut input = fs::File::open(original)?;
         let mut output = fs::OpenOptions::new()
             .write(true)
