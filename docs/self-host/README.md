@@ -114,9 +114,10 @@ files retain their own directory-access requirements.
 ## Backups and upgrades
 
 For the shared Backups screen, password-protected exports, transfers between
-server and devices, and failure recovery, see [Backups and recovery](backups.md).
-Live database encryption, saved snapshots and portable backup passwords are
-separate protections; that guide explains which key each requires.
+server and devices, and failure recovery, see
+[Backups and recovery](backups.md). Live database encryption, saved snapshots
+and portable backup passwords are separate protections; that guide explains
+which key each requires.
 
 Back up the database and encrypted vault, and retain the matching master key in
 a separately protected recovery location. Check that the backup process can read
@@ -246,10 +247,10 @@ docker run --rm -v wealthfolio-data:/data -e WF_SECRET_KEY='<your-secret>' wealt
 Expect `Database at /data/wealthfolio.db is now encrypted`. The command refuses
 to run when there is no database at `WF_DB_PATH` instead of creating an empty
 one, so a mistyped path or an unmounted volume is a clear error rather than a
-silently empty database. Allow space for at least three additional database-sized
-copies, plus WAL and filesystem headroom, on the volume while it runs. Before
-replacement, the command requires free space for a rollback copy plus 16 MiB;
-this check does not reserve space against other processes.
+silently empty database. Allow space for at least three additional
+database-sized copies, plus WAL and filesystem headroom, on the volume while it
+runs. Before replacement, the command requires free space for a rollback copy
+plus 16 MiB; this check does not reserve space against other processes.
 
 **4. Set the container requirement and restart.** After conversion succeeds, set
 `WF_DB_REQUIRE_ENCRYPTION=1` in your deployment's environment file. The shipped
@@ -287,7 +288,8 @@ above from the Unraid terminal instead, with the container stopped.
 Raw appdata archives copy the database as-is; an encrypted archive needs the
 original master key. Stop the container before making a file-level archive and
 keep the key separately protected. To transfer data without that installation
-key, create a [password-protected portable export](backups.md#save-a-backup-and-export-it).
+key, create a
+[password-protected portable export](backups.md#save-a-backup-and-export-it).
 
 **Installs without Docker** (for example the Proxmox LXC from
 community-scripts): the same two steps apply, minus the container. Stop the

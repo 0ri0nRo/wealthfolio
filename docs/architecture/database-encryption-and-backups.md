@@ -88,10 +88,11 @@ does not retroactively protect old exports, filesystem snapshots or external
 copies. The original-download action is distinct from portable export because it
 does not sanitize installation data or assign a backup password.
 
-Device-sync “Back up first” creates a managed snapshot on all platforms, retaining
-its source encryption. Whole-database exports use the Backups protection dialog;
-the general data export screen supports CSV and JSON only. Native restore accepts
-validated import previews rather than a separate direct file-replacement command.
+Device-sync “Back up first” creates a managed snapshot on all platforms,
+retaining its source encryption. Whole-database exports use the Backups
+protection dialog; the general data export screen supports CSV and JSON only.
+Native restore accepts validated import previews rather than a separate direct
+file-replacement command.
 
 ## Portable format and validation
 

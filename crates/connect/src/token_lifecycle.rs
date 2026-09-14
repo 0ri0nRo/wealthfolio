@@ -497,8 +497,8 @@ impl RefreshRequestError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use std::sync::Arc;
 
     #[test]
     fn restored_credentials_are_cleared_without_touching_unrelated_secrets() {

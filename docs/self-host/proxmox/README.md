@@ -45,12 +45,12 @@ backup password, not the LXC's master key. Raw LXC/data-directory backups still
 need the matching key when the database is encrypted.
 
 Stop `wealthfolio.service` before file-level copies or offline conversion. Check
-the installed unit's `User`, `WorkingDirectory` and `EnvironmentFile`; maintenance
-must use that identity and configuration. Preserve `/opt/wealthfolio_data/` and
-the existing `/opt/wealthfolio/.env` (or your customized paths), keeping secret
-copies protected. A shell command does not inherit systemd environment settings.
-The shared guide includes recovery when the service cannot start and temporary
-disk requirements for offline restore.
+the installed unit's `User`, `WorkingDirectory` and `EnvironmentFile`;
+maintenance must use that identity and configuration. Preserve
+`/opt/wealthfolio_data/` and the existing `/opt/wealthfolio/.env` (or your
+customized paths), keeping secret copies protected. A shell command does not
+inherit systemd environment settings. The shared guide includes recovery when
+the service cannot start and temporary disk requirements for offline restore.
 
 ## Getting started: Docker
 

@@ -54,20 +54,21 @@ master key; password-protected portable exports use a separate backup password.
 
 ## Backups and restore
 
-Open **Settings → Backup & Export → Backup & Restore** to save managed snapshots,
-export a selected snapshot or inspect and restore a portable file. Protected
-exports default to `.wfbackup` and restore on another installation using only
-their backup password. The destination keeps its own encryption setting and key.
-Reconnect broker/device sync and custom providers afterward.
+Open **Settings → Backup & Export → Backup & Restore** to save managed
+snapshots, export a selected snapshot or inspect and restore a portable file.
+Protected exports default to `.wfbackup` and restore on another installation
+using only their backup password. The destination keeps its own encryption
+setting and key. Reconnect broker/device sync and custom providers afterward.
 
 Keep the entire database directory persistent and writable by the systemd unit's
 actual user, including `backups/` and private `scratch/`. Allow room for several
-database-sized copies during import/export, in addition to retained backups. Stop
-the service before raw file copies or offline encryption conversion; run those
-commands with the same environment and identity as the service. Do not overwrite
-the main database with a `.wfbackup` file.
+database-sized copies during import/export, in addition to retained backups.
+Stop the service before raw file copies or offline encryption conversion; run
+those commands with the same environment and identity as the service. Do not
+overwrite the main database with a `.wfbackup` file.
 
-The [backup and recovery guide](https://github.com/wealthfolio/wealthfolio/blob/main/docs/self-host/backups.md)
+The
+[backup and recovery guide](https://github.com/wealthfolio/wealthfolio/blob/main/docs/self-host/backups.md)
 covers both transfer directions, HTTPS/proxy limits, original snapshots, missing
-keys and recovery when the server cannot start. It applies to releases containing
-the shared Backup & Restore screen.
+keys and recovery when the server cannot start. It applies to releases
+containing the shared Backup & Restore screen.

@@ -53,10 +53,10 @@ stopped.
 
 For portable exports, appdata archive differences, restore between server and
 device, and recovery after failure, see [Backups and recovery](../backups.md).
-Keep `backups/` and `scratch/` inside the persistent appdata mapping and writable
-by `99:100`. Stop the container before raw appdata copies. A password-protected
-portable export is independent of the server key; an encrypted original snapshot
-or appdata archive still needs that original key.
+Keep `backups/` and `scratch/` inside the persistent appdata mapping and
+writable by `99:100`. Stop the container before raw appdata copies. A
+password-protected portable export is independent of the server key; an
+encrypted original snapshot or appdata archive still needs that original key.
 
 ## Permissions
 
