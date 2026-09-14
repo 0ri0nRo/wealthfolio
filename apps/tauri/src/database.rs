@@ -586,14 +586,14 @@ impl DatabaseRuntime {
     pub async fn run_maintenance(
         &self,
         handle: &AppHandle,
-        request: MaintenanceRequest,
+        prepare: impl FnOnce(&Self) -> std::result::Result<MaintenanceRequest, String> + Send + 'static,
     ) -> std::result::Result<MaintenanceOutcome, String> {
         // The caller may close its window or cancel IPC while a blocking copy
         // runs. Keep the gate, teardown and rebuild owned by the app task.
         let handle = handle.clone();
         tauri::async_runtime::spawn(async move {
             let runtime = handle.state::<DatabaseRuntime>();
-            runtime.run_owned_maintenance(&handle, request).await
+            runtime.run_owned_maintenance(&handle, prepare).await
         })
         .await
         .map_err(|error| format!("Database maintenance task failed: {error}"))?
@@ -602,8 +602,18 @@ impl DatabaseRuntime {
     async fn run_owned_maintenance(
         &self,
         handle: &AppHandle,
-        request: MaintenanceRequest,
+        prepare: impl FnOnce(&Self) -> std::result::Result<MaintenanceRequest, String>,
     ) -> std::result::Result<MaintenanceOutcome, String> {
+        let (_gate, request) = self.prepare_maintenance(prepare)?;
+        let result = self.run_maintenance_inner(handle, request).await;
+        self.record_maintenance_error(result.as_ref().err().map(String::as_str))?;
+        result
+    }
+
+    fn prepare_maintenance(
+        &self,
+        prepare: impl FnOnce(&Self) -> std::result::Result<MaintenanceRequest, String>,
+    ) -> std::result::Result<(MaintenanceGate<'_>, MaintenanceRequest), String> {
         if self
             .maintenance
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
@@ -613,11 +623,12 @@ impl DatabaseRuntime {
         }
         // Clear the gate on every exit, including a panic: leaving it set would
         // reject database work for the rest of the process's life.
-        let _gate = MaintenanceGate(&self.maintenance);
+        let gate = MaintenanceGate(&self.maintenance);
 
-        let result = self.run_maintenance_inner(handle, request).await;
-        self.record_maintenance_error(result.as_ref().err().map(String::as_str))?;
-        result
+        // Preparation may persist a new encryption key. Reject overlapping
+        // requests before either can change the key used by the other.
+        let request = prepare(self)?;
+        Ok((gate, request))
     }
 
     fn record_maintenance_error(
@@ -840,7 +851,9 @@ impl DatabaseRuntime {
                 backup_path: std::path::PathBuf::from(candidate.backup.access.path()),
                 device_key: candidate.backup.access.key().cloned(),
             };
-            let result = runtime.run_owned_maintenance(&handle, request).await;
+            let result = runtime
+                .run_owned_maintenance(&handle, |_| Ok(request))
+                .await;
             drop(candidate);
             result?;
             crate::commands::utilities::finish_database_maintenance(&handle, "database-restored")
@@ -906,20 +919,22 @@ impl DatabaseRuntime {
         &self,
         handle: &AppHandle,
     ) -> std::result::Result<MaintenanceOutcome, String> {
-        let access = self
-            .current_access()?
-            .ok_or_else(|| DatabaseUnavailable::NotInitialized.to_string())?;
-        if access.is_encrypted() {
-            return Err("The database is already encrypted.".to_string());
-        }
+        self.run_maintenance(handle, |runtime| {
+            let access = runtime
+                .current_access()?
+                .ok_or_else(|| DatabaseUnavailable::NotInitialized.to_string())?;
+            if access.is_encrypted() {
+                return Err("The database is already encrypted.".to_string());
+            }
 
-        let key = self
-            .key_provider
-            .create()
-            .map_err(|e: Error| format!("Failed to prepare the database key: {e}"))?;
+            let key = runtime
+                .key_provider
+                .create()
+                .map_err(|e: Error| format!("Failed to prepare the database key: {e}"))?;
 
-        self.run_maintenance(handle, MaintenanceRequest::Enable { key: Arc::new(key) })
-            .await
+            Ok(MaintenanceRequest::Enable { key: Arc::new(key) })
+        })
+        .await
     }
 
     /// Disables at-rest encryption. The key stays in the keychain permanently,
@@ -936,7 +951,7 @@ impl DatabaseRuntime {
             return Err("The database is not encrypted.".to_string());
         }
 
-        self.run_maintenance(handle, MaintenanceRequest::Disable)
+        self.run_maintenance(handle, |_| Ok(MaintenanceRequest::Disable))
             .await
     }
 }
@@ -1246,6 +1261,68 @@ mod tests {
                 .map(|key| key.as_hex().to_string()),
             Some(first.as_hex().to_string())
         );
+    }
+
+    #[test]
+    fn overlapping_encryption_requests_are_rejected_before_key_creation() {
+        let store = Arc::new(FakeSecretStore::default());
+        let mut runtime = runtime();
+        runtime.key_provider = Arc::new(KeychainKeyProvider::new(store.clone()));
+        let runtime = Arc::new(runtime);
+        let first_runtime = Arc::clone(&runtime);
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+
+        let first = std::thread::spawn(move || {
+            let (_gate, request) = first_runtime
+                .prepare_maintenance(|runtime| {
+                    // Hold the first request before it creates a key, while
+                    // the keychain is still empty and a second request enters.
+                    started_tx.send(()).unwrap();
+                    release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+                    Ok(MaintenanceRequest::Enable {
+                        key: Arc::new(runtime.key_provider.create().unwrap()),
+                    })
+                })
+                .unwrap();
+            assert!(first_runtime.maintenance.load(Ordering::SeqCst));
+            match request {
+                MaintenanceRequest::Enable { key } => key,
+                _ => panic!("expected an encryption request"),
+            }
+        });
+
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(store.stored.lock().unwrap().is_none());
+        let mut second_prepared = false;
+        let second = runtime.prepare_maintenance(|runtime| {
+            second_prepared = true;
+            Ok(MaintenanceRequest::Enable {
+                key: Arc::new(runtime.key_provider.create().unwrap()),
+            })
+        });
+        release_tx.send(()).unwrap();
+        let first_key = first.join().unwrap();
+
+        assert_eq!(
+            second.err().as_deref(),
+            Some("Database maintenance is already in progress.")
+        );
+        assert!(!second_prepared);
+        assert_eq!(
+            store.stored.lock().unwrap().as_deref(),
+            Some(first_key.as_hex())
+        );
+        assert!(!runtime.maintenance.load(Ordering::SeqCst));
+
+        // A preparation failure must also release the gate for a retry.
+        assert!(runtime
+            .prepare_maintenance(|_| Err("keychain unavailable".into()))
+            .is_err());
+        assert!(!runtime.maintenance.load(Ordering::SeqCst));
+        assert!(runtime
+            .prepare_maintenance(|_| Ok(MaintenanceRequest::Disable))
+            .is_ok());
     }
 
     #[test]
