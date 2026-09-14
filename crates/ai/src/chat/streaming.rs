@@ -1115,8 +1115,13 @@ async fn stream_agent_response<E: AiEnvironment + 'static>(
 
         Ok(())
     };
-    let (response, ()) = tokio::join!(response_future, title_future);
-    response
+    // Title refinement is optional and must not keep a completed chat open.
+    // Dropping a pending title also releases its repository and environment.
+    tokio::pin!(response_future);
+    tokio::select! {
+        response = &mut response_future => response,
+        () = title_future => response_future.await,
+    }
 }
 
 fn has_final_turn_text(parts: &[ChatMessagePart], pending: &str) -> bool {
@@ -1177,6 +1182,106 @@ fn update_native_reasoning(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn completed_chat_closes_while_title_provider_is_stalled() {
+        use crate::env::test_env::MockEnvironment;
+        use crate::provider_model::AI_PROVIDER_SETTINGS_KEY;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let chat_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let title_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let chat_url = format!("http://{}", chat_listener.local_addr().unwrap());
+        let title_url = format!("http://{}", title_listener.local_addr().unwrap());
+        let (title_started_tx, title_started_rx) = tokio::sync::oneshot::channel();
+        let title_server = tokio::spawn(async move {
+            let (_socket, _) = title_listener.accept().await.unwrap();
+            title_started_tx.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        let chat_server = tokio::spawn(async move {
+            let (mut socket, _) = chat_listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            assert_ne!(socket.read(&mut request).await.unwrap(), 0);
+            let body = format!(
+                "data: {}\n\ndata: [DONE]\n\n",
+                serde_json::json!({
+                    "id": "fixture", "object": "chat.completion.chunk", "created": 1,
+                    "model": "fixture", "choices": [{"index": 0,
+                        "delta": {"role": "assistant", "content": "Complete"},
+                        "finish_reason": "stop"}]
+                })
+            );
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            socket.write_all(headers.as_bytes()).await.unwrap();
+            // The answer completes only after title generation has started.
+            title_started_rx.await.unwrap();
+            socket.write_all(body.as_bytes()).await.unwrap();
+            std::future::pending::<()>().await;
+        });
+
+        let env = Arc::new(MockEnvironment::new().with_secret("ai_openai", "fixture-key"));
+        env.settings_service
+            .set_setting_value(
+                AI_PROVIDER_SETTINGS_KEY,
+                &serde_json::json!({"schemaVersion": 1, "providers": {"openai": {"customUrl": title_url}}}).to_string(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            ProviderService::new(env.clone()).get_provider_url("openai"),
+            Some(title_url)
+        );
+        let agent = create_openai_client(Some("fixture-key".into()), "openai", Some(chat_url))
+            .unwrap()
+            .agent("fixture")
+            .build();
+        let title_ctx = TitleContext {
+            env: env.clone(),
+            current_title: Some("Initial title".into()),
+            is_new_thread: true,
+            user_message: "Fixture prompt".into(),
+            provider_id: "openai".into(),
+            model_id: "fixture".into(),
+            initial_title: Some("Initial title".into()),
+        };
+        let repo = env.chat_repository();
+        let (tx, rx) = mpsc::channel(100);
+        let mut events = super::super::owned_event_stream(rx, async move {
+            stream_agent_response(
+                agent,
+                Message::user("Fixture prompt"),
+                vec![],
+                tx,
+                repo,
+                "thread".into(),
+                "run".into(),
+                "message".into(),
+                title_ctx,
+            )
+            .await
+            .unwrap();
+        });
+        let completed = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            let mut done = false;
+            while let Some(event) = events.next().await {
+                done |= matches!(event, AiStreamEvent::Done { .. });
+            }
+            done
+        })
+        .await;
+        chat_server.abort();
+        title_server.abort();
+        let _ = chat_server.await;
+        let _ = title_server.await;
+        assert!(completed.expect("chat should close without a title response"));
+        drop(events);
+        assert_eq!(Arc::strong_count(&env), 1);
+    }
 
     #[test]
     fn final_response_does_not_duplicate_text_flushed_before_reasoning() {
