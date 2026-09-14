@@ -813,6 +813,7 @@ pub fn run() {
             commands::fire::run_retirement_stress_tests,
         ])
         .build(tauri::generate_context!())
+        // Failure to construct the application is terminal; no command runtime exists yet.
         .expect("Failed to build Wealthfolio application")
         .run(|_handle, event| {
             #[cfg(desktop)]

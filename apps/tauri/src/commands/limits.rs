@@ -111,7 +111,14 @@ pub async fn calculate_deposits_for_contribution_limit(
 ) -> Result<DepositsCalculation, String> {
     let context = state.context()?;
     debug!("Calculating deposits for contribution limit...");
-    let base_currency = context.base_currency.read().unwrap();
+    let base_currency = context
+        .base_currency
+        .read()
+        .map_err(|_| {
+            "Base currency state is unavailable. Restart the application before continuing."
+                .to_string()
+        })?
+        .clone();
     context
         .limits_service()
         .calculate_deposits_for_contribution_limit(&limit_id, &base_currency)

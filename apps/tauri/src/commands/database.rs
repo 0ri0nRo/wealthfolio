@@ -25,7 +25,7 @@ pub async fn get_database_encryption_status(
     runtime: State<'_, DatabaseRuntime>,
 ) -> Result<DatabaseEncryptionStatus, String> {
     Ok(DatabaseEncryptionStatus {
-        enabled: runtime.is_encrypted(),
+        enabled: runtime.is_encrypted()?,
         // All native targets use persistent OS-backed secret storage, including
         // Android Keystore. Key creation verifies a read-back before conversion.
         supported: true,
