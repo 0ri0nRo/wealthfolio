@@ -115,24 +115,25 @@ pub async fn security_headers(request: Request<Body>, next: Next) -> Response {
     response
 }
 
-pub(crate) fn cors_layer(config: &Config) -> CorsLayer {
+pub(crate) fn cors_layer(config: &Config) -> anyhow::Result<CorsLayer> {
     if config.cors_allow.iter().any(|o| o == "*") {
-        CorsLayer::new().allow_origin(Any)
+        Ok(CorsLayer::new().allow_origin(Any))
     } else {
         let origins = config
             .cors_allow
             .iter()
-            .map(|o| o.parse().unwrap())
-            .collect::<Vec<_>>();
-        CorsLayer::new()
+            .map(|origin| origin.parse::<HeaderValue>())
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| anyhow::anyhow!("Invalid header value in WF_CORS_ALLOW_ORIGINS"))?;
+        Ok(CorsLayer::new()
             .allow_origin(origins)
-            .allow_credentials(true)
+            .allow_credentials(true))
     }
 }
 
 #[allow(deprecated)]
-pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
-    let cors = cors_layer(config);
+pub fn app_router(state: Arc<AppState>, config: &Config) -> anyhow::Result<Router> {
+    let cors = cors_layer(config)?;
 
     let openapi = ApiDoc::openapi();
 
@@ -228,7 +229,7 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
         router = router.merge(crate::mcp::router(state.clone(), config));
     }
 
-    router
+    Ok(router
         .layer(cors)
         .layer(SetRequestIdLayer::x_request_id(MakeRequestUuid))
         .layer(PropagateRequestIdLayer::x_request_id())
@@ -243,7 +244,7 @@ pub fn app_router(state: Arc<AppState>, config: &Config) -> Router {
                 })
                 .on_request(DefaultOnRequest::new().level(Level::INFO))
                 .on_response(DefaultOnResponse::new().level(Level::INFO)),
-        )
+        ))
 }
 
 #[cfg(test)]

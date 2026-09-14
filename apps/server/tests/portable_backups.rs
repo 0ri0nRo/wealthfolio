@@ -71,7 +71,7 @@ async fn portable_exports_preserve_selected_data_and_bound_download_lifetimes() 
     );
     for authenticated in [false, true] {
         let root = tempfile::tempdir().unwrap();
-        let mut config = Config::from_env();
+        let mut config = Config::from_env().unwrap();
         config.db_path = root.path().join("app.db").to_string_lossy().into_owned();
         config.addons_root = root.path().to_string_lossy().into_owned();
         config.oidc = None;
@@ -109,7 +109,7 @@ async fn portable_exports_preserve_selected_data_and_bound_download_lifetimes() 
                 "UPDATE app_settings SET setting_value='light' WHERE setting_key='theme'",
             )
             .unwrap();
-        let app = app_router(state.clone(), &config);
+        let app = app_router(state.clone(), &config).unwrap();
         for (method, path) in [
             ("GET", "/api/v1/utilities/database/maintenance"),
             ("POST", "/api/v1/utilities/database/maintenance/retry"),

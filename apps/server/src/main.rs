@@ -90,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
         return result;
     }
 
-    let config = Config::from_env();
+    let config = Config::from_env()?;
     init_tracing();
     // Bind before starting database workers so a port conflict cannot strand them.
     let listener = tokio::net::TcpListener::bind(config.listen_addr).await?;
@@ -107,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
     let state = main_lib::build_state(&config).await?;
     scheduler::start_background_workers(state.clone());
     let static_dir = std::path::PathBuf::from(&config.static_dir);
-    let router = api::app_router(state.clone(), &config)
+    let router = api::app_router(state.clone(), &config)?
         .fallback_service(tower_http::services::ServeDir::new(&static_dir).fallback(
             tower_http::services::ServeFile::new(static_dir.join("index.html")),
         ))

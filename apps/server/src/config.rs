@@ -49,12 +49,12 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn from_env() -> Self {
+    pub fn from_env() -> anyhow::Result<Self> {
         dotenvy::dotenv().ok();
         let listen_addr: SocketAddr = std::env::var("WF_LISTEN_ADDR")
             .unwrap_or_else(|_| "0.0.0.0:8088".to_string())
             .parse()
-            .expect("Invalid WF_LISTEN_ADDR");
+            .context("Invalid WF_LISTEN_ADDR")?;
         let db_path = std::env::var("WF_DB_PATH")
             .unwrap_or_else(|_| crate::main_lib::DEFAULT_DB_PATH.to_string());
         let cors_allow: Vec<String> = std::env::var("WF_CORS_ALLOW_ORIGINS")
@@ -74,7 +74,7 @@ impl Config {
             std::env::var_os("WF_SECRET_KEY"),
             std::env::var_os("WF_SECRET_KEY_FILE"),
         )
-        .unwrap_or_else(|e| panic!("Failed to load server secret key: {e:#}"));
+        .context("Failed to load server secret key")?;
         let (jwt_key, secrets_encryption_key) = derive_keys(&raw_secret_key);
         let database_key = derive_database_key(&raw_secret_key);
         let db_encryption_required = std::env::var("WF_DB_REQUIRE_ENCRYPTION")
@@ -92,7 +92,7 @@ impl Config {
             .map(|hash| hash.trim().to_string())
             .filter(|hash| !hash.is_empty());
 
-        let oidc = OidcConfig::from_env();
+        let oidc = OidcConfig::from_env()?;
 
         // The session signer is needed whenever ANY auth method is enabled.
         let auth = if password_hash.is_some() || oidc.is_some() {
@@ -107,7 +107,7 @@ impl Config {
                 "auto" => CookieSecurePolicy::Auto,
                 "true" | "1" | "yes" => CookieSecurePolicy::Always,
                 "false" | "0" | "no" => CookieSecurePolicy::Never,
-                other => panic!(
+                other => anyhow::bail!(
                     "Invalid WF_COOKIE_SECURE value: \"{other}\". \
                      Expected one of: auto, true, false"
                 ),
@@ -139,7 +139,7 @@ impl Config {
 
         // When auth is enabled, wildcard CORS is incompatible with credentials
         if auth.is_some() && cors_allow.iter().any(|o| o == "*") {
-            panic!(
+            anyhow::bail!(
                 "WF_CORS_ALLOW_ORIGINS cannot be \"*\" when authentication is enabled. \
                  Set explicit origins, e.g. WF_CORS_ALLOW_ORIGINS=https://my.domain.com"
             );
@@ -152,7 +152,7 @@ impl Config {
                 .map(|v| !v.eq_ignore_ascii_case("false"))
                 .unwrap_or(true);
             if auth_required {
-                panic!(
+                anyhow::bail!(
                     "Refusing to start: listening on non-loopback address {listen_addr} without \
                      authentication.\n\
                      \n\
@@ -174,7 +174,7 @@ impl Config {
         // There is no WF_AUTH_REQUIRED escape hatch here — server MCP has
         // no trusted reverse proxy bypass.
         if mcp_enabled && auth.is_none() && !listen_addr.ip().is_loopback() {
-            panic!(
+            anyhow::bail!(
                 "Refusing to start: WF_MCP_ENABLED=true while listening on non-loopback \
                  address {listen_addr} without authentication.\n\
                  \n\
@@ -185,7 +185,7 @@ impl Config {
             );
         }
 
-        Self {
+        let config = Self {
             listen_addr,
             db_path,
             database_key,
@@ -201,7 +201,9 @@ impl Config {
             mcp_enabled,
             mcp_audit_enabled,
             mcp_allowed_hosts,
-        }
+        };
+        let _ = crate::api::cors_layer(&config)?;
+        Ok(config)
     }
 }
 
@@ -235,6 +237,87 @@ mod tests {
     use super::*;
 
     const KEY: &str = "--------------------------------";
+
+    #[test]
+    fn invalid_startup_configuration_returns_errors_without_panicking() {
+        let dir = tempfile::tempdir().unwrap();
+        let cases: &[(&str, &[(&str, &str)])] = &[
+            ("Invalid WF_LISTEN_ADDR", &[("WF_LISTEN_ADDR", "invalid")]),
+            (
+                "WF_CORS_ALLOW_ORIGINS",
+                &[("WF_CORS_ALLOW_ORIGINS", "https://example.com\ninvalid")],
+            ),
+            ("server secret key", &[("WF_SECRET_KEY", "")]),
+            (
+                "Invalid WF_COOKIE_SECURE",
+                &[
+                    ("WF_AUTH_PASSWORD_HASH", "configured"),
+                    ("WF_COOKIE_SECURE", "invalid"),
+                ],
+            ),
+            ("cannot be", &[("WF_AUTH_PASSWORD_HASH", "configured")]),
+            ("Refusing to start", &[("WF_LISTEN_ADDR", "0.0.0.0:8088")]),
+            (
+                "WF_MCP_ENABLED=true",
+                &[
+                    ("WF_LISTEN_ADDR", "0.0.0.0:8088"),
+                    ("WF_AUTH_REQUIRED", "false"),
+                    ("WF_MCP_ENABLED", "true"),
+                ],
+            ),
+            (
+                "partially configured",
+                &[("WF_OIDC_ISSUER_URL", "https://issuer.example")],
+            ),
+            (
+                "WF_OIDC_REDIRECT_URL",
+                &[
+                    ("WF_OIDC_ISSUER_URL", "https://issuer.example"),
+                    ("WF_OIDC_CLIENT_ID", "client"),
+                ],
+            ),
+            (
+                "without an allowlist",
+                &[
+                    ("WF_OIDC_ISSUER_URL", "https://issuer.example"),
+                    ("WF_OIDC_CLIENT_ID", "client"),
+                    ("WF_OIDC_REDIRECT_URL", "https://app.example/callback"),
+                ],
+            ),
+        ];
+        for (expected, env) in cases {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "config::tests::invalid_config_worker",
+                    "--nocapture",
+                ])
+                .current_dir(dir.path())
+                .env_clear()
+                .env("WF_LISTEN_ADDR", "127.0.0.1:8088")
+                .env("WF_SECRET_KEY", KEY)
+                .env("WF_CONFIG_EXPECT_ERROR", expected)
+                .envs(env.iter().copied())
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "case {expected}: {}",
+                String::from_utf8_lossy(&output.stdout)
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_config_worker() {
+        let Ok(expected) = std::env::var("WF_CONFIG_EXPECT_ERROR") else {
+            return;
+        };
+        match Config::from_env() {
+            Err(error) => assert!(format!("{error:#}").contains(&expected), "{error:#}"),
+            Ok(_) => panic!("invalid configuration was accepted"),
+        }
+    }
 
     #[test]
     fn file_and_environment_derive_identical_keys() {
@@ -282,7 +365,7 @@ mod tests {
         if std::env::var_os("WF_KEY_INPUT_TEST").is_none() {
             return;
         }
-        let config = Config::from_env();
+        let config = Config::from_env().unwrap();
         std::fs::remove_file(std::env::var_os("WF_SECRET_KEY_FILE").unwrap()).unwrap();
         assert_eq!(config.raw_secret_key, KEY.as_bytes());
         assert_eq!(config.secrets_encryption_key, derive_keys(KEY.as_bytes()).1);

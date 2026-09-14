@@ -43,7 +43,7 @@ async fn income_summary_query_returns_empty_data_for_empty_resolved_portfolio_sc
         .into_owned();
     let config = test_config(db_path, addons_root);
     let state = build_state(&config).await.unwrap();
-    let app = app_router(state, &config);
+    let app = app_router(state, &config).unwrap();
 
     let response = app
         .oneshot(

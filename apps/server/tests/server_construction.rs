@@ -10,7 +10,7 @@ async fn late_startup_failure_releases_database_users() {
     );
     let root = tempfile::tempdir().unwrap();
     std::env::set_var("WF_SECRET_FILE", root.path().join("secrets.json"));
-    let mut config = Config::from_env();
+    let mut config = Config::from_env().unwrap();
     config.db_path = root.path().join("app.db").to_string_lossy().into_owned();
     config.addons_root = root.path().to_string_lossy().into_owned();
     config.db_encryption_required = false;
