@@ -16,6 +16,8 @@ use tracing::{debug, info, warn};
 #[cfg(feature = "connect-sync")]
 use crate::api::connect::{has_broker_sync, perform_broker_sync};
 use crate::main_lib::AppState;
+#[cfg(feature = "connect-sync")]
+use wealthfolio_connect::CLOUD_REFRESH_TOKEN_KEY;
 
 /// Sync interval: 4 hours (not user-configurable to prevent API abuse)
 #[cfg(feature = "connect-sync")]
@@ -58,7 +60,7 @@ async fn run_scheduled_sync(state: &Arc<AppState>) {
     // Check if user has a refresh token configured (indicates they've logged in)
     let has_token = state
         .secret_store
-        .get_secret("sync_refresh_token")
+        .get_secret(CLOUD_REFRESH_TOKEN_KEY)
         .map(|t| t.is_some())
         .unwrap_or(false);
 

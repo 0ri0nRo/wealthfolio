@@ -21,13 +21,11 @@ use wealthfolio_connect::{
 };
 use wealthfolio_connect::{
     PostLoginBootstrapReason, PostLoginBootstrapResult, PostLoginBootstrapSyncResult,
+    CLOUD_REFRESH_TOKEN_KEY,
 };
 use wealthfolio_core::secrets::SecretStore;
 #[cfg(feature = "device-sync")]
 use wealthfolio_device_sync::SyncState;
-
-// Storage keys (without prefix - the SecretStore adds "wealthfolio_" prefix)
-const SYNC_REFRESH_TOKEN_KEY: &str = "sync_refresh_token";
 
 #[cfg(feature = "device-sync")]
 enum PostLoginDeviceBootstrapDecision {
@@ -290,7 +288,7 @@ pub async fn restore_sync_session(
     let access_token = context.connect_service().get_valid_access_token().await?;
 
     let refresh_token = KeyringSecretStore
-        .get_secret(SYNC_REFRESH_TOKEN_KEY)
+        .get_secret(CLOUD_REFRESH_TOKEN_KEY)
         .map_err(|e| format!("Failed to read refresh token: {}", e))?
         .ok_or_else(|| "No sync session configured".to_string())?;
 
