@@ -766,6 +766,42 @@ export interface Asset {
   updatedAt: string;
 }
 
+/**
+ * Alternative asset holding with valuation details (property, vehicle,
+ * collectible, precious metal, liability, other). Simplified model: no
+ * account, no activities, just asset + quotes.
+ */
+export interface AlternativeAssetHolding {
+  /** Asset ID (e.g., "PROP-a1b2c3d4") */
+  id: string;
+  /** Asset kind (property, vehicle, collectible, precious, liability, other) */
+  kind: string;
+  /** Asset name */
+  name: string;
+  /** Asset symbol (display type label, e.g., "Property", "Vehicle") */
+  symbol: string;
+  /** Currency */
+  currency: string;
+  /** Current market value from latest quote */
+  marketValue: string;
+  /** Purchase price if available (from metadata) */
+  purchasePrice?: string;
+  /** Purchase date if available (from metadata) */
+  purchaseDate?: string;
+  /** Unrealized gain (market_value - purchase_price) */
+  unrealizedGain?: string;
+  /** Unrealized gain percentage */
+  unrealizedGainPct?: string;
+  /** Date of the latest valuation (ISO format) */
+  valuationDate: string;
+  /** Kind-specific metadata */
+  metadata?: Record<string, unknown>;
+  /** For liabilities: linked asset ID if any */
+  linkedAssetId?: string;
+  /** Asset notes */
+  notes?: string | null;
+}
+
 export interface Quote {
   id: string;
   createdAt: string;

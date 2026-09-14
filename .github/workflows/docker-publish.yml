@@ -1,9 +1,9 @@
 name: Docker
 
 on:
+  workflow_dispatch:
   push:
-    # Publish semver tags as releases.
-    tags: ["v*.*.*"]
+    branches: ["addon-alternative-assets-api"]
 
 jobs:
   build:
@@ -11,32 +11,17 @@ jobs:
     permissions:
       contents: read
       packages: write
-      # This is used to complete the identity challenge
-      # with sigstore/fulcio when running outside of PRs.
       id-token: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Set up QEMU for multi-arch builds
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       # Workaround: https://github.com/docker/build-push-action/issues/461
       - name: Setup Docker buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log into Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Log into GitHub Container Registry
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -50,24 +35,21 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: |
-            docker.io/wealthfolio/wealthfolio
-            docker.io/afadil/wealthfolio
             ghcr.io/${{ github.repository_owner }}/wealthfolio
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
+            type=raw,value=asset-targets-alt-api
             type=sha,format=long
 
-      # Build and push Docker image with Buildx (don't push on PR)
+      # The homelab runs amd64 workers only; one architecture keeps this
+      # on-demand fork build scoped to its actual consumer.
       # https://github.com/docker/build-push-action
       - name: Build and push Docker image
         id: build-and-push
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          platforms: linux/amd64
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
