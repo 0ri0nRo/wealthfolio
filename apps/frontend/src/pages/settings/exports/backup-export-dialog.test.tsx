@@ -56,6 +56,27 @@ it("requires a matching password and never exports after cancellation", () => {
   expect(exportBackup).not.toHaveBeenCalled();
 });
 
+it("generates matching passwords and toggles each field without submitting", async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("navigator", { clipboard: { writeText } });
+  render(<BackupExportDialog filename="selected.db" onClose={vi.fn()} />);
+  const password = screen.getByLabelText<HTMLInputElement>(settings.backup_export_password);
+  const confirmation = screen.getByLabelText(settings.backup_export_confirm_password);
+  fireEvent.click(screen.getByRole("button", { name: settings.backup_export_generate }));
+  expect(password.value).toMatch(/^[A-HJ-NP-Za-km-np-z2-9]{24}$/);
+  expect(confirmation).toHaveValue(password.value);
+  expect(password).toHaveAttribute("type", "password");
+  expect(confirmation).toHaveAttribute("type", "password");
+  fireEvent.click(screen.getAllByRole("button", { name: settings.backup_export_show })[0]);
+  expect(password).toHaveAttribute("type", "text");
+  expect(confirmation).toHaveAttribute("type", "password");
+  fireEvent.click(screen.getByRole("button", { name: settings.backup_export_hide }));
+  expect(password).toHaveAttribute("type", "password");
+  fireEvent.click(screen.getByRole("button", { name: settings.backup_export_copy }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith(password.value));
+  expect(exportBackup).not.toHaveBeenCalled();
+});
+
 it("makes plaintext a deliberate choice with a warning and an explicit button", async () => {
   render(<BackupExportDialog filename="selected.db" onClose={vi.fn()} />);
   fireEvent.click(screen.getByRole("radio", { name: settings.backup_export_plain }));
@@ -68,13 +89,17 @@ it("makes plaintext a deliberate choice with a warning and an explicit button", 
 });
 
 it("clears password fields after a failed export", async () => {
-  exportBackup.mockRejectedValueOnce(new Error("Synthetic export failure"));
+  exportBackup.mockRejectedValueOnce(new Error("Use HTTPS to export a password-protected backup."));
   render(<BackupExportDialog filename="selected.db" onClose={vi.fn()} />);
   for (const label of [settings.backup_export_password, settings.backup_export_confirm_password]) {
     fireEvent.change(screen.getByLabelText(label), { target: { value: "long enough password" } });
   }
   fireEvent.click(screen.getByRole("button", { name: "Export" }));
-  await screen.findByText("Synthetic export failure");
+  await screen.findByText(settings.backup_action_failed);
+  const details = screen.getByText("Use HTTPS to export a password-protected backup.");
+  expect(details.closest("details")).not.toHaveAttribute("open");
+  fireEvent.click(screen.getByText(settings.recovery_details));
+  expect(details.closest("details")).toHaveAttribute("open");
   expect(screen.getByLabelText(settings.backup_export_password)).toHaveValue("");
   expect(screen.getByLabelText(settings.backup_export_confirm_password)).toHaveValue("");
 });
@@ -97,4 +122,14 @@ it("aborts an in-flight export when cancelled", async () => {
   expect(signal.aborted).toBe(true);
   expect(onClose).toHaveBeenCalledOnce();
   await act(async () => finish(false));
+});
+
+it("falls back cleanly when an error has no readable details", async () => {
+  exportBackup.mockRejectedValueOnce({ status: 500 });
+  render(<BackupExportDialog filename="selected.db" onClose={vi.fn()} />);
+  fireEvent.click(screen.getByRole("radio", { name: settings.backup_export_plain }));
+  fireEvent.click(screen.getByRole("button", { name: settings.backup_export_plain_button }));
+  await screen.findByText(settings.backup_action_failed);
+  expect(screen.queryByText(settings.recovery_details)).not.toBeInTheDocument();
+  expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
 });

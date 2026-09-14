@@ -1,3 +1,4 @@
+import { BackupError, type BackupFailure } from "@/pages/settings/exports/backup-error";
 import { reloadApplication } from "@/lib/reload-application";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -13,7 +14,7 @@ import {
   type BackupImportPreview,
 } from "../../adapters/tauri/settings";
 import { Button } from "@wealthfolio/ui/components/ui/button";
-import { Input } from "@wealthfolio/ui/components/ui/input";
+import { PasswordInput } from "@wealthfolio/ui/components/ui/password-input";
 import { Label } from "@wealthfolio/ui/components/ui/label";
 
 /** Native startup must succeed before database-dependent providers mount. */
@@ -47,10 +48,9 @@ function NativeStartup({ children }: { children: ReactNode }) {
   }, [generationChanged, status.data?.maintenance]);
   const [selected, setSelected] = useState<string | null>(null);
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [preview, setPreview] = useState<BackupImportPreview | null>(null);
   const [busy, setBusy] = useState<"inspect" | "restore" | "retry" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackupFailure | null>(null);
   const operation = useRef<AbortController | null>(null);
   const previewId = useRef<string | null>(null);
   useEffect(
@@ -70,8 +70,8 @@ function NativeStartup({ children }: { children: ReactNode }) {
         setPassword("");
         setError(null);
       }
-    } catch (error) {
-      setError(String(error));
+    } catch (cause) {
+      setError({ cause });
     }
   };
   const inspect = async (event: React.FormEvent) => {
@@ -87,8 +87,8 @@ function NativeStartup({ children }: { children: ReactNode }) {
         previewId.current = result.id;
         setPreview(result);
       }
-    } catch (error) {
-      if (!controller.signal.aborted) setError(String(error));
+    } catch (cause) {
+      if (!controller.signal.aborted) setError({ cause });
     } finally {
       setPassword("");
       setBusy(null);
@@ -112,8 +112,8 @@ function NativeStartup({ children }: { children: ReactNode }) {
     try {
       await recoverDatabaseFromImport(preview.id);
       await status.refetch();
-    } catch (error) {
-      setError(String(error));
+    } catch (cause) {
+      setError({ cause });
       setPreview(null);
     } finally {
       setBusy(null);
@@ -125,8 +125,8 @@ function NativeStartup({ children }: { children: ReactNode }) {
     setError(null);
     try {
       await retryDatabaseStartup();
-    } catch (error) {
-      setError(String(error));
+    } catch (cause) {
+      setError({ cause });
     } finally {
       await status.refetch();
       setBusy(null);
@@ -232,9 +232,10 @@ function NativeStartup({ children }: { children: ReactNode }) {
                 {selected && <p className="break-all text-sm">{selected.split(/[\\/]/).pop()}</p>}
                 <div className="space-y-2">
                   <Label htmlFor="recovery-password">{t("settings:recovery_password")}</Label>
-                  <Input
+                  <PasswordInput
                     id="recovery-password"
-                    type={showPassword ? "text" : "password"}
+                    showLabel={t("settings:backup_export_show")}
+                    hideLabel={t("settings:backup_export_hide")}
                     autoComplete="off"
                     autoCapitalize="none"
                     spellCheck={false}
@@ -242,17 +243,6 @@ function NativeStartup({ children }: { children: ReactNode }) {
                     disabled={busy !== null}
                     onChange={(event) => setPassword(event.target.value)}
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={busy !== null}
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {t(
-                      showPassword ? "settings:backup_export_hide" : "settings:backup_export_show",
-                    )}
-                  </Button>
                   <p className="text-muted-foreground text-sm">
                     {t("settings:recovery_password_help")}
                   </p>
@@ -276,9 +266,9 @@ function NativeStartup({ children }: { children: ReactNode }) {
           </>
         )}
         {error && (
-          <p role="alert" className="text-destructive break-words text-sm">
-            {error}
-          </p>
+          <div role="alert" className="text-destructive break-words text-sm">
+            <BackupError error={error} />
+          </div>
         )}
       </main>
     </div>

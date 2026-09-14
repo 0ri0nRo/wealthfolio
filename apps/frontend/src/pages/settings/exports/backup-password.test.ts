@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { generateBackupPassphrase, isValidBackupPassword } from "./backup-password";
-import words from "./eff-wordlist.json";
+import { generateBackupPassword, isValidBackupPassword } from "./backup-password";
 
 afterEach(() => vi.restoreAllMocks());
 describe("backup passwords", () => {
@@ -11,20 +10,22 @@ describe("backup passwords", () => {
     expect(isValidBackupPassword("a".repeat(1025))).toBe(false);
     expect(isValidBackupPassword("  twelve words ")).toBe(true);
   });
-  it("rejects biased tail samples and has more than 80 bits of generated entropy", () => {
-    expect(new Set(words).size).toBe(1296);
-    expect(8 * Math.log2(words.length)).toBeGreaterThan(80);
-    const samples = [65535, 0, 1295, 1296, 1, 2, 3, 4, 5];
+  it("uses secure randomness and rejects biased tail samples", () => {
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+    const limit = Math.floor(256 / alphabet.length) * alphabet.length;
+    const samples = [255, limit, 0, alphabet.length - 1, ...Array<number>(22).fill(1)];
     vi.spyOn(crypto, "getRandomValues").mockImplementation((array) => {
-      (array as Uint16Array)[0] = samples.shift()!;
+      (array as Uint8Array)[0] = samples.shift()!;
       return array;
     });
-    expect(generateBackupPassphrase().split(" ")).toEqual([
-      words[0],
-      words[1295],
-      words[0],
-      ...words.slice(1, 6),
-    ]);
+    expect(generateBackupPassword()).toBe(`A9${"B".repeat(22)}`);
     expect(samples).toHaveLength(0);
+  });
+  it("creates valid 24-character passwords without ambiguous characters", () => {
+    for (let index = 0; index < 32; index++) {
+      const password = generateBackupPassword();
+      expect(password).toMatch(/^[A-HJ-NP-Za-km-np-z2-9]{24}$/);
+      expect(isValidBackupPassword(password)).toBe(true);
+    }
   });
 });

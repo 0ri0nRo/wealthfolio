@@ -66,6 +66,17 @@ it("discards an unconfirmed preview on unmount", async () => {
   expect(mocks.discard).toHaveBeenCalledWith("immutable-id");
   expect(mocks.confirm).not.toHaveBeenCalled();
 });
+it("explains a failed backup check without offering restore", async () => {
+  mocks.saved.mockRejectedValueOnce(new Error("SQLCipher failure"));
+  mount("old.db");
+  fireEvent.click(screen.getByRole("button", { name: copy.recovery_inspect }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(copy.backup_action_failed);
+  expect(screen.getByText("SQLCipher failure").closest("details")).not.toHaveAttribute("open");
+  expect(
+    screen.queryByRole("button", { name: copy.backup_confirm_restore }),
+  ).not.toBeInTheDocument();
+  expect(mocks.confirm).not.toHaveBeenCalled();
+});
 it("inspects the native selected file and preserves exact password whitespace", async () => {
   mount();
   fireEvent.click(screen.getByRole("button", { name: copy.recovery_choose_file }));
@@ -81,4 +92,20 @@ it("inspects the native selected file and preserves exact password whitespace", 
     expect.any(AbortSignal),
   );
   expect(mocks.confirm).not.toHaveBeenCalled();
+});
+
+it("preserves native restore instructions and requires inspection again after failure", async () => {
+  const reason = "This backup preview has expired. Inspect the backup again before restoring.";
+  mocks.confirm.mockRejectedValueOnce(reason);
+  mount("old.db");
+  fireEvent.click(screen.getByRole("button", { name: copy.recovery_inspect }));
+  fireEvent.click(await screen.findByRole("button", { name: copy.backup_confirm_restore }));
+  const details = await screen.findByText(reason);
+  expect(details.closest("details")).not.toHaveAttribute("open");
+  fireEvent.click(screen.getByText(copy.recovery_details));
+  expect(details.closest("details")).toHaveAttribute("open");
+  expect(
+    screen.queryByRole("button", { name: copy.backup_confirm_restore }),
+  ).not.toBeInTheDocument();
+  expect(mocks.reload).not.toHaveBeenCalled();
 });

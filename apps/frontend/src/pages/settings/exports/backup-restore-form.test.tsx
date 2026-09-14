@@ -1,5 +1,8 @@
 import { fireEvent, render, screen } from "@/test/render";
 import { beforeEach, expect, it, vi } from "vitest";
+import { createInstance } from "i18next";
+import { I18nextProvider } from "react-i18next";
+import { SUPPORTED_LOCALE_CODES } from "@/i18n/locales";
 import copy from "@/i18n/locales/en/settings.json";
 import { BackupRestoreForm } from "./backup-restore-form";
 const mocks = vi.hoisted(() => ({
@@ -8,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
   loading: false,
   error: false,
+  removing: false,
   web: true,
   data: [
     {
@@ -38,7 +42,7 @@ vi.mock("./use-backup-restore", () => ({
       refetch: mocks.retry,
     },
     create: { mutate: mocks.create, isPending: false },
-    remove: { mutate: mocks.remove, isPending: false },
+    remove: { mutate: mocks.remove, isPending: mocks.removing },
   }),
 }));
 vi.mock("./backup-export-dialog", () => ({
@@ -50,6 +54,8 @@ vi.mock("./backup-import-dialog", () => ({
   ),
 }));
 beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.removing = false;
   mocks.loading = false;
   mocks.error = false;
   mocks.web = true;
@@ -66,17 +72,22 @@ beforeEach(() => {
 it("shows actual snapshot protection and exports the selected snapshot", () => {
   render(<BackupRestoreForm />);
   expect(screen.getByText(new RegExp(copy.backup_protection_encrypted))).toBeVisible();
-  fireEvent.click(screen.getByRole("button", { name: "Export old.db" }));
+  fireEvent.click(screen.getByRole("button", { name: /^Export Backup from Sep 1, 2026/ }));
   expect(screen.getByText("Exporting old.db")).toBeVisible();
 });
 it("native opens review for saved snapshots and disables unavailable snapshots", () => {
   mocks.web = false;
-  mocks.data.push({ ...mocks.data[0], filename: "unknown.db", protection: "unavailable" });
+  mocks.data.push({
+    ...mocks.data[0],
+    filename: "unknown.db",
+    modifiedAt: "2026-09-02T12:00:00Z",
+    protection: "unavailable",
+  });
   render(<BackupRestoreForm />);
-  expect(screen.getByRole("button", { name: "Restore unknown.db" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Export unknown.db" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: /Delete.*unknown.db/ })).toBeEnabled();
-  fireEvent.click(screen.getByRole("button", { name: "Restore old.db" }));
+  expect(screen.getByRole("button", { name: /^Restore Backup from Sep 2, 2026/ })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /^Export Backup from Sep 2, 2026/ })).toBeDisabled();
+  expect(screen.getByRole("button", { name: /^Delete Backup from Sep 2, 2026/ })).toBeEnabled();
+  fireEvent.click(screen.getByRole("button", { name: /^Restore Backup from Sep 1, 2026/ }));
   expect(screen.getByText("Inspecting old.db")).toBeVisible();
 });
 it("native offers file restore alongside managed creation", () => {
@@ -90,7 +101,7 @@ it("native offers file restore alongside managed creation", () => {
 it("shows list failure and retry instead of an empty success state", () => {
   mocks.error = true;
   render(<BackupRestoreForm />);
-  expect(screen.getByRole("alert")).toHaveTextContent(copy.backup_load_error);
+  expect(screen.getByRole("alert")).toHaveTextContent(copy.backup_action_failed);
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(mocks.retry).toHaveBeenCalled();
 });
@@ -118,9 +129,47 @@ it("web offers backup management without any restore controls", () => {
   expect(
     screen.queryByRole("button", { name: copy.backup_restore_from_file }),
   ).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Restore old.db" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Export old.db" })).toBeEnabled();
-  expect(screen.getByRole("button", { name: /Delete.*old.db/ })).toBeEnabled();
+  expect(
+    screen.queryByRole("button", { name: /^Restore Backup from Sep 1, 2026/ }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^Export Backup from Sep 1, 2026/ })).toBeEnabled();
+  expect(screen.getByRole("button", { name: /^Delete Backup from Sep 1, 2026/ })).toBeEnabled();
   fireEvent.click(screen.getByRole("button", { name: copy.backup_now }));
   expect(mocks.create).toHaveBeenCalled();
 });
+
+const catalogs = import.meta.glob<Record<string, string>>(
+  "../../../i18n/locales/*/{common,settings}.json",
+  {
+    eager: true,
+    import: "default",
+  },
+);
+
+it.each(SUPPORTED_LOCALE_CODES)(
+  "localizes delete confirmation and pending copy in %s",
+  async (locale) => {
+    const common = catalogs[`../../../i18n/locales/${locale}/common.json`];
+    const settings = catalogs[`../../../i18n/locales/${locale}/settings.json`];
+    const i18n = createInstance();
+    await i18n.init({
+      lng: locale,
+      fallbackLng: false,
+      resources: { [locale]: { common, settings } },
+      interpolation: { escapeValue: false },
+    });
+    const view = () => (
+      <I18nextProvider i18n={i18n}>
+        <BackupRestoreForm />
+      </I18nextProvider>
+    );
+    const { rerender } = render(view());
+    fireEvent.click(screen.getByTitle(common.delete));
+    expect(screen.getByRole("button", { name: common.cancel })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: common.delete }));
+    expect(mocks.remove).toHaveBeenCalledWith("old.db");
+    mocks.removing = true;
+    rerender(view());
+    expect(screen.getByRole("button", { name: settings.backup_deleting })).toBeDisabled();
+  },
+);

@@ -1,3 +1,4 @@
+import { BackupError, type BackupFailure } from "@/pages/settings/exports/backup-error";
 import { reloadApplication } from "@/lib/reload-application";
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -21,14 +22,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@wealthfolio/ui/components/ui/dialog";
-import { Input } from "@wealthfolio/ui/components/ui/input";
+import { PasswordInput } from "@wealthfolio/ui/components/ui/password-input";
+import { Icons } from "@wealthfolio/ui/components/ui/icons";
 import { Label } from "@wealthfolio/ui/components/ui/label";
 
 export function BackupImportDialog({
   filename,
+  displayName,
   onClose,
 }: {
   filename?: string;
+  displayName?: string;
   onClose: () => void;
 }) {
   const { t, i18n } = useTranslation();
@@ -39,10 +43,9 @@ export function BackupImportDialog({
   });
   const [selected, setSelected] = useState<string | null>(null);
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [preview, setPreview] = useState<BackupImportPreview | null>(null);
   const [pending, setPending] = useState<"inspect" | "restore" | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<BackupFailure | null>(null);
   const operation = useRef<AbortController | null>(null);
   const previewId = useRef<string | null>(null);
   useEffect(
@@ -74,8 +77,8 @@ export function BackupImportDialog({
         previewId.current = result.id;
         setPreview(result);
       }
-    } catch (error) {
-      if (!controller.signal.aborted) setError(String(error));
+    } catch (cause) {
+      if (!controller.signal.aborted) setError({ cause });
     } finally {
       setPassword("");
       setPending(null);
@@ -89,8 +92,8 @@ export function BackupImportDialog({
     try {
       await restoreDatabaseBackupImport(preview.id);
       reloadApplication();
-    } catch (error) {
-      setError(String(error));
+    } catch (cause) {
+      setError({ cause });
       setPreview(null);
       setPending(null);
     }
@@ -103,8 +106,8 @@ export function BackupImportDialog({
         setPassword("");
         setError(null);
       }
-    } catch (error) {
-      setError(String(error));
+    } catch (cause) {
+      setError({ cause });
     }
   };
   const created = preview?.summary.createdAt ? new Date(preview.summary.createdAt) : null;
@@ -129,23 +132,27 @@ export function BackupImportDialog({
         </DialogHeader>
         {preview ? (
           <div className="space-y-4">
-            <h3 className="font-medium">{t("settings:recovery_preview")}</h3>
-            <p>
-              {t("settings:recovery_counts", {
-                accounts: preview.summary.accountCount,
-                activities: preview.summary.activityCount,
-              })}
-            </p>
-            {created && !Number.isNaN(created.getTime()) && (
-              <p>
-                {t("settings:recovery_created", {
-                  date: created.toLocaleString(i18n.resolvedLanguage),
+            <div className="bg-muted/50 space-y-2 rounded-lg p-4">
+              <h3 className="text-muted-foreground text-xs font-medium">
+                {t("settings:recovery_preview")}
+              </h3>
+              <p className="text-sm font-medium">
+                {t("settings:recovery_counts", {
+                  accounts: preview.summary.accountCount,
+                  activities: preview.summary.activityCount,
                 })}
               </p>
-            )}
-            <p>{t("settings:backup_import_confirmation")}</p>
+              {created && !Number.isNaN(created.getTime()) && (
+                <p className="text-muted-foreground text-xs">
+                  {t("settings:recovery_created", {
+                    date: created.toLocaleString(i18n.resolvedLanguage),
+                  })}
+                </p>
+              )}
+            </div>
+            <p className="text-sm leading-relaxed">{t("settings:backup_import_confirmation")}</p>
             {encryption.data && (
-              <p>
+              <p className="text-muted-foreground text-xs leading-relaxed">
                 {t(
                   encryption.data.enabled
                     ? "settings:backup_destination_encrypted"
@@ -153,8 +160,10 @@ export function BackupImportDialog({
                 )}
               </p>
             )}
-            <p className="text-muted-foreground text-sm">{t("settings:backup_import_reconnect")}</p>
-            <DialogFooter>
+            <p className="text-muted-foreground text-xs leading-relaxed">
+              {t("settings:backup_import_reconnect")}
+            </p>
+            <DialogFooter className="border-t pt-4">
               <Button variant="outline" disabled={pending === "restore"} onClick={close}>
                 {t("common:cancel")}
               </Button>
@@ -173,25 +182,35 @@ export function BackupImportDialog({
         ) : (
           <form className="space-y-4" onSubmit={inspect}>
             {filename ? (
-              <p className="break-all text-sm">{filename}</p>
+              <div className="bg-muted/50 flex min-w-0 items-center gap-3 rounded-lg p-3">
+                <Icons.FileArchive className="text-muted-foreground size-5 shrink-0" aria-hidden />
+                <p className="min-w-0 break-words text-sm font-medium" title={filename}>
+                  {displayName ?? filename}
+                </p>
+              </div>
             ) : (
               <>
                 <Button
                   type="button"
                   variant="outline"
+                  className="w-full border-dashed"
                   disabled={pending !== null}
                   onClick={() => void choose()}
                 >
+                  <Icons.FolderOpen className="mr-2 size-4" aria-hidden />
                   {t(selected ? "settings:recovery_change_file" : "settings:recovery_choose_file")}
                 </Button>
                 {typeof selected === "string" && (
-                  <p className="break-all text-sm">{selected.split(/[\\/]/).pop()}</p>
+                  <p className="bg-muted/50 break-all rounded-lg p-3 text-sm">
+                    {selected.split(/[\\/]/).pop()}
+                  </p>
                 )}
                 <div className="space-y-2">
                   <Label htmlFor={`${id}-password`}>{t("settings:recovery_password")}</Label>
-                  <Input
+                  <PasswordInput
                     id={`${id}-password`}
-                    type={showPassword ? "text" : "password"}
+                    showLabel={t("settings:backup_export_show")}
+                    hideLabel={t("settings:backup_export_hide")}
                     autoComplete="off"
                     autoCapitalize="none"
                     spellCheck={false}
@@ -199,24 +218,13 @@ export function BackupImportDialog({
                     disabled={pending !== null}
                     onChange={(event) => setPassword(event.target.value)}
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={pending !== null}
-                    onClick={() => setShowPassword(!showPassword)}
-                  >
-                    {t(
-                      showPassword ? "settings:backup_export_hide" : "settings:backup_export_show",
-                    )}
-                  </Button>
-                  <p className="text-muted-foreground text-sm">
+                  <p className="text-muted-foreground text-xs leading-relaxed">
                     {t("settings:recovery_password_help")}
                   </p>
                 </div>
               </>
             )}
-            <DialogFooter>
+            <DialogFooter className="border-t pt-4">
               <Button type="button" variant="outline" onClick={close}>
                 {t("common:cancel")}
               </Button>
@@ -232,9 +240,9 @@ export function BackupImportDialog({
         )}
         {encryption.isError && <p role="alert">{t("settings:backup_encryption_status_failed")}</p>}
         {error && (
-          <p role="alert" className="text-destructive break-words text-sm">
-            {error}
-          </p>
+          <div role="alert" className="text-destructive break-words text-sm">
+            <BackupError error={error} />
+          </div>
         )}
       </DialogContent>
     </Dialog>

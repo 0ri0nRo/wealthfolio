@@ -1,3 +1,5 @@
+import { createElement } from "react";
+import { BackupError } from "./backup-error";
 import { backupDatabase, deleteDatabaseBackup, listDatabaseBackups } from "@/adapters";
 import { QueryKeys } from "@/lib/query-keys";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -14,10 +16,9 @@ export function useBackupRestore() {
     refetchOnMount: "always",
   });
   const refresh = () => queryClient.invalidateQueries({ queryKey: [QueryKeys.DATABASE_BACKUPS] });
-  const reportError = (error: unknown) =>
+  const reportError = (cause: unknown) =>
     toast({
-      title: t("settings:backup_action_failed"),
-      description: String(error),
+      description: createElement(BackupError, { error: { cause } }),
       variant: "destructive",
     });
   const create = useMutation({
