@@ -329,11 +329,22 @@ impl DatabaseRuntime {
     }
 
     pub fn retained_key(&self) -> std::result::Result<Option<Arc<DbEncryptionKey>>, String> {
-        self.check_state()?;
-        self.key_provider
-            .existing()
-            .map(|key| key.map(Arc::new))
-            .map_err(|error| error.to_string())
+        if let Some(key) = self
+            .current_access()?
+            .and_then(|access| access.key().cloned())
+        {
+            return Ok(Some(key));
+        }
+        // Plaintext and password-protected backups do not need the installation
+        // key. Snapshot inspection already reports encrypted files unavailable
+        // when their original key cannot be read.
+        match self.key_provider.existing() {
+            Ok(key) => Ok(key.map(Arc::new)),
+            Err(error) => {
+                warn!("Could not read the installation key for backups: {error}");
+                Ok(None)
+            }
+        }
     }
 
     /// The live services.
@@ -1085,6 +1096,7 @@ mod tests {
                 Some(DatabaseUnavailable::StatePoisoned)
             );
             assert!(runtime.import_lease().is_err());
+            assert!(runtime.retained_key().is_err());
             assert!(runtime.has_pool_users().is_err());
             assert!(runtime.has_outstanding_jobs().is_err());
             let status = runtime.startup_status();
@@ -1178,6 +1190,7 @@ mod tests {
     #[derive(Default)]
     struct FakeSecretStore {
         stored: StdMutex<Option<String>>,
+        unreadable: bool,
         /// Drop every write instead of keeping it, like a keyring backend
         /// writing to a collection that does not survive the session.
         forgetful: bool,
@@ -1192,6 +1205,11 @@ mod tests {
         }
 
         fn get_secret(&self, _service: &str) -> CoreResult<Option<String>> {
+            if self.unreadable {
+                return Err(Error::Database(DatabaseError::Encryption(
+                    "The keychain is unavailable".into(),
+                )));
+            }
             Ok(self.stored.lock().unwrap().clone())
         }
 
@@ -1226,6 +1244,43 @@ mod tests {
         finish_tx.send(()).unwrap();
         done_rx.await.unwrap();
         assert!(!runtime.has_outstanding_jobs().unwrap());
+    }
+
+    #[test]
+    fn backups_without_an_installation_key_work_when_the_keychain_is_unavailable() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().to_str().unwrap();
+        let mut runtime = DatabaseRuntime::new(root.into());
+        runtime.key_provider = Arc::new(KeychainKeyProvider::new(Arc::new(FakeSecretStore {
+            unreadable: true,
+            ..Default::default()
+        })));
+        let key = runtime.retained_key().unwrap();
+        assert!(key.is_none());
+
+        let source = DbAccess::plaintext(db::get_db_path(root));
+        source.prepare().unwrap();
+        source.run_migrations().unwrap();
+        let snapshot =
+            db::snapshots::create(&source, root, db::snapshots::SnapshotReason::Manual).unwrap();
+        let listed = db::snapshots::list(root, key.clone()).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].protection, "unencrypted");
+        let lease =
+            db::snapshots::acquire(root, snapshot.file_name().unwrap().to_str().unwrap()).unwrap();
+        let saved = lease.access(key.clone()).unwrap();
+
+        for password in [None, Some("backup test password")] {
+            let exported = db::portable::export(&saved, directory.path(), password).unwrap();
+            let prepared = db::portable::prepare_import(
+                &exported.path,
+                directory.path(),
+                password,
+                key.clone(),
+            )
+            .unwrap();
+            assert!(prepared.access.connect_rusqlite().is_ok());
+        }
     }
 
     #[test]
