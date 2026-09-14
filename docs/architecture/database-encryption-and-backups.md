@@ -274,6 +274,31 @@ recover portfolio data rather than credentials. There is no database
 master-password login, exported device-key recovery code, automatic backup
 scheduling, key rotation, or online server restore in this design.
 
+## Runtime failure policy
+
+Database lifecycle locks reject poisoned state with a restart-required error.
+Startup status remains readable and disables recovery when runtime ownership or
+job tracking can no longer be trusted. Encryption status propagates that error;
+it must not report an unavailable database as unencrypted. Backup import/export
+registries and pairing state likewise reject work after poisoning.
+
+Snapshot leases retain their initialized registry. Their destructors remove only
+their own lease even if the registry is poisoned, without clearing poison or
+panicking during unwinding. New leases remain blocked until restart. Disposable
+MCP timestamp throttling can instead clear and rebuild its cache; token
+validation is independent of that cache.
+
+Fallible startup configuration returns errors, including incomplete OIDC
+settings and invalid CORS header values. Authentication requirements still
+reject startup. Tauri commands preserve their existing response shapes and
+propagate failures through `Result`; web handlers return internal errors for
+unavailable state.
+
+Fixed cryptographic/configuration invariants and terminal application
+construction retain `expect` calls. Propagate recoverable failures rather than
+replacing them with empty values. Keep synchronous critical sections short and
+release guards before awaits.
+
 ## Source map
 
 | Responsibility                     | Implementation                                                                                                                                                                              |
