@@ -20,8 +20,8 @@ use wealthfolio_spending::cash_activities::{
     CashActivity, CashActivityFilter, CashActivitySearchRequest, CashActivitySearchResponse,
 };
 use wealthfolio_spending::categorization_rules::{
-    CategorizationRule, CategorizationRulesService, ImportPresetResult, NewCategorizationRule,
-    RemovePresetResult, RulePresetSummary, UpdateCategorizationRule,
+    CategorizationRule, ImportPresetResult, NewCategorizationRule, RemovePresetResult,
+    RulePresetSummary, UpdateCategorizationRule,
 };
 use wealthfolio_spending::events::{Event, EventType, NewEvent, NewEventType, UpdateEvent};
 use wealthfolio_spending::insight::{SpendingInsight, SpendingInsightRequest};
@@ -36,12 +36,14 @@ const MAX_BULK_CATEGORY_ASSIGNMENTS: usize = 1_000;
 ///
 /// Errors are logged, never propagated — the originating command (e.g. saving
 /// settings) succeeds independently of the background categorize.
-fn spawn_auto_categorize(rules_service: Arc<CategorizationRulesService>, account_ids: Vec<String>) {
+fn spawn_auto_categorize(context: Arc<ServiceContext>, account_ids: Vec<String>) {
     if account_ids.is_empty() {
         return;
     }
     tauri::async_runtime::spawn(async move {
-        match rules_service
+        // Keep the context alive so database maintenance can see this job.
+        match context
+            .categorization_rules_service()
             .rerun_all(&account_ids, /* only_uncategorized */ true)
             .await
         {
@@ -72,7 +74,7 @@ async fn spawn_auto_categorize_for_opted_in_accounts(state: &Arc<ServiceContext>
     if !settings.enabled {
         return;
     }
-    spawn_auto_categorize(state.categorization_rules_service(), settings.account_ids);
+    spawn_auto_categorize(Arc::clone(state), settings.account_ids);
 }
 
 async fn spending_enabled(state: &Arc<ServiceContext>) -> Result<bool, String> {
@@ -127,7 +129,7 @@ pub async fn update_spending_settings(
     } else {
         Vec::new()
     };
-    spawn_auto_categorize(context.categorization_rules_service(), to_categorize);
+    spawn_auto_categorize(Arc::clone(&context), to_categorize);
     Ok(after)
 }
 

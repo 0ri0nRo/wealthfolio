@@ -179,6 +179,11 @@ rebuilds services. Failed rebuilds can restore the pre-operation snapshot before
 reopening. Desktop completion restarts the app; mobile rebuilds and refreshes
 its UI.
 
+Native pools retain the existing database owner inside r2d2. After services are
+dropped, maintenance waits for that owner's pool references to drain before
+replacing files. This also covers raw pool clones and nested blocking jobs that
+survive cancellation of their caller; retries and recovery apply the same check.
+
 Database-dependent frontend providers wait behind native startup readiness. When
 startup cannot open the database, recovery can validate a portable backup and
 preserve the original main/WAL/SHM files in a `recovery-original-*` directory

@@ -171,11 +171,7 @@ fn handle_portfolio_request(handle: AppHandle, payload_str: &str, force_recalc: 
                                     .map(|(asset_id, reason)| (asset_id, reason.to_string()))
                                     .collect();
 
-                                let health_service = context.health_service();
-                                let health_clone = health_service.clone();
-                                spawn(async move {
-                                    health_clone.clear_cache().await;
-                                });
+                                context.health_service().clear_cache().await;
 
                                 let result_payload = MarketSyncResult {
                                     failed_syncs,

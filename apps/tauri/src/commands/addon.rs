@@ -85,10 +85,14 @@ pub async fn load_addon_asset(
 ) -> Result<tauri::ipc::Response, String> {
     let context = state.context()?;
     let addon_service = addon_service(&app_handle, &context)?;
-    let asset =
-        tokio::task::spawn_blocking(move || addon_service.load_addon_asset(&addon_id, &asset_id))
-            .await
-            .map_err(|error| format!("Addon asset task failed: {error}"))??;
+    let asset = tokio::task::spawn_blocking(move || {
+        let result = addon_service.load_addon_asset(&addon_id, &asset_id);
+        drop(addon_service);
+        drop(context);
+        result
+    })
+    .await
+    .map_err(|error| format!("Addon asset task failed: {error}"))??;
     Ok(tauri::ipc::Response::new(asset.bytes))
 }
 

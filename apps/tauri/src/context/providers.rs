@@ -80,10 +80,11 @@ pub struct ContextInitResult {
 pub async fn initialize_context(
     app_data_dir: &str,
     access: &db::DbAccess,
+    owner: Arc<db::DatabaseOwner>,
 ) -> Result<ContextInitResult, Box<dyn std::error::Error>> {
     access.run_migrations()?;
 
-    let pool = access.create_pool()?;
+    let pool = access.create_pool_with_owner(owner)?;
     initialize_with_pool(app_data_dir, pool).await
 }
 

@@ -10,7 +10,8 @@
 //!
 //! So the *managed* value is this stable handle and the *contents* are what
 //! maintenance takes. Repository constructors are untouched: they keep taking
-//! `Arc<DbPool>`, and every one of those clones dies with the context.
+//! `Arc<DbPool>`. The pool also retains the runtime owner, so teardown detects
+//! service or connection clones that outlive their context.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -429,7 +430,9 @@ impl DatabaseRuntime {
                 if live.is_some() {
                     return Ok(());
                 }
-                if runtime.startup_error.lock().unwrap().is_none() || runtime.has_outstanding_jobs()
+                if runtime.startup_error.lock().unwrap().is_none()
+                    || runtime.has_outstanding_jobs()
+                    || runtime.has_pool_users()
                 {
                     return Err("Database startup or backup inspection is still running.".into());
                 }
@@ -447,7 +450,13 @@ impl DatabaseRuntime {
         handle: &AppHandle,
         access: DbAccess,
     ) -> std::result::Result<Arc<ServiceContext>, String> {
-        let init = initialize_context(&self.app_data_dir, &access)
+        let owner = self
+            .owner
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or_else(|| "Database ownership is not available.".to_string())?;
+        let init = initialize_context(&self.app_data_dir, &access, owner)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -615,6 +624,8 @@ impl DatabaseRuntime {
             error!("Failed to rebuild the database runtime: {}", rebuild_error);
             if let Ok(completed) = &outcome {
                 if let Some(backup) = &completed.pre_operation_backup {
+                    self.wait_for_pool_release(Instant::now() + OWNERSHIP_WAIT)
+                        .await?;
                     // Construction failure stops and joins its writer before
                     // returning. No background work starts on that path.
                     let owner = self
@@ -733,6 +744,26 @@ impl DatabaseRuntime {
         }
         drop(context);
 
+        self.wait_for_pool_release(deadline).await
+    }
+
+    // The pool retains this existing owner in its r2d2 customizer. Unlike a
+    // context count, this also sees raw pool clones and nested blocking jobs.
+    fn has_pool_users(&self) -> bool {
+        self.owner
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|owner| Arc::strong_count(owner) > 1)
+    }
+
+    async fn wait_for_pool_release(&self, deadline: Instant) -> std::result::Result<(), String> {
+        while self.has_pool_users() && Instant::now() < deadline {
+            tokio::time::sleep(OWNERSHIP_POLL).await;
+        }
+        if self.has_pool_users() {
+            return Err("Background database work is still running. Wait for it to finish before retrying database maintenance.".into());
+        }
         Ok(())
     }
 
@@ -812,8 +843,8 @@ impl DatabaseRuntime {
             let _gate = MaintenanceGate(&runtime.maintenance);
             {
                 let live = runtime.live.lock().unwrap();
-                if live.is_some() || runtime.has_outstanding_jobs() {
-                    return Err("Wait for backup inspection to finish before recovery.".into());
+                if live.is_some() || runtime.has_outstanding_jobs() || runtime.has_pool_users() {
+                    return Err("Wait for background database work or backup inspection to finish before recovery.".into());
                 }
             }
             let candidate = runtime.backup_imports.take(id, "native").map_err(|e| e.to_string())?;
@@ -979,6 +1010,43 @@ mod tests {
 
     fn runtime() -> DatabaseRuntime {
         DatabaseRuntime::new("/tmp/wealthfolio-test".to_string())
+    }
+
+    #[tokio::test]
+    async fn cancelled_caller_cannot_hide_a_blocking_pool_user_from_maintenance() {
+        let directory = tempfile::tempdir().unwrap();
+        let runtime = DatabaseRuntime::new(directory.path().to_string_lossy().into_owned());
+        let path = db::get_db_path(runtime.app_data_dir());
+        let owner = Arc::new(DatabaseOwner::acquire(&path).unwrap());
+        let pool = DbAccess::plaintext(&path)
+            .create_pool_with_owner(Arc::clone(&owner))
+            .unwrap();
+        *runtime.owner.lock().unwrap() = Some(owner);
+        // Raw r2d2 clones can outlive every ServiceContext and outer Arc<DbPool>.
+        let raw_pool = pool.as_ref().clone();
+        drop(pool);
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let caller = tokio::spawn(async move {
+            tokio::task::spawn_blocking(move || {
+                let connection = raw_pool.get().unwrap();
+                started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                drop(connection);
+            })
+            .await
+            .unwrap();
+        });
+        started_rx.await.unwrap();
+        caller.abort();
+        assert!(caller.await.unwrap_err().is_cancelled());
+        assert!(runtime.wait_for_pool_release(Instant::now()).await.is_err());
+        release_tx.send(()).unwrap();
+        runtime
+            .wait_for_pool_release(Instant::now() + OWNERSHIP_WAIT)
+            .await
+            .unwrap();
+        assert!(!runtime.has_pool_users());
     }
 
     #[test]

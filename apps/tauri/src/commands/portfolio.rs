@@ -850,7 +850,7 @@ pub async fn calculate_performance_summary(
             performance_account_tracking_modes_from_map(&accounts_by_id, &account_ids);
         let account_types = performance_account_types_from_map(&accounts_by_id, &account_ids);
         let tracking_composition = performance_tracking_composition(&tracking_modes, &account_ids);
-        let performance_service = context.performance_service();
+        let task_context = Arc::clone(&context);
         let handle = tokio::runtime::Handle::current();
         let scope_id_for_task = resolved.scope_id.clone();
         let base_currency_for_task = resolved.base_currency.clone();
@@ -859,7 +859,8 @@ pub async fn calculate_performance_summary(
         let account_types_for_task = account_types.clone();
         let mut result = tokio::task::spawn_blocking(move || {
             handle.block_on(async move {
-                performance_service
+                task_context
+                    .performance_service()
                     .calculate_performance_summary_for_accounts(
                         &scope_id_for_task,
                         &account_ids_for_task,
@@ -984,9 +985,8 @@ pub async fn get_performance_summaries(
             account_ids: scope.account_ids,
         })
         .collect();
-    let performance_service = context.performance_service();
     let batch = calculate_performance_summary_batch_for_accounts(
-        performance_service,
+        context.performance_service(),
         batch_scopes,
         accounts_by_id,
         base_currency,
