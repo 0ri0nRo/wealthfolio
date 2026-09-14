@@ -10,7 +10,6 @@ use crate::database::DatabaseRuntime;
 use async_trait::async_trait;
 use log::{debug, info, warn};
 use std::collections::HashMap;
-use std::process::Command;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::{AppHandle, State};
@@ -20,13 +19,10 @@ use crate::secret_store::KeyringSecretStore;
 use wealthfolio_core::secrets::SecretStore;
 use wealthfolio_device_sync::engine as shared_sync_engine;
 use wealthfolio_device_sync::{
-    ClaimPairingRequest, ClaimPairingResponse, CommitInitializeKeysRequest,
-    CommitInitializeKeysResponse, CommitRotateKeysRequest, CommitRotateKeysResponse,
-    CompletePairingRequest, CompletePairingResponse, ConfirmPairingRequest, ConfirmPairingResponse,
-    CreatePairingRequest, CreatePairingResponse, Device, DevicePlatform, DeviceSyncClient,
-    EnrollDeviceResponse, GetPairingResponse, InitializeKeysResult, PairingMessagesResponse,
-    RegisterDeviceRequest, ResetTeamSyncResponse, RotateKeysResponse, SuccessResponse,
-    UpdateDeviceRequest,
+    ClaimPairingRequest, ClaimPairingResponse, CompletePairingRequest, CompletePairingResponse,
+    ConfirmPairingRequest, ConfirmPairingResponse, CreatePairingRequest, CreatePairingResponse,
+    Device, DeviceSyncClient, GetPairingResponse, PairingMessagesResponse, ResetTeamSyncResponse,
+    SuccessResponse, UpdateDeviceRequest,
 };
 use wealthfolio_storage_sqlite::sync::SyncTableRowCount;
 
@@ -550,174 +546,8 @@ fn decrypt_sync_payload(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// OS version detection
-// ─────────────────────────────────────────────────────────────────────────────
-
-fn get_os_version() -> Option<String> {
-    let version = get_os_version_impl();
-    if version.is_none() {
-        debug!("[DeviceSync] Could not detect OS version");
-    }
-    version
-}
-
-#[cfg(target_os = "macos")]
-fn get_os_version_impl() -> Option<String> {
-    Command::new("sw_vers")
-        .arg("-productVersion")
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                String::from_utf8(o.stdout).ok()
-            } else {
-                None
-            }
-        })
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-#[cfg(target_os = "windows")]
-fn get_os_version_impl() -> Option<String> {
-    Command::new("powershell")
-        .args([
-            "-NoProfile",
-            "-Command",
-            "[System.Environment]::OSVersion.Version.ToString()",
-        ])
-        .output()
-        .ok()
-        .and_then(|o| {
-            if o.status.success() {
-                String::from_utf8(o.stdout).ok()
-            } else {
-                None
-            }
-        })
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-#[cfg(target_os = "linux")]
-fn get_os_version_impl() -> Option<String> {
-    std::fs::read_to_string("/etc/os-release")
-        .ok()
-        .and_then(|content| {
-            content
-                .lines()
-                .find(|l| l.starts_with("VERSION_ID="))
-                .map(|l| {
-                    l.trim_start_matches("VERSION_ID=")
-                        .trim_matches('"')
-                        .to_string()
-                })
-        })
-        .or_else(|| {
-            std::fs::read_to_string("/etc/lsb-release")
-                .ok()
-                .and_then(|content| {
-                    content
-                        .lines()
-                        .find(|l| l.starts_with("DISTRIB_RELEASE="))
-                        .map(|l| {
-                            l.trim_start_matches("DISTRIB_RELEASE=")
-                                .trim_matches('"')
-                                .to_string()
-                        })
-                })
-        })
-        .or_else(|| {
-            Command::new("uname")
-                .arg("-r")
-                .output()
-                .ok()
-                .and_then(|o| String::from_utf8(o.stdout).ok())
-                .map(|s| s.trim().to_string())
-        })
-        .filter(|s| !s.is_empty())
-}
-
-#[cfg(target_os = "ios")]
-fn get_os_version_impl() -> Option<String> {
-    None
-}
-
-#[cfg(target_os = "android")]
-fn get_os_version_impl() -> Option<String> {
-    None
-}
-
-#[cfg(not(any(
-    target_os = "macos",
-    target_os = "windows",
-    target_os = "linux",
-    target_os = "ios",
-    target_os = "android"
-)))]
-fn get_os_version_impl() -> Option<String> {
-    None
-}
-
-fn get_app_version() -> Option<String> {
-    Some(env!("CARGO_PKG_VERSION").to_string())
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Device Management
 // ─────────────────────────────────────────────────────────────────────────────
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn enroll_device(
-    device_nonce: String,
-    display_name: String,
-    state: State<'_, DatabaseRuntime>,
-) -> Result<EnrollDeviceResponse, String> {
-    let context = state.context()?;
-    info!("[DeviceSync] Enrolling device: {}", display_name);
-
-    let token = get_access_token(&context).await?;
-    let client = create_client()?;
-
-    let platform = DevicePlatform::detect().to_string();
-    let os_version = get_os_version();
-    let app_version = get_app_version();
-
-    info!(
-        "[DeviceSync] Platform: {}, OS version: {:?}, App version: {:?}",
-        platform, os_version, app_version
-    );
-
-    let request = RegisterDeviceRequest {
-        device_nonce,
-        display_name,
-        platform,
-        os_version,
-        app_version,
-    };
-
-    let result = client
-        .enroll_device(&token, request)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let device_id = match &result {
-        EnrollDeviceResponse::Bootstrap { device_id, .. } => device_id,
-        EnrollDeviceResponse::Pair { device_id, .. } => device_id,
-        EnrollDeviceResponse::Ready { device_id, .. } => device_id,
-    };
-
-    info!(
-        "[DeviceSync] Device enrolled: {} (mode: {:?})",
-        device_id,
-        match &result {
-            EnrollDeviceResponse::Bootstrap { .. } => "BOOTSTRAP",
-            EnrollDeviceResponse::Pair { .. } => "PAIR",
-            EnrollDeviceResponse::Ready { .. } => "READY",
-        }
-    );
-    Ok(result)
-}
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn get_device(
@@ -815,102 +645,8 @@ pub async fn revoke_device(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Team Keys (E2EE)
+// Sync reset
 // ─────────────────────────────────────────────────────────────────────────────
-
-#[tauri::command]
-pub async fn initialize_team_keys(
-    state: State<'_, DatabaseRuntime>,
-) -> Result<InitializeKeysResult, String> {
-    let context = state.context()?;
-    info!("[DeviceSync] Initializing team keys...");
-
-    let token = get_access_token(&context).await?;
-    let device_id =
-        get_device_id_from_store().ok_or_else(|| "No device ID configured".to_string())?;
-
-    let result = create_client()?
-        .initialize_team_keys(&token, &device_id)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    info!(
-        "[DeviceSync] Initialize team keys result: {:?}",
-        match &result {
-            InitializeKeysResult::Bootstrap { .. } => "BOOTSTRAP",
-            InitializeKeysResult::PairingRequired { .. } => "PAIRING_REQUIRED",
-            InitializeKeysResult::Ready { .. } => "READY",
-        }
-    );
-
-    Ok(result)
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn commit_initialize_team_keys(
-    key_version: i32,
-    device_key_envelope: String,
-    signature: String,
-    challenge_response: Option<String>,
-    recovery_envelope: Option<String>,
-    state: State<'_, DatabaseRuntime>,
-) -> Result<CommitInitializeKeysResponse, String> {
-    let context = state.context()?;
-    info!("[DeviceSync] Committing team key initialization...");
-
-    let token = get_access_token(&context).await?;
-    let device_id =
-        get_device_id_from_store().ok_or_else(|| "No device ID configured".to_string())?;
-
-    let request = CommitInitializeKeysRequest {
-        device_id: device_id.clone(),
-        key_version,
-        device_key_envelope,
-        signature,
-        challenge_response,
-        recovery_envelope,
-    };
-
-    create_client()?
-        .commit_initialize_team_keys(&token, request)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn rotate_team_keys(
-    state: State<'_, DatabaseRuntime>,
-) -> Result<RotateKeysResponse, String> {
-    let context = state.context()?;
-    info!("[DeviceSync] Starting key rotation...");
-
-    let token = get_access_token(&context).await?;
-    let device_id =
-        get_device_id_from_store().ok_or_else(|| "No device ID configured".to_string())?;
-
-    create_client()?
-        .rotate_team_keys(&token, &device_id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-#[tauri::command]
-pub async fn commit_rotate_team_keys(
-    request: CommitRotateKeysRequest,
-    state: State<'_, DatabaseRuntime>,
-) -> Result<CommitRotateKeysResponse, String> {
-    let context = state.context()?;
-    info!("[DeviceSync] Committing key rotation...");
-
-    let token = get_access_token(&context).await?;
-    let device_id =
-        get_device_id_from_store().ok_or_else(|| "No device ID configured".to_string())?;
-
-    create_client()?
-        .commit_rotate_team_keys(&token, &device_id, request)
-        .await
-        .map_err(|e| e.to_string())
-}
 
 #[tauri::command]
 pub async fn reset_team_sync(

@@ -17,12 +17,10 @@ use crate::api::device_sync_engine;
 use crate::error::{ApiError, ApiResult};
 use crate::main_lib::AppState;
 use wealthfolio_device_sync::{
-    ClaimPairingRequest, ClaimPairingResponse, CommitInitializeKeysRequest,
-    CommitInitializeKeysResponse, CommitRotateKeysRequest, CommitRotateKeysResponse,
-    CompletePairingRequest, CompletePairingResponse, ConfirmPairingRequest, ConfirmPairingResponse,
-    CreatePairingRequest, CreatePairingResponse, Device, DeviceSyncClient, EnrollDeviceResponse,
-    GetPairingResponse, InitializeKeysResult, PairingMessagesResponse, RegisterDeviceRequest,
-    ResetTeamSyncResponse, RotateKeysResponse, SuccessResponse, UpdateDeviceRequest,
+    ClaimPairingRequest, ClaimPairingResponse, CompletePairingRequest, CompletePairingResponse,
+    ConfirmPairingRequest, ConfirmPairingResponse, CreatePairingRequest, CreatePairingResponse,
+    Device, DeviceSyncClient, GetPairingResponse, PairingMessagesResponse, ResetTeamSyncResponse,
+    SuccessResponse, UpdateDeviceRequest,
 };
 
 fn cloud_api_base_url() -> String {
@@ -50,17 +48,6 @@ fn create_client() -> DeviceSyncClient {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RegisterDeviceBody {
-    pub display_name: String,
-    pub platform: String,
-    pub os_version: Option<String>,
-    pub app_version: Option<String>,
-    #[serde(alias = "instanceId")]
-    pub device_nonce: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct UpdateDeviceBody {
     pub display_name: Option<String>,
 }
@@ -84,16 +71,6 @@ pub struct CompletePairingBody {
     pub encrypted_key_bundle: String,
     pub sas_proof: serde_json::Value,
     pub signature: String,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommitInitializeKeysBody {
-    pub key_version: i32,
-    pub device_key_envelope: String,
-    pub signature: String,
-    pub challenge_response: Option<String>,
-    pub recovery_envelope: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -153,39 +130,6 @@ pub struct FlowIdBody {
 // ─────────────────────────────────────────────────────────────────────────────
 // Device Management
 // ─────────────────────────────────────────────────────────────────────────────
-
-async fn register_device(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<RegisterDeviceBody>,
-) -> ApiResult<Json<EnrollDeviceResponse>> {
-    info!("[DeviceSync] Registering device: {}", body.display_name);
-
-    let token = get_access_token(&state).await?;
-
-    let request = RegisterDeviceRequest {
-        device_nonce: body.device_nonce,
-        display_name: body.display_name,
-        platform: body.platform,
-        os_version: body.os_version,
-        app_version: body.app_version,
-    };
-
-    let result = state
-        .device_enroll_service
-        .register_device(&token, request)
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
-
-    // Extract device_id from the discriminated union response
-    let device_id = match &result {
-        EnrollDeviceResponse::Bootstrap { device_id, .. } => device_id,
-        EnrollDeviceResponse::Pair { device_id, .. } => device_id,
-        EnrollDeviceResponse::Ready { device_id, .. } => device_id,
-    };
-
-    info!("[DeviceSync] Device enrolled successfully: {}", device_id);
-    Ok(Json(result))
-}
 
 async fn get_device_endpoint(
     State(state): State<Arc<AppState>>,
@@ -293,85 +237,6 @@ async fn revoke_device_endpoint(
 // ─────────────────────────────────────────────────────────────────────────────
 // Team Keys (E2EE)
 // ─────────────────────────────────────────────────────────────────────────────
-
-async fn initialize_team_keys(
-    State(state): State<Arc<AppState>>,
-) -> ApiResult<Json<InitializeKeysResult>> {
-    info!("[DeviceSync] Initializing team keys...");
-
-    let token = get_access_token(&state).await?;
-    let device_id = get_device_id(&state)
-        .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
-
-    let result = create_client()
-        .initialize_team_keys(&token, &device_id)
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
-
-    Ok(Json(result))
-}
-
-async fn commit_initialize_team_keys(
-    State(state): State<Arc<AppState>>,
-    Json(body): Json<CommitInitializeKeysBody>,
-) -> ApiResult<Json<CommitInitializeKeysResponse>> {
-    info!("[DeviceSync] Committing team key initialization...");
-
-    let token = get_access_token(&state).await?;
-    let device_id = get_device_id(&state)
-        .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
-
-    let request = CommitInitializeKeysRequest {
-        device_id,
-        key_version: body.key_version,
-        device_key_envelope: body.device_key_envelope,
-        signature: body.signature,
-        challenge_response: body.challenge_response,
-        recovery_envelope: body.recovery_envelope,
-    };
-
-    let result = create_client()
-        .commit_initialize_team_keys(&token, request)
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
-
-    Ok(Json(result))
-}
-
-async fn rotate_team_keys(
-    State(state): State<Arc<AppState>>,
-) -> ApiResult<Json<RotateKeysResponse>> {
-    info!("[DeviceSync] Starting key rotation...");
-
-    let token = get_access_token(&state).await?;
-    let device_id = get_device_id(&state)
-        .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
-
-    let result = create_client()
-        .rotate_team_keys(&token, &device_id)
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
-
-    Ok(Json(result))
-}
-
-async fn commit_rotate_team_keys(
-    State(state): State<Arc<AppState>>,
-    Json(request): Json<CommitRotateKeysRequest>,
-) -> ApiResult<Json<CommitRotateKeysResponse>> {
-    info!("[DeviceSync] Committing key rotation...");
-
-    let token = get_access_token(&state).await?;
-    let device_id = get_device_id(&state)
-        .ok_or_else(|| ApiError::BadRequest("No device ID configured".to_string()))?;
-
-    let result = create_client()
-        .commit_rotate_team_keys(&token, &device_id, request)
-        .await
-        .map_err(|e| ApiError::Internal(e.to_string()))?;
-
-    Ok(Json(result))
-}
 
 async fn reset_team_sync(
     State(state): State<Arc<AppState>>,
@@ -729,7 +594,6 @@ pub fn router() -> Router<Arc<AppState>> {
 
     Router::new()
         // Device management
-        .route("/sync/device/register", post(register_device))
         .route("/sync/device/current", get(get_current_device))
         .route("/sync/devices", get(list_devices))
         .route("/sync/device/{device_id}", get(get_device_endpoint))
@@ -739,14 +603,7 @@ pub fn router() -> Router<Arc<AppState>> {
             "/sync/device/{device_id}/revoke",
             post(revoke_device_endpoint),
         )
-        // Team keys (E2EE)
-        .route("/sync/keys/initialize", post(initialize_team_keys))
-        .route(
-            "/sync/keys/initialize/commit",
-            post(commit_initialize_team_keys),
-        )
-        .route("/sync/keys/rotate", post(rotate_team_keys))
-        .route("/sync/keys/rotate/commit", post(commit_rotate_team_keys))
+        // Sync reset
         .route("/sync/team/reset", post(reset_team_sync))
         // Pairing (Issuer - Trusted Device)
         .route("/sync/pairing", post(create_pairing))

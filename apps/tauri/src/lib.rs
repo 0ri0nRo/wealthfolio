@@ -667,8 +667,6 @@ pub fn run() {
             commands::brokers_sync::save_broker_sync_profile_rules,
             // Device sync commands
             #[cfg(feature = "device-sync")]
-            commands::device_sync::enroll_device,
-            #[cfg(feature = "device-sync")]
             commands::device_sync::get_device,
             #[cfg(feature = "device-sync")]
             commands::device_sync::list_devices,
@@ -678,15 +676,7 @@ pub fn run() {
             commands::device_sync::delete_device,
             #[cfg(feature = "device-sync")]
             commands::device_sync::revoke_device,
-            // Team keys (E2EE)
-            #[cfg(feature = "device-sync")]
-            commands::device_sync::initialize_team_keys,
-            #[cfg(feature = "device-sync")]
-            commands::device_sync::commit_initialize_team_keys,
-            #[cfg(feature = "device-sync")]
-            commands::device_sync::rotate_team_keys,
-            #[cfg(feature = "device-sync")]
-            commands::device_sync::commit_rotate_team_keys,
+            // Sync reset
             #[cfg(feature = "device-sync")]
             commands::device_sync::reset_team_sync,
             #[cfg(feature = "device-sync")]

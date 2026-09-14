@@ -1083,6 +1083,9 @@ async fn clear_device_sync_data(State(state): State<Arc<AppState>>) -> ApiResult
     ensure_device_sync_enabled()?;
     info!("[Connect] Clearing device sync data...");
 
+    device_sync_engine::ensure_background_engine_stopped(Arc::clone(&state))
+        .await
+        .map_err(ApiError::Internal)?;
     state
         .device_enroll_service
         .clear_sync_data()
@@ -1093,8 +1096,6 @@ async fn clear_device_sync_data(State(state): State<Arc<AppState>>) -> ApiResult
         .app_sync_repository
         .clear_all_min_snapshot_created_at()
         .await;
-    let _ = device_sync_engine::ensure_background_engine_stopped(Arc::clone(&state)).await;
-
     info!("[Connect] Device sync data cleared");
     Ok(Json(()))
 }

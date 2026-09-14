@@ -143,13 +143,20 @@ cleanup, new-session storage and gate clearing. A dismissed completion notice
 does not clear the gate. Unrelated secrets and the destination database
 encryption key are preserved.
 
-Device sync now uses `sync_identity` exclusively. Server registration stores the
-device nonce and ID in that record and preserves existing keys when registering
-the same identity again. The legacy `sync_device_id` fallback and compatibility
-writes are removed. Installations with only the legacy ID must enroll again and
-pair when required; complete identities remain usable. Restore cleanup also
-deletes leftover legacy IDs. Removing a local identity does not revoke its cloud
-device registration.
+Device sync now uses `sync_identity` exclusively. Native and web clients enroll
+through the shared enable-sync service. The unused local-server
+`POST /api/v1/sync/device/register` endpoint and its adapter command are
+removed, along with the legacy `sync_device_id` fallback and compatibility
+writes. Installations with only the legacy ID must enroll again and pair when
+required; complete identities remain usable. Restore cleanup also deletes
+leftover legacy IDs. Removing a local identity does not revoke its cloud device
+registration.
+
+The unused Tauri `enroll_device` command and local key-initialization and
+rotation commands are also removed from Tauri and HTTP dispatch. Cloud key
+initialization remains part of the shared enrollment service. Both native and
+server sync cleanup stop the background engine before clearing credentials and
+local sync state.
 
 ## Maintenance and recovery
 

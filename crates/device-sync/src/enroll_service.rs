@@ -298,38 +298,6 @@ impl DeviceEnrollService {
         })
     }
 
-    /// Register through the low-level API while retaining one authoritative identity.
-    /// Re-registering the same device must not discard its E2EE keys.
-    pub async fn register_device(
-        &self,
-        token: &str,
-        request: RegisterDeviceRequest,
-    ) -> Result<EnrollDeviceResponse, EnrollServiceError> {
-        let _guard = enroll_operation_lock().lock().await;
-        let mut identity = self.read_identity()?;
-        let device_nonce = request.device_nonce.clone();
-        let result = self
-            .client
-            .enroll_device(token, request)
-            .await
-            .map_err(|e| format!("Enrollment failed: {}", e))?;
-        let device_id = match &result {
-            EnrollDeviceResponse::Bootstrap { device_id, .. }
-            | EnrollDeviceResponse::Pair { device_id, .. }
-            | EnrollDeviceResponse::Ready { device_id, .. } => device_id,
-        };
-        if identity.device_nonce.as_deref() != Some(&device_nonce)
-            || identity.device_id.as_deref() != Some(device_id)
-        {
-            identity = SyncIdentity::default();
-        }
-        identity.version = 2;
-        identity.device_nonce = Some(device_nonce);
-        identity.device_id = Some(device_id.clone());
-        self.save_identity(&identity)?;
-        Ok(result)
-    }
-
     /// Enable device sync - full flow from FRESH to READY (if bootstrap) or REGISTERED (if pairing needed).
     ///
     /// This does:
@@ -828,7 +796,6 @@ impl DeviceEnrollService {
 mod tests {
     use super::*;
     use std::collections::HashMap;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[derive(Default)]
     struct MemorySecrets(std::sync::Mutex<HashMap<String, String>>);
@@ -855,101 +822,5 @@ mod tests {
         let state = service.get_sync_state("test-token").await.unwrap();
         assert_eq!(state.state, SyncState::Fresh);
         assert!(state.device_id.is_none());
-    }
-
-    #[tokio::test]
-    async fn registration_persists_identity_and_preserves_only_matching_device_keys() {
-        for (old_nonce, old_id, preserve_keys) in [
-            (None, None, false),
-            (Some("nonce"), Some("device"), true),
-            (Some("other-nonce"), Some("device"), false),
-            (Some("nonce"), Some("other-device"), false),
-        ] {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let url = format!("http://{}", listener.local_addr().unwrap());
-            let server = tokio::spawn(async move {
-                let (mut socket, _) = listener.accept().await.unwrap();
-                let mut request = Vec::new();
-                let mut buffer = [0; 1024];
-                loop {
-                    let count = socket.read(&mut buffer).await.unwrap();
-                    assert!(count > 0);
-                    request.extend_from_slice(&buffer[..count]);
-                    if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
-                        let headers = String::from_utf8_lossy(&request[..end]);
-                        let length: usize = headers
-                            .lines()
-                            .find_map(|line| {
-                                let (name, value) = line.split_once(':')?;
-                                name.eq_ignore_ascii_case("content-length")
-                                    .then(|| value.trim().parse().unwrap())
-                            })
-                            .unwrap();
-                        if request.len() >= end + 4 + length {
-                            assert!(headers.starts_with("POST /api/v1/sync/team/devices "));
-                            let body: serde_json::Value =
-                                serde_json::from_slice(&request[end + 4..end + 4 + length])
-                                    .unwrap();
-                            assert_eq!(body["device_nonce"], "nonce");
-                            break;
-                        }
-                    }
-                }
-                let body = r#"{"mode":"BOOTSTRAP","device_id":"device","e2ee_key_version":1}"#;
-                socket.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).as_bytes()).await.unwrap();
-            });
-            let store = Arc::new(MemorySecrets::default());
-            let service = DeviceEnrollService::new(store.clone(), &url, "test".into(), None);
-            let original = SyncIdentity {
-                version: 2,
-                device_nonce: old_nonce.map(String::from),
-                device_id: old_id.map(String::from),
-                root_key: Some("root-key".into()),
-                key_version: Some(1),
-                device_secret_key: Some("secret-key".into()),
-                device_public_key: Some("public-key".into()),
-            };
-            if old_id.is_some() {
-                service.save_identity(&original).unwrap();
-            }
-            service
-                .register_device(
-                    "test-token",
-                    RegisterDeviceRequest {
-                        device_nonce: "nonce".into(),
-                        display_name: "test".into(),
-                        platform: "linux".into(),
-                        os_version: None,
-                        app_version: None,
-                    },
-                )
-                .await
-                .unwrap();
-            server.await.unwrap();
-            let saved = service.read_identity().unwrap();
-            assert_eq!(saved.device_nonce.as_deref(), Some("nonce"));
-            assert_eq!(saved.device_id.as_deref(), Some("device"));
-            assert_eq!(
-                saved.root_key,
-                preserve_keys.then_some(original.root_key).flatten()
-            );
-            assert_eq!(
-                saved.key_version,
-                preserve_keys.then_some(original.key_version).flatten()
-            );
-            assert_eq!(
-                saved.device_secret_key,
-                preserve_keys
-                    .then_some(original.device_secret_key)
-                    .flatten()
-            );
-            assert_eq!(
-                saved.device_public_key,
-                preserve_keys
-                    .then_some(original.device_public_key)
-                    .flatten()
-            );
-            assert!(store.get_secret("sync_device_id").unwrap().is_none());
-        }
     }
 }
