@@ -359,15 +359,15 @@ export interface AssetsAPI {
  * Read-only: creating/editing these is only available in the Wealthfolio UI.
  */
 export interface AlternativeAssetsAPI {
-    /**
-     * Get all alternative asset holdings (with their latest valuations).
-     * A liability holding carries `linkedAssetId` when linked to an asset
-     * (e.g. a mortgage linked to a property) — the host UI stores this link,
-     * addons should treat a linked liability's value as netted against its
-     * linked asset rather than double-counted.
-     * @returns Promise resolving to array of alternative asset holdings
-     */
-    getAll(): Promise<AlternativeAssetHolding[]>;
+  /**
+   * Get all alternative asset holdings (with their latest valuations).
+   * A liability holding carries `linkedAssetId` when linked to an asset
+   * (e.g. a mortgage linked to a property) — the host UI stores this link,
+   * addons should treat a linked liability's value as netted against its
+   * linked asset rather than double-counted.
+   * @returns Promise resolving to array of alternative asset holdings
+   */
+  getAll(): Promise<AlternativeAssetHolding[]>;
 }
 
 /**
