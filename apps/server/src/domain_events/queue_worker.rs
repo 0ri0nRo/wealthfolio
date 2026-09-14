@@ -142,6 +142,25 @@ pub async fn event_queue_worker(
     }
 }
 
+fn read_setting(
+    deps: &QueueWorkerDeps,
+    lock: &RwLock<String>,
+    name: &'static str,
+) -> Option<String> {
+    match crate::main_lib::read_runtime_setting(lock, name) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::error!("Background operation stopped: {error}");
+            deps.event_bus
+                .publish(crate::events::ServerEvent::with_payload(
+                    crate::events::PORTFOLIO_UPDATE_ERROR,
+                    serde_json::json!(error.to_string()),
+                ));
+            None
+        }
+    }
+}
+
 /// Processes a batch of domain events.
 async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>) {
     tracing::info!("Processing batch of {} domain event(s)", events.len());
@@ -228,7 +247,9 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
     }
 
     // 2. Plan and trigger portfolio job
-    let timezone = deps.timezone.read().unwrap().clone();
+    let Some(timezone) = read_setting(&deps, &deps.timezone, "Timezone") else {
+        return;
+    };
     if let Some(config) = plan_portfolio_job(events, &timezone) {
         tracing::info!(
             "Triggering portfolio job for accounts: {:?}, market_sync: {:?}",
@@ -319,9 +340,10 @@ async fn run_portfolio_job(
     };
 
     let event_bus = deps.event_bus.clone();
-    let today = user_today(parse_user_timezone_or_default(
-        &deps.timezone.read().unwrap(),
-    ));
+    let Some(timezone) = read_setting(&deps, &deps.timezone, "Timezone") else {
+        return;
+    };
+    let today = user_today(parse_user_timezone_or_default(&timezone));
     let safe_since_date = config
         .since_date
         .filter(|date| !snapshot_date_requires_remediation(*date, today));
@@ -579,8 +601,12 @@ async fn refresh_all_goal_summaries(deps: Arc<QueueWorkerDeps>) {
         }
     };
     let account_ids: Vec<String> = accounts.into_iter().map(|account| account.id).collect();
-    let base_currency = deps.base_currency.read().unwrap().clone();
-    let timezone = deps.timezone.read().unwrap().clone();
+    let Some(base_currency) = read_setting(&deps, &deps.base_currency, "Base currency") else {
+        return;
+    };
+    let Some(timezone) = read_setting(&deps, &deps.timezone, "Timezone") else {
+        return;
+    };
     let latest_snapshot_cutoff = user_today(parse_user_timezone_or_default(&timezone));
     let service = CurrentAccountValuationService::new(
         deps.account_service.as_ref(),

@@ -154,6 +154,27 @@ pub struct AppState {
     _database_owner: Arc<db::DatabaseOwner>,
 }
 
+pub(crate) fn read_runtime_setting(
+    lock: &RwLock<String>,
+    name: &'static str,
+) -> crate::error::ApiResult<String> {
+    lock.read().map(|value| value.clone()).map_err(|_| {
+        crate::error::ApiError::Internal(format!(
+            "{name} state is unavailable. Restart the server before continuing."
+        ))
+    })
+}
+
+impl AppState {
+    pub(crate) fn base_currency(&self) -> crate::error::ApiResult<String> {
+        read_runtime_setting(&self.base_currency, "Base currency")
+    }
+
+    pub(crate) fn timezone(&self) -> crate::error::ApiResult<String> {
+        read_runtime_setting(&self.timezone, "Timezone")
+    }
+}
+
 pub fn init_tracing() {
     let log_format = std::env::var("WF_LOG_FORMAT").unwrap_or_else(|_| "text".to_string());
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
@@ -1036,7 +1057,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         token_lifecycle.clone(),
         spending_settings_service.clone(),
         categorization_rules_service.clone(),
-    );
+    )?;
 
     let state = Arc::new(AppState {
         backup_exports: crate::api::portable_backups::BackupExports::default(),
@@ -1121,4 +1142,26 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         drop(pool);
     }
     result
+}
+
+#[cfg(test)]
+mod runtime_setting_tests {
+    use super::*;
+    use axum::response::IntoResponse;
+
+    #[test]
+    fn poisoned_settings_return_internal_errors_instead_of_default_values() {
+        let setting = RwLock::new("USD".to_string());
+        let _ = std::panic::catch_unwind(|| {
+            let mut value = setting.write().unwrap();
+            value.clear();
+            panic!("interrupted settings update");
+        });
+        let error = read_runtime_setting(&setting, "Base currency").unwrap_err();
+        assert_eq!(
+            error.into_response().status(),
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR
+        );
+        assert!(setting.is_poisoned());
+    }
 }
