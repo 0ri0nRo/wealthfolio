@@ -9,7 +9,7 @@ use std::sync::{Arc, OnceLock};
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 
-use wealthfolio_core::secrets::SecretStore;
+use wealthfolio_core::secrets::{SecretStore, SYNC_IDENTITY_KEY};
 
 use crate::{
     crypto, CommitInitializeKeysRequest, DevicePlatform, DeviceSyncClient, EnrollDeviceResponse,
@@ -20,7 +20,6 @@ use crate::{
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-const SYNC_IDENTITY_KEY: &str = "sync_identity";
 const RESET_REASON_REINITIALIZE: &str = "reinitialize";
 
 static ENROLL_OPERATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -796,6 +795,7 @@ impl DeviceEnrollService {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+    use wealthfolio_core::secrets::LEGACY_SYNC_DEVICE_ID_KEY;
 
     #[derive(Default)]
     struct MemorySecrets(std::sync::Mutex<HashMap<String, String>>);
@@ -817,7 +817,9 @@ mod tests {
     #[tokio::test]
     async fn legacy_only_installations_require_enrollment() {
         let store = Arc::new(MemorySecrets::default());
-        store.set_secret("sync_device_id", "old-device").unwrap();
+        store
+            .set_secret(LEGACY_SYNC_DEVICE_ID_KEY, "old-device")
+            .unwrap();
         let service = DeviceEnrollService::new(store, "http://127.0.0.1:1", "test".into(), None);
         let state = service.get_sync_state("test-token").await.unwrap();
         assert_eq!(state.state, SyncState::Fresh);

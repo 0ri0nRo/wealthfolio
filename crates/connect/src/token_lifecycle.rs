@@ -4,7 +4,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use base64::{engine::general_purpose, Engine as _};
 use serde::Deserialize;
 use tokio::sync::{Mutex, RwLock};
-use wealthfolio_core::secrets::SecretStore;
+use wealthfolio_core::secrets::{SecretStore, LEGACY_SYNC_DEVICE_ID_KEY, SYNC_IDENTITY_KEY};
 
 use crate::request_metadata::{
     log_failed_cloud_request, request_metadata_suffix, server_request_id, CloudRequestContext,
@@ -47,8 +47,8 @@ pub fn clear_restored_installation_credentials(store: &dyn SecretStore) -> Resul
     for key in [
         CLOUD_ACCESS_TOKEN_KEY,
         CLOUD_REFRESH_TOKEN_KEY,
-        "sync_identity",
-        "sync_device_id",
+        SYNC_IDENTITY_KEY,
+        LEGACY_SYNC_DEVICE_ID_KEY,
     ] {
         if store.get_secret(key).map_err(|e| e.to_string())?.is_some() {
             store.delete_secret(key).map_err(|e| e.to_string())?;
@@ -507,8 +507,8 @@ mod tests {
         for key in [
             CLOUD_ACCESS_TOKEN_KEY,
             CLOUD_REFRESH_TOKEN_KEY,
-            "sync_identity",
-            "sync_device_id",
+            SYNC_IDENTITY_KEY,
+            LEGACY_SYNC_DEVICE_ID_KEY,
             "database_encryption_key",
         ] {
             store.set_secret(key, "synthetic secret").unwrap();
@@ -517,8 +517,8 @@ mod tests {
         for key in [
             CLOUD_ACCESS_TOKEN_KEY,
             CLOUD_REFRESH_TOKEN_KEY,
-            "sync_identity",
-            "sync_device_id",
+            SYNC_IDENTITY_KEY,
+            LEGACY_SYNC_DEVICE_ID_KEY,
         ] {
             assert!(store.get_secret(key).unwrap().is_none());
         }
@@ -546,8 +546,8 @@ mod tests {
         for key in [
             CLOUD_ACCESS_TOKEN_KEY,
             CLOUD_REFRESH_TOKEN_KEY,
-            "sync_identity",
-            "sync_device_id",
+            SYNC_IDENTITY_KEY,
+            LEGACY_SYNC_DEVICE_ID_KEY,
         ] {
             assert!(clear_restored_installation_credentials(&BrokenStore(key)).is_err());
         }
@@ -609,8 +609,10 @@ mod tests {
                 clearing: tokio::sync::Notify::new(),
                 release: tokio::sync::Notify::new(),
             });
-            store.set_secret("sync_identity", "old identity").unwrap();
-            store.set_secret("sync_device_id", "old device").unwrap();
+            store.set_secret(SYNC_IDENTITY_KEY, "old identity").unwrap();
+            store
+                .set_secret(LEGACY_SYNC_DEVICE_ID_KEY, "old device")
+                .unwrap();
             let first = {
                 let (state, store, settings) = (state.clone(), store.clone(), settings.clone());
                 tokio::spawn(async move {
@@ -662,8 +664,11 @@ mod tests {
                     .as_deref(),
                 if logout { None } else { Some("second login") }
             );
-            assert!(store.get_secret("sync_identity").unwrap().is_none());
-            assert!(store.get_secret("sync_device_id").unwrap().is_none());
+            assert!(store.get_secret(SYNC_IDENTITY_KEY).unwrap().is_none());
+            assert!(store
+                .get_secret(LEGACY_SYNC_DEVICE_ID_KEY)
+                .unwrap()
+                .is_none());
         }
     }
 

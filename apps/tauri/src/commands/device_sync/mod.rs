@@ -16,7 +16,7 @@ use tauri::{AppHandle, State};
 
 use crate::context::ServiceContext;
 use crate::secret_store::KeyringSecretStore;
-use wealthfolio_core::secrets::SecretStore;
+use wealthfolio_core::secrets::{SecretStore, SYNC_IDENTITY_KEY};
 use wealthfolio_device_sync::engine as shared_sync_engine;
 use wealthfolio_device_sync::{
     ClaimPairingRequest, ClaimPairingResponse, CompletePairingRequest, CompletePairingResponse,
@@ -52,8 +52,6 @@ pub(crate) struct SyncIdentity {
 }
 
 pub(crate) fn get_sync_identity_from_store() -> Option<SyncIdentity> {
-    const SYNC_IDENTITY_KEY: &str = "sync_identity";
-
     match KeyringSecretStore.get_secret(SYNC_IDENTITY_KEY) {
         Ok(Some(json)) => match serde_json::from_str::<SyncIdentity>(&json) {
             Ok(identity) => {

@@ -5,6 +5,8 @@ use axum::{
 };
 use std::time::Duration;
 use tower::ServiceExt;
+use wealthfolio_connect::{CLOUD_ACCESS_TOKEN_KEY, CLOUD_REFRESH_TOKEN_KEY};
+use wealthfolio_core::secrets::SYNC_IDENTITY_KEY;
 use wealthfolio_server::{api::app_router, build_state, config::Config};
 use wealthfolio_storage_sqlite::db;
 
@@ -235,7 +237,11 @@ async fn portable_exports_preserve_selected_data_and_bound_download_lifetimes() 
         state.db_access.connect_rusqlite().unwrap().execute_batch(
             "INSERT INTO app_settings(setting_key,setting_value) VALUES('restore_reconnect_required','true') ON CONFLICT(setting_key) DO UPDATE SET setting_value='true';"
         ).unwrap();
-        for key in ["sync_access_token", "sync_refresh_token", "sync_identity"] {
+        for key in [
+            CLOUD_ACCESS_TOKEN_KEY,
+            CLOUD_REFRESH_TOKEN_KEY,
+            SYNC_IDENTITY_KEY,
+        ] {
             state
                 .secret_store
                 .set_secret(key, "old synthetic identity")
@@ -280,18 +286,18 @@ async fn portable_exports_preserve_selected_data_and_bound_download_lifetimes() 
         assert_eq!(response.status(), StatusCode::OK);
         assert!(state
             .secret_store
-            .get_secret("sync_identity")
+            .get_secret(SYNC_IDENTITY_KEY)
             .unwrap()
             .is_none());
         assert!(state
             .secret_store
-            .get_secret("sync_access_token")
+            .get_secret(CLOUD_ACCESS_TOKEN_KEY)
             .unwrap()
             .is_none());
         assert_eq!(
             state
                 .secret_store
-                .get_secret("sync_refresh_token")
+                .get_secret(CLOUD_REFRESH_TOKEN_KEY)
                 .unwrap()
                 .as_deref(),
             Some("new synthetic login")
