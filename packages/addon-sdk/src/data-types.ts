@@ -785,19 +785,19 @@ export interface AlternativeAssetHolding {
   /** Current market value from latest quote */
   marketValue: string;
   /** Purchase price if available (from metadata) */
-  purchasePrice?: string;
+  purchasePrice?: string | null;
   /** Purchase date if available (from metadata) */
-  purchaseDate?: string;
+  purchaseDate?: string | null;
   /** Unrealized gain (market_value - purchase_price) */
-  unrealizedGain?: string;
+  unrealizedGain?: string | null;
   /** Unrealized gain percentage */
-  unrealizedGainPct?: string;
+  unrealizedGainPct?: string | null;
   /** Date of the latest valuation (ISO format) */
   valuationDate: string;
   /** Kind-specific metadata */
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
   /** For liabilities: linked asset ID if any */
-  linkedAssetId?: string;
+  linkedAssetId?: string | null;
   /** Asset notes */
   notes?: string | null;
 }
