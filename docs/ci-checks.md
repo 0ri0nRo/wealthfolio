@@ -21,9 +21,8 @@ native toolchains for C/Swift dependencies. They do not replace linking,
 packaging, or device runtime tests.
 
 The `Build Status` check requires every selected job to succeed, including
-mobile checks. Unselected jobs may be skipped. Native secret-store PR checks
-retain credential tests; their standalone manual workflow also retains iOS
-compile checks.
+mobile checks. Unselected jobs may be skipped. Existing targeted security
+workflows remain independent and may perform additional platform checks.
 
 ## Manual mobile builds
 
