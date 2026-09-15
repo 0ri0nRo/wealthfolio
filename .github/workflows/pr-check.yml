@@ -1,7 +1,6 @@
 name: PR Check
 
 on:
-  workflow_dispatch:
   pull_request:
     branches:
       - main
@@ -26,8 +25,6 @@ jobs:
       formatting: ${{ steps.filter.outputs.formatting }}
       android: ${{ steps.filter.outputs.android }}
       ios: ${{ steps.filter.outputs.ios }}
-      android_build: ${{ steps.filter.outputs.android_build }}
-      ios_build: ${{ steps.filter.outputs.ios_build }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -37,15 +34,9 @@ jobs:
       - name: Classify changed files
         id: filter
         env:
-          EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if [ "$EVENT_NAME" = workflow_dispatch ]; then
-            # Manual runs exercise both full mobile builds without unrelated PR jobs.
-            printf '%s\n' frontend=false rust=false formatting=false android=true ios=true android_build=true ios_build=true >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           git diff --no-renames --name-only -z "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/changed-files"
           python3 .github/scripts/ci_changes.py < "$RUNNER_TEMP/changed-files" >> "$GITHUB_OUTPUT"
 
@@ -182,32 +173,17 @@ jobs:
       - name: Check release build (src-server)
         run: cargo check --locked -p wealthfolio-server --release
 
-  android-build:
-    name:
-      Android (${{ needs.changes.outputs.android_build == 'true' && 'APK build' || 'compile check'
-      }})
+  android-check:
+    name: Android compile check
     needs: changes
     if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       CARGO_INCREMENTAL: 0
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        if: needs.changes.outputs.android_build == 'true'
-      - uses: actions/setup-node@v4
-        if: needs.changes.outputs.android_build == 'true'
-        with:
-          node-version: "24"
-          cache: "pnpm"
-      - uses: actions/setup-java@v4
-        if: needs.changes.outputs.android_build == 'true'
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: gradle
       - name: Install Android target for the repository toolchain
         run: |
           rustup show active-toolchain
@@ -221,7 +197,6 @@ jobs:
           echo "NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
           echo "RANLIB_aarch64_linux_android=$ANDROID_HOME/ndk/28.2.13676358/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ranlib" >> "$GITHUB_ENV"
       - name: Check Android Rust compilation
-        if: needs.changes.outputs.android_build != 'true'
         run: |
           toolchain="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
           export CC_aarch64_linux_android="$toolchain/aarch64-linux-android24-clang"
@@ -231,30 +206,13 @@ jobs:
           mkdir -p dist
           printf '<!DOCTYPE html><html></html>' > dist/index.html
           cargo check --locked -p wealthfolio-app --target aarch64-linux-android
-      - name: Install Android build tools
-        if: needs.changes.outputs.android_build == 'true'
-        run:
-          '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36"
-          "build-tools;36.0.0"'
-      - run: pnpm install --frozen-lockfile
-        if: needs.changes.outputs.android_build == 'true'
-      - name: Initialize local Android build files
-        if: needs.changes.outputs.android_build == 'true'
-        run: |
-          pnpm tauri android init --ci --skip-targets-install
-          # Keep the reviewed scaffold customizations; retain ignored local SDK/plugin files.
-          git restore -- apps/tauri/gen/android
-      - name: Build ARM64 debug APK
-        if: needs.changes.outputs.android_build == 'true'
-        run: pnpm tauri android build --ci --debug --apk --target aarch64 -- --locked
 
-  ios-build:
-    name:
-      iOS (${{ needs.changes.outputs.ios_build == 'true' && 'unsigned build' || 'compile check' }})
+  ios-check:
+    name: iOS compile check
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     env:
       CARGO_INCREMENTAL: 0
       CARGO_PROFILE_DEV_DEBUG: 0
@@ -267,36 +225,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ios
-      - name: Check iOS device compilation
+      - name: Check iOS device and simulator compilation
         run: |
           mkdir -p dist
           printf '<!DOCTYPE html><html></html>' > dist/index.html
           cargo check --locked -p wealthfolio-app --target aarch64-apple-ios
-      - name: Check iOS simulator compilation
-        if: needs.changes.outputs.ios_build != 'true'
-        run: cargo check --locked -p wealthfolio-app --target aarch64-apple-ios-sim
-      - uses: pnpm/action-setup@v4
-        if: needs.changes.outputs.ios_build == 'true'
-      - uses: actions/setup-node@v4
-        if: needs.changes.outputs.ios_build == 'true'
-        with:
-          node-version: "24"
-          cache: "pnpm"
-      - run: pnpm install --frozen-lockfile
-        if: needs.changes.outputs.ios_build == 'true'
-      - name: Initialize local iOS build files
-        if: needs.changes.outputs.ios_build == 'true'
-        run: |
-          brew install xcodegen
-          node apps/tauri/scripts/sync-ios-composer-icon.mjs
-          pnpm tauri ios init --ci --skip-targets-install
-          # Keep reviewed project customizations and generated local dependency files.
-          git restore -- apps/tauri/gen/apple
-      - name: Build unsigned iOS simulator archive
-        if: needs.changes.outputs.ios_build == 'true'
-        run:
-          pnpm tauri ios build --ci --debug --no-sign --archive-only --target aarch64-sim --
-          --locked
+          cargo check --locked -p wealthfolio-app --target aarch64-apple-ios-sim
 
   build-status:
     name: Build Status
@@ -309,8 +243,8 @@ jobs:
         translation-parity,
         frontend-check,
         rust-check,
-        android-build,
-        ios-build,
+        android-check,
+        ios-check,
       ]
     if: always()
 
@@ -321,9 +255,9 @@ jobs:
           FORMATTING_REQUIRED: ${{ needs.changes.outputs.formatting }}
           FORMATTING_RESULT: ${{ needs.formatting.result }}
           ANDROID_REQUIRED: ${{ needs.changes.outputs.android }}
-          ANDROID_RESULT: ${{ needs.android-build.result }}
+          ANDROID_RESULT: ${{ needs.android-check.result }}
           IOS_REQUIRED: ${{ needs.changes.outputs.ios }}
-          IOS_RESULT: ${{ needs.ios-build.result }}
+          IOS_RESULT: ${{ needs.ios-check.result }}
           FRONTEND_REQUIRED: ${{ needs.changes.outputs.frontend }}
           RUST_REQUIRED: ${{ needs.changes.outputs.rust }}
           TRANSLATION_RESULT: ${{ needs.translation-parity.result }}

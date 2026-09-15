@@ -23,19 +23,19 @@ class ChangeDetectionTests(unittest.TestCase):
     def test_native_paths(self):
         for path in ["apps/tauri/src/lib.rs", "Cargo.lock", "Cargo.toml", ".cargo/config.toml"]:
             with self.subTest(path=path):
-                self.assert_jobs([path], "rust", "android", "ios", "android_build", "ios_build")
+                self.assert_jobs([path], "rust", "android", "ios")
 
     def test_server_only(self):
         self.assert_jobs(["apps/server/src/main.rs"], "rust")
 
     def test_shared_workflows(self):
-        self.assert_jobs([".github/workflows/pr-check.yml"], "frontend", "rust", "formatting", "android", "ios", "android_build", "ios_build")
+        self.assert_jobs([".github/workflows/pr-check.yml"], "frontend", "rust", "formatting", "android", "ios")
 
     def test_tauri_configuration(self):
-        self.assert_jobs(["apps/tauri/tauri.conf.json"], "frontend", "rust", "android", "ios", "android_build", "ios_build")
+        self.assert_jobs(["apps/tauri/tauri.conf.json"], "frontend", "rust", "android", "ios")
 
     def test_dependency_manifests(self):
-        self.assert_jobs(["pnpm-lock.yaml"], "frontend", "formatting", "android", "ios", "android_build", "ios_build")
+        self.assert_jobs(["pnpm-lock.yaml"], "frontend", "formatting", "android", "ios")
 
     def test_docker(self):
         self.assert_jobs(["Dockerfile"], "frontend", "rust", "formatting")
@@ -66,10 +66,10 @@ class ChangeDetectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assert_jobs([path], "rust", "android", "ios")
 
-    def test_native_dependencies_and_http_require_full_builds(self):
+    def test_native_dependencies_and_http_require_mobile_checks(self):
         for path in ["crates/core/Cargo.toml", "crates/new-crate/build.rs", "crates/http/src/lib.rs"]:
             with self.subTest(path=path):
-                self.assert_jobs([path], "rust", "android", "ios", "android_build", "ios_build")
+                self.assert_jobs([path], "rust", "android", "ios")
 
     def test_platform_specific_files(self):
         for platform, paths in {
@@ -81,12 +81,12 @@ class ChangeDetectionTests(unittest.TestCase):
         }.items():
             for path in paths:
                 with self.subTest(path=path):
-                    self.assert_jobs([path], "rust", platform, platform + "_build")
+                    self.assert_jobs([path], "rust", platform)
 
-    def test_full_build_does_not_get_downgraded_by_shared_code(self):
+    def test_mixed_native_and_shared_code_is_order_independent(self):
         paths = ["Cargo.lock", "crates/core/src/lib.rs"]
         for ordered in [paths, list(reversed(paths))]:
-            self.assert_jobs(ordered, "rust", "android", "ios", "android_build", "ios_build")
+            self.assert_jobs(ordered, "rust", "android", "ios")
 
     def test_server_manifest_does_not_trigger_mobile(self):
         self.assert_jobs(["apps/server/Cargo.toml"], "rust")

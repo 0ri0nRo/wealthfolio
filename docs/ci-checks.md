@@ -1,41 +1,66 @@
-# Pull request checks
+# CI checks and test artifacts
 
-PRs are the primary validation gate. Mobile validation is selected by
-`.github/scripts/ci_changes.py` using the complete PR diff, including both sides
-of renamed files.
+## Pull requests
 
-| Changed files                                                                                | Mobile validation                                                    |
-| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
-| Docs, translations, ordinary frontend code                                                   | None                                                                 |
-| Shared Rust source under `crates/`                                                           | Android ARM64 and iOS device/simulator `cargo check`                 |
-| Cargo manifests/lockfile, toolchain, build scripts, shared Tauri integration, `crates/http/` | Full Android APK and iOS device check and unsigned simulator archive |
-| Android project, icons, configuration, capabilities                                          | Full Android APK only                                                |
-| iOS project, icons, configuration, capabilities                                              | iOS device check and unsigned simulator archive only                 |
-| Frontend dependency manifests/lockfile                                                       | Both full mobile builds                                              |
-| Server-only source/manifest                                                                  | None                                                                 |
-| CI workflows/scripts                                                                         | Both full mobile builds                                              |
+PRs run checks selected from the complete diff, including both sides of renamed
+files. Mobile jobs only run `cargo check`; they never build APKs or Xcode
+archives.
 
-Mixed changes combine requirements; a full build takes precedence over a compile
-check. Compile checks skip frontend, Gradle, and Xcode packaging, but still need
-native toolchains for C/Swift dependencies. They do not replace linking,
-packaging, or device runtime tests.
+| Check                                                                                  | Selected for                                                   |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| Formatting                                                                             | Frontend, docs, and relevant configuration changes             |
+| Translation parity                                                                     | Frontend changes                                               |
+| Frontend lint, package types, unit tests, production build, browser regressions        | Frontend/package changes                                       |
+| Rust formatting, Clippy, workspace tests, AI fixture tests, server release compilation | Rust/dependency changes                                        |
+| Android ARM64 compilation                                                              | Shared Rust, Tauri, mobile dependencies, Android configuration |
+| iOS device and simulator compilation                                                   | Shared Rust, Tauri, mobile dependencies, iOS configuration     |
+| Build Status                                                                           | Every PR; all selected jobs must succeed                       |
 
-The `Build Status` check requires every selected job to succeed, including
-mobile checks. Unselected jobs may be skipped. Existing targeted security
-workflows remain independent and may perform additional platform checks.
+Docs and ordinary frontend changes skip mobile checks. Server-only Rust changes
+also skip them. Platform-specific files select their platform; mixed changes
+combine requirements. CI workflow/script changes select all PR checks.
 
-## Manual mobile builds
+The frontend job builds package declarations once and checks frontend types in
+the production build. Existing HTTP/TLS and native/server secret-store workflows
+remain independent, with their existing path filters and platform coverage.
 
-After this workflow is on the default branch, use **Actions → PR Check → Run
-workflow**, and select the branch to validate. Manual runs execute both full
-mobile builds without the unrelated frontend/Rust PR jobs. iOS archives are
-unsigned: signing secrets, provisioning profiles, and distribution are not
-required or performed.
+Compile checks need native toolchains and can still be expensive on a cold
+cache. They do not validate linking, packaging, or device behavior. Run **Build
+Mobile** before merging risky native, dependency, or packaging changes when that
+coverage is needed.
 
-## Frontend work
+## Full mobile builds
 
-The frontend job builds package declarations once, checks package types once,
-and checks frontend types during its production build. Lint, unit tests,
-production builds, and browser regression tests remain required. Compare job and
-step timings across several runs before claiming a speedup; mobile checks can
-still be expensive on a cold cache.
+**Build Mobile** runs on `v*` release tags or manually from Actions. It runs the
+reusable Android release APK build, plus iOS device compilation and a full
+unsigned debug simulator archive. It uploads test artifacts for seven days and
+creates no GitHub release. These are build validations, not store publication.
+The simulator archive does not run on physical iPhones.
+
+Existing desktop/server release and Docker workflows remain unchanged. The
+existing cache-warming workflow runs on selected `main` pushes, weekly, or
+manually; there is no general nightly test suite added here.
+
+## Downloadable test packages
+
+Once merged into the default branch, select a workflow under **Actions → Run
+workflow**, choose the branch, and download from the completed run's
+**Artifacts** section. Downloads include the source commit in their artifact
+names and expire after seven days. These workflows create no tag or GitHub
+release.
+
+| Manual workflow                    | Artifact                                                    |
+| ---------------------------------- | ----------------------------------------------------------- |
+| Build Android APK                  | Release-mode ARM64 APK, signed with a temporary test key    |
+| Build Linux Packages               | Release-mode x64 AppImage and `.deb`, built on Ubuntu 24.04 |
+| Build Windows Installer (existing) | ARM64 or x64 NSIS installer                                 |
+| Build Mobile                       | Android test APK and unsigned iOS simulator archive         |
+
+Android APKs cannot update store installs or APKs from another run because each
+run uses a different test signing key. Use a test device or emulator;
+uninstalling an existing install deletes its local app data. The key is not
+uploaded. These APKs are for sideload testing, not store distribution.
+
+Linux test packages disable updater artifact signing and require a compatible
+system with the runtime libraries. Android and Linux use the repository's
+existing Connect variables and require no production signing secrets.
