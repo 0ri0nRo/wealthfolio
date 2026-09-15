@@ -385,15 +385,18 @@ pub fn run_database_maintenance(encrypt: bool) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let data_root = database_root(current.path()).to_string_lossy().into_owned();
+    // DatabaseOwner prevents this offline command from running alongside a
+    // serving instance for the same database. Clean abandoned staging before
+    // starting our own backup and conversion, whose files must remain intact.
+    db::purge_scratch_dir(
+        std::path::Path::new(current.path()),
+        std::path::Path::new(&data_root),
+    );
     // Migrations must be current before the file is copied: the candidate is a
     // logical copy of whatever schema the source has.
-    current.run_migrations()?;
-
-    let data_root = std::path::Path::new(current.path())
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .to_string_lossy()
-        .into_owned();
+    // Pre-migration backups retain source protection, including plaintext before encryption.
+    current.run_migrations_with_backup(&data_root, &database_owner)?;
 
     let request = if encrypt {
         db::maintenance::MaintenanceRequest::Enable {
@@ -436,10 +439,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     let db_access = open_database(config, &config.db_path)?;
     let db_path = db_access.path().to_string();
     tracing::info!("Database path in use: {}", db_path);
-    let data_root_path = std::path::Path::new(&db_path)
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .to_path_buf();
+    let data_root_path = database_root(&db_path).to_path_buf();
 
     let resolved_secret_path = std::env::var("WF_SECRET_FILE")
         .ok()
@@ -457,7 +457,13 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
         resolved_secret_path.to_string_lossy().to_string(),
     );
 
-    db_access.run_migrations()?;
+    let migration_access = db_access.clone();
+    let migration_owner = database_owner.clone();
+    let backup_root = data_root_path.to_string_lossy().into_owned();
+    tokio::task::spawn_blocking(move || {
+        migration_access.run_migrations_with_backup(&backup_root, &migration_owner)
+    })
+    .await??;
 
     let pool = db_access.create_pool_with_owner(database_owner.clone())?;
     let (sync_outbox_wake_sender, sync_outbox_wake_receiver) = tokio::sync::mpsc::channel(128);

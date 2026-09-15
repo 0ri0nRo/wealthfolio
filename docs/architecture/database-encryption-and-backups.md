@@ -94,6 +94,39 @@ protection dialog; the general data export screen supports CSV and JSON only.
 Native restore accepts validated import previews rather than a separate direct
 file-replacement command.
 
+## Migration backups
+
+`DbAccess::run_migrations_with_backup` runs before creating the pool and writer
+on native desktop/mobile, hosted startup and offline encryption conversion. It
+checks database ownership and inspects schema freshness before Diesel's
+pending-migration query can create its bookkeeping table. Existing application
+schema requires readable migration history; valid partial histories are normal.
+Diesel alone determines which embedded migrations remain pending.
+
+An existing database with pending migrations gets one `BeforeMigration` snapshot
+through the existing SQLCipher copy, integrity checks and durable publication
+path. Free space is checked on the actual backup filesystem against
+`page_count × page_size` plus 16 MiB. This is a backup estimate, not a
+reservation or a guarantee of migration working space. Backup errors prevent
+migrations; migration errors retain and identify the published snapshot. No
+retention, attempt journal or rollback protocol is added. Each retry can create
+another snapshot while retaining earlier copies.
+
+The low-level runner uses `synchronous=FULL` for the migration batch and
+restores `NORMAL` afterward. Existing per-migration transactions,
+nontransactional `VACUUM`, analysis and best-effort checkpoint behavior are
+preserved. Portable validation and reference databases use this runner directly,
+so they also use `FULL` but never create automatic backups. Measure portable
+validation cost before adding a separate durability mode.
+
+Native and asynchronous hosted startup run the wrapper in a blocking worker,
+retaining an `Arc<DatabaseOwner>` inside the worker through caller cancellation.
+Desktop setup lets the event loop render the existing startup gate and schedules
+one-time menu setup on the main thread. Owner-protected startup cleanup removes
+private `.snapshot-*` staging from the explicitly supplied backup root without
+removing published snapshots. Recovery capabilities remain unchanged; see the
+[operator guide](../self-host/backups.md#automatic-backups-before-database-upgrades).
+
 ## Portable format and validation
 
 Protected V1 files contain a 16-byte header, `WFOLIOBACKUP\0\0\0\x01`, followed
