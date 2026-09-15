@@ -270,9 +270,25 @@ impl DbAccess {
             PRAGMA foreign_keys = OFF;
             PRAGMA synchronous = FULL;
             PRAGMA cache_size = -64000;
-            PRAGMA temp_store = MEMORY;
         ",
             )
+            .map_err(StorageError::from)?;
+
+        // Plaintext desktop/server migrations can spill large statement journals
+        // and VACUUM scratch databases to disk instead of growing the heap.
+        // SQLCipher does not encrypt every transient file: encrypted DBs must
+        // keep MEMORY. Preserve mobile behavior too; Android forces it in its
+        // SQLite build, and FILE has not been validated on iOS. DEFAULT is also
+        // memory in our SQLCipher build, so plaintext must explicitly use FILE.
+        // Measurements/rationale: docs/architecture/database-migration-backup-validation.md
+        let temp_store =
+            if self.is_encrypted() || cfg!(any(target_os = "android", target_os = "ios")) {
+                "PRAGMA temp_store = MEMORY;"
+            } else {
+                "PRAGMA temp_store = FILE;"
+            };
+        connection
+            .batch_execute(temp_store)
             .map_err(StorageError::from)?;
 
         let migration_result: Result<Vec<String>> = connection

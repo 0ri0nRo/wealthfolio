@@ -257,6 +257,47 @@ fn migrations_use_full_and_pooled_connections_use_normal() {
 }
 
 #[test]
+fn migration_temp_storage_preserves_encryption_and_mobile_policy() {
+    for encrypted in [false, true] {
+        let (root, access, owner) = older_database(encrypted);
+        access
+            .connect_rusqlite()
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE observed_temp_store(value INTEGER);
+                 CREATE TRIGGER migration_temp_store AFTER INSERT ON __diesel_schema_migrations BEGIN
+                     INSERT INTO observed_temp_store SELECT temp_store FROM pragma_temp_store;
+                 END;",
+            )
+            .unwrap();
+        upgrade(&root, &access, &owner).unwrap();
+        let conn = access.connect_rusqlite().unwrap();
+        let observed: Vec<i64> = conn
+            .prepare("SELECT value FROM observed_temp_store")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+
+        // Observe the real Diesel migration connection, not a freshly opened
+        // connection whose default PRAGMAs could hide a policy regression.
+        if encrypted {
+            assert_eq!(observed, [2, 2], "encrypted migrations must keep MEMORY");
+        } else {
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            assert_eq!(observed, [2, 2], "mobile migrations must keep MEMORY");
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            assert_eq!(
+                observed,
+                [1, 1],
+                "plaintext desktop/server migrations use FILE"
+            );
+        }
+    }
+}
+
+#[test]
 fn overridden_database_path_uses_and_cleans_the_explicit_backup_root() {
     let (database_root, access, owner) = older_database(false);
     let app_data = tempdir().unwrap();

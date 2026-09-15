@@ -119,6 +119,17 @@ preserved. Portable validation and reference databases use this runner directly,
 so they also use `FULL` but never create automatic backups. Measure portable
 validation cost before adding a separate durability mode.
 
+Plaintext desktop/server migrations use `temp_store=FILE` so large statement
+journals and `VACUUM` scratch databases can use disk instead of growing the heap
+with the database. Encrypted databases retain `MEMORY`: SQLCipher does not
+encrypt every transient file, so FILE could expose decrypted data. Android and
+iOS also retain their existing MEMORY behavior; Android's bundled SQLite forces
+it at compile time, and FILE has not been validated on iOS. Using `DEFAULT`
+would not enable disk storage with this SQLCipher build. See the
+[measured memory investigation](database-migration-backup-validation.md#memory-investigation-controlled-reproduction)
+for the evidence and limits. This trades temporary disk I/O and space for lower
+memory use; it does not bound every migration's memory or working-space needs.
+
 Native and asynchronous hosted startup run the wrapper in a blocking worker,
 retaining an `Arc<DatabaseOwner>` inside the worker through caller cancellation.
 Desktop setup lets the event loop render the existing startup gate and schedules
