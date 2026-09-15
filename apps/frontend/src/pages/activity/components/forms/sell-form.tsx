@@ -117,7 +117,8 @@ export const createSellFormSchema = (t?: TFunction) =>
         .positive({
           message: msg(t, "activity:form.err_fxrate_positive", "FX Rate must be positive."),
         })
-        .optional(),
+        .optional()
+        .nullable(),
       // Internal fields
       quoteMode: z.enum([QuoteMode.MARKET, QuoteMode.MANUAL]).default(QuoteMode.MARKET),
       exchangeMic: z.string().nullable().optional(),
@@ -563,6 +564,7 @@ export function SellForm({
             name="accountId"
             accounts={accounts}
             currencyName="currency"
+            fxRateName="fxRate"
             isEditing={isEditing}
           />
           <DatePicker name="activityDate" label={t("activity:field_date")} enableTime={true} />

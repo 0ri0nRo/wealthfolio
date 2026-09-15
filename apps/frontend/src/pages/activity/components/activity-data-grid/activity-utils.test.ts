@@ -55,6 +55,31 @@ const createMockTransaction = (overrides: Partial<LocalTransaction> = {}): Local
 });
 
 describe("activity-utils", () => {
+  it.each(["USD", "CAD"])("serializes an invalidated FX rate for %s accounts", (currency) => {
+    const resolver = createCurrencyResolver(new Map(), "USD");
+    const updated = applyTransactionUpdate({
+      transaction: createMockTransaction({ currency: "EUR", fxRate: "1.2" }),
+      field: "accountId",
+      value: "account-2",
+      accountLookup: new Map([["account-2", createMockAccount({ id: "account-2", currency })]]),
+      assetCurrencyLookup: new Map(),
+      resolveTransactionCurrency: resolver,
+      fallbackCurrency: "USD",
+    });
+    const payload = buildSavePayload(
+      [updated],
+      new Set([updated.id]),
+      new Set(),
+      resolver,
+      new Map(),
+      new Map(),
+      "USD",
+    );
+    expect(JSON.parse(JSON.stringify(payload.updates[0]))).toMatchObject({
+      currency: "EUR",
+      fxRate: currency === "USD" ? "1.2" : null,
+    });
+  });
   it.each([true, false])("handles account changes for a row with isNew=%s", (isNew) => {
     const updated = applyTransactionUpdate({
       transaction: createMockTransaction({

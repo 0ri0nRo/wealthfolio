@@ -407,6 +407,9 @@ export function applyTransactionUpdate(params: TransactionUpdateParams): LocalTr
     updated = { ...updated, accountId: newAccountId };
     const account = accountLookup.get(newAccountId);
     if (account) {
+      if (updated.accountCurrency && updated.accountCurrency !== account.currency) {
+        updated = { ...updated, fxRate: null };
+      }
       updated = { ...updated, accountName: account.name, accountCurrency: account.currency };
 
       // Account defaults apply to new rows, not the currency of an existing activity.

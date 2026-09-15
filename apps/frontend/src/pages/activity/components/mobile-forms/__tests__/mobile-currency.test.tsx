@@ -7,6 +7,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountSelectOption } from "../../forms/fields";
 import type { NewActivityFormValues } from "../../forms/schemas";
 import { MobileDetailsStep } from "../mobile-details-step";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { baseActivitySchema } from "../../forms/schemas";
+import { useActivityMutations } from "../../../hooks/use-activity-mutations";
+
+const updateActivity = vi.hoisted(() => vi.fn());
+vi.mock("@/adapters", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/adapters")>()),
+  updateActivity,
+}));
 
 vi.mock("@/lib/settings-provider", () => ({
   useSettingsContext: () => ({ settings: { baseCurrency: "CAD" } }),
@@ -22,19 +32,23 @@ function TestForm({
   options = accounts,
   onSubmit = vi.fn(),
   isEditing = true,
+  fxRate,
 }: {
   currency: string;
   options?: AccountSelectOption[];
   onSubmit?: (values: NewActivityFormValues) => void;
   isEditing?: boolean;
+  fxRate?: number;
 }) {
   const form = useForm<NewActivityFormValues>({
+    resolver: zodResolver(baseActivitySchema.passthrough()) as never,
     defaultValues: {
       activityType: ActivityType.DEPOSIT,
       accountId: "cad-account",
       activityDate: new Date("2026-09-01T12:00:00Z"),
       amount: 100,
       currency,
+      fxRate,
     },
   });
   const amountWasEdited = useRef(false);
@@ -54,7 +68,38 @@ function TestForm({
   );
 }
 
+function TestEdit({ options }: { options: AccountSelectOption[] }) {
+  const { updateActivityMutation } = useActivityMutations();
+  return (
+    <TestForm
+      currency="USD"
+      fxRate={1.2}
+      options={options}
+      onSubmit={(values) => {
+        void updateActivityMutation.mutateAsync({ ...values, id: "synthetic-mobile" });
+      }}
+    />
+  );
+}
+
 describe("mobile activity currency backfill", () => {
+  it.each(["CAD", "EUR"])("submits the correct FX patch for an account in %s", async (currency) => {
+    updateActivity.mockReset().mockResolvedValue({ id: "synthetic-mobile" });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TestEdit options={[accounts[0], { ...accounts[1], currency }]} />
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: "Account" }));
+    await user.click(screen.getByRole("button", { name: /Other CAD account/ }));
+    await user.click(screen.getByRole("button", { name: "Save test activity" }));
+    await waitFor(() => expect(updateActivity).toHaveBeenCalled());
+    expect(JSON.parse(JSON.stringify(updateActivity.mock.calls[0][0]))).toMatchObject({
+      currency: "USD",
+      fxRate: currency === "CAD" ? "1.2" : null,
+    });
+  });
   beforeEach(() => {
     vi.stubGlobal(
       "ResizeObserver",

@@ -49,7 +49,8 @@ export const createCreditFormSchema = (t?: TFunction) =>
       .positive({
         message: msg(t, "activity:form.err_fxrate_positive", "FX Rate must be positive."),
       })
-      .optional(),
+      .optional()
+      .nullable(),
     subtype: z.string().optional().nullable(),
   });
 
@@ -119,6 +120,7 @@ export function CreditForm({
             name="accountId"
             accounts={accounts}
             currencyName="currency"
+            fxRateName="fxRate"
             isEditing={isEditing}
           />
           <DatePicker name="activityDate" label={t("activity:field_date")} />

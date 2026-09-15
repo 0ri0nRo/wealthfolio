@@ -44,6 +44,7 @@ vi.mock("@wealthfolio/ui", () => ({
 interface FormValues {
   accountId: string;
   currency: string;
+  fxRate?: number | null;
 }
 
 interface TestHarnessProps {
@@ -63,8 +64,10 @@ function TestHarness({ defaultValues, accounts, isEditing }: TestHarnessProps) {
         accounts={accounts}
         currencyName="currency"
         isEditing={isEditing}
+        {...{ fxRateName: "fxRate" as const }}
       />
       <div data-testid="currency-value">{currency}</div>
+      <output data-testid="fx-rate">{JSON.stringify(form.watch("fxRate"))}</output>
       <button type="button" onClick={() => form.setValue("accountId", "acc-usd")}>
         Select USD account
       </button>
@@ -78,6 +81,18 @@ const accounts: AccountSelectOption[] = [
 ];
 
 describe("AccountSelect", () => {
+  it.each(["EUR", "USD"])("invalidates only a changed account currency (%s)", (currency) => {
+    render(
+      <TestHarness
+        accounts={[{ value: "old-account", label: "Old", currency }, ...accounts]}
+        defaultValues={{ accountId: "old-account", currency: "GBP", fxRate: 1.2 }}
+        isEditing
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Choose USD account" }));
+    expect(screen.getByTestId("currency-value")).toHaveTextContent("GBP");
+    expect(screen.getByTestId("fx-rate")).toHaveTextContent(currency === "USD" ? "1.2" : "null");
+  });
   it.each([true, false])("handles an explicit account change with isEditing=%s", (isEditing) => {
     render(
       <TestHarness

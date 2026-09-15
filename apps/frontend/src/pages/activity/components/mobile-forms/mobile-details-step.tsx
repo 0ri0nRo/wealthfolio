@@ -1185,6 +1185,9 @@ export function MobileDetailsStep({
           onSelect={(accountValue) => {
             setValue("accountId", accountValue);
             const selected = filteredAccounts.find((account) => account.value === accountValue);
+            if (selectedAccount && selected && selectedAccount.currency !== selected.currency) {
+              setValue("fxRate", null, { shouldDirty: true, shouldValidate: true });
+            }
             const currentCurrency = getValues("currency")?.trim();
             const shouldAutoSetCurrency =
               (!isEditing && !getFieldState("currency").isDirty) || !currentCurrency;

@@ -30,6 +30,7 @@ interface AccountSelectProps<TFieldValues extends FieldValues = FieldValues> {
   placeholder?: string;
   /** Optional currency field to auto-populate from selected account when untouched/empty */
   currencyName?: FieldPath<TFieldValues>;
+  fxRateName?: FieldPath<TFieldValues>;
   isEditing?: boolean;
 }
 
@@ -39,6 +40,7 @@ export function AccountSelect<TFieldValues extends FieldValues = FieldValues>({
   label,
   placeholder,
   currencyName,
+  fxRateName,
   isEditing = false,
 }: AccountSelectProps<TFieldValues>) {
   const { t } = useTranslation(["activity"]);
@@ -78,10 +80,17 @@ export function AccountSelect<TFieldValues extends FieldValues = FieldValues>({
           <FormControl>
             <Select
               onValueChange={(value) => {
+                const previous = accounts.find((account) => account.value === field.value);
                 field.onChange(value);
-                if (!currencyName) return;
                 const selected = accounts.find((account) => account.value === value);
                 if (!selected) return;
+                if (fxRateName && previous && previous.currency !== selected.currency) {
+                  setValue(fxRateName, null as PathValue<TFieldValues, typeof fxRateName>, {
+                    shouldDirty: true,
+                    shouldValidate: true,
+                  });
+                }
+                if (!currencyName) return;
                 const currentCurrency = (getValues(currencyName) as string | undefined)?.trim();
                 const shouldAutoSetCurrency =
                   (!isEditing && !getFieldState(currencyName).isDirty) || !currentCurrency;

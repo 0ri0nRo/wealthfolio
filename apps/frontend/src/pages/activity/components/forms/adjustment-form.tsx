@@ -91,7 +91,8 @@ export const createAdjustmentFormSchema = (t?: TFunction) =>
         .positive({
           message: msg(t, "activity:form.err_fxrate_positive", "FX Rate must be positive."),
         })
-        .optional(),
+        .optional()
+        .nullable(),
       subtype: z.string().optional().nullable(),
       quoteMode: z.enum([QuoteMode.MARKET, QuoteMode.MANUAL]).default(QuoteMode.MARKET),
       exchangeMic: z.string().nullable().optional(),
@@ -264,6 +265,7 @@ export function AdjustmentForm({
             name="accountId"
             accounts={accounts}
             currencyName="currency"
+            fxRateName="fxRate"
             isEditing={isEditing}
           />
           <DatePicker name="activityDate" label={t("activity:field_date")} />
