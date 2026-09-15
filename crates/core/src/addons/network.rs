@@ -434,7 +434,15 @@ mod tests {
                 let (mut socket, _) = listener.accept().await.unwrap();
                 connections.spawn(async move {
                     let mut request = [0; 1024];
-                    socket.read(&mut request).await.unwrap();
+                    let mut received = 0;
+                    while !request[..received]
+                        .windows(4)
+                        .any(|bytes| bytes == b"\r\n\r\n")
+                    {
+                        let count = socket.read(&mut request[received..]).await.unwrap();
+                        assert!(count > 0, "expected complete request headers");
+                        received += count;
+                    }
                     socket
                         .write_all(
                             b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n",
