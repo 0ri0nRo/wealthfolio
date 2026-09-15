@@ -265,13 +265,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ios
-      - name: Check iOS device and simulator compilation
-        if: needs.changes.outputs.ios_build != 'true'
+      - name: Check iOS device compilation
         run: |
           mkdir -p dist
           printf '<!DOCTYPE html><html></html>' > dist/index.html
           cargo check --locked -p wealthfolio-app --target aarch64-apple-ios
-          cargo check --locked -p wealthfolio-app --target aarch64-apple-ios-sim
+      - name: Check iOS simulator compilation
+        if: needs.changes.outputs.ios_build != 'true'
+        run: cargo check --locked -p wealthfolio-app --target aarch64-apple-ios-sim
       - uses: pnpm/action-setup@v4
         if: needs.changes.outputs.ios_build == 'true'
       - uses: actions/setup-node@v4
@@ -289,10 +290,10 @@ jobs:
           pnpm tauri ios init --ci --skip-targets-install
           # Keep reviewed project customizations and generated local dependency files.
           git restore -- apps/tauri/gen/apple
-      - name: Build unsigned iOS device and simulator archives
+      - name: Build unsigned iOS simulator archive
         if: needs.changes.outputs.ios_build == 'true'
         run:
-          pnpm tauri ios build --ci --debug --no-sign --archive-only --target aarch64 aarch64-sim --
+          pnpm tauri ios build --ci --debug --no-sign --archive-only --target aarch64-sim --
           --locked
 
   build-status:
