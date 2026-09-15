@@ -8,7 +8,14 @@ use wealthfolio_core::sync::{SyncEntity, SyncOperation};
 use wealthfolio_spending::settings::SETTING_KEY_ACCOUNT_IDS;
 
 const REPAIR: &str =
-    include_str!("../../migrations/2026-09-15-000002_account_reference_cleanup/up.sql");
+    include_str!("../../migrations/2026-09-15-000001_account_delete_cleanup/up.sql");
+
+fn apply_repair(conn: &rusqlite::Connection) {
+    // Re-run the consolidated migration against seeded legacy data.
+    let down = include_str!("../../migrations/2026-09-15-000001_account_delete_cleanup/down.sql");
+    conn.execute_batch(&format!("BEGIN;{down}{REPAIR}COMMIT;"))
+        .unwrap();
+}
 
 fn fixture() -> (tempfile::TempDir, DbAccess, rusqlite::Connection) {
     let dir = tempfile::tempdir().unwrap();
@@ -183,7 +190,7 @@ fn repair_requires_absent_account_and_deletion_tombstone() {
         DELETE FROM accounts WHERE id='delete';
         INSERT INTO sync_entity_metadata(entity,entity_id,last_event_id,last_client_timestamp,last_op,last_seq)
         VALUES ('account','keep','keep-event','2026-09-15','delete',1);").unwrap();
-    conn.execute_batch(REPAIR).unwrap();
+    apply_repair(&conn);
     assert_eq!(
         count(&conn, "allocation_targets"),
         3,
@@ -191,11 +198,10 @@ fn repair_requires_absent_account_and_deletion_tombstone() {
     );
     conn.execute_batch("INSERT INTO sync_entity_metadata(entity,entity_id,last_event_id,last_client_timestamp,last_op,last_seq)
         VALUES ('account','delete','delete-event','2026-09-15','delete',2);").unwrap();
-    conn.execute_batch(&format!("BEGIN;{REPAIR}COMMIT;"))
-        .unwrap();
+    apply_repair(&conn);
     assert_clean(&conn);
     assert_eq!(count(&conn, "pragma_foreign_key_check"), 0);
-    conn.execute_batch(REPAIR).unwrap();
+    apply_repair(&conn);
     assert_clean(&conn);
 }
 
@@ -243,7 +249,7 @@ fn runtime_and_migration_prune_lists_identically() {
             )
             .unwrap();
             if migration {
-                conn.execute_batch(REPAIR).unwrap();
+                apply_repair(&conn);
             } else {
                 let mut connection = access.connect().unwrap();
                 connection
