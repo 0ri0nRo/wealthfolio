@@ -136,9 +136,12 @@ fn validate_database(conn: &Connection, encrypted: bool, file_len: u64) -> anyho
     );
     // Only application-owned trigger definitions may cross the boundary. Git
     // checkouts can embed CRLF migrations; backups retain their producer's SQL.
-    let known_triggers =
-        include_str!("../../migrations/2026-05-25-000002_allocation_targets/up.sql")
-            .replace("\r\n", "\n");
+    let known_triggers = [
+        include_str!("../../migrations/2026-05-25-000002_allocation_targets/up.sql"),
+        include_str!("../../migrations/2026-09-15-000001_account_delete_cleanup/up.sql"),
+    ]
+    .join("\n")
+    .replace("\r\n", "\n");
     let mut schema =
         conn.prepare("SELECT type, sql FROM sqlite_master WHERE type IN ('trigger', 'view')")?;
     for object in schema.query_map([], |row| {
