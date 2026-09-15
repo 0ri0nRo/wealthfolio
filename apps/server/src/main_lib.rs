@@ -303,11 +303,10 @@ fn open_database(config: &Config, db_path: &str) -> anyhow::Result<db::DbAccess>
         db::EncryptionPolicy::Plaintext
     };
 
-    // Startup owns the database, so it is the one place allowed to clear the
-    // scratch directory of snapshots a crash left behind. The offline
-    // conversion command deliberately does not: it may be run while an instance
-    // is still serving, and would delete that instance's in-flight snapshots.
-    db::purge_scratch_dir(std::path::Path::new(db_path));
+    // build_state holds DatabaseOwner before reaching here, excluding other
+    // Wealthfolio instances using this database. Clear abandoned snapshot
+    // staging before this process starts operations that could create live files.
+    db::purge_scratch_dir(std::path::Path::new(db_path), database_root(db_path));
 
     let access = db::bootstrap(db_path, &provider, policy)?;
 
@@ -422,6 +421,13 @@ pub fn run_database_maintenance(encrypt: bool) -> anyhow::Result<()> {
 
 /// Default location of the database when `WF_DB_PATH` is unset.
 pub const DEFAULT_DB_PATH: &str = "./db/app.db";
+
+fn database_root(db_path: &str) -> &std::path::Path {
+    std::path::Path::new(db_path)
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."))
+}
 
 pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     let database_owner = Arc::new(db::DatabaseOwner::acquire(&config.db_path)?);
