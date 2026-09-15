@@ -208,9 +208,10 @@ jobs:
           distribution: temurin
           java-version: "17"
           cache: gradle
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
+      - name: Install Android target for the repository toolchain
+        run: |
+          rustup show active-toolchain
+          rustup target add aarch64-linux-android
       - uses: Swatinem/rust-cache@v2
         with:
           key: android
@@ -259,9 +260,10 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: 0
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+      - name: Install iOS targets for the repository toolchain
+        run: |
+          rustup show active-toolchain
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
       - uses: Swatinem/rust-cache@v2
         with:
           key: ios
