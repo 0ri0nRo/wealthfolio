@@ -908,6 +908,11 @@ export interface NetworkRequest {
   headers?: Record<string, string>;
   body?: string;
   auth?: NetworkAuth;
+  /**
+   * HTTP timeout through response-body completion, excluding the preceding DNS lookup.
+   * Positive integer seconds; defaults to 10 and is capped server-side at 120.
+   */
+  timeoutSecs?: number;
 }
 
 export interface NetworkResponse {
