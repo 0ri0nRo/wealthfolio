@@ -128,7 +128,7 @@ fn lists(conn: &rusqlite::Connection) -> (Option<String>, String) {
     )
 }
 
-fn assert_clean(conn: &rusqlite::Connection) {
+fn assert_relations_clean(conn: &rusqlite::Connection) {
     assert_eq!(count(conn, "import_account_templates"), 1);
     assert_eq!(count(conn, "allocation_targets"), 2);
     assert_eq!(count(conn, "allocation_target_weights"), 0);
@@ -141,6 +141,10 @@ fn assert_clean(conn: &rusqlite::Connection) {
         "unrelated"
     );
     assert_eq!(count(conn, "import_templates WHERE id='template'"), 1);
+}
+
+fn assert_clean(conn: &rusqlite::Connection) {
+    assert_relations_clean(conn);
     assert_eq!(
         lists(conn),
         (
@@ -272,6 +276,7 @@ async fn snapshot_account_replacement_preserves_omitted_configuration_tables() {
 #[test]
 fn repair_requires_absent_account_and_deletion_tombstone() {
     let (_dir, _access, conn) = fixture();
+    let original_lists = lists(&conn);
     conn.execute_batch("PRAGMA foreign_keys=OFF;
         DELETE FROM accounts WHERE id='delete';
         INSERT INTO sync_entity_metadata(entity,entity_id,last_event_id,last_client_timestamp,last_op,last_seq)
@@ -285,14 +290,16 @@ fn repair_requires_absent_account_and_deletion_tombstone() {
     conn.execute_batch("INSERT INTO sync_entity_metadata(entity,entity_id,last_event_id,last_client_timestamp,last_op,last_seq)
         VALUES ('account','delete','delete-event','2026-09-15','delete',2);").unwrap();
     apply_repair(&conn);
-    assert_clean(&conn);
+    assert_relations_clean(&conn);
+    assert_eq!(lists(&conn), original_lists);
     assert_eq!(count(&conn, "pragma_foreign_key_check"), 0);
     apply_repair(&conn);
-    assert_clean(&conn);
+    assert_relations_clean(&conn);
+    assert_eq!(lists(&conn), original_lists);
 }
 
 #[test]
-fn runtime_and_migration_prune_lists_identically() {
+fn runtime_prunes_lists_while_migration_preserves_them() {
     let (_dir, access, conn) = fixture();
     conn.execute_batch("PRAGMA foreign_keys=OFF;
         DELETE FROM accounts WHERE id='delete';
@@ -347,7 +354,11 @@ fn runtime_and_migration_prune_lists_identically() {
             }
             assert_eq!(
                 lists(&conn),
-                (expected_csv.map(str::to_owned), expected_json.into()),
+                if migration {
+                    (csv.map(str::to_owned), json.into())
+                } else {
+                    (expected_csv.map(str::to_owned), expected_json.into())
+                },
                 "migration={migration} csv={csv:?} json={json}"
             );
         }
