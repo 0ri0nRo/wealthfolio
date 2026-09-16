@@ -3,8 +3,7 @@ import { usePortfolioAllocations } from "@/hooks/use-portfolio-allocations";
 import { useIsMobileViewport } from "@/hooks/use-platform";
 import { getNetWorthCategoryLabel } from "@/lib/net-worth-category-label";
 import { useSettingsContext } from "@/lib/settings-provider";
-import type { DateRange } from "@/lib/types";
-import { formatDateISO } from "@/lib/utils";
+import { formatDateISO, parseLocalDate } from "@/lib/utils";
 import Balance from "@/pages/dashboard/balance";
 import { AllocationDetailSheet } from "@/pages/holdings/components/allocation-detail-sheet";
 import { DashboardCard } from "@/components/dashboard-card";
@@ -25,7 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@wealthfolio/ui/components/ui/tooltip";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { BreakdownTable } from "./components/breakdown-table";
@@ -48,6 +47,7 @@ import {
 } from "./components/utils";
 import { VelocityCard } from "./components/velocity-card";
 import { NetWorthChart } from "./net-worth-chart";
+import { formatZonedDateKey } from "@/features/spending/lib/timezone";
 
 const DEFAULT_INTERVAL: TimePeriod = "ALL";
 const INTERVAL_STORAGE_KEY = "networth-interval";
@@ -57,43 +57,33 @@ export function NetWorthContent() {
   const { t } = useTranslation();
   const formatting = useNumberFormatting();
   const { settings } = useSettingsContext();
-  const [currentLocalDate, setCurrentLocalDate] = useState(() => new Date());
-  const currentLocalDateISO = formatDateISO(currentLocalDate);
+  const currentDateISO = formatZonedDateKey(new Date(), settings?.timezone);
   const {
     data: netWorthData,
     isLoading,
     isError,
     error,
   } = useNetWorth({
-    date: currentLocalDateISO,
+    date: currentDateISO,
   });
   const isMobile = useIsMobileViewport();
 
-  useEffect(() => {
-    const now = new Date();
-    const nextLocalMidnight = new Date(now);
-    nextLocalMidnight.setHours(24, 0, 0, 0);
-    const timer = window.setTimeout(
-      () => setCurrentLocalDate(new Date()),
-      nextLocalMidnight.getTime() - now.getTime(),
-    );
-
-    return () => window.clearTimeout(timer);
-  }, [currentLocalDate]);
-
   const [intervalCode] = usePersistentState<TimePeriod>(INTERVAL_STORAGE_KEY, DEFAULT_INTERVAL);
 
-  const [dateRange, setDateRange] = useState<DateRange | undefined>(
-    () => getInitialIntervalData(intervalCode).range,
-  );
   const [periodCode, setPeriodCode] = useState<TimePeriod>(intervalCode);
+  // A local Date carries the configured calendar day for the date-only interval helper.
+  const currentDate = useMemo(() => parseLocalDate(currentDateISO), [currentDateISO]);
+  const dateRange = useMemo(
+    () => getInitialIntervalData(periodCode, currentDate).range,
+    [periodCode, currentDate],
+  );
 
   // ISO date strings for the selected-range history query.
   const historyDates = useMemo(() => {
     if (!dateRange?.from) return null;
-    const endDate = dateRange.to ?? currentLocalDate;
+    const endDate = dateRange.to ?? currentDate;
     return { startDate: formatDateISO(dateRange.from), endDate: formatDateISO(endDate) };
-  }, [currentLocalDate, dateRange]);
+  }, [currentDate, dateRange]);
 
   // Extended range covering an equal prior window (for Momentum) and the trailing
   // year (for the Velocity multiple), so both come from one extra query. ALL has
@@ -101,13 +91,13 @@ export function NetWorthContent() {
   // extra daily history.
   const longHistoryDates = useMemo(() => {
     if (!dateRange?.from || periodCode === "ALL") return null;
-    const end = dateRange.to ?? currentLocalDate;
+    const end = dateRange.to ?? currentDate;
     const rangeMs = end.getTime() - dateRange.from.getTime();
     const priorStart = new Date(dateRange.from.getTime() - rangeMs);
     const yearStart = new Date(end.getTime() - 366 * MS_PER_DAY);
     const start = priorStart < yearStart ? priorStart : yearStart;
     return { startDate: formatDateISO(start), endDate: formatDateISO(end) };
-  }, [currentLocalDate, dateRange, periodCode]);
+  }, [currentDate, dateRange, periodCode]);
 
   const { data: historyData, isLoading: isHistoryLoading } = useNetWorthHistory({
     startDate: historyDates?.startDate ?? "",
@@ -121,13 +111,8 @@ export function NetWorthContent() {
     enabled: !!longHistoryDates,
   });
 
-  const handleIntervalSelect = (
-    code: TimePeriod,
-    _description: string,
-    range: DateRange | undefined,
-  ) => {
+  const handleIntervalSelect = (code: TimePeriod) => {
     setPeriodCode(code);
-    setDateRange(range);
   };
 
   const parsedData = useMemo((): ParsedNetWorth | null => {
@@ -167,9 +152,9 @@ export function NetWorthContent() {
   const velocity = useMemo(() => computeVelocity(parsedHistory), [parsedHistory]);
   const trailingYearMonthly = useMemo(() => {
     if (periodCode === "ALL") return undefined;
-    const cutoff = formatDateISO(new Date(Date.now() - 366 * MS_PER_DAY));
+    const cutoff = formatDateISO(new Date(currentDate.getTime() - 366 * MS_PER_DAY));
     return averageMonthlyChange(longHistory.filter((point) => point.date >= cutoff));
-  }, [longHistory, periodCode]);
+  }, [longHistory, periodCode, currentDate]);
   const momentum = useMemo(() => {
     if (!historyDates || periodCode === "ALL") return null;
     return computeMomentum(longHistory, historyDates.startDate, historyDates.endDate);
