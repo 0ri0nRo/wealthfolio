@@ -18,16 +18,6 @@ WHERE snapshot_id NOT IN (SELECT id FROM holdings_snapshots);
 DELETE FROM daily_account_valuation
 WHERE account_id NOT IN (SELECT id FROM accounts);
 
--- Sync may insert snapshots before their account, so a foreign key on account_id
--- would reject valid replay. A trigger covers both repository and direct SQL
--- account deletion without imposing an insertion order.
-CREATE TRIGGER accounts_delete_portfolio_rows
-AFTER DELETE ON accounts
-BEGIN
-    DELETE FROM holdings_snapshots WHERE account_id = OLD.id;
-    DELETE FROM daily_account_valuation WHERE account_id = OLD.id;
-END;
-
 -- Absence alone can mean a synced account has not arrived. Only repair references
 -- to accounts with a recorded deletion, and retain all shared configuration.
 CREATE TEMP TABLE deleted_account_refs AS

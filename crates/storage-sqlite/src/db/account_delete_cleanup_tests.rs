@@ -118,84 +118,9 @@ fn account_delete_cleanup_migration_cleans_orphans_and_preserves_valid_data() {
         count(&conn, "SELECT COUNT(*) FROM sqlite_master WHERE type = 'trigger' AND name = 'accounts_delete_portfolio_rows'"),
         0
     );
-    // Installing the trigger again must preserve surviving data.
+    // Repeating the data repair must preserve surviving data.
     conn.execute_batch(UP).unwrap();
     assert_preserved(&conn);
-}
-
-#[test]
-fn account_delete_cleanup_covers_direct_deletes_and_rolls_back_atomically() {
-    let (_dir, mut conn) = legacy_database();
-    conn.execute_batch(UP).unwrap();
-    conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
-
-    let tx = conn.transaction().unwrap();
-    tx.execute("DELETE FROM accounts WHERE id = 'delete'", [])
-        .unwrap();
-    assert_eq!(
-        count(
-            &tx,
-            "SELECT COUNT(*) FROM holdings_snapshots WHERE account_id = 'delete'"
-        ),
-        0
-    );
-    assert_eq!(
-        count(
-            &tx,
-            "SELECT COUNT(*) FROM daily_account_valuation WHERE account_id = 'delete'"
-        ),
-        0
-    );
-    assert_eq!(
-        count(
-            &tx,
-            "SELECT COUNT(*) FROM snapshot_positions WHERE snapshot_id LIKE 'delete-%'"
-        ),
-        0
-    );
-    tx.rollback().unwrap();
-    assert_preserved(&conn);
-    assert_eq!(
-        count(&conn, "SELECT COUNT(*) FROM accounts WHERE id = 'delete'"),
-        1
-    );
-
-    conn.execute_batch(
-        "CREATE TRIGGER fail_cleanup BEFORE DELETE ON daily_account_valuation
-         WHEN OLD.account_id = 'delete'
-         BEGIN SELECT RAISE(ABORT, 'injected cleanup failure'); END;",
-    )
-    .unwrap();
-    assert!(conn
-        .execute("DELETE FROM accounts WHERE id = 'delete'", [])
-        .is_err());
-    assert_preserved(&conn);
-    assert_eq!(
-        count(&conn, "SELECT COUNT(*) FROM accounts WHERE id = 'delete'"),
-        1
-    );
-    conn.execute_batch("DROP TRIGGER fail_cleanup;").unwrap();
-
-    // Sync applies account deletes through SQL, bypassing AccountService.
-    conn.execute("DELETE FROM accounts WHERE id = 'delete'", [])
-        .unwrap();
-    assert_eq!(count(&conn, "SELECT COUNT(*) FROM holdings_snapshots"), 5);
-    assert_eq!(
-        count(&conn, "SELECT COUNT(*) FROM daily_account_valuation"),
-        1
-    );
-    assert_eq!(count(&conn, "SELECT COUNT(*) FROM snapshot_positions"), 5);
-    assert_eq!(
-        count(
-            &conn,
-            "SELECT COUNT(*) FROM holdings_snapshots WHERE account_id = 'keep'"
-        ),
-        5
-    );
-    assert_eq!(
-        count(&conn, "SELECT COUNT(*) FROM pragma_foreign_key_check"),
-        0
-    );
 }
 
 #[test]
@@ -235,14 +160,5 @@ fn account_delete_cleanup_preserves_snapshots_waiting_for_their_account() {
             "SELECT COUNT(*) FROM holdings_snapshots WHERE account_id = 'late-account'"
         ),
         2
-    );
-    conn.execute("DELETE FROM accounts WHERE id = 'late-account'", [])
-        .unwrap();
-    assert_eq!(
-        count(
-            &conn,
-            "SELECT COUNT(*) FROM holdings_snapshots WHERE account_id = 'late-account'"
-        ),
-        0
     );
 }

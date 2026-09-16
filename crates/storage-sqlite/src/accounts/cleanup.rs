@@ -5,16 +5,25 @@ use wealthfolio_spending::settings::SETTING_KEY_ACCOUNT_IDS;
 use crate::errors::StorageError;
 use crate::schema::{
     allocation_target_constraints, allocation_targets, app_settings, contribution_limits,
-    import_account_templates,
+    daily_account_valuation, holdings_snapshots, import_account_templates,
 };
 
-/// Clean configuration for a logical account deletion, inside the caller's transaction.
+/// Clean portfolio data and configuration for a logical account deletion in the caller's transaction.
 /// Do not call during snapshot replacement: absent snapshot tables retain local configuration.
 /// These changes follow the account-delete event without generating additional sync events.
 pub(crate) fn delete_account_references(
     conn: &mut SqliteConnection,
     account_id: &str,
 ) -> Result<()> {
+    diesel::delete(holdings_snapshots::table.filter(holdings_snapshots::account_id.eq(account_id)))
+        .execute(conn)
+        .map_err(StorageError::from)?;
+    diesel::delete(
+        daily_account_valuation::table.filter(daily_account_valuation::account_id.eq(account_id)),
+    )
+    .execute(conn)
+    .map_err(StorageError::from)?;
+
     diesel::delete(
         import_account_templates::table.filter(import_account_templates::account_id.eq(account_id)),
     )

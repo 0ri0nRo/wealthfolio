@@ -1,2 +1,1 @@
--- Previously deleted orphan data cannot be restored.
-DROP TRIGGER IF EXISTS accounts_delete_portfolio_rows;
+-- Data-only repair: previously deleted orphan data cannot be restored.
