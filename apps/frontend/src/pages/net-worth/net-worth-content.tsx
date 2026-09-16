@@ -25,7 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@wealthfolio/ui/components/ui/tooltip";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 import { BreakdownTable } from "./components/breakdown-table";
@@ -57,8 +57,29 @@ export function NetWorthContent() {
   const { t } = useTranslation();
   const formatting = useNumberFormatting();
   const { settings } = useSettingsContext();
-  const { data: netWorthData, isLoading, isError, error } = useNetWorth();
+  const [currentLocalDate, setCurrentLocalDate] = useState(() => new Date());
+  const currentLocalDateISO = formatDateISO(currentLocalDate);
+  const {
+    data: netWorthData,
+    isLoading,
+    isError,
+    error,
+  } = useNetWorth({
+    date: currentLocalDateISO,
+  });
   const isMobile = useIsMobileViewport();
+
+  useEffect(() => {
+    const now = new Date();
+    const nextLocalMidnight = new Date(now);
+    nextLocalMidnight.setHours(24, 0, 0, 0);
+    const timer = window.setTimeout(
+      () => setCurrentLocalDate(new Date()),
+      nextLocalMidnight.getTime() - now.getTime(),
+    );
+
+    return () => window.clearTimeout(timer);
+  }, [currentLocalDate]);
 
   const [intervalCode] = usePersistentState<TimePeriod>(INTERVAL_STORAGE_KEY, DEFAULT_INTERVAL);
 
@@ -70,9 +91,9 @@ export function NetWorthContent() {
   // ISO date strings for the selected-range history query.
   const historyDates = useMemo(() => {
     if (!dateRange?.from) return null;
-    const endDate = dateRange.to ?? new Date();
+    const endDate = dateRange.to ?? currentLocalDate;
     return { startDate: formatDateISO(dateRange.from), endDate: formatDateISO(endDate) };
-  }, [dateRange]);
+  }, [currentLocalDate, dateRange]);
 
   // Extended range covering an equal prior window (for Momentum) and the trailing
   // year (for the Velocity multiple), so both come from one extra query. ALL has
@@ -80,13 +101,13 @@ export function NetWorthContent() {
   // extra daily history.
   const longHistoryDates = useMemo(() => {
     if (!dateRange?.from || periodCode === "ALL") return null;
-    const end = dateRange.to ?? new Date();
+    const end = dateRange.to ?? currentLocalDate;
     const rangeMs = end.getTime() - dateRange.from.getTime();
     const priorStart = new Date(dateRange.from.getTime() - rangeMs);
     const yearStart = new Date(end.getTime() - 366 * MS_PER_DAY);
     const start = priorStart < yearStart ? priorStart : yearStart;
     return { startDate: formatDateISO(start), endDate: formatDateISO(end) };
-  }, [dateRange, periodCode]);
+  }, [currentLocalDate, dateRange, periodCode]);
 
   const { data: historyData, isLoading: isHistoryLoading } = useNetWorthHistory({
     startDate: historyDates?.startDate ?? "",
