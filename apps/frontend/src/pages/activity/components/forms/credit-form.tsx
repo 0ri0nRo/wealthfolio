@@ -8,6 +8,7 @@ import { useMemo } from "react";
 import { FormProvider, useForm, type Resolver } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import { useActivityCurrency } from "../../hooks/use-activity-currency";
 import {
   AccountSelect,
   AdvancedOptionsSection,
@@ -100,6 +101,8 @@ export function CreditForm({
     },
   });
 
+  useActivityCurrency(form, accounts, { isEditing });
+
   const accountId = form.watch("accountId");
   const currency = form.watch("currency");
   const selectedAccount = useMemo(
@@ -116,13 +119,7 @@ export function CreditForm({
     <FormProvider {...form}>
       <form onSubmit={handleSubmit} className="space-y-4">
         <FormSection title={t("activity:form.section_account")}>
-          <AccountSelect
-            name="accountId"
-            accounts={accounts}
-            currencyName="currency"
-            fxRateName="fxRate"
-            isEditing={isEditing}
-          />
+          <AccountSelect name="accountId" accounts={accounts} />
           <DatePicker name="activityDate" label={t("activity:field_date")} />
         </FormSection>
 

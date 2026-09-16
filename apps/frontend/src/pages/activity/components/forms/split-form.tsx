@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { FormProvider, useForm, type Resolver } from "react-hook-form";
 import { z } from "zod";
 import type { TFunction } from "i18next";
+import { useActivityCurrency } from "../../hooks/use-activity-currency";
 import {
   AccountSelect,
   AdvancedOptionsSection,
@@ -127,6 +128,8 @@ export function SplitForm({
     },
   });
 
+  useActivityCurrency(form, accounts, { isEditing });
+
   const { watch } = form;
   const accountId = watch("accountId");
 
@@ -159,13 +162,7 @@ export function SplitForm({
           <input type="hidden" {...form.register("symbolInstrumentType")} />
           <input type="hidden" {...form.register("existingAssetId")} />
 
-          <AccountSelect
-            name="accountId"
-            accounts={accounts}
-            currencyName="currency"
-            fxRateName="fxRate"
-            isEditing={isEditing}
-          />
+          <AccountSelect name="accountId" accounts={accounts} />
           <DatePicker name="activityDate" label={t("activity:field_date")} />
         </FormSection>
 

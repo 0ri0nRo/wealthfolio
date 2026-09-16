@@ -55,6 +55,20 @@ const createMockTransaction = (overrides: Partial<LocalTransaction> = {}): Local
 });
 
 describe("activity-utils", () => {
+  it("clears the old rate when the transaction currency changes", () => {
+    const updated = applyTransactionUpdate({
+      transaction: createMockTransaction({ currency: "EUR", fxRate: "1.2" }),
+      field: "currency",
+      value: "GBP",
+      accountLookup: new Map(),
+      assetCurrencyLookup: new Map(),
+      resolveTransactionCurrency: createCurrencyResolver(new Map(), "USD"),
+      fallbackCurrency: "USD",
+    });
+    expect(updated.currency).toBe("GBP");
+    expect(updated.fxRate).toBeNull();
+  });
+
   it.each(["USD", "CAD"])("serializes an invalidated FX rate for %s accounts", (currency) => {
     const resolver = createCurrencyResolver(new Map(), "USD");
     const updated = applyTransactionUpdate({

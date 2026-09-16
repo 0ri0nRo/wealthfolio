@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { FormProvider, useForm, type Resolver } from "react-hook-form";
 import { useTranslation } from "react-i18next";
 import { z } from "zod";
+import { useActivityCurrency } from "../../hooks/use-activity-currency";
 import {
   AccountSelect,
   AdvancedOptionsSection,
@@ -273,6 +274,8 @@ export function BuyForm({
     },
   });
 
+  useActivityCurrency(form, accounts, { isEditing });
+
   const { watch, setValue } = form;
   const accountId = watch("accountId");
   const assetId = watch("assetId");
@@ -492,13 +495,7 @@ export function BuyForm({
             </>
           )}
 
-          <AccountSelect
-            name="accountId"
-            accounts={accounts}
-            currencyName="currency"
-            fxRateName="fxRate"
-            isEditing={isEditing}
-          />
+          <AccountSelect name="accountId" accounts={accounts} />
           <DatePicker name="activityDate" label={t("activity:field_date")} enableTime={true} />
         </FormSection>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { Controller, FormProvider, useForm } from "react-hook-form";
 import { AccountSelect, type AccountSelectOption } from "../account-select";
 
@@ -50,22 +50,15 @@ interface FormValues {
 interface TestHarnessProps {
   defaultValues: FormValues;
   accounts: AccountSelectOption[];
-  isEditing?: boolean;
 }
 
-function TestHarness({ defaultValues, accounts, isEditing }: TestHarnessProps) {
+function TestHarness({ defaultValues, accounts }: TestHarnessProps) {
   const form = useForm<FormValues>({ defaultValues });
   const currency = form.watch("currency");
 
   return (
     <FormProvider {...form}>
-      <AccountSelect<FormValues>
-        name="accountId"
-        accounts={accounts}
-        currencyName="currency"
-        isEditing={isEditing}
-        {...{ fxRateName: "fxRate" as const }}
-      />
+      <AccountSelect<FormValues> name="accountId" accounts={accounts} />
       <div data-testid="currency-value">{currency}</div>
       <output data-testid="fx-rate">{JSON.stringify(form.watch("fxRate"))}</output>
       <button type="button" onClick={() => form.setValue("accountId", "acc-usd")}>
@@ -81,79 +74,22 @@ const accounts: AccountSelectOption[] = [
 ];
 
 describe("AccountSelect", () => {
-  it.each(["EUR", "USD"])("invalidates only a changed account currency (%s)", (currency) => {
-    render(
-      <TestHarness
-        accounts={[{ value: "old-account", label: "Old", currency }, ...accounts]}
-        defaultValues={{ accountId: "old-account", currency: "GBP", fxRate: 1.2 }}
-        isEditing
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Choose USD account" }));
-    expect(screen.getByTestId("currency-value")).toHaveTextContent("GBP");
-    expect(screen.getByTestId("fx-rate")).toHaveTextContent(currency === "USD" ? "1.2" : "null");
-  });
-  it.each([true, false])("handles an explicit account change with isEditing=%s", (isEditing) => {
+  it("changes only the account, leaving currency and FX to the activity form", () => {
     render(
       <TestHarness
         accounts={accounts}
-        defaultValues={{ accountId: "acc-eur", currency: "EUR" }}
-        isEditing={isEditing}
+        defaultValues={{ accountId: "acc-eur", currency: "GBP", fxRate: 1.2 }}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Choose USD account" }));
     expect(screen.getByTestId("account-select")).toHaveAttribute("data-value", "acc-usd");
-    expect(screen.getByTestId("currency-value")).toHaveTextContent(isEditing ? "EUR" : "USD");
+    expect(screen.getByTestId("currency-value")).toHaveTextContent("GBP");
+    expect(screen.getByTestId("fx-rate")).toHaveTextContent("1.2");
   });
-  it("does not overwrite a prefilled currency when editing", async () => {
+  it("does not fill currency on mount", () => {
     render(
-      <TestHarness
-        accounts={accounts}
-        defaultValues={{
-          accountId: "acc-eur",
-          currency: "USD",
-        }}
-      />,
+      <TestHarness accounts={accounts} defaultValues={{ accountId: "acc-eur", currency: "" }} />,
     );
-
-    await waitFor(() => {
-      expect(screen.getByTestId("currency-value")).toHaveTextContent("USD");
-    });
-  });
-
-  it("backfills currency when account is preselected and currency is empty", async () => {
-    render(
-      <TestHarness
-        accounts={accounts}
-        defaultValues={{
-          accountId: "acc-eur",
-          currency: "",
-        }}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId("currency-value")).toHaveTextContent("EUR");
-    });
-  });
-
-  it("reflects programmatic account changes", async () => {
-    render(
-      <TestHarness
-        accounts={accounts}
-        defaultValues={{
-          accountId: "acc-eur",
-          currency: "EUR",
-        }}
-      />,
-    );
-
-    expect(screen.getByTestId("account-select")).toHaveAttribute("data-value", "acc-eur");
-
-    screen.getByRole("button", { name: "Select USD account" }).click();
-
-    await waitFor(() => {
-      expect(screen.getByTestId("account-select")).toHaveAttribute("data-value", "acc-usd");
-    });
+    expect(screen.getByTestId("currency-value")).toBeEmptyDOMElement();
   });
 });

@@ -82,6 +82,7 @@ describe("account currency change through validated desktop submission", () => {
           </QueryClientProvider>,
         );
         const user = userEvent.setup();
+        await user.click(screen.getByTestId("advanced-options-button"));
         screen.getByRole("combobox", { name: "Account" }).focus();
         await user.keyboard("[ArrowDown]");
         await user.keyboard("[End][Enter]");
@@ -110,6 +111,7 @@ describe("account currency change through validated desktop submission", () => {
           </QueryClientProvider>,
         );
         const user = userEvent.setup();
+        await user.click(screen.getByTestId("advanced-options-button"));
         screen.getByRole("combobox", { name: "Account" }).focus();
         await user.keyboard("[ArrowDown][End][Enter]");
         await user.click(screen.getByRole("button", { name: /update/i }));

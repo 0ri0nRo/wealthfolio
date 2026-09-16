@@ -1,3 +1,4 @@
+import { getActivityCurrencyPatch } from "../../activity-currency";
 import {
   isAssetBackedIncomeSubtype,
   isAssetIdentityRequired,
@@ -407,20 +408,34 @@ export function applyTransactionUpdate(params: TransactionUpdateParams): LocalTr
     updated = { ...updated, accountId: newAccountId };
     const account = accountLookup.get(newAccountId);
     if (account) {
-      if (updated.accountCurrency && updated.accountCurrency !== account.currency) {
-        updated = { ...updated, fxRate: null };
-      }
-      updated = { ...updated, accountName: account.name, accountCurrency: account.currency };
-
-      // Account defaults apply to new rows, not the currency of an existing activity.
-      if (updated.isNew || !updated.currency) {
-        updated = { ...updated, currency: account.currency };
-      }
+      updated = {
+        ...updated,
+        ...getActivityCurrencyPatch({
+          currency: updated.currency,
+          previousCurrency: updated.currency,
+          accountCurrency: account.currency,
+          previousAccountCurrency: updated.accountCurrency,
+          useAccountDefault: Boolean(updated.isNew || !updated.currency),
+        }),
+        accountName: account.name,
+        accountCurrency: account.currency,
+      };
     }
     updated = applyCashDefaults(updated, resolveTransactionCurrency, fallbackCurrency);
     updated = applySplitDefaults(updated);
   } else if (field === "currency") {
-    updated = { ...updated, currency: typeof value === "string" ? value : updated.currency };
+    const currency = typeof value === "string" ? value : updated.currency;
+    updated = {
+      ...updated,
+      currency,
+      ...getActivityCurrencyPatch({
+        currency,
+        previousCurrency: updated.currency,
+        accountCurrency: updated.accountCurrency,
+        previousAccountCurrency: updated.accountCurrency,
+        useAccountDefault: false,
+      }),
+    };
     updated = applyCashDefaults(updated, resolveTransactionCurrency, fallbackCurrency);
     updated = applySplitDefaults(updated);
   } else if (field === "comment") {
