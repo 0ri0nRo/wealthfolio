@@ -83,7 +83,7 @@ mod tests {
         age_from_birth_year_month, normalize_retirement_plan_ages, PayoutMode,
         RetirementIncomeStream, RetirementPlan, StreamKind,
     };
-    use chrono::{Datelike, Local, NaiveDate};
+    use chrono::{Datelike, NaiveDate};
 
     #[test]
     fn derives_age_from_birth_year_month() {
