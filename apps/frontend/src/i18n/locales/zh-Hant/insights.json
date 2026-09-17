@@ -125,5 +125,18 @@
     },
     "days_ago_other": "{{count}} 天前",
     "days_ago_one": "{{count}} 天前"
+  },
+  "highlights": {
+    "movers": "漲跌排行",
+    "concentration": "集中度",
+    "daily": "每日變動 · 目前持有部位",
+    "rank_by": "每日漲跌排序依據",
+    "gainers": "上漲部位",
+    "losers": "下跌部位",
+    "no_moves": "尚無可顯示漲跌的資料。",
+    "portfolio_share": "佔投資組合價值的比例（含現金）",
+    "largest": "最大持有部位",
+    "top_five": "前五大持有部位",
+    "concentration_unavailable": "集中度計算需要持有部位的價值為正，且投資組合中沒有放空部位。"
   }
 }

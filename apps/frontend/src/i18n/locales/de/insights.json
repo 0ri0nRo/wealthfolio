@@ -125,5 +125,18 @@
     },
     "days_ago_one": "vor {{count}} T",
     "days_ago_other": "vor {{count}} T"
+  },
+  "highlights": {
+    "movers": "Größte Kursbewegungen",
+    "concentration": "Konzentration",
+    "daily": "Tagesänderung · aktuelle Positionen",
+    "rank_by": "Tagesänderungen sortieren nach",
+    "gainers": "Gewinner",
+    "losers": "Verlierer",
+    "no_moves": "Keine Kursbewegungen mit verfügbaren Daten.",
+    "portfolio_share": "Anteil am Portfoliowert einschließlich Barbestand",
+    "largest": "Größte Position",
+    "top_five": "Die fünf größten Positionen",
+    "concentration_unavailable": "Die Konzentration erfordert positive Positionswerte und ein Portfolio ohne Short-Positionen."
   }
 }

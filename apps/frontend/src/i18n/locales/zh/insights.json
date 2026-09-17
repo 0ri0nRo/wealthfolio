@@ -123,5 +123,18 @@
       "per_month": "/月"
     },
     "days_ago_other": "{{count}} 天前"
+  },
+  "highlights": {
+    "movers": "涨跌排行",
+    "concentration": "集中度",
+    "daily": "每日变动 · 当前持仓",
+    "rank_by": "每日涨跌排序依据",
+    "gainers": "上涨持仓",
+    "losers": "下跌持仓",
+    "no_moves": "暂无可显示涨跌的数据。",
+    "portfolio_share": "占投资组合价值的比例（含现金）",
+    "largest": "最大持仓",
+    "top_five": "前五大持仓",
+    "concentration_unavailable": "集中度计算要求持仓价值为正，且投资组合中没有空头头寸。"
   }
 }

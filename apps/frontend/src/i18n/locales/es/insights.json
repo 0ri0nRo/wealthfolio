@@ -131,5 +131,18 @@
     "days_ago_one": "hace {{count}} d",
     "days_ago_other": "hace {{count}} d",
     "days_ago_many": "hace {{count}} d"
+  },
+  "highlights": {
+    "movers": "Mayores movimientos",
+    "concentration": "Concentración",
+    "daily": "Variación diaria · posiciones actuales",
+    "rank_by": "Ordenar movimientos diarios por",
+    "gainers": "Mayores subidas",
+    "losers": "Mayores bajadas",
+    "no_moves": "No hay movimientos con datos disponibles.",
+    "portfolio_share": "Proporción del valor de la cartera, incluido el efectivo",
+    "largest": "Mayor posición",
+    "top_five": "Cinco mayores posiciones",
+    "concentration_unavailable": "La concentración requiere posiciones con valor positivo y una cartera sin posiciones cortas."
   }
 }

@@ -123,5 +123,18 @@
       "per_month": "/月"
     },
     "days_ago_other": "{{count}}日前"
+  },
+  "highlights": {
+    "movers": "値動き上位",
+    "concentration": "集中度",
+    "daily": "日次変動 · 現在の保有銘柄",
+    "rank_by": "日次変動の並べ替え基準",
+    "gainers": "上昇銘柄",
+    "losers": "下落銘柄",
+    "no_moves": "値動きを表示できるデータがありません。",
+    "portfolio_share": "現金を含むポートフォリオ評価額に占める割合",
+    "largest": "最大の保有銘柄",
+    "top_five": "上位5銘柄",
+    "concentration_unavailable": "集中度を表示するには、保有銘柄の評価額が正で、空売りポジションがない必要があります。"
   }
 }
