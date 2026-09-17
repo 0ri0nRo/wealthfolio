@@ -1053,12 +1053,13 @@ export default function PerformancePage() {
   const { settings } = useSettingsContext();
   const todayISO = formatZonedDateKey(new Date(), settings?.timezone);
   const today = useMemo(() => parseLocalDate(todayISO), [todayISO]);
-  const [dateRange, setDateRange] = usePersistentState<DateRange | undefined>(
+  const [savedDateRange, setDateRange] = usePersistentState<DateRange | undefined | null>(
     "performance:dateRange",
-    {
-      from: subMonths(today, 12),
-      to: today,
-    },
+    null,
+  );
+  const dateRange = useMemo(
+    () => (savedDateRange === null ? { from: subMonths(today, 12), to: today } : savedDateRange),
+    [savedDateRange, today],
   );
 
   useEffect(() => {

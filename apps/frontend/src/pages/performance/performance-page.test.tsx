@@ -9,9 +9,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import PerformancePage from "./performance-page";
 import { ALL_PORTFOLIO_ITEM } from "./performance-selection";
 
-const mocks = vi.hoisted(() => ({ performance: vi.fn(), getAccounts: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  performance: vi.fn(),
+  getAccounts: vi.fn(),
+  settings: { timezone: "Asia/Shanghai" } as { timezone: string } | null,
+}));
 vi.mock("@/lib/settings-provider", () => ({
-  useSettingsContext: () => ({ settings: { timezone: "Asia/Shanghai" } }),
+  useSettingsContext: () => ({ settings: mocks.settings }),
 }));
 vi.mock("@/adapters", () => ({ getAccounts: mocks.getAccounts }));
 vi.mock("@/hooks/use-portfolios", () => ({
@@ -120,6 +124,7 @@ function renderPage(seedAccounts = true) {
 
 describe("PerformancePage shared scope", () => {
   beforeEach(() => {
+    mocks.settings = { timezone: "Asia/Shanghai" };
     localStorage.clear();
     useAccountScopeStore.setState(initialState, true);
     mocks.performance.mockReturnValue({
@@ -129,6 +134,27 @@ describe("PerformancePage shared scope", () => {
       errorMessages: [],
     });
     mocks.getAccounts.mockResolvedValue(accounts);
+  });
+
+  it("updates the default range when settings arrive after the initial render", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-12-31T16:30:00Z"));
+    mocks.settings = null;
+    const { rerender, client } = renderPage();
+    mocks.settings = { timezone: "Asia/Shanghai" };
+    rerender(
+      <StrictMode>
+        <QueryClientProvider client={client}>
+          <PerformancePage />
+        </QueryClientProvider>
+      </StrictMode>,
+    );
+    expect(mocks.performance).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        dateRange: { from: new Date(2026, 0, 1), to: new Date(2027, 0, 1) },
+      }),
+    );
+    vi.useRealTimers();
   });
 
   it("retains and requests a hidden account selected elsewhere", async () => {

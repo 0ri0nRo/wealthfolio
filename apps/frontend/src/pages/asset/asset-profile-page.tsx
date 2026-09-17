@@ -517,9 +517,10 @@ export const AssetProfilePage = () => {
     return option;
   }, [assetProfile]);
 
-  const isExpiredOption = assetProfile
-    ? isExpiredOptionAsset(assetProfile, settings?.timezone)
-    : false;
+  const isExpiredOption =
+    optionSpec?.expiration && assetProfile
+      ? isExpiredOptionAsset(assetProfile, settings?.timezone)
+      : false;
 
   const [confirmExpiryOpen, setConfirmExpiryOpen] = useState(false);
   const queryClient = useQueryClient();
