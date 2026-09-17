@@ -10973,6 +10973,102 @@ mod tests {
         );
         assert_eq!(scoped[2].external_inflow_base, Decimal::ZERO);
         assert_eq!(scoped[2].external_outflow_base, Decimal::ZERO);
+        // Netting the internal legs must not relabel the day: it keeps the
+        // per-account provenance instead of a stamped CashAmount mixture.
+        assert_eq!(
+            scoped[2].external_flow_source,
+            ExternalFlowSource::ActivityDerived
+        );
+    }
+
+    // Issue #1609 through the scoped pipeline: a cash deposit and an external
+    // in-kind transfer-in land on the same day in one account. The mock quote
+    // service has no quote, so the transfer degrades to its cost basis and the
+    // day must be the degraded mixture, not the exact one.
+    #[test]
+    fn scoped_flow_pipeline_marks_same_day_cash_and_cost_basis_flows_as_mixed() {
+        let activity_repository = Arc::new(MockActivityRepository::new());
+
+        let mut deposit = create_stored_activity("deposit", "acc-a", None);
+        deposit.activity_type = "DEPOSIT".to_string();
+        deposit.activity_date = parse_test_activity_datetime("2026-05-02");
+        deposit.quantity = None;
+        deposit.unit_price = None;
+        deposit.amount = Some(dec!(50));
+        deposit.metadata = None;
+        activity_repository.add_activity(deposit);
+
+        let mut transfer_in = create_stored_activity("transfer-in", "acc-a", Some("AAPL"));
+        transfer_in.activity_type = "TRANSFER_IN".to_string();
+        transfer_in.activity_date = parse_test_activity_datetime("2026-05-02");
+        transfer_in.quantity = Some(dec!(10));
+        transfer_in.unit_price = Some(dec!(8));
+        transfer_in.amount = None;
+        transfer_in.metadata = Some(json!({ "flow": { "is_external": true } }));
+        activity_repository.add_activity(transfer_in);
+
+        let valuation_repository = Arc::new(MockValuationRepository::new(vec![
+            create_daily_valuation(
+                "acc-a",
+                "2026-05-01",
+                dec!(100),
+                Decimal::ZERO,
+                dec!(100),
+                dec!(100),
+            ),
+            create_daily_valuation(
+                "acc-a",
+                "2026-05-02",
+                dec!(150),
+                dec!(80),
+                dec!(230),
+                dec!(230),
+            ),
+            create_daily_valuation(
+                "acc-b",
+                "2026-05-01",
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+            create_daily_valuation(
+                "acc-b",
+                "2026-05-02",
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ),
+        ]));
+        let account_ids = vec!["acc-a".to_string(), "acc-b".to_string()];
+        let valuation_service = ValuationService::new(
+            Arc::new(RwLock::new("USD".to_string())),
+            valuation_repository,
+            Arc::new(MockSnapshotService),
+            Arc::new(MockQuoteService),
+            Arc::new(MockFxService::new()),
+        )
+        .with_activity_repository(
+            activity_repository,
+            Arc::new(RwLock::new("UTC".to_string())),
+        );
+
+        let scoped = valuation_service
+            .get_historical_valuations_for_accounts(
+                "scope:mixed-day",
+                &account_ids,
+                "USD",
+                Some(NaiveDate::from_ymd_opt(2026, 5, 1).unwrap()),
+                Some(NaiveDate::from_ymd_opt(2026, 5, 2).unwrap()),
+            )
+            .expect("scoped flow calculation should fold same-day activities");
+
+        assert_eq!(scoped[1].external_inflow_base, dec!(130));
+        assert_eq!(scoped[1].external_outflow_base, Decimal::ZERO);
+        assert_eq!(scoped[1].external_flow_source, ExternalFlowSource::Mixed);
+        assert!(scoped[1].external_flow_source.is_degraded());
+        assert!(!scoped[1].external_flow_source.is_unavailable_for_returns());
     }
 
     #[tokio::test]
@@ -14843,6 +14939,7 @@ mod tests {
             event => panic!("expected ActivitiesChanged, got {event:?}"),
         }
     }
+
     // ───────────────────────────────────────────────────────────────────
     // Import writer-boundary policy — one test per policy-table behavior,
     // through the REAL entry point (`import_activities`), asserting the
@@ -15183,5 +15280,111 @@ mod tests {
             .sum();
         // 1000 - 505 + 296 - 9.99
         assert_eq!(booked, dec!(781.01));
+    }
+
+    fn seed_internal_cash_transfer_pair(
+        activity_repository: &MockActivityRepository,
+        group_id: &str,
+    ) {
+        for (id, account_id, activity_type) in [
+            ("pair-out", "acc-a", "TRANSFER_OUT"),
+            ("pair-in", "acc-b", "TRANSFER_IN"),
+        ] {
+            let mut activity = create_cash_transfer_activity(
+                id,
+                account_id,
+                activity_type,
+                "2024-01-17T00:00:00Z",
+                dec!(100),
+                "USD",
+            );
+            activity.source_group_id = Some(group_id.to_string());
+            activity.metadata = Some(json!({ "flow": { "is_external": false } }));
+            activity_repository.add_activity(activity);
+        }
+    }
+
+    fn build_transfer_pair_service(
+        activity_repository: Arc<MockActivityRepository>,
+    ) -> ActivityService {
+        ActivityService::new(
+            activity_repository,
+            Arc::new(MockAccountService::new()),
+            Arc::new(MockAssetService::new()),
+            Arc::new(MockFxService::new()),
+            Arc::new(MockQuoteService),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_get_transfer_pair_returns_pair_for_linked_activity() {
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        seed_internal_cash_transfer_pair(&activity_repository, "group-internal");
+        let activity_service = build_transfer_pair_service(activity_repository);
+
+        let pair = activity_service
+            .get_transfer_pair_for_activity("pair-in".to_string())
+            .expect("lookup should succeed")
+            .expect("linked activity should resolve to a pair");
+
+        assert_eq!(pair.transfer_out.id, "pair-out");
+        assert_eq!(pair.transfer_in.id, "pair-in");
+    }
+
+    #[tokio::test]
+    async fn test_get_transfer_pair_returns_none_for_unpaired_activity() {
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        activity_repository.add_activity(create_cash_transfer_activity(
+            "lonely-out",
+            "acc-a",
+            "TRANSFER_OUT",
+            "2024-01-17T00:00:00Z",
+            dec!(100),
+            "USD",
+        ));
+        let activity_service = build_transfer_pair_service(activity_repository);
+
+        let pair = activity_service
+            .get_transfer_pair_for_activity("lonely-out".to_string())
+            .expect("unpaired activity should not be an error");
+
+        assert!(pair.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_transfer_pair_returns_none_for_grouped_external_transfer() {
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        for (id, account_id, activity_type) in [
+            ("external-out", "acc-a", "TRANSFER_OUT"),
+            ("external-in", "acc-b", "TRANSFER_IN"),
+        ] {
+            let mut activity = create_cash_transfer_activity(
+                id,
+                account_id,
+                activity_type,
+                "2024-01-17T00:00:00Z",
+                dec!(100),
+                "USD",
+            );
+            activity.source_group_id = Some("group-external".to_string());
+            activity_repository.add_activity(activity);
+        }
+        let activity_service = build_transfer_pair_service(activity_repository);
+
+        let pair = activity_service
+            .get_transfer_pair_for_activity("external-in".to_string())
+            .expect("external pair should not be an error");
+
+        assert!(pair.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_get_transfer_pair_errors_for_unknown_activity() {
+        let activity_repository = Arc::new(MockActivityRepository::new());
+        let activity_service = build_transfer_pair_service(activity_repository);
+
+        let result = activity_service.get_transfer_pair_for_activity("missing".to_string());
+
+        assert!(result.is_err());
     }
 }

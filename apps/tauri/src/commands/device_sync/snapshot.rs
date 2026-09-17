@@ -5,7 +5,7 @@ use chrono::{Duration, Utc};
 use log::{debug, info};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 
 use crate::context::ServiceContext;
@@ -246,6 +246,10 @@ pub async fn sync_bootstrap_snapshot_if_needed(
     handle: AppHandle,
     context: &Arc<ServiceContext>,
 ) -> Result<SyncBootstrapResult, String> {
+    context
+        .connect_service()
+        .ensure_device_sync_subscription()
+        .await?;
     let identity = get_sync_identity_from_store()
         .ok_or_else(|| "No sync identity configured. Please enable sync first.".to_string())?;
     let device_id = identity
@@ -523,8 +527,17 @@ pub async fn sync_bootstrap_snapshot_if_needed(
     }
 
     let sqlite_image = decode_snapshot_sqlite_payload(blob, &identity)?;
-    let temp_snapshot_path =
-        std::env::temp_dir().join(format!("wf_snapshot_{}.db", Uuid::new_v4()));
+    // App-private storage, not the shared system temp directory: the snapshot
+    // image is a plaintext copy of synced financial rows.
+    let scratch_dir = handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))
+        .and_then(|dir| {
+            wealthfolio_storage_sqlite::db::scratch_dir(&dir.to_string_lossy())
+                .map_err(|e| format!("Failed to prepare the snapshot scratch directory: {e}"))
+        })?;
+    let temp_snapshot_path = scratch_dir.join(format!("wf_snapshot_{}.db", Uuid::new_v4()));
     std::fs::write(&temp_snapshot_path, sqlite_image)
         .map_err(|e| format!("Failed to persist snapshot image: {}", e))?;
     let snapshot_path_str = temp_snapshot_path.to_string_lossy().to_string();
@@ -580,6 +593,10 @@ pub async fn generate_snapshot_now_internal(
     handle: Option<&AppHandle>,
     context: Arc<ServiceContext>,
 ) -> Result<SyncSnapshotUploadResult, String> {
+    context
+        .connect_service()
+        .ensure_device_sync_subscription()
+        .await?;
     context
         .device_sync_runtime()
         .snapshot_upload_cancelled

@@ -16,8 +16,14 @@ import {
   updateActivity,
   createAccount,
   getAccounts,
+  getAlternativeHoldings,
   updateAccount,
   addonNetworkRequest,
+  getTransferPairForActivity,
+  findTransferMatchCandidates,
+  saveInternalTransferPair,
+  linkTransferActivities,
+  unlinkTransferActivities,
 } from "@/adapters";
 import {
   addExchangeRate,
@@ -458,6 +464,7 @@ export function createAddonHostAPI(
       getHoldings: (accountId: string) => getHoldings({ type: "account", accountId }),
       getActivities,
       getAccounts,
+      getAlternativeHoldings,
 
       getExchangeRates,
       updateExchangeRate,
@@ -519,6 +526,12 @@ export function createAddonHostAPI(
       createActivity,
       updateActivity,
       saveActivities,
+
+      getTransferPairForActivity,
+      findTransferMatchCandidates,
+      saveInternalTransferPair,
+      linkTransferActivities,
+      unlinkTransferActivities,
 
       openCsvFileDialog,
       openFileSaveDialog,

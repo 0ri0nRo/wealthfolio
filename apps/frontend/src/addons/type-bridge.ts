@@ -31,6 +31,8 @@ import type {
   ImportHoldingsCsvResult,
   ImportMappingData,
   IncomeSummary,
+  InternalTransferPairRequest,
+  InternalTransferPairResponse,
   MarketDataProviderInfo,
   NewContributionLimit,
   PerformanceResult,
@@ -39,9 +41,12 @@ import type {
   SymbolSearchResult,
   Settings,
   SimplePerformanceResult,
+  TransferMatchCandidate,
+  TransferMatchCandidateRequest,
   UpdateAssetProfile,
 } from "@/lib/types";
 import type { HoldingInput } from "@/adapters";
+import type { AlternativeAssetHolding } from "@/lib/types";
 import type {
   CategorizationRule as InternalCategorizationRule,
   NewCategorizationRule,
@@ -99,6 +104,7 @@ export interface InternalHostAPI {
   getHoldings(accountId: string): Promise<Holding[]>;
   getActivities(accountId?: string): Promise<ActivityDetails[]>;
   getAccounts(): Promise<Account[]>;
+  getAlternativeHoldings(): Promise<AlternativeAssetHolding[]>;
 
   // Exchange rates
   getExchangeRates(): Promise<ExchangeRate[]>;
@@ -223,6 +229,17 @@ export interface InternalHostAPI {
   checkActivitiesImport(params: { activities: ActivityImport[] }): Promise<ActivityImport[]>;
   getAccountImportMapping(accountId: string, contextKind?: string): Promise<ImportMappingData>;
   saveAccountImportMapping(mapping: ImportMappingData): Promise<ImportMappingData>;
+
+  // Transfer pairing
+  getTransferPairForActivity(activityId: string): Promise<InternalTransferPairResponse | null>;
+  findTransferMatchCandidates(
+    request: TransferMatchCandidateRequest,
+  ): Promise<TransferMatchCandidate[]>;
+  saveInternalTransferPair(
+    request: InternalTransferPairRequest,
+  ): Promise<InternalTransferPairResponse>;
+  linkTransferActivities(activityAId: string, activityBId: string): Promise<[Activity, Activity]>;
+  unlinkTransferActivities(activityAId: string, activityBId: string): Promise<[Activity, Activity]>;
 
   // Snapshots
   getSnapshots(accountId: string, dateFrom?: string, dateTo?: string): Promise<SnapshotInfo[]>;
@@ -484,6 +501,11 @@ export function createSDKHostAPIBridge(
         internalAPI.checkActivitiesImport({ activities }),
       getImportMapping: internalAPI.getAccountImportMapping,
       saveImportMapping: internalAPI.saveAccountImportMapping,
+      getTransferPair: internalAPI.getTransferPairForActivity,
+      findTransferMatchCandidates: internalAPI.findTransferMatchCandidates,
+      saveTransferPair: internalAPI.saveInternalTransferPair,
+      linkTransfer: internalAPI.linkTransferActivities,
+      unlinkTransfer: internalAPI.unlinkTransferActivities,
     },
     "activities",
     guard,
@@ -506,6 +528,13 @@ export function createSDKHostAPIBridge(
       updateQuoteMode: internalAPI.updateQuoteMode,
     },
     "assets",
+    guard,
+  );
+  const alternativeAssets = guardNamespace(
+    {
+      getAll: internalAPI.getAlternativeHoldings,
+    },
+    "alternative-assets",
     guard,
   );
   const quotes = guardNamespace(
@@ -670,6 +699,7 @@ export function createSDKHostAPIBridge(
     activities: activities as unknown as SDKApiWithoutSecrets["activities"],
     market: market as unknown as SDKApiWithoutSecrets["market"],
     assets: assets as unknown as SDKApiWithoutSecrets["assets"],
+    alternativeAssets: alternativeAssets as unknown as SDKApiWithoutSecrets["alternativeAssets"],
     quotes: quotes as unknown as SDKApiWithoutSecrets["quotes"],
     performance: performance as unknown as SDKApiWithoutSecrets["performance"],
     exchangeRates: exchangeRates as unknown as SDKApiWithoutSecrets["exchangeRates"],

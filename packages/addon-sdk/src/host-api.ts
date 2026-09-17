@@ -18,6 +18,7 @@ import type {
   CheckSnapshotImportResult,
   ImportActivitiesResult,
   Asset,
+  AlternativeAssetHolding,
   ContributionLimit,
   DepositsCalculation,
   ExchangeRate,
@@ -28,6 +29,8 @@ import type {
   Holding,
   ImportMappingData,
   IncomeSummary,
+  InternalTransferPairRequest,
+  InternalTransferPairResponse,
   MarketDataProviderInfo,
   NewContributionLimit,
   PerformanceResult,
@@ -43,6 +46,8 @@ import type {
   SpendCategory,
   SpendCategoryKind,
   SymbolSearchResult,
+  TransferMatchCandidate,
+  TransferMatchCandidateRequest,
   UpdateAssetProfile,
 } from './data-types';
 
@@ -210,6 +215,51 @@ export interface ActivitiesAPI {
    * @returns Promise resolving to saved mapping data
    */
   saveImportMapping(mapping: ImportMappingData): Promise<ImportMappingData>;
+
+  /**
+   * Get the linked transfer pair for a given activity
+   * @param activityId Activity identifier
+   * @returns Promise resolving to the transfer pair, or null when the activity
+   * is not part of one. Rejects if the activity does not exist.
+   */
+  getTransferPair(activityId: string): Promise<InternalTransferPairResponse | null>;
+
+  /**
+   * Find candidate activities that could be the opposite leg of a transfer
+   * @param request Match candidate search criteria
+   * @returns Promise resolving to array of candidate matches
+   */
+  findTransferMatchCandidates(
+    request: TransferMatchCandidateRequest,
+  ): Promise<TransferMatchCandidate[]>;
+
+  /**
+   * Create or update an internal transfer pair, linking two activities via a shared source group
+   *
+   * Omit both leg ids to create a pair ({@link CreateInternalTransferPairRequest});
+   * pass both to update an existing one ({@link UpdateInternalTransferPairRequest}).
+   * @param request Transfer pair details
+   * @returns Promise resolving to the created/updated transfer pair
+   */
+  saveTransferPair(
+    request: InternalTransferPairRequest,
+  ): Promise<InternalTransferPairResponse>;
+
+  /**
+   * Link two existing activities together as a transfer pair
+   * @param activityAId First activity identifier
+   * @param activityBId Second activity identifier
+   * @returns Promise resolving to the two linked activities
+   */
+  linkTransfer(activityAId: string, activityBId: string): Promise<[Activity, Activity]>;
+
+  /**
+   * Unlink two activities that were previously paired as a transfer
+   * @param activityAId First activity identifier
+   * @param activityBId Second activity identifier
+   * @returns Promise resolving to the two unlinked activities
+   */
+  unlinkTransfer(activityAId: string, activityBId: string): Promise<[Activity, Activity]>;
 }
 
 /**
@@ -301,6 +351,23 @@ export interface AssetsAPI {
    * @returns Promise resolving to updated asset
    */
   updateQuoteMode(assetId: string, quoteMode: string): Promise<Asset>;
+}
+
+/**
+ * Alternative assets APIs (property, vehicle, collectible, precious metal,
+ * liability, other) — net-worth items tracked outside investment accounts.
+ * Read-only: creating/editing these is only available in the Wealthfolio UI.
+ */
+export interface AlternativeAssetsAPI {
+  /**
+   * Get all alternative asset holdings (with their latest valuations).
+   * A liability holding carries `linkedAssetId` when linked to an asset
+   * (e.g. a mortgage linked to a property) — the host UI stores this link,
+   * addons should treat a linked liability's value as netted against its
+   * linked asset rather than double-counted.
+   * @returns Promise resolving to array of alternative asset holdings
+   */
+  getAll(): Promise<AlternativeAssetHolding[]>;
 }
 
 /**
@@ -841,6 +908,11 @@ export interface NetworkRequest {
   headers?: Record<string, string>;
   body?: string;
   auth?: NetworkAuth;
+  /**
+   * HTTP timeout through response-body completion, excluding the preceding DNS lookup.
+   * Positive integer seconds; defaults to 10 and is capped server-side at 120.
+   */
+  timeoutSecs?: number;
 }
 
 export interface NetworkResponse {
@@ -908,6 +980,9 @@ export interface HostAPI {
 
   /** Asset management operations */
   assets: AssetsAPI;
+
+  /** Alternative assets (property, vehicle, liability, ...) operations */
+  alternativeAssets: AlternativeAssetsAPI;
 
   /** Quote management operations */
   quotes: QuotesAPI;

@@ -885,6 +885,8 @@ export interface QuoteUpdate {
 }
 
 export interface Settings {
+  /** Read-only restore state, absent on older backends. */
+  restoreReconnectRequired?: boolean;
   theme: string;
   font: string;
   language: string;
@@ -1057,7 +1059,8 @@ export interface AccountValuation {
     | "ACTIVITY_DERIVED"
     | "STORED_GROSS"
     | "NET_CONTRIBUTION_FALLBACK"
-    | "MIXED";
+    | "MIXED"
+    | "MIXED_EXACT";
   performanceEligibleValueBase: number;
   valueStatus: ValuationStatus;
   basisStatus: BasisStatus;
@@ -2479,6 +2482,8 @@ export interface RetirementOverview {
   portfolioAtGoalAge: number;
   requiredCapitalReachable: boolean;
   requiredCapitalAtGoalAge: number;
+  leanRequiredCapitalAtGoalAge?: number | null;
+  fatRequiredCapitalAtGoalAge?: number | null;
   shortfallAtGoalAge: number;
   surplusAtGoalAge: number;
   fundedThroughAge: number | null;

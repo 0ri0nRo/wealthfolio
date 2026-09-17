@@ -364,6 +364,59 @@ export interface ActivityBulkMutationResult {
   errors: ActivityBulkMutationError[];
 }
 
+interface InternalTransferPairRequestBase {
+  sourceGroupId?: string;
+  fromAccountId: string;
+  toAccountId: string;
+  activityDate: string | Date;
+  sourceAmount: string | number;
+  destinationAmount: string | number;
+  sourceCurrency: string;
+  destinationCurrency: string;
+  fxRate?: string | number | null;
+  notes?: string | null;
+  transferMode?: 'cash';
+}
+
+/** Create both legs of a new internal transfer pair. */
+export interface CreateInternalTransferPairRequest extends InternalTransferPairRequestBase {
+  transferOutId?: never;
+  transferInId?: never;
+}
+
+/**
+ * Update an existing internal transfer pair. Both leg ids are required: the host
+ * rejects a request that names one leg without the other.
+ */
+export interface UpdateInternalTransferPairRequest extends InternalTransferPairRequestBase {
+  transferOutId: string;
+  transferInId: string;
+}
+
+export type InternalTransferPairRequest =
+  | CreateInternalTransferPairRequest
+  | UpdateInternalTransferPairRequest;
+
+export interface InternalTransferPairResponse {
+  transferOut: Activity;
+  transferIn: Activity;
+}
+
+export interface TransferMatchCandidateRequest {
+  activityId: string;
+  windowDays?: number;
+  limit?: number;
+}
+
+export interface TransferMatchCandidate {
+  activity: Activity;
+  matchKind: 'cash' | 'security' | 'cash_fx_conversion';
+  confidence: 'high' | 'medium' | 'low';
+  score: number;
+  reasons: string[];
+  warnings: string[];
+}
+
 export interface ActivityImport {
   id?: string;
   accountId: string;
@@ -713,6 +766,42 @@ export interface Asset {
   updatedAt: string;
 }
 
+/**
+ * Alternative asset holding with valuation details (property, vehicle,
+ * collectible, precious metal, liability, other). Simplified model: no
+ * account, no activities, just asset + quotes.
+ */
+export interface AlternativeAssetHolding {
+  /** Asset ID (e.g., "PROP-a1b2c3d4") */
+  id: string;
+  /** Asset kind (property, vehicle, collectible, precious, liability, other) */
+  kind: string;
+  /** Asset name */
+  name: string;
+  /** Asset symbol (display type label, e.g., "Property", "Vehicle") */
+  symbol: string;
+  /** Currency */
+  currency: string;
+  /** Current market value from latest quote */
+  marketValue: string;
+  /** Purchase price if available (from metadata) */
+  purchasePrice?: string | null;
+  /** Purchase date if available (from metadata) */
+  purchaseDate?: string | null;
+  /** Unrealized gain (market_value - purchase_price) */
+  unrealizedGain?: string | null;
+  /** Unrealized gain percentage */
+  unrealizedGainPct?: string | null;
+  /** Date of the latest valuation (ISO format) */
+  valuationDate: string;
+  /** Kind-specific metadata */
+  metadata?: Record<string, unknown> | null;
+  /** For liabilities: linked asset ID if any */
+  linkedAssetId?: string | null;
+  /** Asset notes */
+  notes?: string | null;
+}
+
 export interface Quote {
   id: string;
   createdAt: string;
@@ -866,7 +955,8 @@ export interface AccountValuation {
     | 'ACTIVITY_DERIVED'
     | 'STORED_GROSS'
     | 'NET_CONTRIBUTION_FALLBACK'
-    | 'MIXED';
+    | 'MIXED'
+    | 'MIXED_EXACT';
   performanceEligibleValueBase: number;
   valueStatus: ValuationStatus;
   basisStatus: BasisStatus;

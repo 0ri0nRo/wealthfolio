@@ -23,6 +23,7 @@ import {
 
 import { useSpendingSettings } from "../../../hooks/use-spending-settings";
 import { rollUpToTopLevel, topCategoryId } from "../../../lib/category-rollup";
+import { getZonedDateParts } from "../../../lib/timezone";
 import type { ReportsRange } from "../../../lib/reports-period";
 import type { BudgetCategoryRow, BudgetSnapshot } from "../../../types/budget";
 import type { PaceState } from "../../../types/insight";
@@ -45,6 +46,7 @@ const SAVINGS_GROUP_KEY = "savings";
 
 export interface WhereIAmStageProps {
   range: ReportsRange;
+  priorRange?: ReportsRange;
   currentReport: MonthlyReport | undefined;
   priorReport: MonthlyReport | undefined;
   months: MonthBucket[];
@@ -68,6 +70,7 @@ export interface WhereIAmStageProps {
 
 export function WhereIAmStage({
   range,
+  priorRange,
   currentReport,
   priorReport,
   months,
@@ -93,6 +96,7 @@ export function WhereIAmStage({
         />
         <SpentThisPeriodCard
           range={range}
+          priorRange={priorRange}
           spent={currentReport?.current.outflow ?? 0}
           priorSpent={priorReport?.current.outflow}
           breakdown={currentReport?.spendingBreakdown ?? []}
@@ -491,6 +495,7 @@ function buildClosedNarrative({
 
 interface SpentThisPeriodCardProps {
   range: ReportsRange;
+  priorRange?: ReportsRange;
   spent: number;
   priorSpent?: number;
   breakdown: CategoryBreakdownRow[];
@@ -501,6 +506,7 @@ interface SpentThisPeriodCardProps {
 
 const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
   range,
+  priorRange,
   spent,
   priorSpent,
   breakdown,
@@ -511,6 +517,7 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
   const numberFormatting = useNumberFormatting();
   const formatting = useAmountFormatting();
   const dateFormatting = useDateFormatting();
+  const { timezone } = useLocalizationSettings();
   const { t } = useTranslation();
   const { isBalanceHidden } = useBalancePrivacy();
   const segments = useMemo(
@@ -518,8 +525,9 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
     [breakdown, taxonomyCategories, spent, t],
   );
 
-  const periodLabel =
-    range.months <= 1
+  const periodLabel = priorRange
+    ? t("spending:whereIAm.spentThisPeriod")
+    : range.months <= 1
       ? t("spending:whereIAm.spentThisMonth")
       : range.months <= 3
         ? t("spending:whereIAm.spentThisPeriod")
@@ -529,6 +537,18 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
     priorSpent != null && priorSpent > 0 ? ((spent - priorSpent) / priorSpent) * 100 : null;
 
   const priorLabel = useMemo(() => {
+    if (priorRange) {
+      const format = (date: Date) =>
+        dateFormatting.formatCalendarDate(getZonedDateParts(date, timezone), {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        });
+      return t("spending:whereIAm.vsRange", {
+        from: format(priorRange.start),
+        to: format(priorRange.end),
+      });
+    }
     if (range.months <= 1) {
       const prev = new Date(range.start);
       prev.setMonth(prev.getMonth() - 1);
@@ -537,7 +557,7 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
       });
     }
     return t("spending:whereIAm.vsPrior");
-  }, [dateFormatting, range, t]);
+  }, [dateFormatting, range, priorRange, timezone, t]);
 
   if (isLoading) {
     return (
@@ -553,7 +573,7 @@ const SpentThisPeriodCard: FC<SpentThisPeriodCardProps> = ({
   return (
     <div className={CARD_CLASS}>
       <div className={LABEL_CLASS}>{periodLabel}</div>
-      <div className="mt-2 flex items-baseline justify-between gap-2">
+      <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-foreground text-lg font-semibold tabular-nums tracking-tight md:text-xl">
           <PrivacyAmount value={spent} currency={currency} />
         </div>
