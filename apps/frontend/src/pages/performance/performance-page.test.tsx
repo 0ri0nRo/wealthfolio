@@ -10,6 +10,9 @@ import PerformancePage from "./performance-page";
 import { ALL_PORTFOLIO_ITEM } from "./performance-selection";
 
 const mocks = vi.hoisted(() => ({ performance: vi.fn(), getAccounts: vi.fn() }));
+vi.mock("@/lib/settings-provider", () => ({
+  useSettingsContext: () => ({ settings: { timezone: "Asia/Shanghai" } }),
+}));
 vi.mock("@/adapters", () => ({ getAccounts: mocks.getAccounts }));
 vi.mock("@/hooks/use-portfolios", () => ({
   usePortfolios: () => ({ data: [{ id: "p", name: "Retirement" }] }),
@@ -374,6 +377,27 @@ describe("PerformancePage shared scope", () => {
       expect(request.selectedItems.some((item: TrackedItem) => item.id === staleItem.id)).toBe(
         false,
       );
+    }
+  });
+  it("defaults to the configured day and preserves a saved historical range", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-12-31T16:30:00Z"));
+      const first = renderPage();
+      expect(mocks.performance).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          dateRange: { from: new Date(2026, 0, 1), to: new Date(2027, 0, 1) },
+        }),
+      );
+      first.unmount();
+      const range = { from: new Date(2024, 0, 1), to: new Date(2024, 1, 1) };
+      localStorage.setItem("performance:dateRange", JSON.stringify(range));
+      renderPage();
+      expect(mocks.performance).toHaveBeenLastCalledWith(
+        expect.objectContaining({ dateRange: range }),
+      );
+    } finally {
+      vi.useRealTimers();
     }
   });
 });
