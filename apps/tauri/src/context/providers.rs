@@ -449,7 +449,10 @@ async fn build_context(
     let recalculation_gate = Arc::new(PortfolioRecalculationGate::new(
         final_cash_migration.pending_account_ids.clone(),
     ));
-    let goal_service = Arc::new(GoalService::new(goal_repo.clone(), account_service.clone()));
+    let goal_service = Arc::new(
+        GoalService::new(goal_repo.clone(), account_service.clone())
+            .with_timezone(timezone.clone()),
+    );
     let limits_service = Arc::new(ContributionLimitService::new_with_timezone(
         fx_service.clone(),
         limit_repository.clone(),
@@ -601,6 +604,7 @@ async fn build_context(
             asset_repository.clone(),
             quote_service.clone(),
         )
+        .with_timezone(timezone.clone())
         .with_event_sink(domain_event_sink.clone()),
     );
 
