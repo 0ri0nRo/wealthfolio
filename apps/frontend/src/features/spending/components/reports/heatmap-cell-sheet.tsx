@@ -104,8 +104,8 @@ export function HeatmapCellSheet({
 
   // Group by ISO week (Mon-start) so the dense list breaks into legible chunks.
   const grouped = useMemo(
-    () => groupByWeek(activities, timezone, t, dateFormatting),
-    [activities, timezone, t, dateFormatting],
+    () => groupByWeek(activities, accountById, timezone, t, dateFormatting),
+    [activities, accountById, timezone, t, dateFormatting],
   );
 
   const hourLabel = hour == null ? "" : formatHourRange(hour, endHour, dateFormatting);
@@ -338,6 +338,7 @@ interface WeekGroup {
 /** Bucket activities into Monday-anchored ISO weeks, newest first. */
 function groupByWeek(
   activities: Activity[],
+  accountById: Map<string, Account>,
   timezone: string | null | undefined,
   t: TFunction,
   formatting: Pick<FormattingApi, "formatCalendarDate">,
@@ -362,7 +363,16 @@ function groupByWeek(
   const groups: WeekGroup[] = [];
   for (const [key, entry] of byKey) {
     entry.items.sort((a, b) => b.activityDate.localeCompare(a.activityDate));
-    const total = entry.items.reduce((s, a) => s + (parseFloat(a.amount ?? "0") || 0), 0);
+    // Match the header's positive, included spending total; rows retain their full amounts.
+    const total = entry.items.reduce(
+      (sum, activity) =>
+        sum +
+        Math.max(
+          0,
+          getVisibleSpendingAmount(activity, accountById.get(activity.accountId)?.accountType),
+        ),
+      0,
+    );
     groups.push({
       key,
       label: entry.label,
