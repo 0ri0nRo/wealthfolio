@@ -65,7 +65,8 @@
       "holdings_count_one": "{{count}} Position",
       "holdings_count_other": "{{count}} Positionen",
       "accounts_count_one": "{{count}} Konto",
-      "accounts_count_other": "{{count}} Konten"
+      "accounts_count_other": "{{count}} Konten",
+      "pnl_current_holdings": "Aktuelle Positionen"
     }
   },
   "networth": {
@@ -138,5 +139,22 @@
     "largest": "Größte Position",
     "top_five": "Die fünf größten Positionen",
     "concentration_unavailable": "Die Konzentration erfordert positive Positionswerte und ein Portfolio ohne Short-Positionen."
+  },
+  "customize": {
+    "edit": "Anpassen",
+    "widgets": "Widgets",
+    "reset": "Layout zurücksetzen",
+    "cancel": "Abbrechen",
+    "save": "Layout speichern",
+    "saving": "Wird gespeichert…",
+    "hint": "Widgets am Griff verschieben oder ihre Breite am rechten Rand anpassen.",
+    "description": "Wählen Sie die anzuzeigenden Widgets aus. Mit den Pfeilen ändern Sie die Reihenfolge, auch auf Mobilgeräten.",
+    "value": "Portfolioübersicht",
+    "breakdown": "Aufschlüsselung",
+    "move_up": "{{widget}} nach oben verschieben",
+    "move_down": "{{widget}} nach unten verschieben",
+    "hide": "{{widget}} ausblenden",
+    "drag": "{{widget}} ziehen",
+    "empty": "Keine Widgets ausgewählt. Passen Sie diese Seite an, um Widgets hinzuzufügen."
   }
 }
