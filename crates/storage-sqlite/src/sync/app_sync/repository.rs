@@ -212,7 +212,7 @@ impl SyncRowFilter {
             }
             Self::UserSyncableActivities => USER_SYNCABLE_ACTIVITIES_FILTER_SQL,
             Self::SyncableSettings => {
-                static FILTER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| format!("setting_key IN ('spending.enabled', 'spending.account_ids', '{}')", INSIGHTS_OVERVIEW_LAYOUT_KEY));
+                static FILTER: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| format!("setting_key IN ('spending.enabled', 'spending.account_ids', 'spending.excluded_category_ids', '{}')", INSIGHTS_OVERVIEW_LAYOUT_KEY));
                 FILTER.as_str()
             },
             Self::UserTaxonomies => "is_system = 0",
@@ -7808,6 +7808,10 @@ mod tests {
                     app_settings::setting_value.eq(r#"{"version":6,"hiddenWidgets":["regions"]}"#),
                 ),
                 (
+                    app_settings::setting_key.eq("spending.excluded_category_ids"),
+                    app_settings::setting_value.eq("[\"cat-1\"]"),
+                ),
+                (
                     app_settings::setting_key.eq("theme"),
                     app_settings::setting_value.eq("dark"),
                 ),
@@ -7830,7 +7834,7 @@ mod tests {
         let settings_count: CountRow = diesel::sql_query("SELECT COUNT(*) AS c FROM app_settings")
             .get_result(&mut exported_conn)
             .expect("count settings");
-        assert_eq!(settings_count.c, 3);
+        assert_eq!(settings_count.c, 4);
 
         let theme_count: CountRow =
             diesel::sql_query("SELECT COUNT(*) AS c FROM app_settings WHERE setting_key = 'theme'")
@@ -7866,6 +7870,12 @@ mod tests {
             .first(&mut conn)
             .unwrap();
         assert_eq!(restored, r#"{"version":6,"hiddenWidgets":["regions"]}"#);
+        let excluded_categories: String = app_settings::table
+            .filter(app_settings::setting_key.eq("spending.excluded_category_ids"))
+            .select(app_settings::setting_value)
+            .first(&mut conn)
+            .unwrap();
+        assert_eq!(excluded_categories, r#"["cat-1"]"#);
         let theme: String = app_settings::table
             .filter(app_settings::setting_key.eq("theme"))
             .select(app_settings::setting_value)
