@@ -35,8 +35,7 @@
     "confirm": "Réinitialiser l’historique du fournisseur",
     "resetting": "Réinitialisation…",
     "success": "Historique du fournisseur remplacé",
-    "complete": "Les prix et les valorisations du portefeuille ont été mis à jour.",
-    "pending": "Les prix ont été remplacés. Le recalcul du portefeuille est en attente et sera relancé automatiquement. Ne réinitialisez pas à nouveau.",
+    "complete": "Les cours ont été remplacés. Le recalcul du portefeuille a été demandé.",
     "uncertain": "La réponse a été interrompue ; les prix peuvent déjà avoir été remplacés. Vérifiez l’historique et actualisez la page avant d’envisager une nouvelle réinitialisation."
   },
   "createSecurity": {

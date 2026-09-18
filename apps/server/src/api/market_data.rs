@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use wealthfolio_core::portfolio::price_change_rebuild::request_portfolio_rebuild_after_price_changes;
+use wealthfolio_core::events::DomainEvent;
 
 use crate::{
     api::shared::{enqueue_portfolio_job, PortfolioJobConfig},
@@ -20,26 +20,18 @@ use wealthfolio_core::quotes::{
 };
 use wealthfolio_market_data::{DividendEvent, ExchangeInfo};
 
-#[derive(serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ResetProviderHistoryBody {
-    asset_id: String,
-}
-
 async fn reset_provider_history(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<ResetProviderHistoryBody>,
+    Path(asset_id): Path<String>,
 ) -> ApiResult<Json<wealthfolio_core::quotes::ResetProviderHistoryResult>> {
-    // Dropping the HTTP future must not drop committed work's recovery scheduling.
+    // Dropping the HTTP future must not drop committed work's recalculation event.
     let result = tokio::spawn(async move {
-        let result = state
-            .quote_service
-            .reset_provider_history(&body.asset_id)
-            .await;
-        request_portfolio_rebuild_after_price_changes(
-            state.quote_service.as_ref(),
-            state.domain_event_sink.as_ref(),
-        );
+        let result = state.quote_service.reset_provider_history(&asset_id).await;
+        if result.is_ok() {
+            state
+                .domain_event_sink
+                .emit(DomainEvent::PriceHistoryChanged);
+        }
         result
     })
     .await
@@ -56,10 +48,14 @@ async fn reset_all_provider_history(
 ) -> ApiResult<Json<wealthfolio_core::quotes::ResetAllProviderHistoryResult>> {
     let result = tokio::spawn(async move {
         let result = state.quote_service.reset_all_provider_history().await;
-        request_portfolio_rebuild_after_price_changes(
-            state.quote_service.as_ref(),
-            state.domain_event_sink.as_ref(),
-        );
+        if result
+            .as_ref()
+            .is_ok_and(|result| !result.results.is_empty())
+        {
+            state
+                .domain_event_sink
+                .emit(DomainEvent::PriceHistoryChanged);
+        }
         result
     })
     .await
@@ -211,10 +207,11 @@ async fn delete_quote(
 async fn sync_history_quotes(State(state): State<Arc<AppState>>) -> ApiResult<StatusCode> {
     let result = tokio::spawn(async move {
         let result = state.quote_service.resync(None).await;
-        request_portfolio_rebuild_after_price_changes(
-            state.quote_service.as_ref(),
-            state.domain_event_sink.as_ref(),
-        );
+        if result.as_ref().is_ok_and(|result| result.synced > 0) {
+            state
+                .domain_event_sink
+                .emit(DomainEvent::PriceHistoryChanged);
+        }
         result
     })
     .await
@@ -384,13 +381,13 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/market-data/resolve-currency", get(resolve_symbol_quote))
         .route("/market-data/quotes/history", get(get_quote_history))
         .route(
-            "/market-data/quotes/reset-provider-history",
+            "/market-data/quotes/{asset_id}/reset",
             post(reset_provider_history),
         )
         .route("/market-data/dividends", get(fetch_dividends))
         .route("/market-data/quotes/latest", post(get_latest_quotes))
         .route(
-            "/market-data/quotes/reset-all-provider-history",
+            "/market-data/quotes/reset",
             post(reset_all_provider_history),
         )
         .route("/market-data/quotes/{symbol}", put(update_quote))
@@ -399,4 +396,12 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/market-data/quotes/import", post(import_quotes_csv))
         .route("/market-data/sync/history", post(sync_history_quotes))
         .route("/market-data/sync", post(sync_market_data))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn reset_routes_register_alongside_existing_quote_routes() {
+        let _ = super::router();
+    }
 }

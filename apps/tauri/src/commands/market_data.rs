@@ -1,6 +1,6 @@
 use crate::database::DatabaseRuntime;
 use std::collections::HashMap;
-use wealthfolio_core::portfolio::price_change_rebuild::request_portfolio_rebuild_after_price_changes;
+use wealthfolio_core::events::DomainEvent;
 
 use crate::events::{
     emit_portfolio_trigger_recalculate, emit_portfolio_trigger_update, PortfolioRequestPayload,
@@ -20,16 +20,17 @@ pub async fn reset_provider_history(
     state: State<'_, DatabaseRuntime>,
 ) -> Result<wealthfolio_core::quotes::ResetProviderHistoryResult, String> {
     let context = state.context()?;
-    // The owned task finishes commit/recovery scheduling even if its caller disconnects.
+    // The owned task finishes commit and event delivery even if its caller disconnects.
     tauri::async_runtime::spawn(async move {
         let result = context
             .quote_service()
             .reset_provider_history(&asset_id)
             .await;
-        request_portfolio_rebuild_after_price_changes(
-            context.quote_service().as_ref(),
-            context.domain_event_sink.as_ref(),
-        );
+        if result.is_ok() {
+            context
+                .domain_event_sink
+                .emit(DomainEvent::PriceHistoryChanged);
+        }
         result.map_err(|error| error.to_string())
     })
     .await
@@ -45,10 +46,14 @@ pub async fn reset_all_provider_history(
     let context = state.context()?;
     tauri::async_runtime::spawn(async move {
         let result = context.quote_service().reset_all_provider_history().await;
-        request_portfolio_rebuild_after_price_changes(
-            context.quote_service().as_ref(),
-            context.domain_event_sink.as_ref(),
-        );
+        if result
+            .as_ref()
+            .is_ok_and(|result| !result.results.is_empty())
+        {
+            context
+                .domain_event_sink
+                .emit(DomainEvent::PriceHistoryChanged);
+        }
         result.map_err(|error| error.to_string())
     })
     .await
@@ -102,10 +107,11 @@ pub async fn synch_quotes(state: State<'_, DatabaseRuntime>) -> Result<(), Strin
     let context = state.context()?;
     let result = tauri::async_runtime::spawn(async move {
         let result = context.quote_service().resync(None).await;
-        request_portfolio_rebuild_after_price_changes(
-            context.quote_service().as_ref(),
-            context.domain_event_sink.as_ref(),
-        );
+        if result.as_ref().is_ok_and(|result| result.synced > 0) {
+            context
+                .domain_event_sink
+                .emit(DomainEvent::PriceHistoryChanged);
+        }
         result.map_err(|error| error.to_string())
     })
     .await

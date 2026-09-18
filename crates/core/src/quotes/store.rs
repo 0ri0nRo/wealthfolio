@@ -45,20 +45,6 @@ use crate::errors::Result;
 /// - `*_batch` - Operate on multiple assets efficiently
 #[async_trait]
 pub trait QuoteStore: Send + Sync {
-    /// Merge an explicit refresh and durably request recalculation in the same transaction.
-    async fn upsert_quotes_for_refresh(&self, quotes: &[Quote]) -> Result<usize> {
-        self.upsert_quotes(quotes).await
-    }
-
-    fn pending_portfolio_rebuild_token(&self) -> Result<Option<String>> {
-        Ok(None)
-    }
-
-    /// Clear pending work only if no quote mutation has changed its token.
-    async fn clear_pending_portfolio_rebuild_if_token_matches(&self, _token: &str) -> Result<bool> {
-        Ok(false)
-    }
-
     fn provider_history_reset_context(
         &self,
         _asset_id: &str,
@@ -68,7 +54,7 @@ pub trait QuoteStore: Send + Sync {
         ))
     }
 
-    /// Replace provider rows and update sync/rebuild state in one transaction.
+    /// Replace provider rows and update sync state in one transaction.
     async fn replace_provider_history(
         &self,
         _context: super::model::ProviderHistoryResetContext,

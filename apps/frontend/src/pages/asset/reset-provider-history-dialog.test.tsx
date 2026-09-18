@@ -41,7 +41,6 @@ const result = {
   toDate: "2026-09-17",
   insertedCount: 3,
   deletedCount: 7,
-  recalculationPending: false,
 };
 
 describe("Reset provider history", () => {
@@ -112,8 +111,7 @@ describe("Reset provider history", () => {
     expect(mocks.resetAllProviderHistory).not.toHaveBeenCalled();
   });
 
-  it("reports committed prices separately from pending recalculation and refreshes caches", async () => {
-    mocks.resetProviderHistory.mockResolvedValue({ ...result, recalculationPending: true });
+  it("reports saved prices and requested recalculation, and refreshes caches", async () => {
     const { client, onOpenChange } = setup();
     const invalidate = vi.spyOn(client, "invalidateQueries");
     fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
@@ -121,8 +119,7 @@ describe("Reset provider history", () => {
       expect(mocks.toast).toHaveBeenCalledWith(
         expect.objectContaining({
           title: "Provider history replaced",
-          description:
-            "Prices were replaced. Portfolio recalculation is still pending and will be retried automatically. Do not reset again.",
+          description: "Prices were replaced. Portfolio recalculation has been requested.",
         }),
       ),
     );
@@ -198,7 +195,6 @@ describe("Reset all provider history", () => {
       results: [result],
       failures: [{ assetId: "failed-asset", error: "Invalid history" }],
       skipped: [{ assetId: "manual-asset", reason: "Manual prices" }],
-      recalculationPending: true,
     });
     const { onOpenChange } = setup(true);
     fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
@@ -206,7 +202,7 @@ describe("Reset all provider history", () => {
     expect(status).toHaveTextContent("Replaced: 1. Failed: 1. Skipped: 1.");
     expect(status).toHaveTextContent("failed-asset: Invalid history");
     expect(status).toHaveTextContent("manual-asset: Manual prices");
-    expect(status).toHaveTextContent("recalculation is still pending");
+    expect(status).toHaveTextContent("recalculation has been requested");
     expect(
       screen.queryByRole("button", { name: "Reset provider history" }),
     ).not.toBeInTheDocument();

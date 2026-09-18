@@ -317,14 +317,6 @@ pub trait QuoteServiceTrait: Send + Sync {
         ))
     }
 
-    fn pending_portfolio_rebuild_token(&self) -> Result<Option<String>> {
-        Ok(None)
-    }
-
-    async fn clear_pending_portfolio_rebuild_if_token_matches(&self, _token: &str) -> Result<bool> {
-        Ok(false)
-    }
-
     // =========================================================================
     // Quote CRUD Operations
     // =========================================================================
@@ -1933,30 +1925,16 @@ where
         &self,
         asset_id: &str,
     ) -> Result<super::ResetProviderHistoryResult> {
-        let sync = self.get_sync_service().await?;
-        let asset_id = asset_id.to_owned();
-        // The owned task retains the per-asset guard through the writer acknowledgement.
-        // Dropping an HTTP/IPC caller must not unlock an enqueued replacement.
-        tokio::spawn(async move { sync.reset_provider_history(&asset_id).await })
+        self.get_sync_service()
+            .await?
+            .reset_provider_history(asset_id)
             .await
-            .map_err(|error| Error::Unexpected(format!("Quote reset task failed: {error}")))?
     }
 
     async fn reset_all_provider_history(&self) -> Result<super::ResetAllProviderHistoryResult> {
-        let sync = self.get_sync_service().await?;
-        // Own the whole batch so a disconnected caller cannot stop it between assets.
-        tokio::spawn(async move { sync.reset_all_provider_history().await })
-            .await
-            .map_err(|error| Error::Unexpected(format!("Quote reset task failed: {error}")))?
-    }
-
-    fn pending_portfolio_rebuild_token(&self) -> Result<Option<String>> {
-        self.quote_store.pending_portfolio_rebuild_token()
-    }
-
-    async fn clear_pending_portfolio_rebuild_if_token_matches(&self, token: &str) -> Result<bool> {
-        self.quote_store
-            .clear_pending_portfolio_rebuild_if_token_matches(token)
+        self.get_sync_service()
+            .await?
+            .reset_all_provider_history()
             .await
     }
 

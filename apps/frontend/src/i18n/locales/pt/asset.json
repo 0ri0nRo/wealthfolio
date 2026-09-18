@@ -35,8 +35,7 @@
     "confirm": "Redefinir histórico do provedor",
     "resetting": "Redefinindo…",
     "success": "Histórico do provedor substituído",
-    "complete": "Os preços e as avaliações da carteira foram atualizados.",
-    "pending": "Os preços foram substituídos. O recálculo da carteira está pendente e será tentado novamente automaticamente. Não redefina novamente.",
+    "complete": "Os preços foram substituídos. O recálculo da carteira foi solicitado.",
     "uncertain": "A resposta foi interrompida; os preços podem já ter sido substituídos. Verifique o histórico e atualize a página antes de considerar outra redefinição."
   },
   "createSecurity": {

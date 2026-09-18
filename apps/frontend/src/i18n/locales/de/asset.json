@@ -35,8 +35,7 @@
     "confirm": "Anbieterhistorie zurücksetzen",
     "resetting": "Wird zurückgesetzt…",
     "success": "Anbieterhistorie ersetzt",
-    "complete": "Preise und Portfoliobewertungen wurden aktualisiert.",
-    "pending": "Die Preise wurden ersetzt. Die Portfolioneuberechnung steht noch aus und wird automatisch erneut versucht. Nicht erneut zurücksetzen.",
+    "complete": "Die Kurse wurden ersetzt. Die Neuberechnung des Portfolios wurde angefordert.",
     "uncertain": "Die Antwort wurde unterbrochen; die Preise wurden möglicherweise bereits ersetzt. Prüfen Sie die Kurshistorie und laden Sie die Seite neu, bevor Sie erneut zurücksetzen."
   },
   "createSecurity": {

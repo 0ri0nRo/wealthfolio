@@ -7,13 +7,12 @@ afterEach(() => {
 
 it("sends reset as an explicit POST for exactly one asset and returns committed state", async () => {
   const result = {
-    assetId: "asset-1",
+    assetId: "FX:USD/EUR",
     source: "YAHOO",
     fromDate: "2020-01-01",
     toDate: "2026-09-17",
     insertedCount: 3,
     deletedCount: 7,
-    recalculationPending: true,
   };
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
     new Response(JSON.stringify(result), {
@@ -22,16 +21,16 @@ it("sends reset as an explicit POST for exactly one asset and returns committed 
     }),
   );
   vi.stubGlobal("fetch", fetchMock);
-  expect(await invoke("reset_provider_history", { assetId: "asset-1" })).toEqual(result);
+  expect(await invoke("reset_provider_history", { assetId: "FX:USD/EUR" })).toEqual(result);
   expect(fetchMock).toHaveBeenCalledTimes(1);
   const [url, options] = fetchMock.mock.calls[0];
-  expect(url).toBe("/api/v1/market-data/quotes/reset-provider-history");
+  expect(url).toBe("/api/v1/market-data/quotes/FX%3AUSD%2FEUR/reset");
   expect(options?.method).toBe("POST");
-  expect(options?.body).toBe(JSON.stringify({ assetId: "asset-1" }));
+  expect(options?.body).toBeUndefined();
 });
 
 it("posts the global reset exactly once without a selected asset", async () => {
-  const result = { results: [], failures: [], skipped: [], recalculationPending: false };
+  const result = { results: [], failures: [], skipped: [] };
   const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
     new Response(JSON.stringify(result), {
       status: 200,
@@ -42,7 +41,7 @@ it("posts the global reset exactly once without a selected asset", async () => {
   expect(await invoke("reset_all_provider_history")).toEqual(result);
   expect(fetchMock).toHaveBeenCalledTimes(1);
   const [url, options] = fetchMock.mock.calls[0];
-  expect(url).toBe("/api/v1/market-data/quotes/reset-all-provider-history");
+  expect(url).toBe("/api/v1/market-data/quotes/reset");
   expect(options?.method).toBe("POST");
   expect(options?.body ?? "").not.toContain("assetId");
 });

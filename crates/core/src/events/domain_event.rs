@@ -13,7 +13,7 @@ use crate::accounts::TrackingMode;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum DomainEvent {
-    /// Committed price history may require a portfolio rebuild; no market fetch.
+    /// Price history was saved; recalculate portfolios from saved quotes without fetching again.
     PriceHistoryChanged,
 
     /// Activities were created, updated, or deleted.

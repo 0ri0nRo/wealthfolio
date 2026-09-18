@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::sync::{atomic::AtomicBool, Arc, RwLock};
-use wealthfolio_core::portfolio::price_change_rebuild::request_portfolio_rebuild_after_price_changes;
 
 use crate::{
     ai_environment::ServerAiEnvironment, auth::AuthManager, config::Config,
@@ -1142,7 +1141,6 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     #[cfg(feature = "device-sync")]
     start_sync_outbox_wake_worker(sync_outbox_wake_receiver, Arc::clone(&state));
 
-    request_portfolio_rebuild_after_price_changes(state.quote_service.as_ref(), state.domain_event_sink.as_ref());
     if portfolio_history_backfill_needed(&state) {
         tracing::info!(
             "Valuation rows are missing after startup; enqueueing full portfolio rebuild."

@@ -150,7 +150,6 @@ pub struct ResetProviderHistoryResult {
     pub to_date: String,
     pub inserted_count: usize,
     pub deleted_count: usize,
-    pub recalculation_pending: bool,
 }
 
 /// Per-asset results of an explicitly requested global provider-history reset.
@@ -160,7 +159,6 @@ pub struct ResetAllProviderHistoryResult {
     pub results: Vec<ResetProviderHistoryResult>,
     pub failures: Vec<ProviderHistoryResetFailure>,
     pub skipped: Vec<ProviderHistoryResetSkipped>,
-    pub recalculation_pending: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

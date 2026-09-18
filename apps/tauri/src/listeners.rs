@@ -7,7 +7,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use tauri::{async_runtime::spawn, AppHandle, Emitter, Listener, Manager};
 use wealthfolio_core::health::HealthServiceTrait;
-use wealthfolio_core::portfolio::price_change_rebuild::request_portfolio_rebuild_after_price_changes;
 use wealthfolio_core::portfolio::snapshot::{
     reconcile_quote_sync_from_latest_account_snapshots, snapshot_date_requires_remediation,
     SnapshotRecalcMode,
@@ -209,10 +208,6 @@ fn handle_portfolio_request(handle: AppHandle, payload_str: &str, force_recalc: 
                                 );
                             }
                             Err(e) => {
-                                request_portfolio_rebuild_after_price_changes(
-                                    context.quote_service().as_ref(),
-                                    context.domain_event_sink.as_ref(),
-                                );
                                 if let Err(e_emit) =
                                     handle_clone.emit(MARKET_SYNC_ERROR, &e.to_string())
                                 {
@@ -291,13 +286,6 @@ fn handle_portfolio_calculation(
         };
 
         let account_service = context.account_service();
-        if request_portfolio_rebuild_after_price_changes(
-            context.quote_service().as_ref(),
-            context.domain_event_sink.as_ref(),
-        ) && account_ids_input.is_none()
-        {
-            return;
-        }
         let snapshot_service = context.snapshot_service();
         let valuation_service = context.valuation_service();
 

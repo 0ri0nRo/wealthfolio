@@ -35,8 +35,7 @@
     "confirm": "Reimposta cronologia del fornitore",
     "resetting": "Reimpostazione…",
     "success": "Cronologia del fornitore sostituita",
-    "complete": "Prezzi e valutazioni del portafoglio aggiornati.",
-    "pending": "I prezzi sono stati sostituiti. Il ricalcolo del portafoglio è in attesa e verrà ritentato automaticamente. Non reimpostare di nuovo.",
+    "complete": "I prezzi sono stati sostituiti. È stato richiesto il ricalcolo del portafoglio.",
     "uncertain": "La risposta è stata interrotta; i prezzi potrebbero essere già stati sostituiti. Controlla la cronologia e aggiorna la pagina prima di considerare un’altra reimpostazione."
   },
   "createSecurity": {

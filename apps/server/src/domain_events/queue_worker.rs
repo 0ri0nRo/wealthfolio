@@ -250,9 +250,32 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
     let Some(timezone) = read_setting(&deps, &deps.timezone, "Timezone") else {
         return;
     };
-    let job = plan_portfolio_job(events, &timezone);
-    let ran_job = job.is_some();
-    if let Some(config) = job {
+    if let Some(mut config) = plan_portfolio_job(events, &timezone) {
+        let prices_changed = events
+            .iter()
+            .any(|event| matches!(event, DomainEvent::PriceHistoryChanged));
+        if prices_changed {
+            deps.health_service.clear_cache().await;
+            use wealthfolio_core::accounts::AccountServiceTrait;
+            // Saved prices affect archived account history and the in-memory FX cache too.
+            let accounts = deps
+                .fx_service
+                .initialize()
+                .and_then(|()| deps.account_service.get_all_accounts());
+            match accounts {
+                Ok(accounts) => {
+                    config.account_ids = Some(accounts.into_iter().map(|a| a.id).collect())
+                }
+                Err(error) => {
+                    deps.event_bus
+                        .publish(crate::events::ServerEvent::with_payload(
+                            crate::events::PORTFOLIO_UPDATE_ERROR,
+                            serde_json::json!(error.to_string()),
+                        ));
+                    return;
+                }
+            }
+        }
         tracing::info!(
             "Triggering portfolio job for accounts: {:?}, market_sync: {:?}",
             config.account_ids,
@@ -262,10 +285,8 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
         // Run the portfolio job directly (not spawned) so that is_processing
         // guard properly tracks completion and prevents concurrent jobs
         run_portfolio_job(deps.clone(), config).await;
-    }
 
-    let rebuilt = rebuild_portfolio_after_price_changes(&deps).await;
-    if ran_job || rebuilt {
+        // Keep goal cards current after valuation changes, matching the Tauri worker.
         refresh_all_goal_summaries(deps.clone()).await;
     }
 
@@ -318,46 +339,6 @@ async fn process_event_batch(events: &[DomainEvent], deps: Arc<QueueWorkerDeps>)
                 }
             }
         });
-    }
-}
-
-/// Runs once per event batch, sharing the existing worker's debounce and lifecycle.
-async fn rebuild_portfolio_after_price_changes(deps: &QueueWorkerDeps) -> bool {
-    use crate::events::{
-        ServerEvent, PORTFOLIO_UPDATE_COMPLETE, PORTFOLIO_UPDATE_ERROR, PORTFOLIO_UPDATE_START,
-    };
-    if !matches!(
-        deps.quote_service.pending_portfolio_rebuild_token(),
-        Ok(Some(_))
-    ) {
-        return false;
-    }
-    deps.event_bus
-        .publish(ServerEvent::new(PORTFOLIO_UPDATE_START));
-    let result =
-        wealthfolio_core::portfolio::price_change_rebuild::rebuild_portfolio_after_price_changes(
-            deps.quote_service.as_ref(),
-            deps.account_service.as_ref(),
-            deps.snapshot_service.as_ref(),
-            deps.valuation_service.as_ref(),
-            deps.fx_service.as_ref(),
-        )
-        .await;
-    deps.health_service.clear_cache().await;
-    match result {
-        Ok(rebuilt) => {
-            deps.event_bus
-                .publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
-            rebuilt
-        }
-        Err(error) => {
-            tracing::warn!("Portfolio rebuild remains pending: {error}");
-            deps.event_bus.publish(ServerEvent::with_payload(
-                PORTFOLIO_UPDATE_ERROR,
-                serde_json::json!(error.to_string()),
-            ));
-            false
-        }
     }
 }
 
@@ -497,15 +478,6 @@ async fn run_portfolio_job(
         tracing::debug!("Skipping market sync (MarketSyncMode::None)");
     }
 
-    if config.account_ids.is_none()
-        && matches!(
-            deps.quote_service.pending_portfolio_rebuild_token(),
-            Ok(Some(_))
-        )
-    {
-        // The batch worker performs one rebuild after processing its other work.
-        return;
-    }
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_START));
 
     if !account_ids.is_empty() {
@@ -576,6 +548,7 @@ async fn run_portfolio_job(
         }
     }
 
+    deps.health_service.clear_cache().await;
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
 }
 

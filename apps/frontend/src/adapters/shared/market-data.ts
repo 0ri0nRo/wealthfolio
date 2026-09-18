@@ -255,7 +255,6 @@ export interface ResetProviderHistoryResult {
   toDate: string;
   insertedCount: number;
   deletedCount: number;
-  recalculationPending: boolean;
 }
 
 export const resetProviderHistory = (assetId: string): Promise<ResetProviderHistoryResult> =>
@@ -265,7 +264,6 @@ export interface ResetAllProviderHistoryResult {
   results: ResetProviderHistoryResult[];
   failures: { assetId: string; error: string }[];
   skipped: { assetId: string; reason: string }[];
-  recalculationPending: boolean;
 }
 
 export const resetAllProviderHistory = (): Promise<ResetAllProviderHistoryResult> =>

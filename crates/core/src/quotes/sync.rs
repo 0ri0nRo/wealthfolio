@@ -681,14 +681,6 @@ where
                 }),
             }
         }
-        // Successful commits remain reportable even if checking the marker fails.
-        result.recalculation_pending = !result.results.is_empty()
-            || self
-                .quote_store
-                .pending_portfolio_rebuild_token()
-                .ok()
-                .flatten()
-                .is_some();
         Ok(result)
     }
 
@@ -945,12 +937,7 @@ where
     /// Uses per-asset locking (US-012) to prevent duplicate sync work when multiple
     /// sync triggers occur for the same asset. If a sync is already in progress for
     /// this asset, the call is skipped (not blocked) to keep the system responsive.
-    async fn sync_asset(
-        &self,
-        asset: &Asset,
-        plan: &SymbolSyncPlan,
-        request_rebuild: bool,
-    ) -> AssetSyncResult {
+    async fn sync_asset(&self, asset: &Asset, plan: &SymbolSyncPlan) -> AssetSyncResult {
         let asset_id_str = &asset.id;
         let asset_id = AssetId::new(asset_id_str);
 
@@ -1001,11 +988,7 @@ where
                     let write_guard = _lock_guard.clone();
                     let saved = tokio::spawn(async move {
                         let _guard = write_guard;
-                        if request_rebuild {
-                            store.upsert_quotes_for_refresh(&write_quotes).await
-                        } else {
-                            store.upsert_quotes(&write_quotes).await
-                        }
+                        store.upsert_quotes(&write_quotes).await
                     })
                     .await
                     .unwrap_or_else(|error| Err(Error::Unexpected(error.to_string())));
@@ -1159,7 +1142,6 @@ where
     fn execute_sync_plans(
         &self,
         plans: Vec<SymbolSyncPlan>,
-        request_rebuild: bool,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = SyncResult> + Send + '_>> {
         Box::pin(async move {
             if plans.is_empty() {
@@ -1191,7 +1173,7 @@ where
                     let asset = asset_map.get(&plan.asset_id).cloned();
                     async move {
                         if let Some(asset) = asset {
-                            self.sync_asset(&asset, &plan, request_rebuild).await
+                            self.sync_asset(&asset, &plan).await
                         } else {
                             warn!("Asset not found for asset_id: {}", plan.asset_id);
                             AssetSyncResult {
@@ -1763,9 +1745,7 @@ where
         );
 
         // Execute sync and merge with skipped results
-        let mut exec_result = self
-            .execute_sync_plans(plans, !matches!(mode, SyncMode::Incremental))
-            .await;
+        let mut exec_result = self.execute_sync_plans(plans).await;
         exec_result.skipped += result.skipped;
         exec_result.skipped_reasons.extend(result.skipped_reasons);
         Ok(exec_result)

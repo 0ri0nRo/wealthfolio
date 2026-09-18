@@ -21,6 +21,15 @@ common task playbooks.
 - No abstractions for single-use code.
 - No error handling for impossible scenarios.
 - If 200 lines could be 50, rewrite it.
+- Reuse before adding infrastructure: trace the existing service, event, queue,
+  and error handling before proposing a new mechanism. Extend those first.
+- Before adding a migration, persisted state, worker, retry mechanism, or
+  synchronization primitive, explain the concrete failure it prevents and why
+  existing mechanisms cannot handle it. Separate required behavior from optional
+  resilience; do not add optional resilience without agreement.
+- Plans must identify what is reused, what is added, and what is deferred.
+- Reviews must challenge whether each new mechanism needs to exist, not only
+  whether it works.
 
 ### 3. Surgical Changes
 

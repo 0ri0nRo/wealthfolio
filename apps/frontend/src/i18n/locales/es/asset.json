@@ -35,8 +35,7 @@
     "confirm": "Restablecer historial del proveedor",
     "resetting": "Restableciendo…",
     "success": "Historial del proveedor reemplazado",
-    "complete": "Se han actualizado los precios y las valoraciones de la cartera.",
-    "pending": "Los precios se reemplazaron. El recálculo de la cartera está pendiente y se reintentará automáticamente. No vuelva a restablecer.",
+    "complete": "Se reemplazaron los precios. Se solicitó el recálculo de la cartera.",
     "uncertain": "La respuesta se interrumpió; es posible que los precios ya se hayan reemplazado. Revise el historial y actualice la página antes de considerar otro restablecimiento."
   },
   "createSecurity": {

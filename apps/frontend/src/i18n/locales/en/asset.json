@@ -35,8 +35,7 @@
     "confirm": "Reset provider history",
     "resetting": "Resetting…",
     "success": "Provider history replaced",
-    "complete": "Prices and portfolio valuations have been updated.",
-    "pending": "Prices were replaced. Portfolio recalculation is still pending and will be retried automatically. Do not reset again.",
+    "complete": "Prices were replaced. Portfolio recalculation has been requested.",
     "uncertain": "The response was interrupted; prices may already have been replaced. Check the quote history and refresh the page before considering another reset."
   },
   "createSecurity": {

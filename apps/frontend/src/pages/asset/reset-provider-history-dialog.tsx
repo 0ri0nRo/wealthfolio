@@ -44,11 +44,10 @@ export function ResetProviderHistoryDialog({
         results: [result],
         failures: [],
         skipped: [],
-        recalculationPending: result.recalculationPending,
       };
     },
     retry: false,
-    onSuccess: (result) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [QueryKeys.QUOTE_HISTORY] });
       queryClient.invalidateQueries({ queryKey: [QueryKeys.LATEST_QUOTES] });
       queryClient.invalidateQueries({ queryKey: [QueryKeys.ASSET_DATA] });
@@ -57,9 +56,7 @@ export function ResetProviderHistoryDialog({
       if (allAssets) return;
       toast({
         title: t("asset:resetDialog.success"),
-        description: t(
-          result.recalculationPending ? "asset:resetDialog.pending" : "asset:resetDialog.complete",
-        ),
+        description: t("asset:resetDialog.complete"),
       });
       onOpenChange(false);
     },
@@ -104,15 +101,7 @@ export function ResetProviderHistoryDialog({
                 skipped: reset.data.skipped.length,
               })}
             </p>
-            {reset.data.results.length > 0 && (
-              <p>
-                {t(
-                  reset.data.recalculationPending
-                    ? "asset:resetDialog.pending"
-                    : "asset:resetDialog.complete",
-                )}
-              </p>
-            )}
+            {reset.data.results.length > 0 && <p>{t("asset:resetDialog.complete")}</p>}
             <ul className="max-h-48 space-y-1 overflow-y-auto">
               {reset.data.failures.map(({ assetId, error }) => (
                 <li key={assetId}>

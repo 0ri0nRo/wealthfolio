@@ -1,5 +1,4 @@
 use std::sync::Arc;
-use wealthfolio_core::portfolio::price_change_rebuild::request_portfolio_rebuild_after_price_changes;
 
 use crate::{
     error::{ApiError, ApiResult},
@@ -247,10 +246,6 @@ pub async fn process_portfolio_job(
                 let err_msg = err.to_string();
                 tracing::error!("Market data sync failed: {}", err_msg);
                 event_bus.publish(ServerEvent::with_payload(MARKET_SYNC_ERROR, json!(err_msg)));
-                request_portfolio_rebuild_after_price_changes(
-                    state.quote_service.as_ref(),
-                    state.domain_event_sink.as_ref(),
-                );
                 return Err(crate::error::ApiError::Anyhow(anyhow!(err_msg)));
             }
         }
@@ -258,13 +253,6 @@ pub async fn process_portfolio_job(
         tracing::debug!("Skipping market sync (MarketSyncMode::None)");
     }
 
-    if request_portfolio_rebuild_after_price_changes(
-        state.quote_service.as_ref(),
-        state.domain_event_sink.as_ref(),
-    ) && config.account_ids.is_none()
-    {
-        return Ok(());
-    }
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_START));
 
     if !account_ids.is_empty() {
