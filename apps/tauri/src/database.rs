@@ -540,15 +540,10 @@ impl DatabaseRuntime {
                     if let Some(rebuild) = init.final_cash_rebuild {
                         workers.push(tauri::async_runtime::spawn(rebuild));
                     }
-                    let rebuild_handle = handle.clone();
-                    let rebuild_context = Arc::clone(&context);
-                    workers.push(tauri::async_runtime::spawn(async move {
-                        crate::listeners::recover_pending_quote_history(
-                            &rebuild_handle,
-                            &rebuild_context,
-                        )
-                        .await;
-                    }));
+                    wealthfolio_core::portfolio::price_change_rebuild::request_portfolio_rebuild_after_price_changes(
+                        context.quote_service().as_ref(),
+                        context.domain_event_sink.as_ref(),
+                    );
                     self.record_encryption_state(&access);
                     *live = Some(Live {
                         generation: uuid::Uuid::new_v4(),

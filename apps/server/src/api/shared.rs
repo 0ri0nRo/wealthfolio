@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use wealthfolio_core::portfolio::price_change_rebuild::request_portfolio_rebuild_after_price_changes;
 
 use crate::{
     error::{ApiError, ApiResult},
@@ -127,51 +128,6 @@ pub fn trigger_full_portfolio_recalc(state: Arc<AppState>) {
     );
 }
 
-pub fn spawn_pending_quote_rebuild(state: Arc<AppState>) {
-    tokio::spawn(async move {
-        recover_pending_quote_history(&state).await;
-    });
-}
-
-pub async fn recover_pending_quote_history(state: &Arc<AppState>) -> bool {
-    match state.quote_service.pending_quote_rebuild_token() {
-        Ok(Some(_)) => {}
-        Ok(None) => return false,
-        Err(error) => {
-            tracing::warn!("Unable to check pending quote recalculation: {}", error);
-            return false;
-        }
-    }
-    state
-        .event_bus
-        .publish(ServerEvent::new(PORTFOLIO_UPDATE_START));
-    let result = wealthfolio_core::portfolio::quote_history_rebuild::rebuild_pending_quote_history(
-        state.quote_service.as_ref(),
-        state.account_service.as_ref(),
-        state.snapshot_service.as_ref(),
-        state.valuation_service.as_ref(),
-        state.fx_service.as_ref(),
-    )
-    .await;
-    state.health_service.clear_cache().await;
-    match result {
-        Ok(rebuilt) => {
-            state
-                .event_bus
-                .publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE));
-            rebuilt
-        }
-        Err(error) => {
-            tracing::warn!("Quote history recalculation remains pending: {}", error);
-            state.event_bus.publish(ServerEvent::with_payload(
-                PORTFOLIO_UPDATE_ERROR,
-                json!(error.to_string()),
-            ));
-            false
-        }
-    }
-}
-
 /// Trigger a full portfolio recalculation that also syncs the given assets'
 /// market data. Used when a provider-backed FX pair is added so its real rate
 /// is fetched immediately instead of waiting for the periodic sync (#1143).
@@ -291,7 +247,10 @@ pub async fn process_portfolio_job(
                 let err_msg = err.to_string();
                 tracing::error!("Market data sync failed: {}", err_msg);
                 event_bus.publish(ServerEvent::with_payload(MARKET_SYNC_ERROR, json!(err_msg)));
-                recover_pending_quote_history(&state).await;
+                request_portfolio_rebuild_after_price_changes(
+                    state.quote_service.as_ref(),
+                    state.domain_event_sink.as_ref(),
+                );
                 return Err(crate::error::ApiError::Anyhow(anyhow!(err_msg)));
             }
         }
@@ -299,7 +258,11 @@ pub async fn process_portfolio_job(
         tracing::debug!("Skipping market sync (MarketSyncMode::None)");
     }
 
-    if recover_pending_quote_history(&state).await && config.account_ids.is_none() {
+    if request_portfolio_rebuild_after_price_changes(
+        state.quote_service.as_ref(),
+        state.domain_event_sink.as_ref(),
+    ) && config.account_ids.is_none()
+    {
         return Ok(());
     }
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_START));

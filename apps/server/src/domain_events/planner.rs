@@ -185,7 +185,7 @@ pub fn plan_portfolio_job(events: &[DomainEvent], timezone: &str) -> Option<Port
                     }
                 }
             }
-            DomainEvent::AssetClassificationsChanged { .. } => {}
+            DomainEvent::AssetClassificationsChanged { .. } | DomainEvent::PriceHistoryChanged => {}
             DomainEvent::TrackingModeChanged {
                 account_id,
                 old_mode,
@@ -675,5 +675,29 @@ mod tests {
 
         let assets = plan_asset_enrichment(&events);
         assert_eq!(assets.len(), 3);
+    }
+
+    #[test]
+    fn price_history_notifications_do_not_schedule_market_fetches() {
+        let events = vec![
+            DomainEvent::PriceHistoryChanged,
+            DomainEvent::PriceHistoryChanged,
+        ];
+        assert!(plan_portfolio_job(&events, "UTC").is_none());
+    }
+
+    #[test]
+    fn price_history_notifications_preserve_other_portfolio_work() {
+        let events = vec![
+            DomainEvent::PriceHistoryChanged,
+            DomainEvent::ActivitiesChanged {
+                account_ids: vec!["acc1".to_string()],
+                asset_ids: vec![],
+                currencies: vec![],
+                earliest_activity_at_utc: None,
+            },
+        ];
+        let job = plan_portfolio_job(&events, "UTC").unwrap();
+        assert_eq!(job.account_ids, Some(vec!["acc1".to_string()]));
     }
 }

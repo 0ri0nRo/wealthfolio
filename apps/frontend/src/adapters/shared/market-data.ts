@@ -260,3 +260,13 @@ export interface ResetProviderHistoryResult {
 
 export const resetProviderHistory = (assetId: string): Promise<ResetProviderHistoryResult> =>
   invoke<ResetProviderHistoryResult>("reset_provider_history", { assetId });
+
+export interface ResetAllProviderHistoryResult {
+  results: ResetProviderHistoryResult[];
+  failures: { assetId: string; error: string }[];
+  skipped: { assetId: string; reason: string }[];
+  recalculationPending: boolean;
+}
+
+export const resetAllProviderHistory = (): Promise<ResetAllProviderHistoryResult> =>
+  invoke<ResetAllProviderHistoryResult>("reset_all_provider_history");

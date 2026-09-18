@@ -311,11 +311,17 @@ pub trait QuoteServiceTrait: Send + Sync {
         ))
     }
 
-    fn pending_quote_rebuild_token(&self) -> Result<Option<String>> {
+    async fn reset_all_provider_history(&self) -> Result<super::ResetAllProviderHistoryResult> {
+        Err(Error::Repository(
+            "Provider history reset is not supported".into(),
+        ))
+    }
+
+    fn pending_portfolio_rebuild_token(&self) -> Result<Option<String>> {
         Ok(None)
     }
 
-    async fn acknowledge_quote_rebuild(&self, _token: &str) -> Result<bool> {
+    async fn clear_pending_portfolio_rebuild_if_token_matches(&self, _token: &str) -> Result<bool> {
         Ok(false)
     }
 
@@ -1936,12 +1942,22 @@ where
             .map_err(|error| Error::Unexpected(format!("Quote reset task failed: {error}")))?
     }
 
-    fn pending_quote_rebuild_token(&self) -> Result<Option<String>> {
-        self.quote_store.pending_quote_rebuild_token()
+    async fn reset_all_provider_history(&self) -> Result<super::ResetAllProviderHistoryResult> {
+        let sync = self.get_sync_service().await?;
+        // Own the whole batch so a disconnected caller cannot stop it between assets.
+        tokio::spawn(async move { sync.reset_all_provider_history().await })
+            .await
+            .map_err(|error| Error::Unexpected(format!("Quote reset task failed: {error}")))?
     }
 
-    async fn acknowledge_quote_rebuild(&self, token: &str) -> Result<bool> {
-        self.quote_store.acknowledge_quote_rebuild(token).await
+    fn pending_portfolio_rebuild_token(&self) -> Result<Option<String>> {
+        self.quote_store.pending_portfolio_rebuild_token()
+    }
+
+    async fn clear_pending_portfolio_rebuild_if_token_matches(&self, token: &str) -> Result<bool> {
+        self.quote_store
+            .clear_pending_portfolio_rebuild_if_token_matches(token)
+            .await
     }
 
     async fn sync(&self, mode: SyncMode, asset_ids: Option<Vec<String>>) -> Result<SyncResult> {

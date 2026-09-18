@@ -662,6 +662,36 @@ where
         result
     }
 
+    /// Reset independently per asset; failures never undo successful replacements.
+    pub async fn reset_all_provider_history(&self) -> Result<super::ResetAllProviderHistoryResult> {
+        let mut result = super::ResetAllProviderHistoryResult::default();
+        for asset in self.asset_repo.list()? {
+            if let Some(reason) = asset_skip_reason(&asset, true) {
+                result.skipped.push(super::ProviderHistoryResetSkipped {
+                    asset_id: asset.id,
+                    reason: reason.to_string(),
+                });
+                continue;
+            }
+            match self.reset_provider_history(&asset.id).await {
+                Ok(reset) => result.results.push(reset),
+                Err(error) => result.failures.push(super::ProviderHistoryResetFailure {
+                    asset_id: asset.id,
+                    error: error.to_string(),
+                }),
+            }
+        }
+        // Successful commits remain reportable even if checking the marker fails.
+        result.recalculation_pending = !result.results.is_empty()
+            || self
+                .quote_store
+                .pending_portfolio_rebuild_token()
+                .ok()
+                .flatten()
+                .is_some();
+        Ok(result)
+    }
+
     /// Check if an asset should be synced.
     fn should_sync_asset(&self, asset: &Asset) -> bool {
         self.get_skip_reason(asset, false).is_none()
@@ -966,7 +996,8 @@ where
                     // Preserve history on every refresh. An owned write retains the guard
                     // even if the caller is cancelled after enqueueing the SQLite operation.
                     let store = self.quote_store.clone();
-                    let write_quotes = quotes.clone();
+                    let actual_source = quotes.first().map(|quote| quote.data_source.clone());
+                    let write_quotes = quotes;
                     let write_guard = _lock_guard.clone();
                     let saved = tokio::spawn(async move {
                         let _guard = write_guard;
@@ -993,9 +1024,7 @@ where
                             }
 
                             // Persist the actual provider used so future planning reads correct quote bounds.
-                            if let Some(actual_source) =
-                                quotes.first().map(|q| q.data_source.clone())
-                            {
+                            if let Some(actual_source) = actual_source {
                                 match self.sync_state_store.get_by_asset_id(&asset.id) {
                                     Ok(Some(mut state)) if state.data_source != actual_source => {
                                         state.data_source = actual_source;

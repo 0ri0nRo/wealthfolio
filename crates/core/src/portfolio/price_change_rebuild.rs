@@ -1,6 +1,6 @@
-//! Recovery for explicit quote-history writes that committed before recalculation.
+//! Portfolio recalculation after committed price changes.
 
-use tokio::sync::Mutex;
+use crate::events::{DomainEvent, DomainEventSink};
 
 use crate::accounts::AccountServiceTrait;
 use crate::fx::FxServiceTrait;
@@ -12,21 +12,43 @@ use super::snapshot::{
 };
 use super::valuation::{ValuationBatchOutcome, ValuationRecalcMode, ValuationServiceTrait};
 
-// Coalesce concurrent recovery requests; the existing engines still own account locks.
-static REBUILD_LOCK: Mutex<()> = Mutex::const_new(());
+// One worker processes each runtime's event batches. Limit extra work when prices
+// keep changing; the durable marker remains for the next job or startup.
+const MAX_REBUILD_PASSES: usize = 2;
+
+/// Notify the existing debounced worker only when committed prices need rebuilding.
+/// This is also used at startup, after the worker has been installed.
+pub fn request_portfolio_rebuild_after_price_changes(
+    quotes: &dyn QuoteServiceTrait,
+    events: &dyn DomainEventSink,
+) -> bool {
+    match quotes.pending_portfolio_rebuild_token() {
+        Ok(Some(_)) => {
+            events.emit(DomainEvent::PriceHistoryChanged);
+            true
+        }
+        Ok(None) => false,
+        Err(error) => {
+            log::warn!("Unable to check pending portfolio rebuild: {error}");
+            false
+        }
+    }
+}
 
 /// Rebuild without another market fetch. A failed attempt leaves its durable token
-/// intact. If quotes changed during calculation, rebuild again before acknowledging.
-pub async fn rebuild_pending_quote_history(
+/// intact. Retry once if prices change during calculation; otherwise keep pending work.
+pub async fn rebuild_portfolio_after_price_changes(
     quotes: &dyn QuoteServiceTrait,
     accounts: &dyn AccountServiceTrait,
     snapshots: &dyn SnapshotServiceTrait,
     valuations: &dyn ValuationServiceTrait,
     fx: &dyn FxServiceTrait,
 ) -> Result<bool> {
-    let _guard = REBUILD_LOCK.lock().await;
     let mut rebuilt = false;
-    while let Some(token) = quotes.pending_quote_rebuild_token()? {
+    for _ in 0..MAX_REBUILD_PASSES {
+        let Some(token) = quotes.pending_portfolio_rebuild_token()? else {
+            return Ok(rebuilt);
+        };
         // Provider history is shared by archived accounts too; their own historical
         // valuations must be rebuilt even though they remain outside portfolio scope.
         let all_accounts = accounts.get_all_accounts()?;
@@ -63,11 +85,16 @@ pub async fn rebuild_pending_quote_history(
             }
         }
         rebuilt = true;
-        if quotes.acknowledge_quote_rebuild(&token).await? {
-            break;
+        if quotes
+            .clear_pending_portfolio_rebuild_if_token_matches(&token)
+            .await?
+        {
+            return Ok(true);
         }
     }
-    Ok(rebuilt)
+    Err(Error::Unexpected(
+        "Prices changed during calculation; portfolio rebuild remains pending for the next update or restart.".into(),
+    ))
 }
 
 fn all_accounts_rebuilt(account_ids: &[String], outcome: &ValuationBatchOutcome) -> bool {

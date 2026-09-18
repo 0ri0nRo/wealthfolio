@@ -22,12 +22,14 @@
     "deleting": "正在刪除……"
   },
   "refreshDialog": {
-    "title": "更新歷史",
+    "title": "重新整理全部歷史",
     "description_named": "將取得{{name}}的新價格歷史並與現有價格合併。舊歷史、手動價格及券商價格將保留。繼續嗎？",
     "description_generic": "將取得新價格歷史並與現有價格合併。舊歷史、手動價格及券商價格將保留。繼續嗎？",
     "refresh": "更新"
   },
   "resetDialog": {
+    "globalDescription": "替換所有符合條件的資產（包括貨幣對）的供應商價格？每項資產的歷史均在取得及驗證後替換，替換後的歷史可能較短。手動及經紀商價格將保留。失敗資產保留原有歷史，成功的替換不會回復。",
+    "globalResult": "已替換：{{succeeded}}。失敗：{{failed}}。已略過：{{skipped}}。",
     "title": "重設資料來源歷史",
     "description": "將{{name}}的所有資料來源價格替換為新取得的歷史記錄嗎？新歷史可能較短。手動價格及券商價格將保留。如果擷取或驗證失敗，現有歷史將保留。",
     "confirm": "重設資料來源歷史",
@@ -187,7 +189,7 @@
     "record_transaction": "記錄交易",
     "valuation": "估值",
     "update_price": "更新價格",
-    "refresh_history": "更新歷史",
+    "refresh_history": "重新整理全部歷史",
     "edit": "編輯",
     "update_value": "更新價值",
     "edit_details": "編輯詳細資訊",

@@ -1153,7 +1153,7 @@ export const AssetProfilePage = () => {
                       items: [
                         {
                           icon: Icons.Download,
-                          label: t("asset:profile.update_price"),
+                          label: t("common:component.update_quotes"),
                           onClick: handleUpdateQuotes,
                         },
                         {
@@ -1410,7 +1410,7 @@ export const AssetProfilePage = () => {
                         items: [
                           {
                             icon: Icons.Download,
-                            label: t("asset:profile.update_price"),
+                            label: t("common:component.update_quotes"),
                             onClick: handleUpdateQuotes,
                           },
                           {

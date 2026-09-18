@@ -202,11 +202,15 @@ async fn process_event_batch(
     // 2. Plan and run portfolio job directly (not via event emission)
     // This ensures the is_processing guard properly tracks completion
     let timezone = context.get_timezone();
-    if let Some(payload) = plan_portfolio_job(events, &timezone) {
+    let job = plan_portfolio_job(events, &timezone);
+    let ran_job = job.is_some();
+    if let Some(payload) = job {
         run_portfolio_job(app_handle, context, payload).await;
+    }
 
-        // 2b. Refresh all active goal summaries after portfolio valuations update.
-        // This keeps goal cards current without client-side polling.
+    // Price notifications share this worker's debounce and execution lifecycle.
+    let rebuilt = rebuild_portfolio_after_price_changes(app_handle, context).await;
+    if ran_job || rebuilt {
         refresh_all_goal_summaries(context).await;
     }
 
@@ -477,8 +481,11 @@ async fn run_portfolio_calculation(
     snapshot_mode: SnapshotRecalcMode,
     valuation_mode: ValuationRecalcMode,
 ) {
-    if crate::listeners::recover_pending_quote_history(app_handle, context).await
-        && account_ids.is_none()
+    if account_ids.is_none()
+        && matches!(
+            context.quote_service().pending_portfolio_rebuild_token(),
+            Ok(Some(_))
+        )
     {
         return;
     }
@@ -571,6 +578,41 @@ async fn run_portfolio_calculation(
     // Emit completion event
     if let Err(e) = app_handle.emit(PORTFOLIO_UPDATE_COMPLETE, &()) {
         error!("Failed to emit portfolio:update-complete event: {}", e);
+    }
+}
+
+/// Runs once per event batch; startup and explicit price actions notify this worker.
+async fn rebuild_portfolio_after_price_changes(
+    handle: &AppHandle,
+    context: &Arc<ServiceContext>,
+) -> bool {
+    if !matches!(
+        context.quote_service().pending_portfolio_rebuild_token(),
+        Ok(Some(_))
+    ) {
+        return false;
+    }
+    let _ = handle.emit(PORTFOLIO_UPDATE_START, ());
+    let result =
+        wealthfolio_core::portfolio::price_change_rebuild::rebuild_portfolio_after_price_changes(
+            context.quote_service().as_ref(),
+            context.account_service().as_ref(),
+            context.snapshot_service().as_ref(),
+            context.valuation_service().as_ref(),
+            context.fx_service().as_ref(),
+        )
+        .await;
+    context.health_service().clear_cache().await;
+    match result {
+        Ok(rebuilt) => {
+            let _ = handle.emit(PORTFOLIO_UPDATE_COMPLETE, ());
+            rebuilt
+        }
+        Err(error) => {
+            warn!("Portfolio rebuild remains pending: {error}");
+            let _ = handle.emit(PORTFOLIO_UPDATE_ERROR, error.to_string());
+            false
+        }
     }
 }
 

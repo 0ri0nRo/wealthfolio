@@ -222,6 +222,7 @@ export {
   syncHistoryQuotes,
   syncMarketData,
   resetProviderHistory,
+  resetAllProviderHistory,
   updateAssetProfile,
   updateMarketDataProviderSettings,
   updateQuote,

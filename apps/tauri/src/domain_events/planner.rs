@@ -164,7 +164,7 @@ pub fn plan_portfolio_job(
                     }
                 }
             }
-            DomainEvent::AssetClassificationsChanged { .. } => {}
+            DomainEvent::AssetClassificationsChanged { .. } | DomainEvent::PriceHistoryChanged => {}
             DomainEvent::AssetsMerged { .. } => {}
             DomainEvent::TrackingModeChanged {
                 account_id,
@@ -765,5 +765,29 @@ mod tests {
         }];
         let result = plan_categorization_job(&events, &HashSet::new());
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn price_history_notifications_do_not_schedule_market_fetches() {
+        let events = vec![
+            DomainEvent::PriceHistoryChanged,
+            DomainEvent::PriceHistoryChanged,
+        ];
+        assert!(plan_portfolio_job(&events, "UTC").is_none());
+    }
+
+    #[test]
+    fn price_history_notifications_preserve_other_portfolio_work() {
+        let events = vec![
+            DomainEvent::PriceHistoryChanged,
+            DomainEvent::ActivitiesChanged {
+                account_ids: vec!["acc1".to_string()],
+                asset_ids: vec![],
+                currencies: vec![],
+                earliest_activity_at_utc: None,
+            },
+        ];
+        let job = plan_portfolio_job(&events, "UTC").unwrap();
+        assert_eq!(job.account_ids, Some(vec!["acc1".to_string()]));
     }
 }

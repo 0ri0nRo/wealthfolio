@@ -22,12 +22,14 @@
     "deleting": "Wird gelöscht..."
   },
   "refreshDialog": {
-    "title": "Verlauf aktualisieren",
+    "title": "Gesamten Verlauf aktualisieren",
     "description_named": "Neue Kurse für {{name}} werden mit vorhandenen Kursen zusammengeführt. Ältere, manuelle und Broker-Kurse bleiben erhalten. Fortfahren?",
     "description_generic": "Neue Kurse werden mit vorhandenen Kursen zusammengeführt. Ältere, manuelle und Broker-Kurse bleiben erhalten. Fortfahren?",
     "refresh": "Aktualisieren"
   },
   "resetDialog": {
+    "globalDescription": "Anbieterkurse für alle geeigneten Vermögenswerte einschließlich Währungspaare ersetzen? Jeder Verlauf wird vor dem Ersetzen abgerufen und geprüft. Der Ersatz kann kürzer sein. Manuelle und Brokerkurse bleiben erhalten. Bei Fehlern bleibt der bisherige Verlauf erhalten; erfolgreiche Ersetzungen werden nicht rückgängig gemacht.",
+    "globalResult": "Ersetzt: {{succeeded}}. Fehlgeschlagen: {{failed}}. Übersprungen: {{skipped}}.",
     "title": "Anbieterhistorie zurücksetzen",
     "description": "Alle Anbieterpreise für {{name}} durch neu abgerufene Daten ersetzen? Die neue Historie kann kürzer sein. Manuelle und Broker-Kurse bleiben erhalten. Bei einem Abruf- oder Validierungsfehler bleibt die bestehende Historie erhalten.",
     "confirm": "Anbieterhistorie zurücksetzen",
@@ -187,7 +189,7 @@
     "record_transaction": "Transaktion erfassen",
     "valuation": "Bewertung",
     "update_price": "Preis aktualisieren",
-    "refresh_history": "Verlauf aktualisieren",
+    "refresh_history": "Gesamten Verlauf aktualisieren",
     "edit": "Bearbeiten",
     "update_value": "Wert aktualisieren",
     "edit_details": "Details bearbeiten",

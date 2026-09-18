@@ -4,20 +4,28 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ResetProviderHistoryDialog } from "./reset-provider-history-dialog";
 import { RefreshQuotesConfirmDialog } from "./refresh-quotes-confirm-dialog";
 
-const mocks = vi.hoisted(() => ({ resetProviderHistory: vi.fn(), toast: vi.fn() }));
-vi.mock("@/adapters", () => ({ resetProviderHistory: mocks.resetProviderHistory }));
+const mocks = vi.hoisted(() => ({
+  resetProviderHistory: vi.fn(),
+  resetAllProviderHistory: vi.fn(),
+  toast: vi.fn(),
+}));
+vi.mock("@/adapters", () => ({
+  resetProviderHistory: mocks.resetProviderHistory,
+  resetAllProviderHistory: mocks.resetAllProviderHistory,
+}));
 vi.mock("@wealthfolio/ui/components/ui/use-toast", () => ({
   useToast: () => ({ toast: mocks.toast }),
 }));
 
-function setup() {
+function setup(global = false) {
   const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
   const onOpenChange = vi.fn();
   render(
     <QueryClientProvider client={client}>
       <ResetProviderHistoryDialog
-        assetId="asset-1"
-        assetName="Example"
+        allAssets={global}
+        assetId={global ? undefined : "asset-1"}
+        assetName={global ? undefined : "Example"}
         open
         onOpenChange={onOpenChange}
       />
@@ -74,6 +82,36 @@ describe("Reset provider history", () => {
     });
   });
 
+  it("can reset the same asset again after a successful controlled close and reopen", async () => {
+    const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+    const onOpenChange = vi.fn();
+    const dialog = (open: boolean) => (
+      <QueryClientProvider client={client}>
+        <ResetProviderHistoryDialog
+          assetId="asset-1"
+          assetName="Example"
+          open={open}
+          onOpenChange={onOpenChange}
+        />
+      </QueryClientProvider>
+    );
+    const { rerender } = render(dialog(true));
+    fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    rerender(dialog(false));
+    expect(
+      screen.queryByRole("button", { name: "Reset provider history" }),
+    ).not.toBeInTheDocument();
+    rerender(dialog(true));
+    const confirm = screen.getByRole("button", { name: "Reset provider history" });
+    expect(confirm).toBeEnabled();
+    fireEvent.click(confirm);
+    await waitFor(() => expect(mocks.resetProviderHistory).toHaveBeenCalledTimes(2));
+    expect(mocks.resetProviderHistory).toHaveBeenNthCalledWith(1, "asset-1");
+    expect(mocks.resetProviderHistory).toHaveBeenNthCalledWith(2, "asset-1");
+    expect(mocks.resetAllProviderHistory).not.toHaveBeenCalled();
+  });
+
   it("reports committed prices separately from pending recalculation and refreshes caches", async () => {
     mocks.resetProviderHistory.mockResolvedValue({ ...result, recalculationPending: true });
     const { client, onOpenChange } = setup();
@@ -89,6 +127,7 @@ describe("Reset provider history", () => {
       ),
     );
     expect(invalidate).toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Reset provider history" })).toBeEnabled();
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
@@ -129,5 +168,62 @@ describe("Reset provider history", () => {
     );
     expect(screen.getByText(/merge it with existing prices/)).toHaveTextContent("Older history");
     expect(screen.queryByText(/delete and replace/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Reset all provider history", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("does not interpret a missing asset as authorization to reset everything", async () => {
+    const client = new QueryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <ResetProviderHistoryDialog open onOpenChange={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("No asset selected");
+    expect(mocks.resetAllProviderHistory).not.toHaveBeenCalled();
+    expect(mocks.resetProviderHistory).not.toHaveBeenCalled();
+  });
+  it("confirms the global scope and cancels without sending a request", () => {
+    setup(true);
+    expect(screen.getByText(/all eligible assets/)).toHaveTextContent(
+      "successful replacements are not rolled back",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(mocks.resetAllProviderHistory).not.toHaveBeenCalled();
+  });
+  it("reports partial failure by asset and prevents repeating successful resets", async () => {
+    mocks.resetAllProviderHistory.mockResolvedValue({
+      results: [result],
+      failures: [{ assetId: "failed-asset", error: "Invalid history" }],
+      skipped: [{ assetId: "manual-asset", reason: "Manual prices" }],
+      recalculationPending: true,
+    });
+    const { onOpenChange } = setup(true);
+    fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("Replaced: 1. Failed: 1. Skipped: 1.");
+    expect(status).toHaveTextContent("failed-asset: Invalid history");
+    expect(status).toHaveTextContent("manual-asset: Manual prices");
+    expect(status).toHaveTextContent("recalculation is still pending");
+    expect(
+      screen.queryByRole("button", { name: "Reset provider history" }),
+    ).not.toBeInTheDocument();
+    expect(mocks.resetAllProviderHistory).toHaveBeenCalledTimes(1);
+    expect(mocks.resetProviderHistory).not.toHaveBeenCalled();
+    expect(onOpenChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+  it("never automatically retries a global reset after an interrupted response", async () => {
+    mocks.resetAllProviderHistory.mockRejectedValue(new Error("Network connection lost"));
+    setup(true);
+    fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "prices may already have been replaced",
+    );
+    expect(screen.getByRole("button", { name: "Reset provider history" })).toBeDisabled();
+    expect(mocks.resetAllProviderHistory).toHaveBeenCalledTimes(1);
   });
 });

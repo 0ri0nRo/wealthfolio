@@ -50,12 +50,12 @@ pub trait QuoteStore: Send + Sync {
         self.upsert_quotes(quotes).await
     }
 
-    fn pending_quote_rebuild_token(&self) -> Result<Option<String>> {
+    fn pending_portfolio_rebuild_token(&self) -> Result<Option<String>> {
         Ok(None)
     }
 
     /// Clear pending work only if no quote mutation has changed its token.
-    async fn acknowledge_quote_rebuild(&self, _token: &str) -> Result<bool> {
+    async fn clear_pending_portfolio_rebuild_if_token_matches(&self, _token: &str) -> Result<bool> {
         Ok(false)
     }
 

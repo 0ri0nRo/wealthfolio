@@ -19,7 +19,7 @@ use wealthfolio_core::quotes::store::{ProviderSettingsStore, QuoteStore};
 use wealthfolio_core::quotes::types::{AssetId, Day, QuoteSource};
 use wealthfolio_core::quotes::{
     LatestQuotePair, MarketDataProviderSetting, ProviderHistoryResetContext, Quote,
-    ResetProviderHistoryResult, UpdateMarketDataProviderSetting, PENDING_QUOTE_REBUILD_KEY,
+    ResetProviderHistoryResult, UpdateMarketDataProviderSetting, PENDING_PORTFOLIO_REBUILD_KEY,
 };
 use wealthfolio_core::Result;
 
@@ -145,7 +145,7 @@ fn mark_quote_rebuild(conn: &mut SqliteConnection) -> Result<()> {
     use crate::schema::app_settings::dsl::*;
     diesel::replace_into(app_settings)
         .values((
-            setting_key.eq(PENDING_QUOTE_REBUILD_KEY),
+            setting_key.eq(PENDING_PORTFOLIO_REBUILD_KEY),
             setting_value.eq(uuid::Uuid::new_v4().to_string()),
         ))
         .execute(conn)
@@ -297,11 +297,11 @@ impl QuoteStore for MarketDataRepository {
         self.merge_quotes(input_quotes, true).await
     }
 
-    fn pending_quote_rebuild_token(&self) -> Result<Option<String>> {
+    fn pending_portfolio_rebuild_token(&self) -> Result<Option<String>> {
         use crate::schema::app_settings::dsl::*;
         let mut conn = get_connection(&self.pool)?;
         app_settings
-            .filter(setting_key.eq(PENDING_QUOTE_REBUILD_KEY))
+            .filter(setting_key.eq(PENDING_PORTFOLIO_REBUILD_KEY))
             .select(setting_value)
             .first(&mut conn)
             .optional()
@@ -309,14 +309,14 @@ impl QuoteStore for MarketDataRepository {
             .map_err(Into::into)
     }
 
-    async fn acknowledge_quote_rebuild(&self, token: &str) -> Result<bool> {
+    async fn clear_pending_portfolio_rebuild_if_token_matches(&self, token: &str) -> Result<bool> {
         let token = token.to_owned();
         self.writer
             .exec(move |conn| {
                 use crate::schema::app_settings::dsl::*;
                 let count = diesel::delete(
                     app_settings
-                        .filter(setting_key.eq(PENDING_QUOTE_REBUILD_KEY))
+                        .filter(setting_key.eq(PENDING_PORTFOLIO_REBUILD_KEY))
                         .filter(setting_value.eq(token)),
                 )
                 .execute(conn)
@@ -1650,7 +1650,80 @@ mod tests {
         let reset = sync.reset_provider_history("AAPL").await.unwrap();
         assert_eq!((reset.deleted_count, reset.inserted_count), (10, 5));
         assert_eq!(raw_rows(&repo, "AAPL").len(), 5);
-        assert!(repo.pending_quote_rebuild_token().unwrap().is_some());
+        assert!(repo.pending_portfolio_rebuild_token().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn global_reset_commits_successes_preserves_failures_and_skips_manual_assets() {
+        use wealthfolio_core::quotes::{MarketDataClient, QuoteSyncService};
+        let (repo, _temp) = create_test_repository().await;
+        for id in ["GOOD", "FAILED", "MANUAL"] {
+            insert_test_asset(&repo, id);
+            repo.save_quote(&quote_with_source(
+                id,
+                NaiveDate::from_ymd_opt(2010, 1, 4).unwrap(),
+                "YAHOO",
+                Decimal::ONE,
+            ))
+            .await
+            .unwrap();
+        }
+        let mut conn = get_connection(&repo.pool).unwrap();
+        diesel::sql_query("UPDATE market_data_providers SET enabled=0")
+            .execute(&mut conn)
+            .unwrap();
+        diesel::sql_query(r#"UPDATE assets SET provider_config='{"preferred_provider":"UNAVAILABLE"}' WHERE id='FAILED'"#)
+            .execute(&mut conn).unwrap();
+        diesel::sql_query("UPDATE assets SET quote_mode='MANUAL' WHERE id='MANUAL'")
+            .execute(&mut conn)
+            .unwrap();
+        drop(conn);
+        let repo = Arc::new(repo);
+        let client = MarketDataClient::new_with_extra(
+            Arc::new(NoSecrets),
+            vec![],
+            vec![Arc::new(ShortHistoryProvider::default())],
+        )
+        .await
+        .unwrap();
+        let sync = QuoteSyncService::new(
+            Arc::new(tokio::sync::RwLock::new(client)),
+            repo.clone(),
+            Arc::new(crate::market_data::QuoteSyncStateRepository::new(
+                repo.pool.clone(),
+                repo.writer.clone(),
+            )),
+            Arc::new(crate::assets::AssetRepository::new(
+                repo.pool.clone(),
+                repo.writer.clone(),
+            )),
+            Arc::new(crate::activities::ActivityRepository::new(
+                repo.pool.clone(),
+                repo.writer.clone(),
+            )),
+        );
+        let result = sync.reset_all_provider_history().await.unwrap();
+        assert_eq!(result.results.len(), 1);
+        assert_eq!(result.results[0].asset_id, "GOOD");
+        assert_eq!(result.failures.len(), 1);
+        assert_eq!(result.failures[0].asset_id, "FAILED");
+        assert!(result
+            .skipped
+            .iter()
+            .any(|asset| asset.asset_id == "MANUAL"));
+        assert!(result.recalculation_pending);
+        assert_eq!(raw_rows(&repo, "GOOD").len(), 5);
+        for id in ["FAILED", "MANUAL"] {
+            let rows = raw_rows(&repo, id);
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].close, "1");
+        }
+        assert!(repo.pending_portfolio_rebuild_token().unwrap().is_some());
+    }
+
+    mod price_change_rebuild_tests {
+        use super::*;
+        include!("price_change_rebuild_tests.rs");
     }
 
     #[tokio::test]
@@ -1712,7 +1785,7 @@ mod tests {
         release.notify_one();
         assert!(running.await.unwrap().is_err());
         assert_eq!(raw_rows(&repo, "BUSY").len(), 1);
-        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
+        assert!(repo.pending_portfolio_rebuild_token().unwrap().is_none());
     }
 
     fn raw_rows(repo: &MarketDataRepository, asset: &str) -> Vec<QuoteDB> {
@@ -1739,7 +1812,7 @@ mod tests {
             })
             .collect();
         repo.upsert_quotes(&quotes).await.unwrap();
-        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
+        assert!(repo.pending_portfolio_rebuild_token().unwrap().is_none());
         let recent: Vec<_> = quotes[5..]
             .iter()
             .cloned()
@@ -1753,7 +1826,7 @@ mod tests {
         assert_eq!(rows.len(), 10);
         assert_eq!(rows[0].close, "1");
         assert_eq!(rows[9].close, "10");
-        assert!(repo.pending_quote_rebuild_token().unwrap().is_some());
+        assert!(repo.pending_portfolio_rebuild_token().unwrap().is_some());
     }
 
     #[tokio::test]
@@ -1798,7 +1871,7 @@ mod tests {
         .await
         .unwrap();
         let before = raw_rows(&repo, "ROLLBACK");
-        let token = repo.pending_quote_rebuild_token().unwrap();
+        let token = repo.pending_portfolio_rebuild_token().unwrap();
         let context = repo.provider_history_reset_context("ROLLBACK").unwrap();
         diesel::sql_query("CREATE TRIGGER reject_reset BEFORE INSERT ON quotes WHEN NEW.source = 'FAIL' BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
             .execute(&mut get_connection(&repo.pool).unwrap()).unwrap();
@@ -1813,7 +1886,7 @@ mod tests {
             serde_json::to_value(raw_rows(&repo, "ROLLBACK")).unwrap(),
             serde_json::to_value(before).unwrap()
         );
-        assert_eq!(repo.pending_quote_rebuild_token().unwrap(), token);
+        assert_eq!(repo.pending_portfolio_rebuild_token().unwrap(), token);
     }
 
     #[tokio::test]
@@ -1842,7 +1915,7 @@ mod tests {
             .await
             .is_err());
         assert_eq!(raw_rows(&repo, "CONFLICT").len(), 1);
-        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
+        assert!(repo.pending_portfolio_rebuild_token().unwrap().is_none());
         let context = repo.provider_history_reset_context("CONFLICT").unwrap();
         diesel::sql_query("UPDATE market_data_providers SET priority=priority+1 WHERE id='YAHOO'")
             .execute(&mut get_connection(&repo.pool).unwrap())
@@ -1869,7 +1942,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let token = repo.pending_quote_rebuild_token().unwrap().unwrap();
+        let token = repo.pending_portfolio_rebuild_token().unwrap().unwrap();
         repo.writer.shutdown().await;
         drop(repo);
         let path = temp.path().join("test.db").to_string_lossy().to_string();
@@ -1877,11 +1950,14 @@ mod tests {
         let writer = spawn_writer((*pool).clone()).unwrap();
         let reopened = MarketDataRepository::new(pool, writer);
         assert_eq!(
-            reopened.pending_quote_rebuild_token().unwrap(),
+            reopened.pending_portfolio_rebuild_token().unwrap(),
             Some(token.clone())
         );
         assert_eq!(raw_rows(&reopened, "RESTART").len(), 1);
-        assert!(reopened.acknowledge_quote_rebuild(&token).await.unwrap());
+        assert!(reopened
+            .clear_pending_portfolio_rebuild_if_token_matches(&token)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -1893,23 +1969,35 @@ mod tests {
         repo.upsert_quotes_for_refresh(std::slice::from_ref(&quote))
             .await
             .unwrap();
-        let first = repo.pending_quote_rebuild_token().unwrap().unwrap();
+        let first = repo.pending_portfolio_rebuild_token().unwrap().unwrap();
         repo.save_quote(&quote).await.unwrap();
-        assert!(!repo.acknowledge_quote_rebuild(&first).await.unwrap());
-        let second = repo.pending_quote_rebuild_token().unwrap().unwrap();
+        assert!(!repo
+            .clear_pending_portfolio_rebuild_if_token_matches(&first)
+            .await
+            .unwrap());
+        let second = repo.pending_portfolio_rebuild_token().unwrap().unwrap();
         // A direct SQL writer (such as device sync) also invalidates the token.
         diesel::sql_query("UPDATE quotes SET close='2' WHERE asset_id='TOKEN'")
             .execute(&mut get_connection(&repo.pool).unwrap())
             .unwrap();
-        assert!(!repo.acknowledge_quote_rebuild(&second).await.unwrap());
-        let third = repo.pending_quote_rebuild_token().unwrap().unwrap();
+        assert!(!repo
+            .clear_pending_portfolio_rebuild_if_token_matches(&second)
+            .await
+            .unwrap());
+        let third = repo.pending_portfolio_rebuild_token().unwrap().unwrap();
         repo.delete_quote(&quote.id).await.unwrap();
-        assert!(!repo.acknowledge_quote_rebuild(&third).await.unwrap());
-        let current = repo.pending_quote_rebuild_token().unwrap().unwrap();
-        assert!(repo.acknowledge_quote_rebuild(&current).await.unwrap());
-        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
+        assert!(!repo
+            .clear_pending_portfolio_rebuild_if_token_matches(&third)
+            .await
+            .unwrap());
+        let current = repo.pending_portfolio_rebuild_token().unwrap().unwrap();
+        assert!(repo
+            .clear_pending_portfolio_rebuild_if_token_matches(&current)
+            .await
+            .unwrap());
+        assert!(repo.pending_portfolio_rebuild_token().unwrap().is_none());
         repo.save_quote(&quote).await.unwrap();
-        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
+        assert!(repo.pending_portfolio_rebuild_token().unwrap().is_none());
     }
 
     #[tokio::test]

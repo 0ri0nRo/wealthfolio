@@ -55,8 +55,9 @@ mod service_tests;
 
 // Re-export commonly used types for convenience
 pub use model::{
-    LatestQuotePair, ProviderHistoryResetContext, Quote, ResetProviderHistoryResult, ResolvedQuote,
-    SymbolSearchResult,
+    LatestQuotePair, ProviderHistoryResetContext, ProviderHistoryResetFailure,
+    ProviderHistoryResetSkipped, Quote, ResetAllProviderHistoryResult, ResetProviderHistoryResult,
+    ResolvedQuote, SymbolSearchResult,
 };
 pub use store::{ProviderSettingsStore, QuoteStore};
 

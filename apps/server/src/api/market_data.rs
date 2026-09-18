@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use wealthfolio_core::portfolio::price_change_rebuild::request_portfolio_rebuild_after_price_changes;
 
 use crate::{
     api::shared::{enqueue_portfolio_job, PortfolioJobConfig},
@@ -35,7 +36,30 @@ async fn reset_provider_history(
             .quote_service
             .reset_provider_history(&body.asset_id)
             .await;
-        super::shared::spawn_pending_quote_rebuild(state);
+        request_portfolio_rebuild_after_price_changes(
+            state.quote_service.as_ref(),
+            state.domain_event_sink.as_ref(),
+        );
+        result
+    })
+    .await
+    .map_err(|_| {
+        crate::error::ApiError::Internal(
+            "Reset completion could not be confirmed. Reload quotes before retrying.".into(),
+        )
+    })??;
+    Ok(Json(result))
+}
+
+async fn reset_all_provider_history(
+    State(state): State<Arc<AppState>>,
+) -> ApiResult<Json<wealthfolio_core::quotes::ResetAllProviderHistoryResult>> {
+    let result = tokio::spawn(async move {
+        let result = state.quote_service.reset_all_provider_history().await;
+        request_portfolio_rebuild_after_price_changes(
+            state.quote_service.as_ref(),
+            state.domain_event_sink.as_ref(),
+        );
         result
     })
     .await
@@ -187,7 +211,10 @@ async fn delete_quote(
 async fn sync_history_quotes(State(state): State<Arc<AppState>>) -> ApiResult<StatusCode> {
     let result = tokio::spawn(async move {
         let result = state.quote_service.resync(None).await;
-        super::shared::spawn_pending_quote_rebuild(state);
+        request_portfolio_rebuild_after_price_changes(
+            state.quote_service.as_ref(),
+            state.domain_event_sink.as_ref(),
+        );
         result
     })
     .await
@@ -362,6 +389,10 @@ pub fn router() -> Router<Arc<AppState>> {
         )
         .route("/market-data/dividends", get(fetch_dividends))
         .route("/market-data/quotes/latest", post(get_latest_quotes))
+        .route(
+            "/market-data/quotes/reset-all-provider-history",
+            post(reset_all_provider_history),
+        )
         .route("/market-data/quotes/{symbol}", put(update_quote))
         .route("/market-data/quotes/id/{id}", delete(delete_quote))
         .route("/market-data/quotes/check", post(check_quotes_import))

@@ -7,3 +7,15 @@ it("uses the same reset command and assetId on the platform adapter", async () =
   expect(await resetProviderHistory("asset-1")).toEqual({ recalculationPending: true });
   expect(mocks.invoke).toHaveBeenCalledWith("reset_provider_history", { assetId: "asset-1" });
 });
+
+it("uses the global command without an asset payload", async () => {
+  const { resetAllProviderHistory } = await import("./market-data");
+  mocks.invoke.mockResolvedValue({
+    results: [],
+    failures: [],
+    skipped: [],
+    recalculationPending: false,
+  });
+  await resetAllProviderHistory();
+  expect(mocks.invoke).toHaveBeenCalledWith("reset_all_provider_history");
+});

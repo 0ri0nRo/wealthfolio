@@ -153,6 +153,30 @@ pub struct ResetProviderHistoryResult {
     pub recalculation_pending: bool,
 }
 
+/// Per-asset results of an explicitly requested global provider-history reset.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ResetAllProviderHistoryResult {
+    pub results: Vec<ResetProviderHistoryResult>,
+    pub failures: Vec<ProviderHistoryResetFailure>,
+    pub skipped: Vec<ProviderHistoryResetSkipped>,
+    pub recalculation_pending: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderHistoryResetFailure {
+    pub asset_id: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderHistoryResetSkipped {
+    pub asset_id: String,
+    pub reason: String,
+}
+
 /// Configuration captured before a destructive replacement fetch.
 #[derive(Debug, Clone)]
 pub struct ProviderHistoryResetContext {
