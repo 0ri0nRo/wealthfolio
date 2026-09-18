@@ -23,9 +23,19 @@
   },
   "refreshDialog": {
     "title": "Verlauf aktualisieren",
-    "description_named": "Dadurch werden alle Anbieter-Kursnotierungen gelöscht und durch aktuelle Daten für {{name}} ersetzt. Manuelle Kursnotierungen bleiben erhalten. Fortfahren?",
-    "description_generic": "Dadurch werden alle Anbieter-Kursnotierungen gelöscht und durch aktuelle Daten ersetzt. Manuelle Kursnotierungen bleiben erhalten. Fortfahren?",
+    "description_named": "Neue Kurse für {{name}} werden mit vorhandenen Kursen zusammengeführt. Ältere, manuelle und Broker-Kurse bleiben erhalten. Fortfahren?",
+    "description_generic": "Neue Kurse werden mit vorhandenen Kursen zusammengeführt. Ältere, manuelle und Broker-Kurse bleiben erhalten. Fortfahren?",
     "refresh": "Aktualisieren"
+  },
+  "resetDialog": {
+    "title": "Anbieterhistorie zurücksetzen",
+    "description": "Alle Anbieterpreise für {{name}} durch neu abgerufene Daten ersetzen? Die neue Historie kann kürzer sein. Manuelle und Broker-Kurse bleiben erhalten. Bei einem Abruf- oder Validierungsfehler bleibt die bestehende Historie erhalten.",
+    "confirm": "Anbieterhistorie zurücksetzen",
+    "resetting": "Wird zurückgesetzt…",
+    "success": "Anbieterhistorie ersetzt",
+    "complete": "Preise und Portfoliobewertungen wurden aktualisiert.",
+    "pending": "Die Preise wurden ersetzt. Die Portfolioneuberechnung steht noch aus und wird automatisch erneut versucht. Nicht erneut zurücksetzen.",
+    "uncertain": "Die Antwort wurde unterbrochen; die Preise wurden möglicherweise bereits ersetzt. Prüfen Sie die Kurshistorie und laden Sie die Seite neu, bevor Sie erneut zurücksetzen."
   },
   "createSecurity": {
     "title": "Wertpapier hinzufügen",

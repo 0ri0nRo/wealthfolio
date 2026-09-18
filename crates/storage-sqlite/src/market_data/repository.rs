@@ -18,7 +18,8 @@ use crate::utils::{chunk_for_sqlite, SQLITE_MAX_PARAMS_CHUNK};
 use wealthfolio_core::quotes::store::{ProviderSettingsStore, QuoteStore};
 use wealthfolio_core::quotes::types::{AssetId, Day, QuoteSource};
 use wealthfolio_core::quotes::{
-    LatestQuotePair, MarketDataProviderSetting, Quote, UpdateMarketDataProviderSetting,
+    LatestQuotePair, MarketDataProviderSetting, ProviderHistoryResetContext, Quote,
+    ResetProviderHistoryResult, UpdateMarketDataProviderSetting, PENDING_QUOTE_REBUILD_KEY,
 };
 use wealthfolio_core::Result;
 
@@ -43,82 +44,7 @@ impl MarketDataRepository {
     pub fn new(pool: Arc<Pool<ConnectionManager<SqliteConnection>>>, writer: WriteHandle) -> Self {
         Self { pool, writer }
     }
-}
-
-// =============================================================================
-// QuoteStore Implementation
-// =============================================================================
-
-#[async_trait]
-impl QuoteStore for MarketDataRepository {
-    // =========================================================================
-    // Mutations
-    // =========================================================================
-
-    async fn save_quote(&self, quote: &Quote) -> Result<Quote> {
-        let quote_cloned = quote.clone();
-        let db_row = QuoteDB::from(&quote_cloned);
-
-        let saved_row = self
-            .writer
-            .exec_tx(move |tx| -> Result<QuoteDB> {
-                let mut payload = db_row;
-                let existing = quotes_dsl::quotes
-                    .filter(quotes_dsl::asset_id.eq(&payload.asset_id))
-                    .filter(quotes_dsl::day.eq(&payload.day))
-                    .filter(quotes_dsl::source.eq(&payload.source))
-                    .select(QuoteDB::as_select())
-                    .first::<QuoteDB>(tx.conn())
-                    .optional()
-                    .map_err(StorageError::QueryFailed)?;
-
-                let is_update = existing.is_some();
-                if let Some(existing_row) = existing {
-                    payload.id = existing_row.id;
-                }
-
-                diesel::replace_into(quotes_dsl::quotes)
-                    .values(&payload)
-                    .execute(tx.conn())
-                    .map_err(StorageError::QueryFailed)?;
-
-                if is_update {
-                    tx.update(&payload)?;
-                } else {
-                    tx.insert(&payload)?;
-                }
-
-                Ok(payload)
-            })
-            .await?;
-
-        Ok(Quote::from(saved_row))
-    }
-
-    async fn delete_quote(&self, quote_id: &str) -> Result<()> {
-        let id_to_delete = quote_id.to_string();
-        self.writer
-            .exec_tx(move |tx| -> Result<()> {
-                let existing = quotes_dsl::quotes
-                    .filter(quotes_dsl::id.eq(&id_to_delete))
-                    .select(QuoteDB::as_select())
-                    .first::<QuoteDB>(tx.conn())
-                    .optional()
-                    .map_err(StorageError::QueryFailed)?;
-
-                diesel::delete(quotes_dsl::quotes.filter(quotes_dsl::id.eq(&id_to_delete)))
-                    .execute(tx.conn())
-                    .map_err(StorageError::QueryFailed)?;
-
-                if let Some(row) = existing {
-                    tx.delete_model(&row);
-                }
-                Ok(())
-            })
-            .await
-    }
-
-    async fn upsert_quotes(&self, input_quotes: &[Quote]) -> Result<usize> {
+    async fn merge_quotes(&self, input_quotes: &[Quote], request_rebuild: bool) -> Result<usize> {
         if input_quotes.is_empty() {
             return Ok(0);
         }
@@ -206,9 +132,283 @@ impl QuoteStore for MarketDataRepository {
                         tx.insert(&payload)?;
                     }
                 }
+                if request_rebuild && total_upserted > 0 {
+                    mark_quote_rebuild(tx.conn())?;
+                }
                 Ok(total_upserted)
             })
             .await
+    }
+}
+
+fn mark_quote_rebuild(conn: &mut SqliteConnection) -> Result<()> {
+    use crate::schema::app_settings::dsl::*;
+    diesel::replace_into(app_settings)
+        .values((
+            setting_key.eq(PENDING_QUOTE_REBUILD_KEY),
+            setting_value.eq(uuid::Uuid::new_v4().to_string()),
+        ))
+        .execute(conn)
+        .map_err(StorageError::QueryFailed)?;
+    Ok(())
+}
+
+fn reset_context(conn: &mut SqliteConnection, id: &str) -> Result<ProviderHistoryResetContext> {
+    use crate::schema::{
+        assets, market_data_custom_providers as custom, market_data_providers as providers,
+    };
+    let asset: wealthfolio_core::assets::Asset = assets::table
+        .find(id)
+        .select(crate::assets::AssetDB::as_select())
+        .first::<crate::assets::AssetDB>(conn)
+        .map_err(StorageError::QueryFailed)?
+        .into();
+    let providers = providers::table
+        .order(providers::id.asc())
+        .select((
+            providers::id,
+            providers::enabled,
+            providers::priority,
+            providers::config,
+        ))
+        .load::<(String, bool, i32, Option<String>)>(conn)
+        .map_err(StorageError::QueryFailed)?;
+    let custom = custom::table
+        .order(custom::id.asc())
+        .select((
+            custom::id,
+            custom::code,
+            custom::enabled,
+            custom::priority,
+            custom::config,
+        ))
+        .load::<(String, String, bool, i32, Option<String>)>(conn)
+        .map_err(StorageError::QueryFailed)?;
+    // Exclude labels and last-sync bookkeeping: only fetch identity/configuration matters.
+    let fingerprint = serde_json::json!({
+        "kind": asset.kind, "active": asset.is_active, "mode": asset.quote_mode,
+        "currency": asset.quote_ccy, "type": asset.instrument_type,
+        "symbol": asset.instrument_symbol, "exchange": asset.instrument_exchange_mic,
+        "metadata": asset.metadata, "assetProvider": asset.provider_config,
+        "providers": providers, "custom": custom,
+    })
+    .to_string();
+    let earliest: Option<String> = quotes_dsl::quotes
+        .filter(quotes_dsl::asset_id.eq(id))
+        .filter(quotes_dsl::source.ne("MANUAL"))
+        .filter(quotes_dsl::source.ne("BROKER"))
+        .select(diesel::dsl::min(quotes_dsl::day))
+        .first(conn)
+        .map_err(StorageError::QueryFailed)?;
+    let earliest_provider_date = earliest
+        .map(|day| chrono::NaiveDate::parse_from_str(&day, "%Y-%m-%d"))
+        .transpose()?;
+    let provider_configuration = providers
+        .iter()
+        .filter(|(_, enabled, _, _)| *enabled)
+        .map(|(id, _, priority, _)| (id.clone(), *priority))
+        .collect();
+    Ok(ProviderHistoryResetContext {
+        asset,
+        fingerprint,
+        earliest_provider_date,
+        provider_configuration,
+    })
+}
+
+// =============================================================================
+// QuoteStore Implementation
+// =============================================================================
+
+#[async_trait]
+impl QuoteStore for MarketDataRepository {
+    // =========================================================================
+    // Mutations
+    // =========================================================================
+
+    async fn save_quote(&self, quote: &Quote) -> Result<Quote> {
+        let quote_cloned = quote.clone();
+        let db_row = QuoteDB::from(&quote_cloned);
+
+        let saved_row = self
+            .writer
+            .exec_tx(move |tx| -> Result<QuoteDB> {
+                let mut payload = db_row;
+                let existing = quotes_dsl::quotes
+                    .filter(quotes_dsl::asset_id.eq(&payload.asset_id))
+                    .filter(quotes_dsl::day.eq(&payload.day))
+                    .filter(quotes_dsl::source.eq(&payload.source))
+                    .select(QuoteDB::as_select())
+                    .first::<QuoteDB>(tx.conn())
+                    .optional()
+                    .map_err(StorageError::QueryFailed)?;
+
+                let is_update = existing.is_some();
+                if let Some(existing_row) = existing {
+                    payload.id = existing_row.id;
+                }
+
+                diesel::replace_into(quotes_dsl::quotes)
+                    .values(&payload)
+                    .execute(tx.conn())
+                    .map_err(StorageError::QueryFailed)?;
+
+                if is_update {
+                    tx.update(&payload)?;
+                } else {
+                    tx.insert(&payload)?;
+                }
+
+                Ok(payload)
+            })
+            .await?;
+
+        Ok(Quote::from(saved_row))
+    }
+
+    async fn delete_quote(&self, quote_id: &str) -> Result<()> {
+        let id_to_delete = quote_id.to_string();
+        self.writer
+            .exec_tx(move |tx| -> Result<()> {
+                let existing = quotes_dsl::quotes
+                    .filter(quotes_dsl::id.eq(&id_to_delete))
+                    .select(QuoteDB::as_select())
+                    .first::<QuoteDB>(tx.conn())
+                    .optional()
+                    .map_err(StorageError::QueryFailed)?;
+
+                diesel::delete(quotes_dsl::quotes.filter(quotes_dsl::id.eq(&id_to_delete)))
+                    .execute(tx.conn())
+                    .map_err(StorageError::QueryFailed)?;
+
+                if let Some(row) = existing {
+                    tx.delete_model(&row);
+                }
+                Ok(())
+            })
+            .await
+    }
+
+    async fn upsert_quotes(&self, input_quotes: &[Quote]) -> Result<usize> {
+        self.merge_quotes(input_quotes, false).await
+    }
+
+    async fn upsert_quotes_for_refresh(&self, input_quotes: &[Quote]) -> Result<usize> {
+        self.merge_quotes(input_quotes, true).await
+    }
+
+    fn pending_quote_rebuild_token(&self) -> Result<Option<String>> {
+        use crate::schema::app_settings::dsl::*;
+        let mut conn = get_connection(&self.pool)?;
+        app_settings
+            .filter(setting_key.eq(PENDING_QUOTE_REBUILD_KEY))
+            .select(setting_value)
+            .first(&mut conn)
+            .optional()
+            .map_err(StorageError::QueryFailed)
+            .map_err(Into::into)
+    }
+
+    async fn acknowledge_quote_rebuild(&self, token: &str) -> Result<bool> {
+        let token = token.to_owned();
+        self.writer
+            .exec(move |conn| {
+                use crate::schema::app_settings::dsl::*;
+                let count = diesel::delete(
+                    app_settings
+                        .filter(setting_key.eq(PENDING_QUOTE_REBUILD_KEY))
+                        .filter(setting_value.eq(token)),
+                )
+                .execute(conn)
+                .map_err(StorageError::QueryFailed)?;
+                Ok(count == 1)
+            })
+            .await
+    }
+
+    fn provider_history_reset_context(
+        &self,
+        asset_id: &str,
+    ) -> Result<ProviderHistoryResetContext> {
+        let mut conn = get_connection(&self.pool)?;
+        conn.transaction::<_, StorageError, _>(|conn| {
+            reset_context(conn, asset_id).map_err(StorageError::from)
+        })
+        .map_err(Into::into)
+    }
+
+    async fn replace_provider_history(
+        &self,
+        context: ProviderHistoryResetContext,
+        quotes: Vec<Quote>,
+    ) -> Result<ResetProviderHistoryResult> {
+        let first = quotes.first().ok_or_else(|| {
+            wealthfolio_core::Error::Asset(
+                "Cannot replace provider history with an empty response".into(),
+            )
+        })?;
+        let source = first.data_source.clone();
+        if source.is_empty()
+            || matches!(source.as_str(), "MANUAL" | "BROKER")
+            || quotes.iter().any(|q| {
+                q.asset_id != context.asset.id
+                    || q.data_source != source
+                    || q.currency.is_empty()
+                    || q.close <= rust_decimal::Decimal::ZERO
+            })
+        {
+            return Err(wealthfolio_core::Error::Asset(
+                "Invalid provider history replacement".into(),
+            ));
+        }
+        let from_date = quotes
+            .iter()
+            .map(|q| q.timestamp.date_naive())
+            .min()
+            .unwrap()
+            .to_string();
+        let to_date = quotes
+            .iter()
+            .map(|q| q.timestamp.date_naive())
+            .max()
+            .unwrap()
+            .to_string();
+        let rows: Vec<QuoteDB> = quotes.iter().map(QuoteDB::from).collect();
+        self.writer.exec_tx(move |tx| {
+            let current = reset_context(tx.conn(), &context.asset.id)?;
+            current.ensure_eligible()?;
+            if current.fingerprint != context.fingerprint {
+                return Err(wealthfolio_core::Error::Asset(
+                    "Asset or provider settings changed during fetching; history was not replaced".into()));
+            }
+            let deleted_count = diesel::delete(quotes_dsl::quotes
+                .filter(quotes_dsl::asset_id.eq(&context.asset.id))
+                .filter(quotes_dsl::source.ne("MANUAL"))
+                .filter(quotes_dsl::source.ne("BROKER")))
+                .execute(tx.conn()).map_err(StorageError::QueryFailed)?;
+            let mut inserted_count = 0;
+            // INSERT (not REPLACE) protects unrelated/manual identities from collisions.
+            // Deliberately bypass the ordinary upsert's manual-day exclusion.
+            for chunk in rows.chunks(1_000) {
+                inserted_count += diesel::insert_into(quotes_dsl::quotes).values(chunk)
+                    .execute(tx.conn()).map_err(StorageError::QueryFailed)?;
+            }
+            let now = chrono::Utc::now().to_rfc3339();
+            diesel::sql_query("INSERT INTO quote_sync_state
+                (asset_id, data_source, sync_priority, error_count, last_synced_at, created_at, updated_at)
+                VALUES (?, ?, 0, 0, ?, ?, ?)
+                ON CONFLICT(asset_id) DO UPDATE SET data_source=excluded.data_source,
+                error_count=0, last_error=NULL, last_synced_at=excluded.last_synced_at,
+                updated_at=excluded.updated_at")
+                .bind::<Text, _>(&context.asset.id).bind::<Text, _>(&source)
+                .bind::<Text, _>(&now).bind::<Text, _>(&now).bind::<Text, _>(&now)
+                .execute(tx.conn()).map_err(StorageError::QueryFailed)?;
+            mark_quote_rebuild(tx.conn())?;
+            Ok(ResetProviderHistoryResult {
+                asset_id: context.asset.id, source, from_date, to_date,
+                inserted_count, deleted_count, recalculation_pending: true,
+            })
+        }).await
     }
 
     async fn delete_quotes_for_asset(&self, asset_id: &AssetId) -> Result<usize> {
@@ -1305,6 +1505,411 @@ mod tests {
             created_at: Utc::now(),
             notes: None,
         }
+    }
+
+    struct NoSecrets;
+    impl wealthfolio_core::secrets::SecretStore for NoSecrets {
+        fn set_secret(&self, _: &str, _: &str) -> Result<()> {
+            Ok(())
+        }
+        fn get_secret(&self, _: &str) -> Result<Option<String>> {
+            Ok(None)
+        }
+        fn delete_secret(&self, _: &str) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[derive(Default)]
+    struct ShortHistoryProvider {
+        gate: Option<(Arc<tokio::sync::Notify>, Arc<tokio::sync::Notify>)>,
+    }
+    #[async_trait]
+    impl wealthfolio_market_data::MarketDataProvider for ShortHistoryProvider {
+        fn id(&self) -> &'static str {
+            "YAHOO"
+        }
+        fn capabilities(&self) -> wealthfolio_market_data::ProviderCapabilities {
+            wealthfolio_market_data::FixtureProvider::new("unused").capabilities()
+        }
+        fn rate_limit(&self) -> wealthfolio_market_data::RateLimit {
+            Default::default()
+        }
+        async fn get_latest_quote(
+            &self,
+            _: &wealthfolio_market_data::QuoteContext,
+            _: wealthfolio_market_data::ProviderInstrument,
+        ) -> std::result::Result<
+            wealthfolio_market_data::Quote,
+            wealthfolio_market_data::errors::MarketDataError,
+        > {
+            unreachable!("history test must not fall back to latest")
+        }
+        async fn get_historical_quotes(
+            &self,
+            _: &wealthfolio_market_data::QuoteContext,
+            _: wealthfolio_market_data::ProviderInstrument,
+            start: chrono::DateTime<Utc>,
+            end: chrono::DateTime<Utc>,
+        ) -> std::result::Result<
+            Vec<wealthfolio_market_data::Quote>,
+            wealthfolio_market_data::errors::MarketDataError,
+        > {
+            if let Some((started, release)) = &self.gate {
+                started.notify_one();
+                release.notified().await;
+            }
+            Ok((2015..2020)
+                .map(|year| {
+                    wealthfolio_market_data::Quote::new(
+                        Utc.with_ymd_and_hms(year, 1, 4, 12, 0, 0).unwrap(),
+                        Decimal::TEN,
+                        "USD".into(),
+                        "YAHOO".into(),
+                    )
+                })
+                .filter(|q| q.timestamp >= start && q.timestamp <= end)
+                .collect())
+        }
+        async fn get_historical_quotes_for_reset(
+            &self,
+            context: &wealthfolio_market_data::QuoteContext,
+            instrument: wealthfolio_market_data::ProviderInstrument,
+            start: chrono::DateTime<Utc>,
+            end: chrono::DateTime<Utc>,
+        ) -> std::result::Result<
+            Vec<wealthfolio_market_data::Quote>,
+            wealthfolio_market_data::errors::MarketDataError,
+        > {
+            self.get_historical_quotes(context, instrument, start, end)
+                .await
+        }
+    }
+
+    #[tokio::test]
+    async fn backfill_execution_preserves_history_then_explicit_reset_replaces_it() {
+        use wealthfolio_core::quotes::{
+            MarketDataClient, QuoteSyncService, QuoteSyncServiceTrait, SyncMode,
+        };
+        let (repo, _temp) = create_test_repository().await;
+        insert_test_asset(&repo, "AAPL");
+        let mut conn = get_connection(&repo.pool).unwrap();
+        diesel::sql_query("UPDATE market_data_providers SET enabled=0")
+            .execute(&mut conn)
+            .unwrap();
+        diesel::sql_query("INSERT INTO accounts (id,name,account_type,currency,is_default,is_active,created_at,updated_at) VALUES ('history-account','History','SECURITIES','USD',0,1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+            .execute(&mut conn).unwrap();
+        diesel::sql_query("INSERT INTO activities (id,account_id,asset_id,activity_type,activity_date,quantity,unit_price,currency,created_at,updated_at) VALUES ('history-buy','history-account','AAPL','BUY','2010-01-04T12:00:00Z','1','1','USD',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
+            .execute(&mut conn).unwrap();
+        drop(conn);
+        let old_quotes: Vec<_> = (2010..2020)
+            .map(|year| {
+                quote_with_source(
+                    "AAPL",
+                    NaiveDate::from_ymd_opt(year, 1, 4).unwrap(),
+                    "YAHOO",
+                    Decimal::ONE,
+                )
+            })
+            .collect();
+        repo.upsert_quotes(&old_quotes).await.unwrap();
+        let repo = Arc::new(repo);
+        let client = MarketDataClient::new_with_extra(
+            Arc::new(NoSecrets),
+            vec![],
+            vec![Arc::new(ShortHistoryProvider::default())],
+        )
+        .await
+        .unwrap();
+        let sync = QuoteSyncService::new(
+            Arc::new(tokio::sync::RwLock::new(client)),
+            repo.clone(),
+            Arc::new(crate::market_data::QuoteSyncStateRepository::new(
+                repo.pool.clone(),
+                repo.writer.clone(),
+            )),
+            Arc::new(crate::assets::AssetRepository::new(
+                repo.pool.clone(),
+                repo.writer.clone(),
+            )),
+            Arc::new(crate::activities::ActivityRepository::new(
+                repo.pool.clone(),
+                repo.writer.clone(),
+            )),
+        );
+        let result = sync
+            .sync(
+                SyncMode::BackfillHistory { days: 365 },
+                Some(vec!["AAPL".into()]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.failed, 0, "{:?}", result.failures);
+        assert_eq!(result.quotes_synced, 5);
+        assert_eq!(raw_rows(&repo, "AAPL").len(), 10);
+        let reset = sync.reset_provider_history("AAPL").await.unwrap();
+        assert_eq!((reset.deleted_count, reset.inserted_count), (10, 5));
+        assert_eq!(raw_rows(&repo, "AAPL").len(), 5);
+        assert!(repo.pending_quote_rebuild_token().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn reset_reports_busy_and_rechecks_configuration_after_fetch() {
+        use wealthfolio_core::quotes::{MarketDataClient, QuoteSyncService};
+        let (repo, _temp) = create_test_repository().await;
+        insert_test_asset(&repo, "BUSY");
+        diesel::sql_query("UPDATE market_data_providers SET enabled=0")
+            .execute(&mut get_connection(&repo.pool).unwrap())
+            .unwrap();
+        repo.save_quote(&quote_with_source(
+            "BUSY",
+            NaiveDate::from_ymd_opt(2010, 1, 4).unwrap(),
+            "YAHOO",
+            Decimal::ONE,
+        ))
+        .await
+        .unwrap();
+        let repo = Arc::new(repo);
+        let started = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let client = MarketDataClient::new_with_extra(
+            Arc::new(NoSecrets),
+            vec![],
+            vec![Arc::new(ShortHistoryProvider {
+                gate: Some((started.clone(), release.clone())),
+            })],
+        )
+        .await
+        .unwrap();
+        let sync = Arc::new(QuoteSyncService::new(
+            Arc::new(tokio::sync::RwLock::new(client)),
+            repo.clone(),
+            Arc::new(crate::market_data::QuoteSyncStateRepository::new(
+                repo.pool.clone(),
+                repo.writer.clone(),
+            )),
+            Arc::new(crate::assets::AssetRepository::new(
+                repo.pool.clone(),
+                repo.writer.clone(),
+            )),
+            Arc::new(crate::activities::ActivityRepository::new(
+                repo.pool.clone(),
+                repo.writer.clone(),
+            )),
+        ));
+        let running = {
+            let sync = sync.clone();
+            tokio::spawn(async move { sync.reset_provider_history("BUSY").await })
+        };
+        tokio::time::timeout(std::time::Duration::from_secs(3), started.notified())
+            .await
+            .unwrap();
+        let busy = sync.reset_provider_history("BUSY").await.unwrap_err();
+        assert!(busy.to_string().contains("Already refreshing"));
+        diesel::sql_query("UPDATE assets SET quote_mode='MANUAL' WHERE id='BUSY'")
+            .execute(&mut get_connection(&repo.pool).unwrap())
+            .unwrap();
+        release.notify_one();
+        assert!(running.await.unwrap().is_err());
+        assert_eq!(raw_rows(&repo, "BUSY").len(), 1);
+        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
+    }
+
+    fn raw_rows(repo: &MarketDataRepository, asset: &str) -> Vec<QuoteDB> {
+        quotes_dsl::quotes
+            .filter(quotes_dsl::asset_id.eq(asset))
+            .order((quotes_dsl::day, quotes_dsl::source))
+            .select(QuoteDB::as_select())
+            .load(&mut get_connection(&repo.pool).unwrap())
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn explicit_refresh_merges_five_years_without_deleting_ten_years() {
+        let (repo, _temp) = create_test_repository().await;
+        insert_test_asset(&repo, "MERGE");
+        let quotes: Vec<_> = (2010..2020)
+            .map(|year| {
+                quote_with_source(
+                    "MERGE",
+                    NaiveDate::from_ymd_opt(year, 1, 4).unwrap(),
+                    "YAHOO",
+                    Decimal::ONE,
+                )
+            })
+            .collect();
+        repo.upsert_quotes(&quotes).await.unwrap();
+        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
+        let recent: Vec<_> = quotes[5..]
+            .iter()
+            .cloned()
+            .map(|mut q| {
+                q.close = Decimal::TEN;
+                q
+            })
+            .collect();
+        repo.upsert_quotes_for_refresh(&recent).await.unwrap();
+        let rows = raw_rows(&repo, "MERGE");
+        assert_eq!(rows.len(), 10);
+        assert_eq!(rows[0].close, "1");
+        assert_eq!(rows[9].close, "10");
+        assert!(repo.pending_quote_rebuild_token().unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn reset_preserves_overlays_and_inserts_provider_rows_beneath_them() {
+        let (repo, _temp) = create_test_repository().await;
+        insert_test_asset(&repo, "RESET");
+        let old = NaiveDate::from_ymd_opt(2010, 1, 4).unwrap();
+        let today = NaiveDate::from_ymd_opt(2025, 1, 4).unwrap();
+        for (date, source) in [(old, "YAHOO"), (today, "MANUAL"), (today, "BROKER")] {
+            repo.save_quote(&quote_with_source("RESET", date, source, Decimal::ONE))
+                .await
+                .unwrap();
+        }
+        let context = repo.provider_history_reset_context("RESET").unwrap();
+        assert_eq!(context.earliest_provider_date, Some(old));
+        let result = repo
+            .replace_provider_history(
+                context,
+                vec![quote_with_source("RESET", today, "YAHOO", Decimal::TEN)],
+            )
+            .await
+            .unwrap();
+        assert_eq!((result.deleted_count, result.inserted_count), (1, 1));
+        let rows = raw_rows(&repo, "RESET");
+        assert_eq!(rows.len(), 3);
+        assert!(rows.iter().all(|r| r.day == "2025-01-04"));
+        assert!(rows.iter().any(|r| r.source == "YAHOO" && r.close == "10"));
+        assert!(result.recalculation_pending);
+    }
+
+    #[tokio::test]
+    async fn reset_rolls_back_deletion_and_marker_when_insertion_fails() {
+        let (repo, _temp) = create_test_repository().await;
+        insert_test_asset(&repo, "ROLLBACK");
+        let date = NaiveDate::from_ymd_opt(2025, 1, 4).unwrap();
+        repo.upsert_quotes_for_refresh(&[quote_with_source(
+            "ROLLBACK",
+            date,
+            "YAHOO",
+            Decimal::ONE,
+        )])
+        .await
+        .unwrap();
+        let before = raw_rows(&repo, "ROLLBACK");
+        let token = repo.pending_quote_rebuild_token().unwrap();
+        let context = repo.provider_history_reset_context("ROLLBACK").unwrap();
+        diesel::sql_query("CREATE TRIGGER reject_reset BEFORE INSERT ON quotes WHEN NEW.source = 'FAIL' BEGIN SELECT RAISE(ABORT, 'injected failure'); END")
+            .execute(&mut get_connection(&repo.pool).unwrap()).unwrap();
+        assert!(repo
+            .replace_provider_history(
+                context,
+                vec![quote_with_source("ROLLBACK", date, "FAIL", Decimal::TEN)]
+            )
+            .await
+            .is_err());
+        assert_eq!(
+            serde_json::to_value(raw_rows(&repo, "ROLLBACK")).unwrap(),
+            serde_json::to_value(before).unwrap()
+        );
+        assert_eq!(repo.pending_quote_rebuild_token().unwrap(), token);
+    }
+
+    #[tokio::test]
+    async fn reset_rejects_empty_wrong_asset_and_changed_configuration() {
+        let (repo, _temp) = create_test_repository().await;
+        insert_test_asset(&repo, "CONFLICT");
+        let date = NaiveDate::from_ymd_opt(2025, 1, 4).unwrap();
+        let quote = quote_with_source("CONFLICT", date, "YAHOO", Decimal::ONE);
+        repo.save_quote(&quote).await.unwrap();
+        let context = repo.provider_history_reset_context("CONFLICT").unwrap();
+        assert!(repo
+            .replace_provider_history(context.clone(), vec![])
+            .await
+            .is_err());
+        let mut wrong_asset = quote.clone();
+        wrong_asset.asset_id = "WRONG".into();
+        assert!(repo
+            .replace_provider_history(context.clone(), vec![wrong_asset])
+            .await
+            .is_err());
+        diesel::sql_query("UPDATE assets SET instrument_symbol='CHANGED' WHERE id='CONFLICT'")
+            .execute(&mut get_connection(&repo.pool).unwrap())
+            .unwrap();
+        assert!(repo
+            .replace_provider_history(context, vec![quote.clone()])
+            .await
+            .is_err());
+        assert_eq!(raw_rows(&repo, "CONFLICT").len(), 1);
+        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
+        let context = repo.provider_history_reset_context("CONFLICT").unwrap();
+        diesel::sql_query("UPDATE market_data_providers SET priority=priority+1 WHERE id='YAHOO'")
+            .execute(&mut get_connection(&repo.pool).unwrap())
+            .unwrap();
+        assert!(repo
+            .replace_provider_history(context, vec![quote])
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn rebuild_token_survives_reopening_database_after_committed_reset() {
+        let (repo, temp) = create_test_repository().await;
+        insert_test_asset(&repo, "RESTART");
+        let context = repo.provider_history_reset_context("RESTART").unwrap();
+        repo.replace_provider_history(
+            context,
+            vec![quote_with_source(
+                "RESTART",
+                NaiveDate::from_ymd_opt(2025, 1, 4).unwrap(),
+                "YAHOO",
+                Decimal::ONE,
+            )],
+        )
+        .await
+        .unwrap();
+        let token = repo.pending_quote_rebuild_token().unwrap().unwrap();
+        repo.writer.shutdown().await;
+        drop(repo);
+        let path = temp.path().join("test.db").to_string_lossy().to_string();
+        let pool = create_pool(&path).unwrap();
+        let writer = spawn_writer((*pool).clone()).unwrap();
+        let reopened = MarketDataRepository::new(pool, writer);
+        assert_eq!(
+            reopened.pending_quote_rebuild_token().unwrap(),
+            Some(token.clone())
+        );
+        assert_eq!(raw_rows(&reopened, "RESTART").len(), 1);
+        assert!(reopened.acknowledge_quote_rebuild(&token).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn quote_writes_invalidate_pending_rebuild_acknowledgement() {
+        let (repo, _temp) = create_test_repository().await;
+        insert_test_asset(&repo, "TOKEN");
+        let date = NaiveDate::from_ymd_opt(2025, 1, 4).unwrap();
+        let quote = quote_with_source("TOKEN", date, "YAHOO", Decimal::ONE);
+        repo.upsert_quotes_for_refresh(&[quote.clone()])
+            .await
+            .unwrap();
+        let first = repo.pending_quote_rebuild_token().unwrap().unwrap();
+        repo.save_quote(&quote).await.unwrap();
+        assert!(!repo.acknowledge_quote_rebuild(&first).await.unwrap());
+        let second = repo.pending_quote_rebuild_token().unwrap().unwrap();
+        // A direct SQL writer (such as device sync) also invalidates the token.
+        diesel::sql_query("UPDATE quotes SET close='2' WHERE asset_id='TOKEN'")
+            .execute(&mut get_connection(&repo.pool).unwrap())
+            .unwrap();
+        assert!(!repo.acknowledge_quote_rebuild(&second).await.unwrap());
+        let third = repo.pending_quote_rebuild_token().unwrap().unwrap();
+        repo.delete_quote(&quote.id).await.unwrap();
+        assert!(!repo.acknowledge_quote_rebuild(&third).await.unwrap());
+        let current = repo.pending_quote_rebuild_token().unwrap().unwrap();
+        assert!(repo.acknowledge_quote_rebuild(&current).await.unwrap());
+        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
+        repo.save_quote(&quote).await.unwrap();
+        assert!(repo.pending_quote_rebuild_token().unwrap().is_none());
     }
 
     #[tokio::test]

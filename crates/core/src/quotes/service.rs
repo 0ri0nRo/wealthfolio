@@ -30,7 +30,7 @@ use crate::assets::{
     parse_crypto_pair_symbol, parse_symbol_with_exchange_suffix, symbol_resolution_candidates,
     Asset, AssetKind, AssetRepositoryTrait, AssetSpec, InstrumentType, ProviderProfile, QuoteMode,
 };
-use crate::errors::Result;
+use crate::errors::{Error, Result};
 use crate::fx::currency::{get_normalization_rule, normalize_currency_code};
 use crate::portfolio::snapshot::is_quantity_significant;
 use crate::secrets::SecretStore;
@@ -302,6 +302,23 @@ pub struct SparseAssetMarketFacts {
 /// Unified trait for all quote operations.
 #[async_trait]
 pub trait QuoteServiceTrait: Send + Sync {
+    async fn reset_provider_history(
+        &self,
+        _asset_id: &str,
+    ) -> Result<super::ResetProviderHistoryResult> {
+        Err(Error::Repository(
+            "Provider history reset is not supported".into(),
+        ))
+    }
+
+    fn pending_quote_rebuild_token(&self) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    async fn acknowledge_quote_rebuild(&self, _token: &str) -> Result<bool> {
+        Ok(false)
+    }
+
     // =========================================================================
     // Quote CRUD Operations
     // =========================================================================
@@ -1905,6 +1922,27 @@ where
     // =========================================================================
     // Sync Operations
     // =========================================================================
+
+    async fn reset_provider_history(
+        &self,
+        asset_id: &str,
+    ) -> Result<super::ResetProviderHistoryResult> {
+        let sync = self.get_sync_service().await?;
+        let asset_id = asset_id.to_owned();
+        // The owned task retains the per-asset guard through the writer acknowledgement.
+        // Dropping an HTTP/IPC caller must not unlock an enqueued replacement.
+        tokio::spawn(async move { sync.reset_provider_history(&asset_id).await })
+            .await
+            .map_err(|error| Error::Unexpected(format!("Quote reset task failed: {error}")))?
+    }
+
+    fn pending_quote_rebuild_token(&self) -> Result<Option<String>> {
+        self.quote_store.pending_quote_rebuild_token()
+    }
+
+    async fn acknowledge_quote_rebuild(&self, token: &str) -> Result<bool> {
+        self.quote_store.acknowledge_quote_rebuild(token).await
+    }
 
     async fn sync(&self, mode: SyncMode, asset_ids: Option<Vec<String>>) -> Result<SyncResult> {
         let sync_service = self.get_sync_service().await?;

@@ -85,6 +85,88 @@ pub struct YahooProvider {
 }
 
 impl YahooProvider {
+    async fn historical_quotes(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        strict: bool,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        let symbol = self.extract_symbol(&instrument)?;
+
+        debug!(
+            "Fetching historical quotes for {} from {} to {} from Yahoo",
+            symbol,
+            start.format("%Y-%m-%d"),
+            end.format("%Y-%m-%d")
+        );
+
+        // Skip cash symbols
+        if symbol.starts_with("CASH:") {
+            return Ok(vec![]);
+        }
+
+        let start_time = Self::chrono_to_offset_datetime(start);
+        let end_time = Self::chrono_to_offset_datetime(end);
+
+        let response = self
+            .connector
+            .get_quote_history(&symbol, start_time, end_time)
+            .await
+            .map_err(|e| self.convert_yahoo_error(e, &symbol))?;
+
+        // Prefer Yahoo's own currency from response metadata over resolver chain
+        let currency = response
+            .metadata()
+            .ok()
+            .and_then(|m| m.currency)
+            .unwrap_or_else(|| self.get_currency(context));
+
+        match response.quotes() {
+            Ok(yahoo_quotes) => {
+                let original_count = response
+                    .chart
+                    .result
+                    .as_ref()
+                    .and_then(|results| results.first())
+                    .and_then(|result| result.timestamp.as_ref())
+                    .map_or(0, Vec::len);
+                let quotes: Vec<Quote> = yahoo_quotes
+                    .into_iter()
+                    .filter_map(|q| match self.yahoo_quote_to_quote(q, currency.clone()) {
+                        Ok(quote) => Some(quote),
+                        Err(e) => {
+                            warn!("Skipping quote due to conversion error: {:?}", e);
+                            None
+                        }
+                    })
+                    .collect();
+
+                if strict && quotes.len() != original_count {
+                    return Err(MarketDataError::ValidationFailed {
+                        message: "Yahoo history contains discarded rows".into(),
+                    });
+                }
+                if quotes.is_empty() {
+                    return Err(MarketDataError::NoDataForRange);
+                }
+
+                Ok(quotes)
+            }
+            Err(yahoo::YahooError::NoQuotes) => {
+                warn!(
+                    "No historical quotes returned for '{}' between {} and {}",
+                    symbol,
+                    start.format("%Y-%m-%d"),
+                    end.format("%Y-%m-%d")
+                );
+                Err(MarketDataError::NoDataForRange)
+            }
+            Err(e) => Err(self.convert_yahoo_error(e, &symbol)),
+        }
+    }
+
     /// Create a new Yahoo Finance provider.
     pub async fn new() -> Result<Self, MarketDataError> {
         let client = wealthfolio_http::client_builder()
@@ -984,66 +1066,19 @@ impl MarketDataProvider for YahooProvider {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Quote>, MarketDataError> {
-        let symbol = self.extract_symbol(&instrument)?;
-
-        debug!(
-            "Fetching historical quotes for {} from {} to {} from Yahoo",
-            symbol,
-            start.format("%Y-%m-%d"),
-            end.format("%Y-%m-%d")
-        );
-
-        // Skip cash symbols
-        if symbol.starts_with("CASH:") {
-            return Ok(vec![]);
-        }
-
-        let start_time = Self::chrono_to_offset_datetime(start);
-        let end_time = Self::chrono_to_offset_datetime(end);
-
-        let response = self
-            .connector
-            .get_quote_history(&symbol, start_time, end_time)
+        self.historical_quotes(context, instrument, start, end, false)
             .await
-            .map_err(|e| self.convert_yahoo_error(e, &symbol))?;
+    }
 
-        // Prefer Yahoo's own currency from response metadata over resolver chain
-        let currency = response
-            .metadata()
-            .ok()
-            .and_then(|m| m.currency)
-            .unwrap_or_else(|| self.get_currency(context));
-
-        match response.quotes() {
-            Ok(yahoo_quotes) => {
-                let quotes: Vec<Quote> = yahoo_quotes
-                    .into_iter()
-                    .filter_map(|q| match self.yahoo_quote_to_quote(q, currency.clone()) {
-                        Ok(quote) => Some(quote),
-                        Err(e) => {
-                            warn!("Skipping quote due to conversion error: {:?}", e);
-                            None
-                        }
-                    })
-                    .collect();
-
-                if quotes.is_empty() {
-                    return Err(MarketDataError::NoDataForRange);
-                }
-
-                Ok(quotes)
-            }
-            Err(yahoo::YahooError::NoQuotes) => {
-                warn!(
-                    "No historical quotes returned for '{}' between {} and {}",
-                    symbol,
-                    start.format("%Y-%m-%d"),
-                    end.format("%Y-%m-%d")
-                );
-                Err(MarketDataError::NoDataForRange)
-            }
-            Err(e) => Err(self.convert_yahoo_error(e, &symbol)),
-        }
+    async fn get_historical_quotes_for_reset(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        self.historical_quotes(context, instrument, start, end, true)
+            .await
     }
 
     async fn get_splits(

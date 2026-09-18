@@ -169,6 +169,7 @@ export const COMMANDS: CommandMap = {
   check_quotes_import: { method: "POST", path: "/market-data/quotes/check" },
   import_quotes_csv: { method: "POST", path: "/market-data/quotes/import" },
   synch_quotes: { method: "POST", path: "/market-data/sync/history" },
+  reset_provider_history: { method: "POST", path: "/market-data/quotes/reset-provider-history" },
   sync_market_data: { method: "POST", path: "/market-data/sync" },
   // Secrets
   set_secret: { method: "POST", path: "/secrets" },
@@ -1129,6 +1130,7 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       body = JSON.stringify({ quotes, overwriteExisting });
       break;
     }
+    case "reset_provider_history":
     case "sync_market_data": {
       body = JSON.stringify(payload);
       break;

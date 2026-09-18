@@ -19,6 +19,34 @@ use wealthfolio_core::quotes::{
 };
 use wealthfolio_market_data::{DividendEvent, ExchangeInfo};
 
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResetProviderHistoryBody {
+    asset_id: String,
+}
+
+async fn reset_provider_history(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ResetProviderHistoryBody>,
+) -> ApiResult<Json<wealthfolio_core::quotes::ResetProviderHistoryResult>> {
+    // Dropping the HTTP future must not drop committed work's recovery scheduling.
+    let result = tokio::spawn(async move {
+        let result = state
+            .quote_service
+            .reset_provider_history(&body.asset_id)
+            .await;
+        super::shared::spawn_pending_quote_rebuild(state);
+        result
+    })
+    .await
+    .map_err(|_| {
+        crate::error::ApiError::Internal(
+            "Reset completion could not be confirmed. Reload quotes before retrying.".into(),
+        )
+    })??;
+    Ok(Json(result))
+}
+
 async fn get_market_data_providers(
     State(state): State<Arc<AppState>>,
 ) -> ApiResult<Json<Vec<ProviderInfo>>> {
@@ -157,7 +185,15 @@ async fn delete_quote(
 }
 
 async fn sync_history_quotes(State(state): State<Arc<AppState>>) -> ApiResult<StatusCode> {
-    let result = state.quote_service.resync(None).await?;
+    let result = tokio::spawn(async move {
+        let result = state.quote_service.resync(None).await;
+        super::shared::spawn_pending_quote_rebuild(state);
+        result
+    })
+    .await
+    .map_err(|_| {
+        crate::error::ApiError::Internal("Refresh completion could not be confirmed.".into())
+    })??;
     if result.failed > 0 {
         tracing::warn!("resync reported {} failures", result.failed);
     }
@@ -320,6 +356,10 @@ pub fn router() -> Router<Arc<AppState>> {
         .route("/market-data/search", get(search_symbol))
         .route("/market-data/resolve-currency", get(resolve_symbol_quote))
         .route("/market-data/quotes/history", get(get_quote_history))
+        .route(
+            "/market-data/quotes/reset-provider-history",
+            post(reset_provider_history),
+        )
         .route("/market-data/dividends", get(fetch_dividends))
         .route("/market-data/quotes/latest", post(get_latest_quotes))
         .route("/market-data/quotes/{symbol}", put(update_quote))

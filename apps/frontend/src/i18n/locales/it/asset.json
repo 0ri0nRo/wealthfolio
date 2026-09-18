@@ -23,9 +23,19 @@
   },
   "refreshDialog": {
     "title": "Aggiorna cronologia",
-    "description_named": "Questo eliminerà e sostituirà tutte le quotazioni del provider con dati aggiornati per {{name}}. Le quotazioni manuali verranno conservate. Continuare?",
-    "description_generic": "Questo eliminerà e sostituirà tutte le quotazioni del provider con dati aggiornati. Le quotazioni manuali verranno conservate. Continuare?",
+    "description_named": "I nuovi prezzi di {{name}} verranno uniti a quelli esistenti. La cronologia precedente e i prezzi manuali e del broker saranno conservati. Continuare?",
+    "description_generic": "I nuovi prezzi verranno uniti a quelli esistenti. La cronologia precedente e i prezzi manuali e del broker saranno conservati. Continuare?",
     "refresh": "Aggiorna"
+  },
+  "resetDialog": {
+    "title": "Reimposta cronologia del fornitore",
+    "description": "Sostituire tutti i prezzi del fornitore per {{name}} con una cronologia appena scaricata? La nuova cronologia potrebbe essere più breve. I prezzi manuali e del broker saranno conservati. Se il recupero o la verifica fallisce, la cronologia esistente sarà mantenuta.",
+    "confirm": "Reimposta cronologia del fornitore",
+    "resetting": "Reimpostazione…",
+    "success": "Cronologia del fornitore sostituita",
+    "complete": "Prezzi e valutazioni del portafoglio aggiornati.",
+    "pending": "I prezzi sono stati sostituiti. Il ricalcolo del portafoglio è in attesa e verrà ritentato automaticamente. Non reimpostare di nuovo.",
+    "uncertain": "La risposta è stata interrotta; i prezzi potrebbero essere già stati sostituiti. Controlla la cronologia e aggiorna la pagina prima di considerare un’altra reimpostazione."
   },
   "createSecurity": {
     "title": "Aggiungi titolo",

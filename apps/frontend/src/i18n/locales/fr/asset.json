@@ -23,9 +23,19 @@
   },
   "refreshDialog": {
     "title": "Actualiser l'historique",
-    "description_named": "Cela supprimera et remplacera toutes les cotations du fournisseur par des données actualisées pour {{name}}. Les cotations manuelles seront conservées. Continuer ?",
-    "description_generic": "Cela supprimera et remplacera toutes les cotations du fournisseur par des données actualisées. Les cotations manuelles seront conservées. Continuer ?",
+    "description_named": "Les nouvelles cotations de {{name}} seront fusionnées avec les prix existants. L’historique antérieur et les prix manuels ou du courtier seront conservés. Continuer ?",
+    "description_generic": "Les nouvelles cotations seront fusionnées avec les prix existants. L’historique antérieur et les prix manuels ou du courtier seront conservés. Continuer ?",
     "refresh": "Actualiser"
+  },
+  "resetDialog": {
+    "title": "Réinitialiser l’historique du fournisseur",
+    "description": "Remplacer tous les prix du fournisseur pour {{name}} par un nouvel historique ? Celui-ci peut être plus court. Les prix manuels et du courtier seront conservés. L’historique existant est conservé si la récupération ou la validation échoue.",
+    "confirm": "Réinitialiser l’historique du fournisseur",
+    "resetting": "Réinitialisation…",
+    "success": "Historique du fournisseur remplacé",
+    "complete": "Les prix et les valorisations du portefeuille ont été mis à jour.",
+    "pending": "Les prix ont été remplacés. Le recalcul du portefeuille est en attente et sera relancé automatiquement. Ne réinitialisez pas à nouveau.",
+    "uncertain": "La réponse a été interrompue ; les prix peuvent déjà avoir été remplacés. Vérifiez l’historique et actualisez la page avant d’envisager une nouvelle réinitialisation."
   },
   "createSecurity": {
     "title": "Ajouter un titre",

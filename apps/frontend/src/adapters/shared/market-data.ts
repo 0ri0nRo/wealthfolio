@@ -247,3 +247,16 @@ export const importManualQuotes = async (quotes: QuoteImport[]): Promise<QuoteIm
     throw error;
   }
 };
+
+export interface ResetProviderHistoryResult {
+  assetId: string;
+  source: string;
+  fromDate: string;
+  toDate: string;
+  insertedCount: number;
+  deletedCount: number;
+  recalculationPending: boolean;
+}
+
+export const resetProviderHistory = (assetId: string): Promise<ResetProviderHistoryResult> =>
+  invoke<ResetProviderHistoryResult>("reset_provider_history", { assetId });

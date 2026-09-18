@@ -110,6 +110,74 @@ impl ProviderRegistry {
         }
     }
 
+    /// Destructive replacement must not silently accept partial validation or
+    /// fail over away from an explicitly preferred provider.
+    pub async fn fetch_quotes_for_reset(
+        &self,
+        context: &QuoteContext,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        let mut last_error = MarketDataError::NoProvidersAvailable;
+        let mut diagnostics = FetchDiagnostics::new();
+        for provider in self.filter_providers(context, true, &mut diagnostics) {
+            if context
+                .preferred_provider
+                .as_ref()
+                .is_some_and(|id| id.as_ref() != provider.id())
+            {
+                continue;
+            }
+            let provider_id: ProviderId = Cow::Borrowed(provider.id());
+            if !self.circuit_breaker.is_allowed(&provider_id) {
+                continue;
+            }
+            let result = async {
+                let resolved = self.resolver.resolve(&provider_id, context)?;
+                self.rate_limiter.acquire(&provider_id).await;
+                let quotes = provider
+                    .get_historical_quotes_for_reset(context, resolved.instrument, start, end)
+                    .await?;
+                if quotes.is_empty() {
+                    return Err(MarketDataError::NoDataForRange);
+                }
+                for quote in &quotes {
+                    // Providers bucket daily prices at different intraday times.
+                    // Validate UTC dates, rather than rejecting valid midnight/noon bars.
+                    if quote.timestamp.date_naive() < start.date_naive()
+                        || quote.timestamp.date_naive() > end.date_naive()
+                    {
+                        return Err(MarketDataError::ValidationFailed {
+                            message:
+                                "Reset history contains a quote outside the requested date range"
+                                    .into(),
+                        });
+                    }
+                    self.validator
+                        .validate_for_instrument(quote, Some(&context.instrument))?;
+                }
+                Ok(quotes)
+            }
+            .await;
+            match result {
+                Ok(quotes) => {
+                    self.circuit_breaker.record_success(&provider_id);
+                    return Ok(quotes);
+                }
+                Err(error) => {
+                    if matches!(
+                        error.retry_class(),
+                        RetryClass::FailoverWithPenalty | RetryClass::CircuitOpen
+                    ) {
+                        self.circuit_breaker.record_failure(&provider_id);
+                    }
+                    last_error = error;
+                }
+            }
+        }
+        Err(last_error)
+    }
+
     /// Fetch quotes for an instrument.
     ///
     /// Tries providers in order:
@@ -1931,5 +1999,230 @@ mod tests {
             matches!(error, MarketDataError::ValidationFailed { .. }),
             "expected a validation failure, got {error:?}"
         );
+    }
+    struct ResetProvider {
+        base: MockProvider,
+        prices: Vec<rust_decimal::Decimal>,
+        timestamp: Option<DateTime<Utc>>,
+    }
+
+    #[async_trait::async_trait]
+    impl MarketDataProvider for ResetProvider {
+        fn id(&self) -> &'static str {
+            self.base.id()
+        }
+        fn priority(&self) -> u8 {
+            self.base.priority()
+        }
+        fn capabilities(&self) -> ProviderCapabilities {
+            self.base.capabilities()
+        }
+        fn rate_limit(&self) -> RateLimit {
+            self.base.rate_limit()
+        }
+        async fn get_latest_quote(
+            &self,
+            context: &QuoteContext,
+            instrument: ProviderInstrument,
+        ) -> Result<Quote, MarketDataError> {
+            self.base.get_latest_quote(context, instrument).await
+        }
+        async fn get_historical_quotes(
+            &self,
+            context: &QuoteContext,
+            instrument: ProviderInstrument,
+            start: DateTime<Utc>,
+            end: DateTime<Utc>,
+        ) -> Result<Vec<Quote>, MarketDataError> {
+            self.base
+                .get_historical_quotes(context, instrument, start, end)
+                .await
+        }
+        async fn get_historical_quotes_for_reset(
+            &self,
+            _: &QuoteContext,
+            _: ProviderInstrument,
+            start: DateTime<Utc>,
+            _: DateTime<Utc>,
+        ) -> Result<Vec<Quote>, MarketDataError> {
+            self.base.call_count.fetch_add(1, Ordering::SeqCst);
+            if self.base.should_fail {
+                return Err(MarketDataError::ValidationFailed {
+                    message: "Lossy parser response".into(),
+                });
+            }
+            Ok(self
+                .prices
+                .iter()
+                .map(|price| {
+                    Quote::new(
+                        self.timestamp.unwrap_or(start),
+                        *price,
+                        "USD".into(),
+                        self.id().into(),
+                    )
+                })
+                .collect())
+        }
+    }
+
+    fn reset_provider(
+        id: &'static str,
+        prices: Vec<rust_decimal::Decimal>,
+        fail: bool,
+    ) -> Arc<ResetProvider> {
+        Arc::new(ResetProvider {
+            base: MockProvider::new(id, 1, fail),
+            prices,
+            timestamp: None,
+        })
+    }
+
+    #[tokio::test]
+    async fn reset_rejects_any_invalid_row_and_empty_history() {
+        for prices in [vec![], vec![dec!(100), dec!(-1)]] {
+            let provider = reset_provider("TEST", prices, false);
+            let registry = ProviderRegistry::new(vec![provider], Arc::new(MockResolver));
+            let context = QuoteContext {
+                instrument: InstrumentId::Equity {
+                    ticker: Arc::from("TEST"),
+                    mic: None,
+                },
+                identifiers: Default::default(),
+                overrides: None,
+                currency_hint: None,
+                preferred_provider: None,
+                bond_metadata: None,
+                custom_provider_code: None,
+            };
+            assert!(registry
+                .fetch_quotes_for_reset(&context, Utc::now(), Utc::now())
+                .await
+                .is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn reset_preferred_failure_does_not_fallback() {
+        let preferred = reset_provider("PREFERRED", vec![], true);
+        let fallback = reset_provider("FALLBACK", vec![dec!(100)], false);
+        let registry = ProviderRegistry::new(
+            vec![preferred.clone(), fallback.clone()],
+            Arc::new(MockResolver),
+        );
+        let mut context = QuoteContext {
+            instrument: InstrumentId::Equity {
+                ticker: Arc::from("TEST"),
+                mic: None,
+            },
+            identifiers: Default::default(),
+            overrides: None,
+            currency_hint: None,
+            preferred_provider: None,
+            bond_metadata: None,
+            custom_provider_code: None,
+        };
+        context.preferred_provider = Some(Cow::Borrowed("PREFERRED"));
+        assert!(registry
+            .fetch_quotes_for_reset(&context, Utc::now(), Utc::now())
+            .await
+            .is_err());
+        assert_eq!(preferred.base.call_count.load(Ordering::SeqCst), 1);
+        assert_eq!(fallback.base.call_count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn reset_without_preference_tries_next_eligible_response() {
+        let invalid = reset_provider("INVALID", vec![dec!(-1)], false);
+        let fallback = reset_provider("FALLBACK", vec![dec!(100)], false);
+        let registry = ProviderRegistry::new(vec![invalid, fallback], Arc::new(MockResolver));
+        let context = QuoteContext {
+            instrument: InstrumentId::Equity {
+                ticker: Arc::from("TEST"),
+                mic: None,
+            },
+            identifiers: Default::default(),
+            overrides: None,
+            currency_hint: None,
+            preferred_provider: None,
+            bond_metadata: None,
+            custom_provider_code: None,
+        };
+        let quotes = registry
+            .fetch_quotes_for_reset(&context, Utc::now(), Utc::now())
+            .await
+            .unwrap();
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0].source, "FALLBACK");
+    }
+
+    #[tokio::test]
+    async fn reset_fails_closed_for_unaudited_provider() {
+        let provider = Arc::new(MockProvider::new("LATEST_ADAPTER", 1, false));
+        let registry = ProviderRegistry::new(vec![provider.clone()], Arc::new(MockResolver));
+        let context = QuoteContext {
+            instrument: InstrumentId::Equity {
+                ticker: Arc::from("TEST"),
+                mic: None,
+            },
+            identifiers: Default::default(),
+            overrides: None,
+            currency_hint: None,
+            preferred_provider: None,
+            bond_metadata: None,
+            custom_provider_code: None,
+        };
+        assert!(registry
+            .fetch_quotes_for_reset(&context, Utc::now(), Utc::now())
+            .await
+            .is_err());
+        assert_eq!(provider.call_count.load(Ordering::SeqCst), 0);
+    }
+    #[tokio::test]
+    async fn reset_validates_requested_dates_without_requiring_exact_times() {
+        let start = DateTime::parse_from_rfc3339("2025-01-02T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let end = DateTime::parse_from_rfc3339("2025-01-03T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let context = QuoteContext {
+            instrument: InstrumentId::Equity {
+                ticker: Arc::from("TEST"),
+                mic: None,
+            },
+            identifiers: Default::default(),
+            overrides: None,
+            currency_hint: None,
+            preferred_provider: None,
+            bond_metadata: None,
+            custom_provider_code: None,
+        };
+        for (timestamp, accepted) in [
+            ("1970-01-01T00:00:00Z", false),
+            ("2025-01-01T23:59:59Z", false),
+            ("2025-01-04T00:00:00Z", false),
+            ("2025-01-02T00:00:00Z", true),
+            ("2025-01-03T23:59:59Z", true),
+        ] {
+            let provider = Arc::new(ResetProvider {
+                base: MockProvider::new("TEST", 1, false),
+                prices: vec![dec!(100)],
+                timestamp: Some(
+                    DateTime::parse_from_rfc3339(timestamp)
+                        .unwrap()
+                        .with_timezone(&Utc),
+                ),
+            });
+            let registry = ProviderRegistry::new(vec![provider], Arc::new(MockResolver));
+            assert_eq!(
+                registry
+                    .fetch_quotes_for_reset(&context, start, end)
+                    .await
+                    .is_ok(),
+                accepted,
+                "timestamp {timestamp}"
+            );
+        }
     }
 }

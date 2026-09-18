@@ -23,9 +23,19 @@
   },
   "refreshDialog": {
     "title": "Atualizar histórico",
-    "description_named": "Isso excluirá e substituirá todas as cotações do provedor com dados novos para {{name}}. As cotações manuais serão mantidas. Continuar?",
-    "description_generic": "Isso excluirá e substituirá todas as cotações do provedor com dados novos. As cotações manuais serão mantidas. Continuar?",
+    "description_named": "Os novos preços de {{name}} serão combinados com os existentes. O histórico anterior e os preços manuais e da corretora serão preservados. Continuar?",
+    "description_generic": "Os novos preços serão combinados com os existentes. O histórico anterior e os preços manuais e da corretora serão preservados. Continuar?",
     "refresh": "Atualizar"
+  },
+  "resetDialog": {
+    "title": "Redefinir histórico do provedor",
+    "description": "Substituir todos os preços do provedor de {{name}} por um histórico recém-obtido? O novo histórico pode ser mais curto. Os preços manuais e da corretora serão preservados. Se a busca ou validação falhar, o histórico existente será mantido.",
+    "confirm": "Redefinir histórico do provedor",
+    "resetting": "Redefinindo…",
+    "success": "Histórico do provedor substituído",
+    "complete": "Os preços e as avaliações da carteira foram atualizados.",
+    "pending": "Os preços foram substituídos. O recálculo da carteira está pendente e será tentado novamente automaticamente. Não redefina novamente.",
+    "uncertain": "A resposta foi interrompida; os preços podem já ter sido substituídos. Verifique o histórico e atualize a página antes de considerar outra redefinição."
   },
   "createSecurity": {
     "title": "Adicionar ativo",

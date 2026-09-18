@@ -23,9 +23,19 @@
   },
   "refreshDialog": {
     "title": "Refresh history",
-    "description_named": "This will delete and replace all provider quotes with fresh data for {{name}}. Manual quotes will be preserved. Continue?",
-    "description_generic": "This will delete and replace all provider quotes with fresh data. Manual quotes will be preserved. Continue?",
+    "description_named": "This will fetch fresh history for {{name}} and merge it with existing prices. Older history, manual prices, and broker prices will be preserved. Continue?",
+    "description_generic": "This will fetch fresh history and merge it with existing prices. Older history, manual prices, and broker prices will be preserved. Continue?",
     "refresh": "Refresh"
+  },
+  "resetDialog": {
+    "title": "Reset provider history",
+    "description": "Replace all provider prices for {{name}} with freshly fetched history? The replacement may be shorter. Manual and broker prices will be preserved. Existing history is kept if fetching or validation fails.",
+    "confirm": "Reset provider history",
+    "resetting": "Resetting…",
+    "success": "Provider history replaced",
+    "complete": "Prices and portfolio valuations have been updated.",
+    "pending": "Prices were replaced. Portfolio recalculation is still pending and will be retried automatically. Do not reset again.",
+    "uncertain": "The response was interrupted; prices may already have been replaced. Check the quote history and refresh the page before considering another reset."
   },
   "createSecurity": {
     "title": "Add Security",

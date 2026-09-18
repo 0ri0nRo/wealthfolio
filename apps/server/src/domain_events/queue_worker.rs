@@ -453,6 +453,36 @@ async fn run_portfolio_job(
         tracing::debug!("Skipping market sync (MarketSyncMode::None)");
     }
 
+    if matches!(
+        deps.quote_service.pending_quote_rebuild_token(),
+        Ok(Some(_))
+    ) {
+        event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_START));
+        let result =
+            wealthfolio_core::portfolio::quote_history_rebuild::rebuild_pending_quote_history(
+                deps.quote_service.as_ref(),
+                deps.account_service.as_ref(),
+                deps.snapshot_service.as_ref(),
+                deps.valuation_service.as_ref(),
+                deps.fx_service.as_ref(),
+            )
+            .await;
+        deps.health_service.clear_cache().await;
+        let rebuilt = matches!(&result, Ok(true));
+        match result {
+            Ok(_) => event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_COMPLETE)),
+            Err(error) => {
+                tracing::warn!("Quote history recalculation remains pending: {}", error);
+                event_bus.publish(ServerEvent::with_payload(
+                    PORTFOLIO_UPDATE_ERROR,
+                    json!(error.to_string()),
+                ));
+            }
+        }
+        if rebuilt && config.account_ids.is_none() {
+            return;
+        }
+    }
     event_bus.publish(ServerEvent::new(PORTFOLIO_UPDATE_START));
 
     if !account_ids.is_empty() {

@@ -121,51 +121,32 @@ struct CryptoDailyQuote {
 }
 
 impl CryptoDailyQuote {
-    /// Extract the close price from the dynamic fields.
-    /// Looks for "4a. close (XXX)" or "4b. close (XXX)" patterns.
-    fn get_close(&self) -> Option<Decimal> {
-        // Try to find close price in USD first, then any other currency
-        for (key, value) in &self.fields {
-            if key.starts_with("4a. close") || key.starts_with("4b. close") {
-                if let Some(s) = value.as_str() {
-                    return Decimal::from_str(s).ok();
-                }
-            }
-        }
-        None
+    /// Select only the requested market; map iteration must never choose a currency.
+    fn market_price(&self, field: &str, market: &str) -> Option<Decimal> {
+        let (number, name) = field.split_once(". ")?;
+        let primary = format!("{number}a. {name} ({market})");
+        let secondary = format!("{number}b. {name} ({market})");
+        self.fields
+            .get(&primary)
+            .or_else(|| self.fields.get(&secondary))?
+            .as_str()
+            .and_then(|value| Decimal::from_str(value).ok())
     }
 
-    fn get_open(&self) -> Option<Decimal> {
-        for (key, value) in &self.fields {
-            if key.starts_with("1a. open") || key.starts_with("1b. open") {
-                if let Some(s) = value.as_str() {
-                    return Decimal::from_str(s).ok();
-                }
-            }
-        }
-        None
+    fn get_close(&self, market: &str) -> Option<Decimal> {
+        self.market_price("4. close", market)
     }
 
-    fn get_high(&self) -> Option<Decimal> {
-        for (key, value) in &self.fields {
-            if key.starts_with("2a. high") || key.starts_with("2b. high") {
-                if let Some(s) = value.as_str() {
-                    return Decimal::from_str(s).ok();
-                }
-            }
-        }
-        None
+    fn get_open(&self, market: &str) -> Option<Decimal> {
+        self.market_price("1. open", market)
     }
 
-    fn get_low(&self) -> Option<Decimal> {
-        for (key, value) in &self.fields {
-            if key.starts_with("3a. low") || key.starts_with("3b. low") {
-                if let Some(s) = value.as_str() {
-                    return Decimal::from_str(s).ok();
-                }
-            }
-        }
-        None
+    fn get_high(&self, market: &str) -> Option<Decimal> {
+        self.market_price("2. high", market)
+    }
+
+    fn get_low(&self, market: &str) -> Option<Decimal> {
+        self.market_price("3. low", market)
     }
 
     fn get_volume(&self) -> Option<Decimal> {
@@ -517,6 +498,79 @@ impl CompanyOverviewResponse {
 // ============================================================================
 
 impl AlphaVantageProvider {
+    async fn historical_quotes(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        strict: bool,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        // HISTORICAL_OPTIONS requires per-day API calls — not practical with rate limits.
+        // Use NotSupported so the registry falls through to the next provider (e.g. Yahoo).
+        if matches!(context.instrument, InstrumentId::Option { .. }) {
+            return Err(MarketDataError::NotSupported {
+                operation: "historical_quotes".to_string(),
+                provider: PROVIDER_ID.to_string(),
+            });
+        }
+
+        let quotes = match instrument {
+            ProviderInstrument::EquitySymbol { ref symbol } => {
+                let currency = self.resolve_currency(context);
+                self.fetch_equity_quotes(symbol, &currency, strict).await?
+            }
+            ProviderInstrument::FxPair { ref from, ref to } => {
+                self.fetch_fx_quotes(from, to, strict).await?
+            }
+            ProviderInstrument::CryptoPair {
+                ref symbol,
+                ref market,
+            } => self.fetch_crypto_quotes(symbol, market, strict).await?,
+            ProviderInstrument::FxSymbol { ref symbol } => {
+                // Try to parse FX symbol format (e.g., "EURUSD" -> EUR/USD)
+                if symbol.len() == 6 {
+                    let from = &symbol[..3];
+                    let to = &symbol[3..];
+                    self.fetch_fx_quotes(from, to, strict).await?
+                } else {
+                    return Err(MarketDataError::UnsupportedAssetType(format!(
+                        "Cannot parse FX symbol: {}",
+                        symbol
+                    )));
+                }
+            }
+            ProviderInstrument::CryptoSymbol { ref symbol } => {
+                // Try to parse crypto symbol format (e.g., "BTC-USD" -> BTC/USD)
+                if let Some((base, quote)) = symbol.split_once('-') {
+                    self.fetch_crypto_quotes(base, quote, strict).await?
+                } else {
+                    let currency = self.resolve_currency(context);
+                    self.fetch_crypto_quotes(symbol, &currency, strict).await?
+                }
+            }
+            ProviderInstrument::MetalSymbol { .. } => {
+                return Err(MarketDataError::UnsupportedAssetType(
+                    "Alpha Vantage does not support metals".to_string(),
+                ));
+            }
+            ProviderInstrument::BondIsin { .. } => {
+                return Err(MarketDataError::UnsupportedAssetType(
+                    "Alpha Vantage does not support bonds".to_string(),
+                ));
+            }
+        };
+
+        // Filter by date range
+        let filtered = Self::filter_by_date_range(quotes, start, end);
+
+        if filtered.is_empty() {
+            return Err(MarketDataError::NoDataForRange);
+        }
+
+        Ok(filtered)
+    }
+
     /// Create a new Alpha Vantage provider with the given API key.
     ///
     /// # Errors
@@ -652,11 +706,12 @@ impl AlphaVantageProvider {
         &self,
         symbol: &str,
         currency: &str,
+        strict: bool,
     ) -> Result<Vec<Quote>, MarketDataError> {
         let params = [
             ("function", "TIME_SERIES_DAILY"),
             ("symbol", symbol),
-            ("outputsize", "compact"), // TIME_SERIES_DAILY: 'full' is premium-only
+            ("outputsize", if strict { "full" } else { "compact" }), // TIME_SERIES_DAILY: 'full' is premium-only
         ];
 
         let text = self.fetch(&params).await?;
@@ -676,6 +731,7 @@ impl AlphaVantageProvider {
             MarketDataError::SymbolNotFound(format!("No data for symbol: {}", symbol))
         })?;
 
+        let original_count = time_series.len();
         let mut quotes: Vec<Quote> = time_series
             .into_iter()
             .filter_map(|(date_str, daily)| {
@@ -699,6 +755,11 @@ impl AlphaVantageProvider {
             })
             .collect();
 
+        if strict && quotes.len() != original_count {
+            return Err(MarketDataError::ValidationFailed {
+                message: "Alpha Vantage history contains discarded rows".into(),
+            });
+        }
         // Sort by timestamp ascending
         quotes.sort_by_key(|a| a.timestamp);
 
@@ -793,7 +854,12 @@ impl AlphaVantageProvider {
     }
 
     /// Fetch FX quotes using FX_DAILY endpoint.
-    async fn fetch_fx_quotes(&self, from: &str, to: &str) -> Result<Vec<Quote>, MarketDataError> {
+    async fn fetch_fx_quotes(
+        &self,
+        from: &str,
+        to: &str,
+        strict: bool,
+    ) -> Result<Vec<Quote>, MarketDataError> {
         let params = [
             ("function", "FX_DAILY"),
             ("from_symbol", from),
@@ -818,6 +884,7 @@ impl AlphaVantageProvider {
             MarketDataError::SymbolNotFound(format!("No data for FX pair: {}/{}", from, to))
         })?;
 
+        let original_count = time_series.len();
         let mut quotes: Vec<Quote> = time_series
             .into_iter()
             .filter_map(|(date_str, daily)| {
@@ -840,6 +907,11 @@ impl AlphaVantageProvider {
             })
             .collect();
 
+        if strict && quotes.len() != original_count {
+            return Err(MarketDataError::ValidationFailed {
+                message: "Alpha Vantage history contains discarded rows".into(),
+            });
+        }
         // Sort by timestamp ascending
         quotes.sort_by_key(|a| a.timestamp);
 
@@ -858,6 +930,7 @@ impl AlphaVantageProvider {
         &self,
         symbol: &str,
         market: &str,
+        strict: bool,
     ) -> Result<Vec<Quote>, MarketDataError> {
         let params = [
             ("function", "DIGITAL_CURRENCY_DAILY"),
@@ -882,17 +955,18 @@ impl AlphaVantageProvider {
             MarketDataError::SymbolNotFound(format!("No data for crypto: {}/{}", symbol, market))
         })?;
 
+        let original_count = time_series.len();
         let mut quotes: Vec<Quote> = time_series
             .into_iter()
             .filter_map(|(date_str, daily)| {
                 let timestamp = Self::parse_date(&date_str)?;
-                let close = daily.get_close()?;
+                let close = daily.get_close(market)?;
 
                 Some(Quote {
                     timestamp,
-                    open: daily.get_open(),
-                    high: daily.get_high(),
-                    low: daily.get_low(),
+                    open: daily.get_open(market),
+                    high: daily.get_high(market),
+                    low: daily.get_low(market),
                     close,
                     volume: daily.get_volume(),
                     currency: market.to_string(),
@@ -901,6 +975,11 @@ impl AlphaVantageProvider {
             })
             .collect();
 
+        if strict && quotes.len() != original_count {
+            return Err(MarketDataError::ValidationFailed {
+                message: "Alpha Vantage history contains discarded rows".into(),
+            });
+        }
         // Sort by timestamp ascending
         quotes.sort_by_key(|a| a.timestamp);
 
@@ -1152,21 +1231,21 @@ impl MarketDataProvider for AlphaVantageProvider {
         let quotes = match instrument {
             ProviderInstrument::EquitySymbol { ref symbol } => {
                 let currency = self.resolve_currency(context);
-                self.fetch_equity_quotes(symbol, &currency).await?
+                self.fetch_equity_quotes(symbol, &currency, false).await?
             }
             ProviderInstrument::FxPair { ref from, ref to } => {
-                self.fetch_fx_quotes(from, to).await?
+                self.fetch_fx_quotes(from, to, false).await?
             }
             ProviderInstrument::CryptoPair {
                 ref symbol,
                 ref market,
-            } => self.fetch_crypto_quotes(symbol, market).await?,
+            } => self.fetch_crypto_quotes(symbol, market, false).await?,
             ProviderInstrument::FxSymbol { ref symbol } => {
                 // Try to parse FX symbol format (e.g., "EURUSD" -> EUR/USD)
                 if symbol.len() == 6 {
                     let from = &symbol[..3];
                     let to = &symbol[3..];
-                    self.fetch_fx_quotes(from, to).await?
+                    self.fetch_fx_quotes(from, to, false).await?
                 } else {
                     return Err(MarketDataError::UnsupportedAssetType(format!(
                         "Cannot parse FX symbol: {}",
@@ -1177,10 +1256,10 @@ impl MarketDataProvider for AlphaVantageProvider {
             ProviderInstrument::CryptoSymbol { ref symbol } => {
                 // Try to parse crypto symbol format (e.g., "BTC-USD" -> BTC/USD)
                 if let Some((base, quote)) = symbol.split_once('-') {
-                    self.fetch_crypto_quotes(base, quote).await?
+                    self.fetch_crypto_quotes(base, quote, false).await?
                 } else {
                     let currency = self.resolve_currency(context);
-                    self.fetch_crypto_quotes(symbol, &currency).await?
+                    self.fetch_crypto_quotes(symbol, &currency, false).await?
                 }
             }
             ProviderInstrument::MetalSymbol { .. } => {
@@ -1209,69 +1288,19 @@ impl MarketDataProvider for AlphaVantageProvider {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Quote>, MarketDataError> {
-        // HISTORICAL_OPTIONS requires per-day API calls — not practical with rate limits.
-        // Use NotSupported so the registry falls through to the next provider (e.g. Yahoo).
-        if matches!(context.instrument, InstrumentId::Option { .. }) {
-            return Err(MarketDataError::NotSupported {
-                operation: "historical_quotes".to_string(),
-                provider: PROVIDER_ID.to_string(),
-            });
-        }
+        self.historical_quotes(context, instrument, start, end, false)
+            .await
+    }
 
-        let quotes = match instrument {
-            ProviderInstrument::EquitySymbol { ref symbol } => {
-                let currency = self.resolve_currency(context);
-                self.fetch_equity_quotes(symbol, &currency).await?
-            }
-            ProviderInstrument::FxPair { ref from, ref to } => {
-                self.fetch_fx_quotes(from, to).await?
-            }
-            ProviderInstrument::CryptoPair {
-                ref symbol,
-                ref market,
-            } => self.fetch_crypto_quotes(symbol, market).await?,
-            ProviderInstrument::FxSymbol { ref symbol } => {
-                // Try to parse FX symbol format (e.g., "EURUSD" -> EUR/USD)
-                if symbol.len() == 6 {
-                    let from = &symbol[..3];
-                    let to = &symbol[3..];
-                    self.fetch_fx_quotes(from, to).await?
-                } else {
-                    return Err(MarketDataError::UnsupportedAssetType(format!(
-                        "Cannot parse FX symbol: {}",
-                        symbol
-                    )));
-                }
-            }
-            ProviderInstrument::CryptoSymbol { ref symbol } => {
-                // Try to parse crypto symbol format (e.g., "BTC-USD" -> BTC/USD)
-                if let Some((base, quote)) = symbol.split_once('-') {
-                    self.fetch_crypto_quotes(base, quote).await?
-                } else {
-                    let currency = self.resolve_currency(context);
-                    self.fetch_crypto_quotes(symbol, &currency).await?
-                }
-            }
-            ProviderInstrument::MetalSymbol { .. } => {
-                return Err(MarketDataError::UnsupportedAssetType(
-                    "Alpha Vantage does not support metals".to_string(),
-                ));
-            }
-            ProviderInstrument::BondIsin { .. } => {
-                return Err(MarketDataError::UnsupportedAssetType(
-                    "Alpha Vantage does not support bonds".to_string(),
-                ));
-            }
-        };
-
-        // Filter by date range
-        let filtered = Self::filter_by_date_range(quotes, start, end);
-
-        if filtered.is_empty() {
-            return Err(MarketDataError::NoDataForRange);
-        }
-
-        Ok(filtered)
+    async fn get_historical_quotes_for_reset(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        self.historical_quotes(context, instrument, start, end, true)
+            .await
     }
 
     async fn get_dividends(
@@ -1497,10 +1526,10 @@ mod tests {
 
         let quote = CryptoDailyQuote { fields };
 
-        assert_eq!(quote.get_open().unwrap().to_string(), "45000.00");
-        assert_eq!(quote.get_high().unwrap().to_string(), "46000.00");
-        assert_eq!(quote.get_low().unwrap().to_string(), "44000.00");
-        assert_eq!(quote.get_close().unwrap().to_string(), "45500.00");
+        assert_eq!(quote.get_open("USD").unwrap().to_string(), "45000.00");
+        assert_eq!(quote.get_high("USD").unwrap().to_string(), "46000.00");
+        assert_eq!(quote.get_low("USD").unwrap().to_string(), "44000.00");
+        assert_eq!(quote.get_close("USD").unwrap().to_string(), "45500.00");
         assert_eq!(quote.get_volume().unwrap().to_string(), "1000000");
     }
 
@@ -1742,5 +1771,33 @@ mod tests {
         assert_eq!(data[0].last.as_deref(), Some("25.50"));
         assert_eq!(data[0].mark.as_deref(), Some("25.75"));
         assert_eq!(data[0].volume.as_deref(), Some("1500"));
+    }
+    #[test]
+    fn crypto_prices_stay_in_the_requested_currency() {
+        let quote: CryptoDailyQuote = serde_json::from_value(serde_json::json!({
+            "1a. open (CAD)": "130", "1b. open (USD)": "95",
+            "2a. high (CAD)": "140", "2b. high (USD)": "105",
+            "3a. low (CAD)": "120", "3b. low (USD)": "90",
+            "4a. close (CAD)": "135", "4b. close (USD)": "100"
+        }))
+        .unwrap();
+        assert_eq!(quote.get_open("CAD"), Some(Decimal::from(130)));
+        assert_eq!(quote.get_high("CAD"), Some(Decimal::from(140)));
+        assert_eq!(quote.get_low("CAD"), Some(Decimal::from(120)));
+        assert_eq!(quote.get_close("CAD"), Some(Decimal::from(135)));
+        assert_eq!(quote.get_close("USD"), Some(Decimal::from(100)));
+        assert_eq!(quote.get_close("EUR"), None);
+    }
+
+    #[test]
+    fn crypto_missing_or_invalid_market_close_does_not_fall_back_to_usd() {
+        for cad in [serde_json::Value::Null, serde_json::json!("invalid")] {
+            let quote: CryptoDailyQuote = serde_json::from_value(serde_json::json!({
+                "4a. close (CAD)": cad,
+                "4b. close (USD)": "100"
+            }))
+            .unwrap();
+            assert_eq!(quote.get_close("CAD"), None);
+        }
     }
 }

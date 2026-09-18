@@ -111,6 +111,90 @@ impl Default for UsTreasuryCalcProvider {
 }
 
 impl UsTreasuryCalcProvider {
+    async fn historical_quotes(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        strict: bool,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        let isin = extract_isin(&instrument)?;
+        guard_us_treasury(&isin)?;
+
+        let bond =
+            context
+                .bond_metadata
+                .as_ref()
+                .ok_or_else(|| MarketDataError::ProviderError {
+                    provider: PROVIDER_ID.to_string(),
+                    message: "Bond metadata (coupon, maturity) required for calculated pricing"
+                        .to_string(),
+                })?;
+
+        let start_date = start.date_naive();
+        let end_date = end.date_naive();
+        let currency = context.currency_hint.as_deref().unwrap_or("USD");
+
+        let coupon_rate: f64 = bond.coupon_rate.try_into().unwrap_or(0.0);
+        let face_value: f64 = bond.face_value.try_into().unwrap_or(US_TREASURY_FACE_VALUE);
+
+        // A reset cannot reuse a cache populated by lenient parsing.
+        let mut strict_curves = HashMap::new();
+        for year in start_date.year()..=end_date.year() {
+            if strict {
+                strict_curves.insert(year, self.fetch_year_curves(year, true).await?);
+            } else {
+                self.ensure_curves(year).await?;
+            }
+        }
+
+        let cache_guard = self.curve_cache.read().await;
+        let cache = if strict {
+            &strict_curves
+        } else {
+            &*cache_guard
+        };
+        let mut quotes = Vec::new();
+
+        // Collect all curve dates in range
+        for year in start_date.year()..=end_date.year() {
+            if let Some(year_curves) = cache.get(&year) {
+                for (date, curve) in year_curves {
+                    if *date >= start_date && *date <= end_date {
+                        match Self::calculate_price(
+                            curve,
+                            *date,
+                            bond.maturity_date,
+                            coupon_rate,
+                            &bond.coupon_frequency,
+                            face_value,
+                        ) {
+                            Ok(price) => match Self::make_quote(*date, price, currency) {
+                                Ok(q) => quotes.push(q),
+                                Err(e) => {
+                                    if strict {
+                                        return Err(e);
+                                    }
+                                    debug!("Skipping date {}: {}", date, e);
+                                }
+                            },
+                            Err(e) => {
+                                if strict {
+                                    return Err(e);
+                                }
+                                debug!("Skipping date {}: {}", date, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        quotes.sort_by_key(|q| q.timestamp);
+        Ok(quotes)
+    }
+
     pub fn new() -> Self {
         let client = wealthfolio_http::client_builder()
             .timeout(REQUEST_TIMEOUT)
@@ -199,7 +283,7 @@ impl UsTreasuryCalcProvider {
             }
         }
 
-        let curves = self.fetch_year_curves(year).await?;
+        let curves = self.fetch_year_curves(year, false).await?;
         {
             let mut cache = self.curve_cache.write().await;
             cache.insert(year, curves);
@@ -208,7 +292,11 @@ impl UsTreasuryCalcProvider {
     }
 
     /// Fetch and parse one year of yield curve data from Treasury.gov XML.
-    async fn fetch_year_curves(&self, year: i32) -> Result<YearCurves, MarketDataError> {
+    async fn fetch_year_curves(
+        &self,
+        year: i32,
+        strict: bool,
+    ) -> Result<YearCurves, MarketDataError> {
         let url = format!(
             "https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml?data=daily_treasury_yield_curve&field_tdr_date_value={}",
             year
@@ -241,7 +329,7 @@ impl UsTreasuryCalcProvider {
                 message: format!("Failed to read response: {}", e),
             })?;
 
-        parse_yield_curve_xml(&body)
+        parse_yield_curve_xml(&body, strict)
     }
 
     /// Look up the yield curve for a specific date, falling back to previous
@@ -457,64 +545,19 @@ impl MarketDataProvider for UsTreasuryCalcProvider {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Quote>, MarketDataError> {
-        let isin = extract_isin(&instrument)?;
-        guard_us_treasury(&isin)?;
+        self.historical_quotes(context, instrument, start, end, false)
+            .await
+    }
 
-        let bond =
-            context
-                .bond_metadata
-                .as_ref()
-                .ok_or_else(|| MarketDataError::ProviderError {
-                    provider: PROVIDER_ID.to_string(),
-                    message: "Bond metadata (coupon, maturity) required for calculated pricing"
-                        .to_string(),
-                })?;
-
-        let start_date = start.date_naive();
-        let end_date = end.date_naive();
-        let currency = context.currency_hint.as_deref().unwrap_or("USD");
-
-        let coupon_rate: f64 = bond.coupon_rate.try_into().unwrap_or(0.0);
-        let face_value: f64 = bond.face_value.try_into().unwrap_or(US_TREASURY_FACE_VALUE);
-
-        // Ensure we have curves for all years in range
-        for year in start_date.year()..=end_date.year() {
-            self.ensure_curves(year).await?;
-        }
-
-        let cache = self.curve_cache.read().await;
-        let mut quotes = Vec::new();
-
-        // Collect all curve dates in range
-        for year in start_date.year()..=end_date.year() {
-            if let Some(year_curves) = cache.get(&year) {
-                for (date, curve) in year_curves {
-                    if *date >= start_date && *date <= end_date {
-                        match Self::calculate_price(
-                            curve,
-                            *date,
-                            bond.maturity_date,
-                            coupon_rate,
-                            &bond.coupon_frequency,
-                            face_value,
-                        ) {
-                            Ok(price) => match Self::make_quote(*date, price, currency) {
-                                Ok(q) => quotes.push(q),
-                                Err(e) => {
-                                    debug!("Skipping date {}: {}", date, e);
-                                }
-                            },
-                            Err(e) => {
-                                debug!("Skipping date {}: {}", date, e);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        quotes.sort_by_key(|q| q.timestamp);
-        Ok(quotes)
+    async fn get_historical_quotes_for_reset(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        self.historical_quotes(context, instrument, start, end, true)
+            .await
     }
 }
 
@@ -582,12 +625,20 @@ const TENOR_MAP: &[(&str, f64)] = &[
 ///
 /// The XML uses Atom + custom namespace.  We do simple text scanning rather
 /// than a full XML parse to avoid heavy dependencies.
-fn parse_yield_curve_xml(xml: &str) -> Result<YearCurves, MarketDataError> {
+fn parse_yield_curve_xml(xml: &str, strict: bool) -> Result<YearCurves, MarketDataError> {
     let mut results: YearCurves = Vec::new();
 
     // Each entry is between <entry> ... </entry>
     for entry in xml.split("<entry>").skip(1) {
-        let entry_end = entry.find("</entry>").unwrap_or(entry.len());
+        let entry_end = match entry.find("</entry>") {
+            Some(end) => end,
+            None if strict => {
+                return Err(MarketDataError::ValidationFailed {
+                    message: "Treasury history contains an unclosed entry".into(),
+                });
+            }
+            None => entry.len(),
+        };
         let entry = &entry[..entry_end];
 
         // Find the content section
@@ -612,10 +663,8 @@ fn parse_yield_curve_xml(xml: &str) -> Result<YearCurves, MarketDataError> {
         // Extract yield values for each tenor
         let mut points: Vec<(f64, f64)> = Vec::new();
         for (label, tenor_years) in TENOR_MAP {
-            if let Some(val_str) = extract_xml_value(content, label) {
-                if let Ok(yield_val) = val_str.parse::<f64>() {
-                    points.push((*tenor_years, yield_val));
-                }
+            if let Some(yield_val) = parse_yield_value(content, label, strict)? {
+                points.push((*tenor_years, yield_val));
             }
         }
 
@@ -625,6 +674,16 @@ fn parse_yield_curve_xml(xml: &str) -> Result<YearCurves, MarketDataError> {
         }
     }
 
+    if strict
+        && (results.len() != xml.matches("<entry>").count()
+            || !xml.contains("</feed>")
+            || xml.contains("rel=\"next\"")
+            || xml.contains("rel='next'"))
+    {
+        return Err(MarketDataError::ValidationFailed {
+            message: "Treasury history contains discarded rows or incomplete pagination".into(),
+        });
+    }
     if results.is_empty() {
         return Err(MarketDataError::ProviderError {
             provider: PROVIDER_ID.to_string(),
@@ -633,6 +692,35 @@ fn parse_yield_curve_xml(xml: &str) -> Result<YearCurves, MarketDataError> {
     }
 
     Ok(results)
+}
+
+/// Missing and explicitly null tenors are legitimate inputs to interpolation.
+/// A present malformed/nonfinite tenor must not silently become missing on reset.
+fn parse_yield_value(xml: &str, tag: &str, strict: bool) -> Result<Option<f64>, MarketDataError> {
+    if !strict {
+        return Ok(extract_xml_value(xml, tag).and_then(|value| value.parse().ok()));
+    }
+    for name in [format!("d:{tag}"), tag.to_string()] {
+        if let Some(start) = xml.find(&format!("<{name}")) {
+            let element = &xml[start..];
+            let invalid = || MarketDataError::ValidationFailed {
+                message: format!("Treasury history contains an invalid {tag} tenor"),
+            };
+            let open_end = element.find('>').ok_or_else(invalid)?;
+            let opening = &element[..=open_end];
+            let is_null = opening.contains("m:null=\"true\"") || opening.contains("m:null='true'");
+            let has_close = element.contains(&format!("</{name}>"));
+            if is_null && (opening.ends_with("/>") || has_close) {
+                return Ok(None);
+            }
+            let value = extract_xml_value(xml, tag)
+                .and_then(|value| value.parse::<f64>().ok())
+                .filter(|value| value.is_finite())
+                .ok_or_else(invalid)?;
+            return Ok(Some(value));
+        }
+    }
+    Ok(None)
 }
 
 /// Extract the text content of a simple XML element like `<d:TAG>value</d:TAG>`.
@@ -827,7 +915,7 @@ mod tests {
   </entry>
 </feed>"#;
 
-        let curves = parse_yield_curve_xml(xml).unwrap();
+        let curves = parse_yield_curve_xml(xml, false).unwrap();
         assert_eq!(curves.len(), 2);
 
         // First entry
@@ -847,7 +935,7 @@ mod tests {
     #[test]
     fn test_parse_yield_curve_xml_empty() {
         let xml = "<feed></feed>";
-        assert!(parse_yield_curve_xml(xml).is_err());
+        assert!(parse_yield_curve_xml(xml, false).is_err());
     }
 
     #[test]
@@ -947,5 +1035,56 @@ mod tests {
         // Verify it is below par (discounted)
         assert!(price < 1.0);
         assert!(price > 0.97);
+    }
+    #[test]
+    fn reset_rejects_lossy_or_incomplete_treasury_curves() {
+        let valid = "<entry><content><d:NEW_DATE>2025-01-02</d:NEW_DATE><d:BC_1YEAR>4.2</d:BC_1YEAR></content></entry>";
+        let body = format!("<feed>{valid}</feed>");
+        assert_eq!(parse_yield_curve_xml(&body, true).unwrap().len(), 1);
+        let lossy = format!(
+            "<feed>{valid}<entry><content><d:NEW_DATE>bad</d:NEW_DATE></content></entry></feed>"
+        );
+        assert_eq!(parse_yield_curve_xml(&lossy, false).unwrap().len(), 1);
+        assert!(parse_yield_curve_xml(&lossy, true).is_err());
+        assert!(parse_yield_curve_xml(&format!("<feed>{valid}"), true).is_err());
+        assert!(
+            parse_yield_curve_xml(&format!("<feed>{valid}<link rel=\"next\" /></feed>"), true)
+                .is_err()
+        );
+    }
+    #[test]
+    fn reset_rejects_malformed_tenors_without_losing_curve_dates() {
+        for bad in ["invalid", "NaN", "inf", "-inf", "1e999", ""] {
+            let xml = format!("<feed><entry><content><d:NEW_DATE>2025-01-02</d:NEW_DATE><d:BC_1YEAR>4.2</d:BC_1YEAR><d:BC_10YEAR>{bad}</d:BC_10YEAR></content></entry></feed>");
+            // The lenient path retains the date; comparing row counts alone is insufficient.
+            assert_eq!(parse_yield_curve_xml(&xml, false).unwrap().len(), 1);
+            assert!(
+                parse_yield_curve_xml(&xml, true).is_err(),
+                "accepted {bad:?}"
+            );
+        }
+        let unclosed_tenor = "<feed><entry><content><d:NEW_DATE>2025-01-02</d:NEW_DATE><d:BC_1YEAR>4.2</d:BC_1YEAR><d:BC_10YEAR>4.5</content></entry></feed>";
+        assert!(parse_yield_curve_xml(unclosed_tenor, true).is_err());
+    }
+
+    #[test]
+    fn reset_accepts_explicitly_null_and_missing_tenors() {
+        for null in [
+            "<d:BC_10YEAR m:null=\"true\" />",
+            "<d:BC_10YEAR m:null='true'></d:BC_10YEAR>",
+            "",
+        ] {
+            let xml = format!("<feed><entry><content><d:NEW_DATE>2025-01-02</d:NEW_DATE><d:BC_1YEAR>4.2</d:BC_1YEAR>{null}</content></entry></feed>");
+            let curves = parse_yield_curve_xml(&xml, true).unwrap();
+            assert_eq!(curves.len(), 1);
+            assert_eq!(curves[0].1 .0, vec![(1.0, 4.2)]);
+        }
+    }
+
+    #[test]
+    fn reset_rejects_unclosed_entry_even_with_closed_feed() {
+        let xml = "<feed><entry><content><d:NEW_DATE>2025-01-02</d:NEW_DATE><d:BC_1YEAR>4.2</d:BC_1YEAR></content></feed>";
+        assert_eq!(parse_yield_curve_xml(xml, false).unwrap().len(), 1);
+        assert!(parse_yield_curve_xml(xml, true).is_err());
     }
 }

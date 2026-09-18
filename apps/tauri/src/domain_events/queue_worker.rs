@@ -477,6 +477,11 @@ async fn run_portfolio_calculation(
     snapshot_mode: SnapshotRecalcMode,
     valuation_mode: ValuationRecalcMode,
 ) {
+    if crate::listeners::recover_pending_quote_history(app_handle, context).await
+        && account_ids.is_none()
+    {
+        return;
+    }
     // Emit start event
     if let Err(e) = app_handle.emit(PORTFOLIO_UPDATE_START, &()) {
         error!("Failed to emit portfolio:update-start event: {}", e);

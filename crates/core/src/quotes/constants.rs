@@ -73,3 +73,6 @@ pub const MAX_SYNC_ERRORS: i32 = 10;
 /// The per-provider rate limiter already enforces its own concurrency/delay,
 /// so this just controls how many assets we dispatch at once.
 pub const SYNC_CONCURRENCY: usize = 10;
+
+/// Local-only durable acknowledgement token for explicit quote history changes.
+pub const PENDING_QUOTE_REBUILD_KEY: &str = "quote_history.pending_rebuild";

@@ -1141,6 +1141,7 @@ pub async fn build_state(config: &Config) -> anyhow::Result<Arc<AppState>> {
     #[cfg(feature = "device-sync")]
     start_sync_outbox_wake_worker(sync_outbox_wake_receiver, Arc::clone(&state));
 
+    crate::api::shared::spawn_pending_quote_rebuild(Arc::clone(&state));
     if portfolio_history_backfill_needed(&state) {
         tracing::info!(
             "Valuation rows are missing after startup; enqueueing full portfolio rebuild."

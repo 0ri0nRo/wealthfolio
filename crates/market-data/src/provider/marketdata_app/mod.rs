@@ -29,6 +29,8 @@ use crate::resolver::ResolverChain;
 
 const BASE_URL: &str = "https://api.marketdata.app/v1";
 const PROVIDER_ID: &str = "MARKETDATA_APP";
+// https://www.marketdata.app/docs/api/universal-parameters/limit/
+const RESET_HISTORY_ROW_LIMIT: usize = 10_000;
 
 /// Default HTTP request timeout
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -85,6 +87,167 @@ pub struct MarketDataAppProvider {
 }
 
 impl MarketDataAppProvider {
+    async fn historical_quotes(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+        strict: bool,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        let symbol = Self::extract_symbol(&instrument)?;
+
+        let start_str = start.format("%Y-%m-%d").to_string();
+        let end_str = end.format("%Y-%m-%d").to_string();
+
+        let mut url = Self::historical_candles_url(&symbol, &start_str, &end_str);
+        if strict {
+            url.push_str(&format!("&limit={RESET_HISTORY_ROW_LIMIT}"));
+        }
+
+        let response_text = self.fetch(&url).await?;
+        let candles: CandlesResponse =
+            serde_json::from_str(&response_text).map_err(|e| MarketDataError::ProviderError {
+                provider: PROVIDER_ID.to_string(),
+                message: format!("Failed to parse response: {}", e),
+            })?;
+
+        if candles.s != "ok" {
+            return Err(MarketDataError::ProviderError {
+                provider: PROVIDER_ID.to_string(),
+                message: format!("API returned status: {}", candles.s),
+            });
+        }
+
+        // Extract parallel arrays
+        let closes = candles.c.ok_or_else(|| MarketDataError::ProviderError {
+            provider: PROVIDER_ID.to_string(),
+            message: "No close prices in response".to_string(),
+        })?;
+
+        let opens = candles.o.unwrap_or_default();
+        let highs = candles.h.unwrap_or_default();
+        let lows = candles.l.unwrap_or_default();
+        let volumes = candles.v.unwrap_or_default();
+        let timestamps = candles.t.unwrap_or_default();
+
+        if closes.is_empty() {
+            return Err(MarketDataError::NoDataForRange);
+        }
+
+        if strict {
+            Self::ensure_uncapped_reset_history(closes.len())?;
+        }
+        if strict && timestamps.len() != closes.len() {
+            return Err(MarketDataError::ValidationFailed {
+                message: "Mismatched history timestamps and prices".into(),
+            });
+        }
+        let currency = Self::get_currency(context);
+
+        // Build quotes from parallel arrays, filtering out invalid prices
+        let mut quotes = Vec::with_capacity(closes.len());
+
+        for (i, close) in closes.iter().enumerate() {
+            // Close price is required - skip this quote if it can't be converted
+            let close_decimal = match Decimal::from_f64_retain(*close) {
+                Some(d) => d,
+                None => {
+                    warn!(
+                        "Skipping quote at index {}: failed to convert close price {}",
+                        i, close
+                    );
+                    continue;
+                }
+            };
+
+            // Skip quotes with missing timestamps to avoid data corruption
+            let timestamp_unix = match timestamps.get(i) {
+                Some(&ts) if ts > 0 => ts,
+                _ => {
+                    warn!(
+                        "Skipping quote at index {}: missing or invalid timestamp",
+                        i
+                    );
+                    continue;
+                }
+            };
+            let timestamp = match Utc.timestamp_opt(timestamp_unix, 0).single() {
+                Some(ts) => ts,
+                None => {
+                    warn!(
+                        "Skipping quote at index {}: failed to parse timestamp {}",
+                        i, timestamp_unix
+                    );
+                    continue;
+                }
+            };
+
+            // Optional fields - use None if conversion fails
+            let open = opens.get(i).and_then(|v| Decimal::from_f64_retain(*v));
+            let high = highs.get(i).and_then(|v| Decimal::from_f64_retain(*v));
+            let low = lows.get(i).and_then(|v| Decimal::from_f64_retain(*v));
+            let volume = volumes.get(i).and_then(|v| Decimal::from_f64_retain(*v));
+
+            quotes.push(Quote {
+                timestamp,
+                open,
+                high,
+                low,
+                close: close_decimal,
+                volume,
+                currency: currency.clone(),
+                source: PROVIDER_ID.to_string(),
+            });
+        }
+
+        if strict && quotes.len() != closes.len() {
+            return Err(MarketDataError::ValidationFailed {
+                message: "History contains discarded rows".into(),
+            });
+        }
+        if quotes.is_empty() {
+            return Err(MarketDataError::NoDataForRange);
+        }
+
+        // The candles endpoint never includes the current trading day's data.
+        // Supplement with the real-time prices endpoint if `end` covers today
+        // and the candles don't already include it.
+        let today = Utc::now().date_naive();
+        let end_date = end.date_naive();
+        let last_candle_date = quotes.last().map(|q| q.timestamp.date_naive());
+
+        if end_date >= today && last_candle_date.is_some_and(|d| d < today) {
+            match self.get_latest_quote(context, instrument).await {
+                Ok(latest) => {
+                    // Avoid duplicates: only append if the real-time quote is
+                    // newer than the last candle (e.g., skip on weekends when
+                    // the prices endpoint returns the same day as the last candle).
+                    if latest.timestamp.date_naive() > last_candle_date.unwrap() {
+                        quotes.push(latest);
+                    }
+                }
+                Err(e) => warn!(
+                    "MarketData.app: failed to fetch current-day price for {}: {}",
+                    symbol, e
+                ),
+            }
+        }
+
+        Ok(quotes)
+    }
+
+    fn ensure_uncapped_reset_history(row_count: usize) -> Result<(), MarketDataError> {
+        // A response exactly at the limit is ambiguous; never authorize deletion
+        // when the provider may have omitted history from the requested range.
+        if row_count >= RESET_HISTORY_ROW_LIMIT {
+            return Err(MarketDataError::ValidationFailed {
+                message: "History reached the provider response limit; reset was cancelled. Use ordinary refresh to preserve existing history.".into(),
+            });
+        }
+        Ok(())
+    }
+
     /// Create a new MarketData.app provider with the given API key.
     pub fn new(api_key: String) -> Self {
         let client = wealthfolio_http::client_builder()
@@ -264,130 +427,19 @@ impl MarketDataProvider for MarketDataAppProvider {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Quote>, MarketDataError> {
-        let symbol = Self::extract_symbol(&instrument)?;
+        self.historical_quotes(context, instrument, start, end, false)
+            .await
+    }
 
-        let start_str = start.format("%Y-%m-%d").to_string();
-        let end_str = end.format("%Y-%m-%d").to_string();
-
-        let url = Self::historical_candles_url(&symbol, &start_str, &end_str);
-
-        let response_text = self.fetch(&url).await?;
-        let candles: CandlesResponse =
-            serde_json::from_str(&response_text).map_err(|e| MarketDataError::ProviderError {
-                provider: PROVIDER_ID.to_string(),
-                message: format!("Failed to parse response: {}", e),
-            })?;
-
-        if candles.s != "ok" {
-            return Err(MarketDataError::ProviderError {
-                provider: PROVIDER_ID.to_string(),
-                message: format!("API returned status: {}", candles.s),
-            });
-        }
-
-        // Extract parallel arrays
-        let closes = candles.c.ok_or_else(|| MarketDataError::ProviderError {
-            provider: PROVIDER_ID.to_string(),
-            message: "No close prices in response".to_string(),
-        })?;
-
-        let opens = candles.o.unwrap_or_default();
-        let highs = candles.h.unwrap_or_default();
-        let lows = candles.l.unwrap_or_default();
-        let volumes = candles.v.unwrap_or_default();
-        let timestamps = candles.t.unwrap_or_default();
-
-        if closes.is_empty() {
-            return Err(MarketDataError::NoDataForRange);
-        }
-
-        let currency = Self::get_currency(context);
-
-        // Build quotes from parallel arrays, filtering out invalid prices
-        let mut quotes = Vec::with_capacity(closes.len());
-
-        for (i, close) in closes.iter().enumerate() {
-            // Close price is required - skip this quote if it can't be converted
-            let close_decimal = match Decimal::from_f64_retain(*close) {
-                Some(d) => d,
-                None => {
-                    warn!(
-                        "Skipping quote at index {}: failed to convert close price {}",
-                        i, close
-                    );
-                    continue;
-                }
-            };
-
-            // Skip quotes with missing timestamps to avoid data corruption
-            let timestamp_unix = match timestamps.get(i) {
-                Some(&ts) if ts > 0 => ts,
-                _ => {
-                    warn!(
-                        "Skipping quote at index {}: missing or invalid timestamp",
-                        i
-                    );
-                    continue;
-                }
-            };
-            let timestamp = match Utc.timestamp_opt(timestamp_unix, 0).single() {
-                Some(ts) => ts,
-                None => {
-                    warn!(
-                        "Skipping quote at index {}: failed to parse timestamp {}",
-                        i, timestamp_unix
-                    );
-                    continue;
-                }
-            };
-
-            // Optional fields - use None if conversion fails
-            let open = opens.get(i).and_then(|v| Decimal::from_f64_retain(*v));
-            let high = highs.get(i).and_then(|v| Decimal::from_f64_retain(*v));
-            let low = lows.get(i).and_then(|v| Decimal::from_f64_retain(*v));
-            let volume = volumes.get(i).and_then(|v| Decimal::from_f64_retain(*v));
-
-            quotes.push(Quote {
-                timestamp,
-                open,
-                high,
-                low,
-                close: close_decimal,
-                volume,
-                currency: currency.clone(),
-                source: PROVIDER_ID.to_string(),
-            });
-        }
-
-        if quotes.is_empty() {
-            return Err(MarketDataError::NoDataForRange);
-        }
-
-        // The candles endpoint never includes the current trading day's data.
-        // Supplement with the real-time prices endpoint if `end` covers today
-        // and the candles don't already include it.
-        let today = Utc::now().date_naive();
-        let end_date = end.date_naive();
-        let last_candle_date = quotes.last().map(|q| q.timestamp.date_naive());
-
-        if end_date >= today && last_candle_date.is_some_and(|d| d < today) {
-            match self.get_latest_quote(context, instrument).await {
-                Ok(latest) => {
-                    // Avoid duplicates: only append if the real-time quote is
-                    // newer than the last candle (e.g., skip on weekends when
-                    // the prices endpoint returns the same day as the last candle).
-                    if latest.timestamp.date_naive() > last_candle_date.unwrap() {
-                        quotes.push(latest);
-                    }
-                }
-                Err(e) => warn!(
-                    "MarketData.app: failed to fetch current-day price for {}: {}",
-                    symbol, e
-                ),
-            }
-        }
-
-        Ok(quotes)
+    async fn get_historical_quotes_for_reset(
+        &self,
+        context: &QuoteContext,
+        instrument: ProviderInstrument,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<Quote>, MarketDataError> {
+        self.historical_quotes(context, instrument, start, end, true)
+            .await
     }
 }
 
@@ -536,5 +588,11 @@ mod tests {
         let candles: CandlesResponse = serde_json::from_str(json).unwrap();
         assert_eq!(candles.s, "no_data");
         assert!(candles.c.is_none());
+    }
+    #[test]
+    fn reset_rejects_capped_history_even_when_every_row_is_valid() {
+        assert!(MarketDataAppProvider::ensure_uncapped_reset_history(9_999).is_ok());
+        assert!(MarketDataAppProvider::ensure_uncapped_reset_history(10_000).is_err());
+        assert!(MarketDataAppProvider::ensure_uncapped_reset_history(10_001).is_err());
     }
 }

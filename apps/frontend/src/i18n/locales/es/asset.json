@@ -23,9 +23,19 @@
   },
   "refreshDialog": {
     "title": "Actualizar historial",
-    "description_named": "Esto eliminará y reemplazará todas las cotizaciones del proveedor con datos nuevos para {{name}}. Las cotizaciones manuales se conservarán. ¿Continuar?",
-    "description_generic": "Esto eliminará y reemplazará todas las cotizaciones del proveedor con datos nuevos. Las cotizaciones manuales se conservarán. ¿Continuar?",
+    "description_named": "Se combinarán los nuevos precios de {{name}} con los existentes. Se conservarán el historial anterior y los precios manuales y del bróker. ¿Continuar?",
+    "description_generic": "Se combinarán los nuevos precios con los existentes. Se conservarán el historial anterior y los precios manuales y del bróker. ¿Continuar?",
     "refresh": "Actualizar"
+  },
+  "resetDialog": {
+    "title": "Restablecer historial del proveedor",
+    "description": "¿Reemplazar todos los precios del proveedor de {{name}} por un historial recién obtenido? El nuevo historial puede ser más corto. Se conservarán los precios manuales y del bróker. Si la descarga o validación falla, se conservará el historial existente.",
+    "confirm": "Restablecer historial del proveedor",
+    "resetting": "Restableciendo…",
+    "success": "Historial del proveedor reemplazado",
+    "complete": "Se han actualizado los precios y las valoraciones de la cartera.",
+    "pending": "Los precios se reemplazaron. El recálculo de la cartera está pendiente y se reintentará automáticamente. No vuelva a restablecer.",
+    "uncertain": "La respuesta se interrumpió; es posible que los precios ya se hayan reemplazado. Revise el historial y actualice la página antes de considerar otro restablecimiento."
   },
   "createSecurity": {
     "title": "Añadir valor",

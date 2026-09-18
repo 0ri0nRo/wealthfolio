@@ -540,6 +540,15 @@ impl DatabaseRuntime {
                     if let Some(rebuild) = init.final_cash_rebuild {
                         workers.push(tauri::async_runtime::spawn(rebuild));
                     }
+                    let rebuild_handle = handle.clone();
+                    let rebuild_context = Arc::clone(&context);
+                    workers.push(tauri::async_runtime::spawn(async move {
+                        crate::listeners::recover_pending_quote_history(
+                            &rebuild_handle,
+                            &rebuild_context,
+                        )
+                        .await;
+                    }));
                     self.record_encryption_state(&access);
                     *live = Some(Live {
                         generation: uuid::Uuid::new_v4(),

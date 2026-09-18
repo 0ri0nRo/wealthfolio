@@ -221,6 +221,7 @@ export {
   searchTicker,
   syncHistoryQuotes,
   syncMarketData,
+  resetProviderHistory,
   updateAssetProfile,
   updateMarketDataProviderSettings,
   updateQuote,

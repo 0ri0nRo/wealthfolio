@@ -14,6 +14,28 @@ use wealthfolio_core::quotes::{
 use wealthfolio_market_data::{DividendEvent, ExchangeInfo};
 
 #[tauri::command]
+pub async fn reset_provider_history(
+    asset_id: String,
+    state: State<'_, DatabaseRuntime>,
+    handle: AppHandle,
+) -> Result<wealthfolio_core::quotes::ResetProviderHistoryResult, String> {
+    let context = state.context()?;
+    // The owned task finishes commit/recovery scheduling even if its caller disconnects.
+    tauri::async_runtime::spawn(async move {
+        let result = context
+            .quote_service()
+            .reset_provider_history(&asset_id)
+            .await;
+        crate::listeners::spawn_pending_quote_rebuild(handle, context);
+        result.map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|_| {
+        "Reset completion could not be confirmed. Reload quotes before retrying.".to_string()
+    })?
+}
+
+#[tauri::command]
 pub async fn search_symbol(
     query: String,
     state: State<'_, DatabaseRuntime>,
@@ -54,13 +76,18 @@ pub async fn sync_market_data(
 }
 
 #[tauri::command]
-pub async fn synch_quotes(state: State<'_, DatabaseRuntime>) -> Result<(), String> {
+pub async fn synch_quotes(
+    state: State<'_, DatabaseRuntime>,
+    handle: AppHandle,
+) -> Result<(), String> {
     let context = state.context()?;
-    let result = context
-        .quote_service()
-        .resync(None)
-        .await
-        .map_err(|e| e.to_string())?;
+    let result = tauri::async_runtime::spawn(async move {
+        let result = context.quote_service().resync(None).await;
+        crate::listeners::spawn_pending_quote_rebuild(handle, context);
+        result.map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|_| "Refresh completion could not be confirmed.".to_string())??;
     if result.failed > 0 {
         warn!("resync reported {} failures", result.failed);
     }

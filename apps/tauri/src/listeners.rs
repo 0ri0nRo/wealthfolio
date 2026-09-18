@@ -38,6 +38,47 @@ pub fn setup_event_listeners(handle: AppHandle) {
     });
 }
 
+pub fn spawn_pending_quote_rebuild(handle: AppHandle, context: Arc<ServiceContext>) {
+    spawn(async move {
+        recover_pending_quote_history(&handle, &context).await;
+    });
+}
+
+pub(crate) async fn recover_pending_quote_history(
+    handle: &AppHandle,
+    context: &Arc<ServiceContext>,
+) -> bool {
+    match context.quote_service().pending_quote_rebuild_token() {
+        Ok(Some(_)) => {}
+        Ok(None) => return false,
+        Err(error) => {
+            warn!("Unable to check pending quote recalculation: {}", error);
+            return false;
+        }
+    }
+    let _ = handle.emit(PORTFOLIO_UPDATE_START, ());
+    let result = wealthfolio_core::portfolio::quote_history_rebuild::rebuild_pending_quote_history(
+        context.quote_service().as_ref(),
+        context.account_service().as_ref(),
+        context.snapshot_service().as_ref(),
+        context.valuation_service().as_ref(),
+        context.fx_service().as_ref(),
+    )
+    .await;
+    context.health_service().clear_cache().await;
+    match result {
+        Ok(rebuilt) => {
+            let _ = handle.emit(PORTFOLIO_UPDATE_COMPLETE, ());
+            rebuilt
+        }
+        Err(error) => {
+            warn!("Quote history recalculation remains pending: {}", error);
+            let _ = handle.emit(PORTFOLIO_UPDATE_ERROR, error.to_string());
+            false
+        }
+    }
+}
+
 fn resolve_listener_account_ids(
     context: &Arc<ServiceContext>,
     account_ids: Option<&Vec<String>>,
@@ -208,6 +249,7 @@ fn handle_portfolio_request(handle: AppHandle, payload_str: &str, force_recalc: 
                                 );
                             }
                             Err(e) => {
+                                recover_pending_quote_history(&handle_clone, &context).await;
                                 if let Err(e_emit) =
                                     handle_clone.emit(MARKET_SYNC_ERROR, &e.to_string())
                                 {
@@ -286,6 +328,10 @@ fn handle_portfolio_calculation(
         };
 
         let account_service = context.account_service();
+        if recover_pending_quote_history(&app_handle, &context).await && account_ids_input.is_none()
+        {
+            return;
+        }
         let snapshot_service = context.snapshot_service();
         let valuation_service = context.valuation_service();
 
