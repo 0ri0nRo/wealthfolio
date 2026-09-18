@@ -84,8 +84,10 @@ mod tests {
     #[test]
     fn missing_account_is_not_acknowledged() {
         let accounts = vec!["a".into(), "b".into()];
-        let mut outcome = ValuationBatchOutcome::default();
-        outcome.successful_accounts = vec!["a".into(), "a".into()];
+        let mut outcome = ValuationBatchOutcome {
+            successful_accounts: vec!["a".into(), "a".into()],
+            ..Default::default()
+        };
         assert!(!all_accounts_rebuilt(&accounts, &outcome));
         outcome.successful_accounts.push("b".into());
         assert!(all_accounts_rebuilt(&accounts, &outcome));

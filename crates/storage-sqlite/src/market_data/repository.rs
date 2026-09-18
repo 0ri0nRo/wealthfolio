@@ -1890,7 +1890,7 @@ mod tests {
         insert_test_asset(&repo, "TOKEN");
         let date = NaiveDate::from_ymd_opt(2025, 1, 4).unwrap();
         let quote = quote_with_source("TOKEN", date, "YAHOO", Decimal::ONE);
-        repo.upsert_quotes_for_refresh(&[quote.clone()])
+        repo.upsert_quotes_for_refresh(std::slice::from_ref(&quote))
             .await
             .unwrap();
         let first = repo.pending_quote_rebuild_token().unwrap().unwrap();
