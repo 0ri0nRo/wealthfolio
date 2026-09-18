@@ -584,17 +584,6 @@ impl MarketDataProvider for FixtureProvider {
         Ok(self.quote_for_date(&instrument, latest_trading_date(&instrument, as_of)))
     }
 
-    async fn get_historical_quotes_for_reset(
-        &self,
-        context: &QuoteContext,
-        instrument: ProviderInstrument,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<Vec<Quote>, MarketDataError> {
-        self.get_historical_quotes(context, instrument, start, end)
-            .await
-    }
-
     async fn get_historical_quotes(
         &self,
         _context: &QuoteContext,

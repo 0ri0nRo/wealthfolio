@@ -116,22 +116,6 @@ pub trait MarketDataProvider: Send + Sync {
         end: DateTime<Utc>,
     ) -> Result<Vec<Quote>, MarketDataError>;
 
-    /// Fetch history suitable for destructive replacement. Implementations must
-    /// reject discarded rows, incomplete responses, and latest/default fallbacks.
-    /// Fail closed until a provider's parser explicitly supports this contract.
-    async fn get_historical_quotes_for_reset(
-        &self,
-        _context: &QuoteContext,
-        _instrument: ProviderInstrument,
-        _start: DateTime<Utc>,
-        _end: DateTime<Utc>,
-    ) -> Result<Vec<Quote>, MarketDataError> {
-        Err(MarketDataError::NotSupported {
-            operation: "validated history replacement".to_string(),
-            provider: self.id().to_string(),
-        })
-    }
-
     /// Search for symbols matching the query.
     ///
     /// # Arguments

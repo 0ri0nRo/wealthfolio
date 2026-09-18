@@ -1519,19 +1519,6 @@ mod tests {
                 .filter(|q| q.timestamp >= start && q.timestamp <= end)
                 .collect())
         }
-        async fn get_historical_quotes_for_reset(
-            &self,
-            context: &wealthfolio_market_data::QuoteContext,
-            instrument: wealthfolio_market_data::ProviderInstrument,
-            start: chrono::DateTime<Utc>,
-            end: chrono::DateTime<Utc>,
-        ) -> std::result::Result<
-            Vec<wealthfolio_market_data::Quote>,
-            wealthfolio_market_data::errors::MarketDataError,
-        > {
-            self.get_historical_quotes(context, instrument, start, end)
-                .await
-        }
     }
 
     #[tokio::test]

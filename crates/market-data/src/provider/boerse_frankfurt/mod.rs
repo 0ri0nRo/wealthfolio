@@ -399,17 +399,6 @@ impl MarketDataProvider for BoerseFrankfurtProvider {
         })
     }
 
-    async fn get_historical_quotes_for_reset(
-        &self,
-        context: &QuoteContext,
-        instrument: ProviderInstrument,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<Vec<Quote>, MarketDataError> {
-        self.get_historical_quotes(context, instrument, start, end)
-            .await
-    }
-
     async fn get_historical_quotes(
         &self,
         context: &QuoteContext,
@@ -459,36 +448,19 @@ impl MarketDataProvider for BoerseFrankfurtProvider {
             .map(|c| c.to_string())
             .unwrap_or_else(|| "EUR".to_string());
 
-        if body.c.len() != body.t.len() {
-            return Err(MarketDataError::ValidationFailed {
-                message: "Mismatched history timestamps and prices".into(),
-            });
-        }
         let len = body.t.len();
         let mut quotes = Vec::with_capacity(len);
 
         for i in 0..len {
             let ts = body.t[i];
-            let timestamp = DateTime::from_timestamp(ts, 0).ok_or_else(|| {
-                MarketDataError::ValidationFailed {
-                    message: format!("Invalid history timestamp at index {}", i),
-                }
-            })?;
+            let timestamp = DateTime::from_timestamp(ts, 0).unwrap_or_else(Utc::now);
 
             let divisor = if bond { 100.0 } else { 1.0 };
 
-            let close = Decimal::try_from(
-                body.c
-                    .get(i)
-                    .copied()
-                    .ok_or_else(|| MarketDataError::ValidationFailed {
-                        message: format!("Missing history close at index {}", i),
-                    })?
-                    / divisor,
-            )
-            .map_err(|_| MarketDataError::ValidationFailed {
-                message: format!("Failed to convert close to decimal at index {}", i),
-            })?;
+            let close = Decimal::try_from(body.c.get(i).copied().unwrap_or(0.0) / divisor)
+                .map_err(|_| MarketDataError::ValidationFailed {
+                    message: format!("Failed to convert close to decimal at index {}", i),
+                })?;
 
             let open = body
                 .o

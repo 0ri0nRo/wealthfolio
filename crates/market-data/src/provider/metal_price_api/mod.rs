@@ -80,122 +80,6 @@ pub struct MetalPriceApiProvider {
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl MetalPriceApiProvider {
-    async fn historical_quotes(
-        &self,
-        _context: &QuoteContext,
-        instrument: ProviderInstrument,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-        strict: bool,
-    ) -> Result<Vec<Quote>, MarketDataError> {
-        let (raw_symbol, quote_currency) = match &instrument {
-            ProviderInstrument::MetalSymbol { symbol, quote } => {
-                (symbol.to_string(), quote.to_string())
-            }
-            _ => {
-                return Err(MarketDataError::UnsupportedAssetType(format!(
-                    "{:?}",
-                    instrument
-                )))
-            }
-        };
-
-        let (base_code, weight_multiplier) = Self::parse_metal_symbol(&raw_symbol)
-            .ok_or_else(|| MarketDataError::SymbolNotFound(raw_symbol.clone()))?;
-
-        let start_date = start.format("%Y-%m-%d");
-        let end_date = end.format("%Y-%m-%d");
-
-        let url = format!(
-            "https://api.metalpriceapi.com/v1/timeframe?base={}&currencies={}&start_date={}&end_date={}",
-            quote_currency, base_code, start_date, end_date
-        );
-
-        let response = self
-            .client
-            .get(&url)
-            .header("X-API-KEY", &self.api_key)
-            .send()
-            .await
-            .map_err(|e| MarketDataError::ProviderError {
-                provider: PROVIDER_ID.to_string(),
-                message: e.to_string(),
-            })?;
-
-        // Read as text first so we can include the body in error messages
-        // (the API returns error details that don't match the success schema).
-        let response_text = response
-            .text()
-            .await
-            .map_err(|e| MarketDataError::ProviderError {
-                provider: PROVIDER_ID.to_string(),
-                message: format!("Failed to read response: {}", e),
-            })?;
-
-        let tf_resp: MetalPriceTimeframeResponse =
-            serde_json::from_str(&response_text).map_err(|e| {
-                warn!(
-                    provider = PROVIDER_ID,
-                    error = %e,
-                    body = %&response_text[..response_text.len().min(300)],
-                    "Failed to parse timeframe response"
-                );
-                MarketDataError::ProviderError {
-                    provider: PROVIDER_ID.to_string(),
-                    message: format!("Failed to parse timeframe response: {}", e),
-                }
-            })?;
-
-        if !tf_resp.success || tf_resp.rates.is_empty() {
-            warn!(
-                provider = PROVIDER_ID,
-                symbol = %raw_symbol,
-                body = %&response_text[..response_text.len().min(300)],
-                "Metal Price API timeframe request failed"
-            );
-            return Err(MarketDataError::ProviderError {
-                provider: PROVIDER_ID.to_string(),
-                message: format!(
-                    "Timeframe API request failed (body: {})",
-                    &response_text[..response_text.len().min(300)]
-                ),
-            });
-        }
-
-        let mut quotes = Vec::new();
-        for (date_str, rates) in &tf_resp.rates {
-            let Some(rate) = rates.get(base_code) else {
-                if strict {
-                    return Err(MarketDataError::ValidationFailed {
-                        message: "Missing metal rate in history".into(),
-                    });
-                }
-                continue;
-            };
-            let price_per_oz = Self::rate_to_price(*rate)?;
-            let price = price_per_oz * weight_multiplier;
-
-            let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|e| {
-                MarketDataError::ProviderError {
-                    provider: PROVIDER_ID.to_string(),
-                    message: format!("Invalid date '{}': {}", date_str, e),
-                }
-            })?;
-
-            let timestamp = Utc.from_utc_datetime(&date.and_hms_opt(12, 0, 0).unwrap());
-
-            quotes.push(Quote::new(
-                timestamp,
-                price,
-                quote_currency.clone(),
-                PROVIDER_ID.to_string(),
-            ));
-        }
-
-        quotes.sort_by_key(|q| q.timestamp);
-        Ok(quotes)
-    }
-
     /// Create a new Metal Price API provider with the given API key.
     pub fn new(api_key: String) -> Self {
         let client = wealthfolio_http::client_builder()
@@ -379,24 +263,112 @@ impl MarketDataProvider for MetalPriceApiProvider {
     /// HTTP 421 which is handled as a provider error.
     async fn get_historical_quotes(
         &self,
-        context: &QuoteContext,
+        _context: &QuoteContext,
         instrument: ProviderInstrument,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Quote>, MarketDataError> {
-        self.historical_quotes(context, instrument, start, end, false)
-            .await
-    }
+        let (raw_symbol, quote_currency) = match &instrument {
+            ProviderInstrument::MetalSymbol { symbol, quote } => {
+                (symbol.to_string(), quote.to_string())
+            }
+            _ => {
+                return Err(MarketDataError::UnsupportedAssetType(format!(
+                    "{:?}",
+                    instrument
+                )))
+            }
+        };
 
-    async fn get_historical_quotes_for_reset(
-        &self,
-        context: &QuoteContext,
-        instrument: ProviderInstrument,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<Vec<Quote>, MarketDataError> {
-        self.historical_quotes(context, instrument, start, end, true)
+        let (base_code, weight_multiplier) = Self::parse_metal_symbol(&raw_symbol)
+            .ok_or_else(|| MarketDataError::SymbolNotFound(raw_symbol.clone()))?;
+
+        let start_date = start.format("%Y-%m-%d");
+        let end_date = end.format("%Y-%m-%d");
+
+        let url = format!(
+            "https://api.metalpriceapi.com/v1/timeframe?base={}&currencies={}&start_date={}&end_date={}",
+            quote_currency, base_code, start_date, end_date
+        );
+
+        let response = self
+            .client
+            .get(&url)
+            .header("X-API-KEY", &self.api_key)
+            .send()
             .await
+            .map_err(|e| MarketDataError::ProviderError {
+                provider: PROVIDER_ID.to_string(),
+                message: e.to_string(),
+            })?;
+
+        // Read as text first so we can include the body in error messages
+        // (the API returns error details that don't match the success schema).
+        let response_text = response
+            .text()
+            .await
+            .map_err(|e| MarketDataError::ProviderError {
+                provider: PROVIDER_ID.to_string(),
+                message: format!("Failed to read response: {}", e),
+            })?;
+
+        let tf_resp: MetalPriceTimeframeResponse =
+            serde_json::from_str(&response_text).map_err(|e| {
+                warn!(
+                    provider = PROVIDER_ID,
+                    error = %e,
+                    body = %&response_text[..response_text.len().min(300)],
+                    "Failed to parse timeframe response"
+                );
+                MarketDataError::ProviderError {
+                    provider: PROVIDER_ID.to_string(),
+                    message: format!("Failed to parse timeframe response: {}", e),
+                }
+            })?;
+
+        if !tf_resp.success || tf_resp.rates.is_empty() {
+            warn!(
+                provider = PROVIDER_ID,
+                symbol = %raw_symbol,
+                body = %&response_text[..response_text.len().min(300)],
+                "Metal Price API timeframe request failed"
+            );
+            return Err(MarketDataError::ProviderError {
+                provider: PROVIDER_ID.to_string(),
+                message: format!(
+                    "Timeframe API request failed (body: {})",
+                    &response_text[..response_text.len().min(300)]
+                ),
+            });
+        }
+
+        let mut quotes = Vec::new();
+        for (date_str, rates) in &tf_resp.rates {
+            let Some(rate) = rates.get(base_code) else {
+                continue;
+            };
+            let price_per_oz = Self::rate_to_price(*rate)?;
+            let price = price_per_oz * weight_multiplier;
+
+            let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").map_err(|e| {
+                MarketDataError::ProviderError {
+                    provider: PROVIDER_ID.to_string(),
+                    message: format!("Invalid date '{}': {}", date_str, e),
+                }
+            })?;
+
+            let timestamp = Utc.from_utc_datetime(&date.and_hms_opt(12, 0, 0).unwrap());
+
+            quotes.push(Quote::new(
+                timestamp,
+                price,
+                quote_currency.clone(),
+                PROVIDER_ID.to_string(),
+            ));
+        }
+
+        quotes.sort_by_key(|q| q.timestamp);
+        Ok(quotes)
     }
 }
 

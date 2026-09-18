@@ -368,7 +368,6 @@ impl FinnhubProvider {
         currency: &str,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
-        strict: bool,
     ) -> Result<Vec<Quote>, MarketDataError> {
         let from_ts = start.timestamp().to_string();
         let to_ts = end.timestamp().to_string();
@@ -464,11 +463,6 @@ impl FinnhubProvider {
             end.format("%Y-%m-%d")
         );
 
-        if strict && quotes.len() != len {
-            return Err(MarketDataError::ValidationFailed {
-                message: "Finnhub history contains discarded rows".into(),
-            });
-        }
         Ok(quotes)
     }
 
@@ -650,19 +644,6 @@ impl MarketDataProvider for FinnhubProvider {
         self.fetch_latest_quote(&symbol, &currency).await
     }
 
-    async fn get_historical_quotes_for_reset(
-        &self,
-        context: &QuoteContext,
-        instrument: ProviderInstrument,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<Vec<Quote>, MarketDataError> {
-        let symbol = self.extract_symbol(&instrument)?;
-        let currency = self.get_currency(context);
-        self.fetch_historical_quotes(&symbol, &currency, start, end, true)
-            .await
-    }
-
     async fn get_historical_quotes(
         &self,
         context: &QuoteContext,
@@ -681,7 +662,7 @@ impl MarketDataProvider for FinnhubProvider {
         );
 
         let quotes = self
-            .fetch_historical_quotes(&symbol, &currency, start, end, false)
+            .fetch_historical_quotes(&symbol, &currency, start, end)
             .await?;
 
         if quotes.is_empty() {

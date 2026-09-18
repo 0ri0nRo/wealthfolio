@@ -22,7 +22,7 @@ use crate::models::{
     AssetProfile, DividendEvent, InstrumentId, ProviderId, Quote, QuoteContext, SearchResult,
     SplitEvent,
 };
-use crate::provider::MarketDataProvider;
+use crate::provider::{MarketDataProvider, DATA_SOURCE_CUSTOM_SCRAPER};
 use crate::resolver::{check_profile, SymbolResolver};
 
 /// Provider registry for orchestrating market data fetching.
@@ -110,8 +110,9 @@ impl ProviderRegistry {
         }
     }
 
-    /// Destructive replacement must not silently accept partial validation or
-    /// fail over away from an explicitly preferred provider.
+    /// Validate every returned quote before replacement, without filtering bad rows.
+    /// Uses ordinary history fetching; this cannot guarantee upstream completeness.
+    /// An explicitly preferred provider is exclusive for replacement.
     pub async fn fetch_quotes_for_reset(
         &self,
         context: &QuoteContext,
@@ -128,6 +129,15 @@ impl ProviderRegistry {
             {
                 continue;
             }
+            // Custom scrapers may turn a failed history request into a latest quote.
+            if provider.id() == DATA_SOURCE_CUSTOM_SCRAPER {
+                last_error = MarketDataError::NotSupported {
+                    operation: "history replacement (historical fetching may fall back to latest)"
+                        .into(),
+                    provider: provider.id().into(),
+                };
+                continue;
+            }
             let provider_id: ProviderId = Cow::Borrowed(provider.id());
             if !self.circuit_breaker.is_allowed(&provider_id) {
                 continue;
@@ -136,7 +146,7 @@ impl ProviderRegistry {
                 let resolved = self.resolver.resolve(&provider_id, context)?;
                 self.rate_limiter.acquire(&provider_id).await;
                 let quotes = provider
-                    .get_historical_quotes_for_reset(context, resolved.instrument, start, end)
+                    .get_historical_quotes(context, resolved.instrument, start, end)
                     .await?;
                 if quotes.is_empty() {
                     return Err(MarketDataError::NoDataForRange);
@@ -2029,17 +2039,6 @@ mod tests {
         }
         async fn get_historical_quotes(
             &self,
-            context: &QuoteContext,
-            instrument: ProviderInstrument,
-            start: DateTime<Utc>,
-            end: DateTime<Utc>,
-        ) -> Result<Vec<Quote>, MarketDataError> {
-            self.base
-                .get_historical_quotes(context, instrument, start, end)
-                .await
-        }
-        async fn get_historical_quotes_for_reset(
-            &self,
             _: &QuoteContext,
             _: ProviderInstrument,
             start: DateTime<Utc>,
@@ -2048,7 +2047,7 @@ mod tests {
             self.base.call_count.fetch_add(1, Ordering::SeqCst);
             if self.base.should_fail {
                 return Err(MarketDataError::ValidationFailed {
-                    message: "Lossy parser response".into(),
+                    message: "History fetch failed".into(),
                 });
             }
             Ok(self
@@ -2157,8 +2156,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reset_fails_closed_for_unaudited_provider() {
-        let provider = Arc::new(MockProvider::new("LATEST_ADAPTER", 1, false));
+    async fn reset_rejects_custom_scraper_latest_fallback() {
+        let provider = Arc::new(MockProvider::new(DATA_SOURCE_CUSTOM_SCRAPER, 1, false));
         let registry = ProviderRegistry::new(vec![provider.clone()], Arc::new(MockResolver));
         let context = QuoteContext {
             instrument: InstrumentId::Equity {

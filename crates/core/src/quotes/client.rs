@@ -408,7 +408,7 @@ impl MarketDataClient {
             id.starts_with("CUSTOM:") || id.starts_with(DATA_SOURCE_CUSTOM_SCRAPER)
         }) {
             return Err(MarketDataClientError::InvalidData(
-                "Reset is unavailable for custom scrapers: their history cannot yet be verified as complete and free of default prices".into(),
+                "Reset is unavailable for custom scrapers because historical fetching may fall back to a latest price".into(),
             ).into());
         }
         let context = self.build_quote_context(asset)?;
