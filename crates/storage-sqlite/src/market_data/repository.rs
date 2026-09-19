@@ -47,9 +47,7 @@ impl MarketDataRepository {
 }
 
 fn reset_context(conn: &mut SqliteConnection, id: &str) -> Result<ProviderHistoryResetContext> {
-    use crate::schema::{
-        assets, market_data_custom_providers as custom, market_data_providers as providers,
-    };
+    use crate::schema::{assets, market_data_providers as providers};
     let asset: wealthfolio_core::assets::Asset = assets::table
         .find(id)
         .select(crate::assets::AssetDB::as_select())
@@ -66,24 +64,13 @@ fn reset_context(conn: &mut SqliteConnection, id: &str) -> Result<ProviderHistor
         ))
         .load::<(String, bool, i32, Option<String>)>(conn)
         .map_err(StorageError::QueryFailed)?;
-    let custom = custom::table
-        .order(custom::id.asc())
-        .select((
-            custom::id,
-            custom::code,
-            custom::enabled,
-            custom::priority,
-            custom::config,
-        ))
-        .load::<(String, String, bool, i32, Option<String>)>(conn)
-        .map_err(StorageError::QueryFailed)?;
     // Exclude labels and last-sync bookkeeping: only fetch identity/configuration matters.
     let fingerprint = serde_json::json!({
         "kind": asset.kind, "active": asset.is_active, "mode": asset.quote_mode,
         "currency": asset.quote_ccy, "type": asset.instrument_type,
         "symbol": asset.instrument_symbol, "exchange": asset.instrument_exchange_mic,
         "metadata": asset.metadata, "assetProvider": asset.provider_config,
-        "providers": providers, "custom": custom,
+        "providers": providers,
     })
     .to_string();
     let earliest: Option<String> = quotes_dsl::quotes
@@ -1803,6 +1790,35 @@ mod tests {
             serde_json::to_value(raw_rows(&repo, "ROLLBACK")).unwrap(),
             serde_json::to_value(before).unwrap()
         );
+    }
+
+    #[tokio::test]
+    async fn reset_ignores_unrelated_custom_provider_configuration_changes() {
+        let (repo, _temp) = create_test_repository().await;
+        insert_test_asset(&repo, "RESET");
+        let date = NaiveDate::from_ymd_opt(2025, 1, 4).unwrap();
+        repo.save_quote(&quote_with_source("RESET", date, "YAHOO", Decimal::ONE))
+            .await
+            .unwrap();
+        let mut conn = get_connection(&repo.pool).unwrap();
+        diesel::sql_query("INSERT INTO market_data_custom_providers
+            (id, code, name, description, enabled, priority, config, created_at, updated_at)
+            VALUES ('unrelated', 'UNRELATED', 'Unrelated', '', 1, 1, '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)")
+            .execute(&mut conn).unwrap();
+        let context = repo.provider_history_reset_context("RESET").unwrap();
+        diesel::sql_query(r#"UPDATE market_data_custom_providers SET config='{"changed":true}' WHERE id='unrelated'"#)
+            .execute(&mut conn).unwrap();
+        let result = repo
+            .replace_provider_history(
+                context,
+                vec![quote_with_source("RESET", date, "YAHOO", Decimal::TEN)],
+            )
+            .await
+            .unwrap();
+        assert_eq!((result.deleted_count, result.inserted_count), (1, 1));
+        let rows = raw_rows(&repo, "RESET");
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].close, "10");
     }
 
     #[tokio::test]

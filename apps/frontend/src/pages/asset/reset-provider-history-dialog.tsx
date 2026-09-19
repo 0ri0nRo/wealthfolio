@@ -2,6 +2,10 @@ import { useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { resetProviderHistory, resetAllProviderHistory } from "@/adapters";
+import type {
+  ResetAllProviderHistoryResult,
+  ResetProviderHistoryError,
+} from "@/adapters/shared/market-data";
 import { QueryKeys } from "@/lib/query-keys";
 import { invalidatePerformanceCaches } from "@/lib/performance-cache";
 import { useToast } from "@wealthfolio/ui/components/ui/use-toast";
@@ -35,7 +39,7 @@ export function ResetProviderHistoryDialog({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const submitting = useRef(false);
-  const reset = useMutation({
+  const reset = useMutation<ResetAllProviderHistoryResult, ResetProviderHistoryError>({
     mutationFn: async () => {
       if (allAssets) return resetAllProviderHistory();
       if (!assetId) throw new Error("No asset selected for reset.");
@@ -66,10 +70,7 @@ export function ResetProviderHistoryDialog({
   });
   const errorMessage =
     reset.error instanceof Error ? reset.error.message : String(reset.error ?? "");
-  // A lost response can occur after commit; never imply that a network error rolled back prices.
-  const uncertain = /timeout|timed out|abort|network|fetch|connection|could not be confirmed/i.test(
-    errorMessage,
-  );
+  const uncertain = reset.error?.outcomeUnknown === true;
 
   return (
     <AlertDialog

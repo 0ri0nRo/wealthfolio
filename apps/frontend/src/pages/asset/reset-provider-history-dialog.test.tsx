@@ -128,23 +128,32 @@ describe("Reset provider history", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it.each(["Already refreshing this asset", "Invalid provider history: discarded rows"])(
-    "shows backend rejection: %s",
-    async (message) => {
-      mocks.resetProviderHistory.mockRejectedValue(new Error(message));
-      setup();
-      fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
-      expect(await screen.findByRole("alert")).toHaveTextContent(message);
-      expect(mocks.toast).not.toHaveBeenCalled();
-      expect(mocks.resetProviderHistory).toHaveBeenCalledTimes(1);
-    },
-  );
+  it.each([
+    "Already refreshing this asset",
+    "Invalid provider history: invalid returned rows",
+    "Asset or provider settings changed during fetching; history was not replaced",
+    "Provider network connection failed before replacement",
+  ])("shows backend rejection: %s", async (message) => {
+    mocks.resetProviderHistory.mockRejectedValue(
+      Object.assign(new Error(message), { outcomeUnknown: false }),
+    );
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(message);
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(screen.queryByText(/prices may already have been replaced/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reset provider history" })).toBeEnabled();
+    expect(mocks.resetProviderHistory).toHaveBeenCalledTimes(1);
+  });
 
   it.each([
     "Request timed out",
+    "Internal Server Error",
     "Reset completion could not be confirmed. Reload quotes before retrying.",
   ])("does not retry an uncertain response or claim a rollback: %s", async (message) => {
-    mocks.resetProviderHistory.mockRejectedValue(new Error(message));
+    mocks.resetProviderHistory.mockRejectedValue(
+      Object.assign(new Error(message), { outcomeUnknown: true }),
+    );
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -213,7 +222,9 @@ describe("Reset all provider history", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
   it("never automatically retries a global reset after an interrupted response", async () => {
-    mocks.resetAllProviderHistory.mockRejectedValue(new Error("Network connection lost"));
+    mocks.resetAllProviderHistory.mockRejectedValue(
+      Object.assign(new Error("Network connection lost"), { outcomeUnknown: true }),
+    );
     setup(true);
     fireEvent.click(screen.getByRole("button", { name: "Reset provider history" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(

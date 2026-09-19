@@ -18,3 +18,33 @@ it("uses the global command without an asset payload", async () => {
   await resetAllProviderHistory();
   expect(mocks.invoke).toHaveBeenCalledWith("reset_all_provider_history");
 });
+
+it.each(["single", "all"])(
+  "classifies %s reset errors without inspecting messages",
+  async (scope) => {
+    const { resetAllProviderHistory } = await import("./market-data");
+    const reset = () =>
+      scope === "single" ? resetProviderHistory("asset-1") : resetAllProviderHistory();
+    const rejection = {
+      message: "Asset or provider settings changed during fetching; history was not replaced",
+      outcomeUnknown: false,
+    };
+    for (const error of [
+      rejection,
+      Object.assign(new Error(rejection.message), { outcomeUnknown: false }),
+    ]) {
+      mocks.invoke.mockRejectedValueOnce(error);
+      await expect(reset()).rejects.toMatchObject(rejection);
+    }
+    for (const error of [
+      new TypeError("Failed to fetch"),
+      new Error("Command timed out"),
+      new SyntaxError("Invalid JSON response"),
+      { message: "Reset completion could not be confirmed.", outcomeUnknown: true },
+      Object.assign(new Error("Internal Server Error"), { outcomeUnknown: true }),
+    ]) {
+      mocks.invoke.mockRejectedValueOnce(error);
+      await expect(reset()).rejects.toMatchObject({ outcomeUnknown: true, message: error.message });
+    }
+  },
+);

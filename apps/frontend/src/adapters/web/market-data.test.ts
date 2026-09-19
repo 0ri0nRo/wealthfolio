@@ -45,3 +45,22 @@ it("posts the global reset exactly once without a selected asset", async () => {
   expect(options?.method).toBe("POST");
   expect(options?.body ?? "").not.toContain("assetId");
 });
+
+it.each([400, 408, 500, 504])("classifies HTTP %s reset responses", async (status) => {
+  const message =
+    status === 400
+      ? "Asset or provider settings changed during fetching; history was not replaced"
+      : "Reset completion could not be confirmed. Reload quotes before retrying.";
+  vi.stubGlobal(
+    "fetch",
+    vi
+      .fn()
+      .mockResolvedValue(
+        new Response(status === 408 ? null : JSON.stringify({ code: status, message }), { status }),
+      ),
+  );
+  await expect(invoke("reset_provider_history", { assetId: "asset-1" })).rejects.toMatchObject({
+    ...(status === 408 ? {} : { message }),
+    outcomeUnknown: status === 408 || status >= 500,
+  });
+});

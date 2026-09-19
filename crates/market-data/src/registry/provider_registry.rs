@@ -120,8 +120,7 @@ impl ProviderRegistry {
         end: DateTime<Utc>,
     ) -> Result<Vec<Quote>, MarketDataError> {
         let mut last_error = MarketDataError::NoProvidersAvailable;
-        let mut diagnostics = FetchDiagnostics::new();
-        for provider in self.filter_providers(context, true, &mut diagnostics) {
+        for provider in self.ordered_providers(context, true) {
             if context
                 .preferred_provider
                 .as_ref()

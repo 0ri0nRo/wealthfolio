@@ -2171,7 +2171,11 @@ export const invoke = async <T>(command: string, payload?: Record<string, unknow
       void 0;
     }
     console.error(`[Invoke] Command "${command}" failed: ${msg}`);
-    throw new Error(msg);
+    // The server's 408 timeout leaves owned reset tasks running; 5xx responses
+    // can also follow a committed reset whose completion failed.
+    throw Object.assign(new Error(msg), {
+      outcomeUnknown: res.status === 408 || res.status >= 500,
+    });
   }
   // Handle responses with no body (204 No Content, 202 Accepted, or empty 200)
   if (res.status === 204 || res.status === 202) {
