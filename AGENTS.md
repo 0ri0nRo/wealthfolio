@@ -18,9 +18,6 @@ with a React frontend, Tauri desktop/mobile runtime, and Axum web server.
   them.
 - For multi-step work, give a brief plan with verification steps. Keep plans
   clear and concise; list unresolved questions only when they need an answer.
-- Lead the final response with findings or outcomes. Include checks run,
-  results, and any validation gaps. Use absolute file links in responses; keep
-  repository documentation paths relative so they work in every checkout.
 
 ## Architecture and implementation
 
@@ -29,8 +26,9 @@ with a React frontend, Tauri desktop/mobile runtime, and Axum web server.
   patterns.
 - Frontend calls go through `@/adapters`. `apps/frontend/vite.config.ts` selects
   Tauri or web adapters at build time using `BUILD_TARGET`; `adapters/index.ts`
-  defaults to Tauri for TypeScript checking. Do not assume a type check
-  validates both runtime implementations.
+  defaults to Tauri for TypeScript checking, as does the `#platform` alias in
+  `apps/frontend/tsconfig.json`. TypeScript includes the frontend source tree,
+  but these aliases do not validate both runtime configurations equivalently.
 - Shared domain calls live in `apps/frontend/src/adapters/shared/` and use
   `shared/platform.ts`, which resolves through `#platform`. Runtime-specific
   operations live in `adapters/tauri/` and `adapters/web/`; some features own
@@ -39,7 +37,8 @@ with a React frontend, Tauri desktop/mobile runtime, and Axum web server.
 - Keep Tauri commands (`apps/tauri/src/commands/`) and Axum handlers
   (`apps/server/src/api/`) thin. Put shared business logic in the owning Rust
   crate; core services live in `crates/core/`, persistence and migrations in
-  `crates/storage-sqlite/`.
+  `crates/storage-sqlite/`. Add schema changes as new migrations in
+  `crates/storage-sqlite/migrations/`; never edit a migration already shipped.
 
 When adding or changing a backend call, trace both runtime paths: the frontend
 adapter/export, Tauri command registration in `apps/tauri/src/lib.rs`, web
@@ -99,13 +98,30 @@ checks pass, repeat or broaden them only for new changes, failures, or
 unresolved risk. Do not substitute a running dev server for a completed build
 check.
 
-| Changed area                    | Required validation                                                                                                                                                               |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Documentation/instructions only | Verify referenced paths, commands, imports, and consistency; check formatting and diff. Application builds/tests are unnecessary.                                                 |
-| Frontend or shared TS packages  | Relevant one-shot tests, lint, and `pnpm type-check`; build affected frontend targets (`pnpm build`, `pnpm build:tauri`). Shared frontend changes require both targets.           |
-| Adapter/API wiring              | Above frontend checks plus `pnpm --filter frontend exec vitest run src/adapters/adapter-command-parity.test.ts`; check affected Rust runtimes and relevant handler/service tests. |
-| Rust logic or persistence       | Focused crate tests and `cargo fmt --all -- --check`; compile affected consumers. Shared backend changes require both runtime packages in the command above.                      |
-| UI behavior/layout              | Relevant frontend checks plus exercise the changed flow; use existing browser/layout tests when they cover it.                                                                    |
+- **Documentation/instructions:** verify referenced paths, commands, imports,
+  and consistency; check formatting and diff. Application builds/tests are
+  unnecessary.
+- **Frontend or shared TS packages:** run relevant one-shot tests, lint, and
+  `pnpm type-check`. Routine component changes do not require both builds. For
+  adapter/runtime wiring, Vite/build configuration, dependencies, or shared
+  package changes affecting both bundles, run `pnpm build` and
+  `pnpm build:tauri`. For target-specific build changes, build that target.
+- **Adapter/API wiring:** also run
+  `pnpm --filter frontend exec vitest run src/adapters/adapter-command-parity.test.ts`;
+  check affected Rust runtimes and relevant handler/service tests.
+- **Rust logic or persistence:** run focused crate tests,
+  `cargo fmt --all -- --check`, and Clippy for affected crates with
+  `cargo clippy --locked -p <crate> --all-targets --all-features -- -D warnings`.
+  Compile affected consumers; shared backend changes require both runtime
+  packages in the command above. CI runs Clippy across `--workspace`.
+- **UI text/translations:** update affected keys and plural forms in every
+  supported locale; run `pnpm --filter frontend i18n:check`.
+- **UI behavior/layout:** exercise the changed flow. Run
+  `pnpm test:e2e:net-worth` for relevant net-worth layout changes and
+  `pnpm test:e2e:addon-sandbox` for addon sandbox changes. For application
+  flows, use `pnpm test:e2e` or focused specs. Before running E2E tests, consult
+  `.claude/skills/run-e2e-tests/SKILL.md` and `e2e/README.md` for setup; use the
+  selected suite's script/config for its server and browser requirements.
 
 For full PR checks and environment prerequisites, consult
 `.github/workflows/pr-check.yml` and relevant specialized workflows when working
