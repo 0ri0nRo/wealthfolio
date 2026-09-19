@@ -11,13 +11,20 @@ with a React frontend, Tauri desktop/mobile runtime, and Axum web server.
 - Prefer the smallest readable change that satisfies the task. Avoid speculative
   features and abstractions; preserve validation at external input and
   persistence boundaries.
+- Reuse before adding infrastructure: trace the existing service, event, queue,
+  and error handling before proposing a new mechanism. Extend those first.
+- Before adding a migration, persisted state, worker, retry mechanism, or
+  synchronization primitive, explain the concrete failure it prevents and why
+  existing mechanisms cannot handle it. Separate required behavior from optional
+  resilience; do not add optional resilience without agreement.
 - Match existing style. Do not refactor unrelated code or reformat adjacent
   files. Remove only imports, variables, and functions made unused by your
   changes.
 - Preserve existing user changes. Report unrelated issues rather than fixing
   them.
 - For multi-step work, give a brief plan with verification steps. Keep plans
-  clear and concise; list unresolved questions only when they need an answer.
+  clear and concise; identify what is reused, added, and deferred, and list
+  unresolved questions only when they need an answer.
 
 ## Architecture and implementation
 
@@ -135,6 +142,8 @@ Report checks that were blocked or not run and why; never imply they passed.
 Review the final diff for unrelated changes before finishing.
 
 ## Code review rules
+
+Challenge whether each new mechanism needs to exist, not only whether it works.
 
 For bug-fix reviews:
 
